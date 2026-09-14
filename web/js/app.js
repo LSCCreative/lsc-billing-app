@@ -128,25 +128,40 @@
     }
 
     setNav('estimates');
-    EstimatesView.mount(main, { onAuthLost, onGoPricing: toPricing, onOpenSettings: openSettings });
+    /* onGoPricing keeps its name: the first-run setup step it serves still
+       means the rate card specifically, and Pricing is where toFinance() with
+       no argument lands. Wrapped rather than passed by reference so a caller
+       that ever hands it an event doesn't have that event read as initialTab. */
+    EstimatesView.mount(main, {
+      onAuthLost,
+      onGoPricing: () => toFinance(),
+      onOpenSettings: openSettings,
+    });
     appMounted = true;
   }
 
   function setNav(active) {
     document.getElementById('nav-estimates').classList.toggle('active', active === 'estimates');
     document.getElementById('nav-clients').classList.toggle('active', active === 'clients');
-    document.getElementById('nav-pricing').classList.toggle('active', active === 'pricing');
+    document.getElementById('nav-finance').classList.toggle('active', active === 'finance');
   }
 
   /* The header is no longer the only way to either of these: the estimates
      list's first-run setup steps open them too, so they sit here rather than
-     inside bindNav's closure where only the header could reach them. */
-  function toPricing() {
+     inside bindNav's closure where only the header could reach them.
+
+     Finance replaced the old standalone Pricing item, so this is where
+     toPricing used to be — the rate card is now one sub-tab inside it, and
+     FinanceView decides which sub-tab to open. `initialTab` is passed straight
+     through: callers that mean Pricing (the header item, the first-run setup
+     step) pass nothing and get it, and the Pricing screen's own links out to
+     Overhead and Goals name their destination. */
+  function toFinance(initialTab) {
     if (appView.hidden) return;
     if (!LSCUnsaved.confirmLeave()) return;
-    setNav('pricing');
+    setNav('finance');
     window.scrollTo(0, 0);
-    PricingView.mount(main, { onAuthLost });
+    FinanceView.mount(main, { onAuthLost, initialTab });
   }
 
   function openSettings(opener) {
@@ -246,7 +261,8 @@
     document.getElementById('logo-btn').addEventListener('click', toEstimates);
     document.getElementById('nav-estimates').addEventListener('click', toEstimates);
     document.getElementById('nav-clients').addEventListener('click', toClients);
-    document.getElementById('nav-pricing').addEventListener('click', toPricing);
+    // Wrapped: a bare toFinance would take the click event as its initialTab.
+    document.getElementById('nav-finance').addEventListener('click', () => toFinance());
     signOutBtn.addEventListener('click', () => {
       if (appView.hidden) return;
       // A sign-out empties #main, so it discards unsaved work exactly as nav

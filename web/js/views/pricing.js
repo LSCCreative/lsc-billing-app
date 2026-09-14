@@ -45,14 +45,29 @@ const PricingView = (() => {
      without asking. */
   const snapshot = () => JSON.stringify({ card, taxRaw });
 
-  /* Is this screen still the one on #main?
+  /* Is this screen still in the page?
      A save is async and nothing stops the user navigating while it is in
      flight, so its outcome can land after they have moved on — and render()
-     writes over #main, which put the whole rate card back on top of whatever
-     had replaced it. Verified by delaying the PUT and leaving mid-save. The
-     same applies to the failure path, where $('pricing-error') is simply gone
-     and the old code threw on it. */
-  const onScreen = () => Boolean(root && root.querySelector('#tax-inp'));
+     writes over its container, which put the whole rate card back on top of
+     whatever had replaced it. Verified by delaying the PUT and leaving
+     mid-save. The same applies to the failure path, where $('pricing-error') is
+     simply gone and the old code threw on it.
+
+     Asked of the document, not of `root`. This used to be root.querySelector,
+     which was correct while root was #main — a permanent element that other
+     screens write over. Since the Finance move, root is #finance-sub, and a
+     nav item that leaves Finance replaces #main wholesale and takes that div
+     out of the document with the rate card still inside it: root.querySelector
+     would keep finding #tax-inp in the detached tree and answer "still on
+     screen" forever. The LSCUnsaved watcher below is the one that makes that
+     visible — a stale dirty rate card would then interrupt every later
+     navigation to ask about a screen nobody can see. getElementById can't see a
+     detached node, which is exactly the question being asked.
+
+     This depends on #tax-inp being unique in the document: the Goals screen
+     reuses .tax-setting for the same underlying field and must give its input a
+     different id. */
+  const onScreen = () => Boolean(document.getElementById('tax-inp'));
 
   /* The stored rate is a fraction; the field shows a percent. A plain ×100 puts
      the float error on screen — 0.07 renders as 7.000000000000001 — so the
@@ -566,9 +581,12 @@ const PricingView = (() => {
     render();
     LSCUnsaved.watch('pricing', {
       label: 'the rate card',
-      // Asks what is on screen rather than holding an element: every structural
-      // edit re-renders this screen, which would invalidate a stored reference.
-      onScreen: () => Boolean(root && root.querySelector('#tax-inp')),
+      // The module-level sentinel, not a second copy of it: these two had drifted
+      // into duplicate expressions asking the same question, and only one of them
+      // would have been fixed for the Finance move. Asks what is in the page
+      // rather than holding an element, because every structural edit re-renders
+      // this screen and would invalidate a stored reference.
+      onScreen,
       dirty: () => snapshot() !== baseline,
     });
     loadUsage();

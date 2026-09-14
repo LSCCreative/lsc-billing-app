@@ -1,0 +1,22 @@
+/* The Finance area — see js/views/finance.js.
+ *
+ * The sub-tab row is the header's own .nav-link, so everything that makes a nav
+ * item look like one (uppercase 11px, the accent underline on .active, the
+ * :focus-visible ring in a11y.css, the 44px touch target below 768px) arrives
+ * with the class. All this file owns is the row those buttons sit in.
+ *
+ * No rule under the row on purpose: the child screen's own .page-head brings a
+ * border-bottom 22px later, and two horizontal rules that close together turn
+ * the top of the screen into a ladder. The accent underline under the active
+ * tab is what marks it; the page title below says where you landed.
+ *
+ * The negative left margin pulls the first tab's own 10px of .nav-link padding
+ * back out, so the row's text starts on #main's left edge in line with the page
+ * title under it rather than indented a notch from it.
+ */
+.finance-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 22px -10px;
+}

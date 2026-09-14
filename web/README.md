@@ -16,6 +16,7 @@ css/estimates.css        estimate screens, additive
 css/pricing.css          pricing screen, additive
 css/settings.css         invoice settings modal, additive
 css/clients.css          clients screen + typeahead dropdown, additive
+css/finance.css          the Finance sub-tab row, additive
 css/responsive.css       the responsive bands (tablet 768-1099, mobile
                          <768). Every rule is inside a media query
 css/a11y.css             accessibility pass: --muted contrast override,
@@ -30,7 +31,8 @@ js/calc.js               the money model. A byte-identical copy of
 js/util.js               fmt / esc / today / num, and the ABN helpers
 js/typeahead.js          client typeahead (combobox over /api/clients?q=)
 js/rows.js               per-row and per-section figures, following calc.js
-js/data.js               the rate card and settings, cached for the session
+js/data.js               rate card, settings, overhead and goals, cached for
+                         the session and preloaded together
 js/toast.js              the corner toast
 js/connection.js         the connection-lost banner; subscribes to api.js
 js/unsaved.js            unsaved-edit warnings — confirm() on the way out of a
@@ -42,6 +44,8 @@ js/views/estimate-detail.js  the read-only estimate
 js/views/estimate-editor.js  the editor
 js/views/clients.js      the client list, one client's record + estimate history
 js/views/pricing.js      the rate card (Pricing & Services)
+js/views/finance.js      Finance: routes Pricing / Overhead / Goals into
+                         #finance-sub. A router, not a screen
 js/views/settings.js     the Invoice Settings modal (GST + payment details)
 js/app.js                boot + top-level view switching
 ```

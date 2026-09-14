@@ -16,8 +16,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 ## Where this is in the design flow
 
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
-dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (not
-started)** → Design Review (not applicable yet).
+dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
+progress — the nav shell is in, 9 UI tasks to go)** → Design Review (not applicable yet).
 
 **Completed, 2026-09-15:**
 1. Grill Me — no file output; every structural decision folded into the brief (see "Resolved
@@ -63,17 +63,30 @@ started)** → Design Review (not applicable yet).
    updatedAt: null }` — see "Resolved decisions" #9 and the new #15 below — then round-trips and
    re-updates in place). `npm test` 91/91.
 
-**Not started:** everything else in TASKS.md, starting with the Finance nav + `FinanceView` shell.
-`web/` still has only one change — `web/js/calc.js`, byte-identical to the server money model, must
-be re-copied (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`. No frontend
-*screens* exist for this feature yet, so the new routes have only been exercised by `test-api.js`,
-not by a browser — see "Open items" below.
+9. **Finance nav + `FinanceView` shell** — `web/js/views/finance.js` (new, ~140 lines) plus
+   `web/css/finance.css` (new, one rule). `#nav-pricing` is now `#nav-finance`; `setNav()` takes
+   `'finance'`; `toPricing()` is now `toFinance(initialTab)`. `LSCData.load()` preloads all five
+   payloads in one `Promise.all` and `loaded()` requires all five; new accessors
+   (`overheadItems()`, `overheadSnapshots()`, `goals()`, `goalsConfigured()`) and setters
+   (`setOverheadItems`, `setOverheadSnapshots`, `setGoals`) are in place for the screens that write
+   them. Pricing mounts unmodified into `#finance-sub`; Overhead and Goals render a placeholder
+   until their own tasks land. **One fix to `pricing.js` came with the move** — see resolved
+   decision 16, it's the only reason that file is in this commit. Verified in a browser against
+   `api-scratch` (see "Verifying your work"), not just by eye over the diff: routing, `initialTab`,
+   the unsaved-edit guard in all four of its states, the stale-watcher case, a full save
+   round-trip from inside the sub-container, 375px, and a clean console. `npm test` still 91/91
+   (no backend change in this task).
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Finance
-nav + `FinanceView` shell**, `frontend — Opus/high`), state its model/effort bucket out loud before
-writing code, and work top-down. Per its own task note, this can be built against the now-real
-`/api/overhead-items`, `/api/overhead-snapshots`, and `/api/goals` routes (no need to stub them —
-that was only a fallback for if this task landed first).
+**Not started:** everything else in TASKS.md, starting with **Pricing screen: computed rate column
++ explanatory note**. `web/js/calc.js` is byte-identical to the server money model and must be
+re-copied (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
+
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Pricing
+screen: computed rate column + explanatory note**, `money math — Opus/high`), state its
+model/effort bucket out loud before writing code, and work top-down. Everything that task needs
+now exists: `toFinance('overhead')` / `toFinance('goals')` are the cross-links its note calls (both
+verified working), `overheadRatePerHour()` is in `web/js/calc.js`, and its inputs are in
+`LSCData.overheadItems()` / `LSCData.goals()` before the first paint.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -172,6 +185,36 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     functions, rather than inventing a `DEFAULT_GOALS`. The Goals view (not yet built) should render
     these as empty fields, not zeros.
 
+16. **`pricing.js`'s on-screen sentinel now asks the document, not its own `root`** — the one
+    change the Finance move forced on a file this feature otherwise doesn't touch. It used to read
+    `root.querySelector('#tax-inp')`, which was correct only while `root` was `#main`, an element
+    no navigation ever removes. `root` is now `#finance-sub`, and leaving Finance replaces `#main`
+    wholesale — taking that div *out of the document with the rate card still inside it*. The old
+    sentinel kept finding `#tax-inp` in the detached tree and answered "still on screen" forever,
+    which left a dirty `LSCUnsaved` watcher interrupting *every subsequent navigation* to ask about
+    a screen nobody could see. `document.getElementById` can't see a detached node, which is
+    exactly the question being asked. Confirmed load-bearing rather than cosmetic by measuring both
+    forms against the same detached node (old: `true`, new: `false`). The duplicate copy of the
+    expression inline in the `LSCUnsaved.watch` call was collapsed into the shared const at the
+    same time — there were two of them and only one would have been fixed.
+    **This makes `#tax-inp` a document-unique id.** The Goals screen reuses `.tax-setting` for the
+    same underlying field and **must give its input a different id** (`#goals-tax-inp` or
+    similar), or Pricing's sentinel starts answering for Goals' field.
+17. **The sub-tabs are `<nav>` + `aria-current="page"`, not `role="tablist"`.** ARIA tabs promise
+    arrow-key movement between tabs and a labelled tabpanel; this row replaces a whole screen and
+    has neither, so claiming the role would describe behaviour that isn't implemented. It is the
+    header's own `.nav-link` markup and `.active` convention moved into `#main`, exactly as the IA
+    doc specifies — which also means the `:focus-visible` ring, the `white-space:nowrap` at
+    ~865px and the 44px touch target below 768px all arrive with the class, nothing new to write.
+    If these ever become real tabs, that's a deliberate change with roving tabindex attached.
+18. **`onGoPricing` kept its name** where the estimates first-run checklist calls it
+    (`estimate-list.js` → `estimates.js` → `app.js`). The step still means the rate card
+    specifically, and Pricing is where `toFinance()` with no argument lands — renaming it through
+    three files would have been churn for no gain. It is passed as `() => toFinance()` rather than
+    by reference, so a caller that ever hands it an event doesn't have that event read as
+    `initialTab` (`FinanceView` also falls back to Pricing on a non-tab value, so both ends are
+    defensive; there's a check for it in the verification run).
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -190,18 +233,25 @@ line, and both charts are all things a person *looks at* — verify them in a br
 
 - **Nothing is blocked.** The previous session's one open item (the category/frequency enum
   spellings) was put to the user and confirmed as-is — see resolved decision 11.
-- **Neither the calc functions nor the new routes have ever been looked at by a human in a
-  browser**, because no screen renders them yet. They're pure/API-tested, which is the right gate
-  for *these* tasks, but every consumer of them is a thing a person looks at — the rate column, the
-  Minimum Job Price line, the Target Annual Revenue stat, the Overhead expense table itself. The
-  em-dash empty states (resolved decision 13) and the goals-nulls shape (decision 15) are the
-  specific things to check by eye once those screens exist: a `null` leaking through as "$0.00",
-  "NaN" or "$Infinity" is the failure mode these are shaped to prevent, and only a person looking at
-  the screen will catch it if a view coerces the value on its way out.
-- **`.design/overhead-finance/` is still untracked in git** (`git status` shows `?? .design/
-  overhead-finance/`), along with the deletion of the superseded `.design/overhead-profit-goals/`
-  and `BILLING_APP_PLAN.md`. Three tasks' worth of work now sits in the working tree uncommitted —
-  worth a commit before the next session rather than letting it grow further.
+- **The calc functions still haven't been looked at by a human in a browser.** The shell proved the
+  *data* arrives — `LSCData.goals()` reads back the three nulls unmodified, `overheadItems()` is
+  `[]` on a fresh account — but nothing yet *renders* a computed figure. The em-dash empty states
+  (resolved decision 13) and the goals-nulls shape (decision 15) remain the specific things to
+  check by eye as each screen lands: a `null` leaking through as "$0.00", "NaN" or "$Infinity" is
+  the failure mode these are shaped to prevent, and only a person looking at the screen will catch
+  it if a view coerces the value on its way out.
+- **The sub-tab row's active underline sits ~12px below its label below 768px**, because
+  `.nav-link` gets `min-height:44px` there (responsive.css's touch-target rule) while the text
+  stays vertically centred. It is legible and consistent with the rest of the system — the header's
+  own nav does the same thing — but it reads a little loose. Noted for the **Layout check at
+  1099px / 900px / 768px** task rather than tuned here, so the whole Finance area gets measured in
+  one pass instead of this row being adjusted twice. Otherwise the row behaves at 375px: one line,
+  no wrap, no horizontal overflow (`body.scrollWidth` 375 at a 375px viewport).
+- **The preload's failure copy is now slightly narrow.** `app.js`'s catch still says "Couldn't load
+  your rate card", but the `Promise.all` behind it now also fetches overhead, snapshots and goals —
+  so a 500 from `/api/overhead-items` shows a message naming the rate card. The remedy it gives
+  ("once the server is back, reload the page") is right either way, so it was left alone rather
+  than reworded mid-task; worth a second look during the design review.
 - `server/src/calc.js` is 428 lines, `server/src/db.js` ~290, and there are now two new route files
   (`overhead.js` ~95 lines, `goals.js` ~45 lines) plus ~90 new lines in `test-api.js`. None need
   splitting yet — see resolved decision 12 for why `calc.js` specifically should stay one file —
