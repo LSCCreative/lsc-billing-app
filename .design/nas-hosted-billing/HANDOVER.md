@@ -9,9 +9,10 @@ Overhauling the LSC Billing App from a memoryless Electron desktop app into a re
 Frontend on GitHub Pages, backend (Node/Express + SQLite) in Docker on the user's NAS. Full
 rationale, architecture diagram and experience principles: [DESIGN_BRIEF.md](DESIGN_BRIEF.md).
 
-## State as of 2026-09-14 (Core UI, Interactions & States, Responsive & Polish, and Deployment are
-all complete. Two manual dashboard steps — a Pages secret and enabling Pages — are the only things
-left for the user to do before the site is actually live; see DEPLOYMENT.md)
+## State as of 2026-09-14 (every section of TASKS.md is complete, including Deployment — the app
+is live: **https://lsccreative.github.io/lsc-billing-app/** talking to
+**https://billing.lsccreative.studio**. All that remains is the user signing in once with real
+credentials, per the "Login accounts" note below)
 
 Working tree: `server/` (the API, Node/Express + SQLite) and `web/` (the GitHub Pages frontend —
 new as of 8 Sept 2026, see below). `index.html`/`main.js`/`preload.js` at repo root are the old
@@ -701,21 +702,48 @@ checklist line, and it's a standing task (`/design-review`) rather than build wo
        visit if the URL never changes, so every deploy now gets a new URL for every local asset.
   - **The repo now exists**: [`LSCCreative/lsc-billing-app`](https://github.com/LSCCreative/lsc-billing-app),
     public (GitHub Pages needs that on the free plan), created and pushed this session — the app
-    had no `.git` before this task. **Pages source is already set to GitHub Actions**, done via
+    had no `.git` before this task. **Pages source was set to GitHub Actions** via
     `gh api -X POST repos/.../pages -f build_type=workflow` rather than the dashboard click, since
     the API allowed it directly.
-  - **One manual step remains, and only one**: the `LSC_API_BASE` repository secret, which needs
-    the tunnel hostname from the Cloudflare step above and so can't be set until that's live.
-    Written up as the last step in `DEPLOYMENT.md`.
-  - **Partially verified end to end.** The `config.js` templating and the cache-busting `sed` were
-    dry-run locally against the real `web/index.html` before being trusted in CI (both correct —
-    every nested `js/views/*.js` path matched). The workflow then **actually ran** on the real push
-    to `main` and failed at exactly the expected point (`LSC_API_BASE repository secret is not
-    set`), which confirms the trigger, checkout, and Pages/OIDC permissions are all correctly
-    wired — only the secret and the tunnel hostname are missing, both of which need the user.
-    The live Pages URL, a cross-origin login against the real tunnel hostname, and a save
-    round-tripping to the NAS still need those two things to exist first. `npm test` 68/68 — no
-    `server/` or `web/` application code changed by this task.
+  - **The tunnel wiring is done, on the real NAS, with the user's live-in-conversation approval**
+    (the NAS also runs other people's Nextcloud/Supabase, so this asked first rather than acting
+    unattended). `cloudflared-tunnel`'s network turned out to be `media_net`, not a network named
+    after the tunnel — found by inspecting it over SSH rather than assumed.
+    `server/docker-compose.yml` now declares `media_net` as `external: true` and attaches `billing`
+    to it, so this survives any future `docker compose up -d`. Reachability was proven with a
+    throwaway `curlimages/curl` container on `media_net`, because the official `cloudflared` image
+    has no shell to `docker exec` into — worth remembering before reaching for `docker exec` on it
+    again.
+  - **The hostname is `billing.lsccreative.studio`** — added as a Published application route on
+    the tunnel (dashboard name `deck-productions-nas`; the two existing routes were
+    `media.lsccreative.studio` and `db.productiondecks.online`, so `lsccreative.studio` was picked
+    to match the media one; user confirmed both the domain and the tunnel-reuse decision before
+    either was touched).
+  - **🔴 Found and fixed: `docker compose restart` does not reload `.env`.** After updating
+    `CORS_ORIGINS`/`COOKIE_SAMESITE`/`COOKIE_SECURE` in the NAS's `.env` and restarting, the
+    container kept answering `/health` correctly but sent **no `Access-Control-Allow-Origin`
+    header at all** — because `restart` reuses the container's environment as baked in at
+    *creation*, not what's currently in `.env`. In the browser this surfaced as the login
+    screen's generic "could not reach the server" (a CORS-blocked `fetch` throws, and `api.js`
+    classifies any throw as `network`), while `curl` against the identical URL looked completely
+    healthy — the two tools were telling two different, both-true stories, and only the browser's
+    network log surfaced the missing header. Fixed with `docker compose up -d`, which recreates
+    the container from the current `.env`. Written up as its own 🔴 note in `DEPLOYMENT.md` so it
+    isn't repeated next time an env var changes.
+  - **The `LSC_API_BASE` secret is set** (`https://billing.lsccreative.studio`), and a manual
+    workflow run confirmed a full green pipeline: checkout → config.js generated from the secret →
+    cache-busting applied → Pages configured → artifact uploaded → deployed.
+  - **Verified end to end, live, in a real browser** (not just `curl`): the deployed
+    `https://lsccreative.github.io/lsc-billing-app/` renders the login screen with no error
+    banner, the cross-origin `/api/session` preflight and request both carry the correct
+    `Access-Control-Allow-Origin` header, `js/config.js` on the live site reads the real tunnel
+    URL, and every script/stylesheet tag carries the deploying commit's `?v=` hash. **Not
+    verified**: an actual sign-in and a save round-trip, since that needs real account
+    credentials only the user has — see "Login accounts" below. Everything a login depends on
+    (CORS, cookie flags, config generation, cache-busting) is already proven; signing in is the
+    last confirmation, not a debugging step. `npm test` 68/68 — no `server/` or `web/` application
+    code changed by this task, only `server/docker-compose.yml` (network) and the NAS's `.env`
+    (CORS/cookie config).
 
 ~~**Open seam left by the estimates port**: the server has no column for `sectionLabels`.~~
 **Closed** by the schema v2 snapshot above, decided with the user on 2026-09-09.

@@ -7,6 +7,14 @@
 #
 # The container never listens on the public internet directly. Put Tailscale or
 # a reverse proxy in front of the published port — see the deployment guide.
+#
+# `media_net` joins this container to the same Docker network as the NAS's
+# Cloudflare Tunnel container, so the tunnel can reach it at `lsc-billing:8080`
+# for a Zero Trust Public Hostname (see DEPLOYMENT.md). It's declared external
+# because that network is owned by another stack (the media server), not this
+# one. Locally this network won't exist — `docker compose up` will fail to
+# find it; either create it once (`docker network create media_net`) or, for
+# purely local runs, comment the `networks:` blocks below out.
 
 services:
   billing:
@@ -32,3 +40,12 @@ services:
 
     volumes:
       - ./data:/data
+
+    networks:
+      - default
+      - media_net
+
+networks:
+  default: {}
+  media_net:
+    external: true
