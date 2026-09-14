@@ -1,0 +1,34 @@
+# Deployment unit for the DXP4800 Pro (UGOS Pro → Container Manager), and the
+# same file that runs the stack locally on the Mac.
+#
+#   Local:  docker compose up --build          → data lands in ./data
+#   NAS:    change the volume's host path to a real share, e.g.
+#           /volume1/docker/lsc-billing/data:/data
+#
+# The container never listens on the public internet directly. Put Tailscale or
+# a reverse proxy in front of the published port — see the deployment guide.
+
+services:
+  billing:
+    build: .
+    image: lsc-billing:latest
+    container_name: lsc-billing
+    restart: unless-stopped
+
+    # Bound to loopback so nothing is reachable from the LAN until a proxy or
+    # Tailscale is deliberately put in front of it. Change to "8080:8080" only
+    # if you intend the whole local network to reach it.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    env_file:
+      - .env
+
+    # These win over .env: inside the container the data path and port are
+    # fixed, whatever the host-side .env says.
+    environment:
+      DATA_DIR: /data
+      PORT: "8080"
+
+    volumes:
+      - ./data:/data

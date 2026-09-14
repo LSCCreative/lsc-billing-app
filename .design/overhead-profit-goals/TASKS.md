@@ -1,0 +1,35 @@
+# Build Tasks: Overhead Dashboard, Profit Goals & Dynamic Pricing Integration
+
+Generated from: .design/overhead-profit-goals/DESIGN_BRIEF.md (+ HANDOVER.md resolved decisions)
+Date: 7 September 2026
+
+Note: Information Architecture was skipped in the design flow for this feature. The two open IA questions from HANDOVER.md (exact placement of the estimate-editor toggle, and Goals save pattern) are resolved inline in the relevant tasks below using the brief's own precedent (`.tax-setting` explicit-save pattern; toggle placed directly above the existing summary bar) rather than left as loose ends.
+
+All work happens in `index.html` only (`main.js`/`preload.js` untouched). No new dependencies — hand-rolled inline SVG for charts, matching the app's zero-dependency pattern.
+
+## Foundation
+
+- [ ] **Overhead & Goals data layer**: Add the three new `localStorage`-backed stores and their pure calculation functions, with no UI yet — `lsc-overhead-items` (CRUD array: id, name, category, cost, frequency), `lsc-overhead-snapshots` (append-only log entry `{ts, totalAnnual, byCategory}` written on every overhead add/edit/delete), and `lsc-goals` (singleton: desired net income, target profit margin %, billable capacity hrs/wk, tax reserve target %). Implement the four formulas from HANDOVER.md as standalone functions: annual total (weekly×52 + monthly×12 + quarterly×4 + yearly), target annual revenue, overhead rate per hour, and minimum job price. Wire the existing `TAX_RATE`/`.tax-setting` value so Goals' "Tax Reserve Target %" reads and writes the exact same stored number — no second tax field. _Modifies: `TAX_RATE` handling. New: three localStorage keys, formula functions._
+- [ ] **Nav wiring for Overhead and Goals**: Add `#nav-overhead` and `#nav-goals` as flat top-level `.nav-link` buttons next to Estimates/Pricing/Invoice Settings, each setting `view` and calling `render()`, matching the existing `#nav-pricing` click handler exactly (active-state toggle included). Stub both view renders as an empty `.page-head` with title only — no table/form content yet. _Reuses: `.nav-link`, existing `view`/`render()` switcher pattern. New: two nav buttons, two view stubs._
+
+## Core UI
+
+- [ ] **Overhead expense table + Add/Edit Expense modal**: Build the Overhead page's dense expense table (Name, Category, Cost, Frequency, computed monthly-equivalent, row actions) using `.est-table`, populated from `lsc-overhead-items`. Add/Edit opens a `.modal-box` with `.field`-pattern inputs (category and frequency as `<select>`s, category list fixed: Software, Admin/Legal, Marketing, Hosting, Tax, Other). Save writes the row, appends one snapshot entry, closes the modal, and triggers a re-render — no separate recalculate step. Delete uses native `confirm()`, matching `deleteProject()`. _Reuses: `.est-table`, `.modal-box`/`.modal-overlay`, `.field`, `.btn`/`.btn-accent`, native `confirm()` pattern. New: expense table markup, Add/Edit Expense modal._
+- [ ] **Overhead Summary Card**: Add a `.proj-card`-style card above or beside the table showing Monthly Total / Annual Total, computed live from `lsc-overhead-items` (no page reload). _Reuses: `.proj-card`. New: summary card content._
+- [ ] **Goals form + shared Tax Reserve control**: Build the Goals page as a single `.field`-group form (Desired Net Income, Target Profit Margin %, Billable Capacity hrs/wk, Tax Reserve Target %) with one explicit Save button, matching the Pricing screen's save affordance — not per-field autosave. The Tax Reserve Target control reuses `.tax-setting` verbatim and writes/reads the same `TAX_RATE` value the Pricing screen's block already controls, confirmed by testing that changing it in either place updates the other on next render. _Modifies: `.tax-setting` becomes shared between Pricing and Goals. Reuses: `.field`, `.btn-accent`. New: Goals form markup + save handler._
+
+## Interactions & States
+
+- [ ] **Historical Overhead Trend chart (SVG line)**: Hand-rolled inline SVG line chart on the Overhead page, one point per entry in `lsc-overhead-snapshots`, x-axis by date, y-axis by total. Hover a point shows date + total via SVG `<title>`/tooltip. Empty state (no snapshots yet) reads as a plain message, not a broken empty chart. _New component, no chart library._
+- [ ] **Category Breakdown donut + legend**: Hand-rolled inline SVG donut on the Overhead page, computed live from current `lsc-overhead-items` grouped by category. Applies the brief's scoped palette exception (terracotta `--accent` for the largest category, muted warm-grey/ochre tonal ramp for the rest — nowhere else in the app breaks the single-accent rule). Legend list beside the donut shows category + $ + % for every segment (not colour-only, colourblind-safe). Hover a segment shows its value via `<title>`/tooltip. Covers: empty state (no expenses), single-category state, 5–6 category state. _New component, no chart library._
+- [ ] **Estimate-editor Overhead/Profit toggle + Minimum Job Price line**: Add "Include Overhead & Profit Margin in Calculation" as an inline switch directly above the existing `.summary-bar` in the estimate editor, defaulting ON. When on, render a secondary line below the existing totals — "Minimum Job Price: $X" — using Estimated Hours (existing `totalHours`) × Overhead Rate Per Hour, plus Direct Job Costs (`expenseTotal`, not `labourTotal`), plus the Goals profit margin. Switching off removes the line entirely; verify `clientPriceExGst`/billed total on the estimate never changes either way, in both edit and read-only estimate view. Covers: on, off, and the case where Goals/Overhead have no data yet (line reads as "Set up Overhead & Goals to see this" rather than $0 or NaN). _Modifies: estimate editor totals block, estimate view-mode totals. New: toggle control._
+- [ ] **Cost breakdown modal**: Add a `(?)`/click target next to the Minimum Job Price line that opens a `.modal-box` showing the three-line math (Direct Labor/Materials, Overhead Allocation, Net Profit Goal → Minimum Job Price), matching the app's existing modal focus-trap and Escape-to-close behavior. _Reuses: `.modal-box`/`.modal-overlay`. New: cost breakdown modal content._
+
+## Responsive & Polish
+
+- [ ] **Layout check at 1100px–maximized**: Confirm the Overhead table, Summary Card, and both charts stay legible and don't overflow at the app's fixed minimum window size (1100×700) through a fully maximized window — no breakpoint work, just verify nothing clips or wraps badly at the floor width.
+- [ ] **Accessibility pass**: Visible focus rings on every new interactive element (nav items, toggle, chart legend items, table row actions, modal buttons) — the brief notes the app currently lacks these broadly, so this is new work, not a check. Confirm both new modals trap focus while open, return focus to their trigger on close, and close on `Escape`. Verify chart colours (including the scoped donut palette) and `--muted` text hit ≥4.5:1 contrast against `--bg`/`--surface`.
+
+## Review
+
+- [ ] **Design review**: Run /design-review against the brief.

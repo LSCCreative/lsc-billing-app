@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Server runtime data — never commit real client/billing data or secrets
+server/data/
+server/.env
+
+# Frontend config — holds the real NAS/tunnel API URL, generated at deploy
+# time by the GitHub Actions workflow, see web/README.md
+web/js/config.js
+
+# OS cruft
+.DS_Store
+
+# Editor/tooling
+.clinerules/
+
+# Old Electron app — being retired, not yet tracked in git (see CLAUDE.md)
+/index.html
+/main.js
+/preload.js
+/icon.icns
+/package.json
+/package-lock.json
+/BILLING.csv

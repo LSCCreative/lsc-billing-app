@@ -1,0 +1,146 @@
+/* Estimate screens — additive only. app.css is the verbatim desktop
+   stylesheet and carries everything these screens actually look like; this
+   file adds the few things the desktop app had no need for. */
+
+/* The desktop app reported a failed save with alert(). A blocking dialog is
+   the one place a user cannot look at the form behind it, which is exactly
+   what they need to see when a save fails. This is that message, inline above
+   the actions and next to the work it failed to save. */
+#editor-error,
+#export-error {
+  display: none;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border: 1px solid #7a2222;
+  background: #1f1414;
+  color: #f0a0a0;
+  font-size: 12px;
+}
+#editor-error.show,
+#export-error.show {
+  display: block;
+}
+/* Sits between .est-header's rule and the first block, so it takes the
+   header's bottom spacing instead of adding its own above. */
+#export-error {
+  margin: -8px 0 26px;
+}
+#export-error .btn {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* The cards are the only route into an estimate, so they take focus. app.css
+   gives .proj-card a hover border; this matches it for the keyboard. */
+.proj-card:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.proj-card:focus-visible::after {
+  transform: scaleX(1);
+}
+
+/* The GST-free toggle in the document-type bar. Only rendered when the business
+   is GST-registered, so it is never a control that cannot do anything — see the
+   note in js/views/estimate-editor.js. Pushed to the far end of the bar so it
+   doesn't read as part of the invoice-number group beside it. */
+.doc-gst-free {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.doc-gst-free input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* .spinner is display:none in app.css and switched on inline while a write is
+   in flight. Inside a .btn it needs the flex box's alignment, not the
+   inline-block the desktop app's export button got away with. */
+.btn .spinner {
+  flex-shrink: 0;
+}
+
+/* ── Two classes that replaced inline styles in the editor's markup ────────
+   Both carry exactly what the `style` attribute carried, so every width from
+   768px up renders identically. They exist because css/responsive.css has to
+   override them in the mobile band, and a declaration in a style attribute can
+   only be beaten with !important — which nothing could then beat in turn. */
+
+/* The line-item row's delete cell. app.css centres nothing by default; this is
+   the `style="justify-content:center"` those six-column rows used to carry. */
+.gt-row .del-cell {
+  justify-content: center;
+}
+
+/* Total (inc GST) and Est. Take-Home each take two of the summary bar's five
+   columns. The mobile band stacks the bar to one column and sets this back to
+   `auto`; a span of 2 there would conjure an implicit second column and push
+   the figure off the screen. */
+.summary-bar .sum-span2 {
+  grid-column: span 2;
+}
+
+/* ── First-run setup steps ─────────────────────────────────────────────────
+   Shown inside the estimates empty state while the rate card or the invoice
+   settings have never been saved. app.css's .empty-state supplies the dashed
+   border and the muted heading; only the step list is new. */
+
+/* The plain empty state is one centred sentence. This one carries a paragraph
+   and an action per step, which read badly centred, so the block stays centred
+   in the card while its contents don't. */
+.empty-state.first-run {
+  padding: 48px 30px;
+}
+
+.first-run-steps {
+  list-style: none;
+  margin: 24px auto 0;
+  padding: 0;
+  max-width: 520px;
+  text-align: left;
+}
+
+.first-run-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.first-run-step-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.first-run-step-title {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* app.css sets .empty-state p to 12px centred; inside the left-aligned column
+   these want the tighter measure that a two-line explanation needs. */
+.empty-state.first-run .first-run-step-text p {
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+/* Keeps "Open Invoice Settings" on one line beside its paragraph. */
+.first-run-step .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.empty-state.first-run .first-run-skip {
+  margin: 22px auto 0;
+  max-width: 520px;
+  font-size: 11px;
+}

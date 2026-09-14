@@ -1,0 +1,80 @@
+/* Login screen — additive only. Reuses .field, .btn, .btn-accent, .spinner and
+   the :root tokens from app.css; adds nothing that any other screen inherits. */
+
+/* An id selector's own `display` outranks the UA stylesheet's [hidden] rule, so
+   without this `el.hidden = true` silently does nothing to #login-view and it
+   keeps reserving its 100vh above the app. */
+[hidden] { display: none !important; }
+
+#login-view {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 40px 38px 34px;
+  width: 100%;
+  max-width: 380px;
+}
+
+.login-wordmark {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: .04em;
+  color: var(--text);
+}
+.login-wordmark em { color: var(--accent); font-style: normal; }
+
+.login-sub {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--muted);
+  margin-top: 6px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.login-fields { display: flex; flex-direction: column; gap: 14px; padding-top: 24px; }
+
+.login-card .btn-accent {
+  width: 100%;
+  justify-content: center;
+  padding: 11px 18px;
+  margin-top: 20px;
+}
+
+/* The spinner sits inside the button and only occupies space while pending, so
+   the label doesn't shift on idle. */
+.login-card .spinner { margin-right: 2px; }
+.login-card .btn-accent[data-pending="true"] .spinner { display: inline-block; }
+
+/* Empty until there is something to say, so a screen reader announcing the
+   live region isn't reading a blank box on load. */
+#login-error {
+  display: none;
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-left-width: 3px;
+  background: rgba(184, 84, 68, 0.10);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#login-error.show { display: block; }
+
+/* The base .field inputs signal focus by border colour alone, which is thin at
+   this size and is the only cue on the screen a user might land on cold. The
+   global focus-ring pass is a later task; this is scoped to the login card. */
+.login-card input:focus-visible,
+.login-card button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

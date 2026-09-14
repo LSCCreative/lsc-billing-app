@@ -1,0 +1,3 @@
+# The real API hostname is deployment-specific and this repo is public.
+# Copy js/config.example.js to js/config.js and fill it in — see README.md.
+js/config.js

@@ -1,0 +1,62 @@
+/* Accessibility pass — additive only, loaded last. Touches nothing in app.css
+   directly (that file's own header says not to); both fixes here work by
+   overriding what app.css set, from a later stylesheet, which wins ties on
+   equal specificity the same way css/responsive.css already relies on.
+
+   Covers the two items from TASKS.md's Accessibility pass that are genuinely
+   global: the --muted contrast ratio, and focus rings on every interactive
+   element app.css strips outline from. The rest of that task (aria-live on
+   the banner and login error, and the modal focus trap) already existed or is
+   done in JS — see web/js/views/settings.js for the trap. */
+
+/* --muted was rgba(240,237,232,0.42): 3.67:1 on --bg and 3.34:1 on --surface,
+   both under the 4.5:1 body-text threshold. 0.6 clears both (6.15:1 / 5.2:1)
+   without a visible shift large enough to read as a redesign — verified with
+   the WCAG relative-luminance formula against both backgrounds this token is
+   used on. --muted2 is untouched: it is only ever a placeholder-style "empty"
+   row, not text carrying information. */
+:root {
+  --muted: rgba(240, 237, 232, 0.6);
+}
+
+/* app.css sets `outline:none` on every text input, select and custom button in
+   the app (.field input/textarea, .svc-select, .text-inp, .num-inp, the
+   pricing-table/tax-setting/doc-type/invoice-number inputs) and leaves .btn /
+   .nav-link / .back-btn / .del-btn to the UA default, which this theme's dark
+   background makes inconsistent at best. A handful of screens already added
+   their own scoped `:focus-visible` ring (login.css, connection.css,
+   estimates.css's card, clients.css's history link) with exactly this
+   treatment — this is that same ring, applied everywhere else so keyboard
+   navigation is never guesswork about what's focused. `:focus-visible` rather
+   than `:focus` so a mouse click still doesn't ring anything. */
+.btn:focus-visible,
+.nav-link:focus-visible,
+.back-btn:focus-visible,
+.del-btn:focus-visible,
+.field input:focus-visible,
+.field textarea:focus-visible,
+.svc-select:focus-visible,
+.text-inp:focus-visible,
+.num-inp:focus-visible,
+.doc-type-select:focus-visible,
+.inv-num-inp:focus-visible,
+.pricing-table input:focus-visible,
+.tax-setting input:focus-visible,
+.pricing-sec-label-inp:focus-visible,
+.set-check input:focus-visible,
+.client-save-toggle input:focus-visible,
+.typeahead-item:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* .nav-link already animates a border-bottom on hover; the ring sits outside
+   the button so the two don't compete for the same edge. */
+.nav-link:focus-visible {
+  outline-offset: 3px;
+}

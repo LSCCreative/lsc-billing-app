@@ -1,0 +1,49 @@
+/* Connection-lost banner — additive only. Reuses .btn/.btn-sm and the :root
+   tokens from app.css. */
+
+#connection-banner {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 40px;
+  font-size: 12px;
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+
+  /* Sticks directly beneath #app-header, which is 52px tall and sticky at 0.
+     Its z-index is one below the header's 100 so it tucks under, not over. */
+  position: sticky;
+  top: 52px;
+  z-index: 99;
+
+  /* Opaque, not an alpha tint: content scrolls underneath a sticky element.
+     This is #181818 with the accent at 12%, resolved against --bg. */
+  background: #2B1F1D;
+}
+#connection-banner.show { display: flex; }
+
+#connection-banner .cb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+#connection-banner-message { flex: 1; line-height: 1.5; }
+
+#connection-banner-retry { flex-shrink: 0; }
+
+#connection-banner-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Write actions go dead while the server is unreachable. The block itself is
+   enforced in js/connection.js; this is only the affordance, and it matches
+   .btn:disabled's opacity so a blocked button reads the same as a disabled one.
+   Any control that writes to the API must carry data-write — see web/README.md. */
+body[data-connection="lost"] [data-write] {
+  opacity: .4;
+  cursor: not-allowed;
+}

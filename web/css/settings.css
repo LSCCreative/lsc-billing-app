@@ -1,0 +1,134 @@
+/* Invoice Settings modal — additive only. app.css already carries the modal
+   shell (.modal-overlay, .modal-box, .modal-title, .modal-actions) and the form
+   fields (.form-grid, .field, .field.full), ported verbatim from the desktop
+   build. Nothing here restyles them. */
+
+/* The desktop modal was one flat block of bank fields. This one has two subjects
+   — GST and payment details — and they need telling apart. */
+.set-group + .set-group {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.set-group-head {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.set-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.set-group-head + .set-hint {
+  margin-top: -4px;
+  margin-bottom: 14px;
+}
+
+/* app.css sets `.field input { width: 100% }`, which would stretch a checkbox
+   across the whole column. These sit outside .field for that reason. */
+.set-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.set-check input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.set-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  margin-top: 14px;
+}
+
+.set-row .field {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.set-row .set-check {
+  padding-bottom: 9px;
+}
+
+/* GST rate and the inclusive-pricing toggle do nothing unless the business is
+   registered — calc.js ignores both otherwise — so they read as inactive rather
+   than sitting there at full strength looking editable. `disabled` is set in
+   js/views/settings.js; this is only the affordance. */
+.set-row-off {
+  opacity: 0.45;
+}
+.set-row-off .set-check {
+  cursor: default;
+}
+
+.set-loading {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* Same treatment as #pricing-error and #editor-error: inline, next to the work
+   it is refusing, rather than the alert() the desktop app used — which covers
+   the very fields the message is naming. */
+#settings-error {
+  display: none;
+  margin: 18px 0 0;
+  padding: 10px 14px;
+  border: 1px solid #7a2222;
+  background: #1f1414;
+  color: #f0a0a0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+#settings-error.show {
+  display: block;
+}
+
+/* The actions bar sits directly under the error when one is showing, so it drops
+   the top border it would otherwise double up on. */
+#settings-error.show + .modal-actions {
+  border-top: 0;
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.modal-actions .saved-msg {
+  margin-right: auto;
+}
+
+/* The desktop modal was one flat block of bank fields and stood 391px tall, so it
+   fit any window and the shared shell in app.css never needed to think about
+   height. This one carries GST, business and payment — 864px — and the shell
+   centres its box in a fixed overlay with no max-height and no scrolling. Below
+   ~900px of viewport height that centring pushed the title off the top and Save
+   and Cancel off the bottom, with nothing scrollable to reach them: the modal
+   could be opened and read but not saved or cancelled, only escaped. It bites at
+   1440x800, the commonest laptop viewport, so it is not an edge case.
+
+   Scoped to this modal's id rather than .modal-overlay: the shell is base CSS and
+   the Desktop Preservation Law says don't touch it. margin:auto keeps the box
+   centred whenever it does fit, so short content behaves exactly as before. */
+#modal-invoice-settings {
+  align-items: flex-start;
+  overflow-y: auto;
+  padding: 24px 0;
+}
+#modal-invoice-settings .modal-box {
+  margin: auto;
+}

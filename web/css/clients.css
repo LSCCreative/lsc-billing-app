@@ -1,0 +1,118 @@
+/* Clients screen and the client typeahead — additive only. The list reuses
+   app.css's .cards-grid/.proj-card, the record reuses .form-grid/.field, and
+   the history reuses .est-block/.est-table. */
+
+/* ── Typeahead ─────────────────────────────────────────────────────────────── */
+
+.typeahead-wrap {
+  position: relative;
+}
+.typeahead-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  max-height: 264px;
+  overflow-y: auto;
+  list-style: none;
+  background: #1e2228;
+  border: 1px solid var(--accent);
+  border-top: none;
+}
+.typeahead-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+}
+.typeahead-list li:last-child {
+  border-bottom: none;
+}
+.typeahead-list li:hover,
+.typeahead-list li[aria-selected='true'] {
+  background: rgba(184, 84, 68, 0.12);
+}
+.ta-name {
+  font-size: 13px;
+  color: var(--text);
+}
+.ta-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Link state under the estimate editor's Business Name ─────────────────── */
+
+.client-link-status {
+  min-height: 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.client-link-status [hidden] {
+  display: none !important;
+}
+.client-save-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+/* app.css's .field input rule would otherwise stretch the checkbox full-width. */
+.field .client-save-toggle input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+/* The label rule in .field is for field captions; this is a control label. */
+.field label.client-save-toggle {
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+}
+
+/* ── Client record ─────────────────────────────────────────────────────────── */
+
+/* Same treatment as #editor-error: inline, above the actions. */
+#client-error {
+  display: none;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border: 1px solid #7a2222;
+  background: #1f1414;
+  color: #f0a0a0;
+  font-size: 12px;
+}
+#client-error.show {
+  display: block;
+}
+
+#client-history {
+  margin-top: 34px;
+}
+.client-history-empty {
+  padding: 18px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.client-history-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.client-history-link:hover,
+.client-history-link:focus-visible {
+  color: var(--accent);
+  outline: none;
+  text-decoration: underline;
+}

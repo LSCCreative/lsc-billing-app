@@ -1,0 +1,46 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd server && CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 npm start"
+      ],
+      "port": 8080
+    },
+    {
+      "_comment": "Throwaway API against a scratch database, for verifying UI work without touching server/data. Seed it first: cd server && DATA_DIR=/tmp/lsc-billing-scratch ADMIN_USERNAME=dev ADMIN_PASSWORD=scratch-dev-password npm run seed",
+      "name": "api-scratch",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd server && DATA_DIR=/tmp/lsc-billing-scratch CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 npm start"
+      ],
+      "port": 8080
+    },
+    {
+      "_comment": "A never-configured database, for verifying the first-run setup steps on the estimates empty state — those only render while the pricing and settings rows have never been written, which api-scratch's database has. Delete /tmp/lsc-billing-firstrun to reset it. Seed it first: cd server && DATA_DIR=/tmp/lsc-billing-firstrun ADMIN_USERNAME=dev ADMIN_PASSWORD=<12+ chars> npm run seed",
+      "name": "api-firstrun",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd server && DATA_DIR=/tmp/lsc-billing-firstrun CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 npm start"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5173",
+        "--directory",
+        "web"
+      ],
+      "port": 5173
+    }
+  ]
+}

@@ -1,0 +1,685 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Responsive — the tablet band (768–1099px) and the mobile band (<768px).
+
+   Additive and siloed, per the Desktop Preservation Law: every rule here lives
+   inside a media query, so the >=1100px layout is untouched. app.css stays
+   byte-identical to the desktop <style> block; this file is loaded last so it
+   wins ties on equal specificity.
+
+   One rule is a min-width query rather than a max-width one — it hides
+   #nav-menu-btn, which is markup no desktop layout has. It is explained where
+   it sits, at the head of the mobile band.
+
+   The three tables that stack below 768px (the editor's line-item grids, the
+   read-only estimate's tables, the rate card) do it by printing a data-label
+   from each cell. Those attributes are written by estimate-editor.js,
+   estimate-detail.js, clients.js and pricing.js, and each carries a comment
+   pointing back here. **A new column needs a data-label or it loses its
+   heading on a phone.**
+
+   TASKS.md names `@media (max-width: 992px)` for this task but states the band
+   as 768–1099px, as does DESIGN_BRIEF.md. 992 would leave 993–1099px on the
+   desktop rules inside a sub-desktop viewport, so the band here is 1099px.
+
+   Two queries, not one, because the measurements say the band has two halves.
+   Nothing actually breaks between ~900 and 1099px — the base rules already
+   handle it — so that half gets only the table guard. The things that do break
+   both break at ~860px, and are fixed at 900 with margin:
+
+     • the header nav wraps to two lines from ~865px down (TASKS.md estimated
+       ~720px and recorded that the tablet band was unaffected; it is not);
+     • .summary-bar silently clips a money figure from ~860px down.
+
+   Measured on the estimates list, detail, editor, pricing and clients screens
+   at 1400 / 1099 / 900 / 768px. There are still no stored baseline screenshots
+   for this project — this was done as a live measurement pass with
+   getBoundingClientRect/getComputedStyle, the same method as the desktop
+   preservation check.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── 768–1099px ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 1099px) {
+  /* The editor's line-item tables are CSS grids with four fixed money columns
+     (90/90/90/110 plus a 32px delete cell) and one flexible name column. Only
+     the name column can absorb a narrower viewport, so it is the one that goes
+     first: at 768px it is down to 259px. Rather than let it keep squashing,
+     the block scrolls and the grid holds a floor.
+
+     .bb-head and .bb-picker take the same floor so the title bar and the
+     service picker scroll with the rows instead of sitting at the visible
+     width and leaving a blank strip beside them when scrolled.
+
+     660px is deliberately just under the content width at 768px (705px), so
+     this is latent through the whole tablet band and engages only below it.
+     That is the point: it guarantees the tables can never silently squash,
+     without forcing a scrollbar onto a width where they still fit. The <768px
+     task replaces this with stacked label/value blocks. */
+  .billing-block {
+    overflow-x: auto;
+  }
+  .billing-block .bb-head,
+  .billing-block .bb-picker,
+  .billing-block .gt-head,
+  .billing-block .gt-row,
+  .billing-block .gt-body > * {
+    min-width: 660px;
+  }
+}
+
+/* ── below ~900px ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  /* 40px of gutter is generous on a 1080px column and expensive on a 768px
+     one. Held at 40px down to 900px on purpose: dropping it higher up the band
+     would make the content column grow as the window shrinks, which reads as a
+     jump backwards at the boundary. */
+  #main {
+    padding: 34px 24px;
+  }
+  /* The banner is a full-bleed bar under the header; its inset matches #main's
+     so its text lines up with the page content. */
+  #connection-banner {
+    padding: 10px 24px;
+  }
+
+  /* The header nav.
+
+     #hdr-right needs 690px and the wordmark beside it takes 123px, so below
+     ~865px the flex items start shrinking. .nav-link has no flex-shrink of its
+     own, so they shrink to min-content and the labels break across two lines —
+     "Invoice / Settings", "Sign / Out" — inside a header fixed at 52px. It is
+     not clipped, but it is a mess, and it starts well inside the tablet band.
+
+     Fixed here by taking the space back rather than by collapsing the nav: the
+     <768px task owns the compact nav, and a real one (a menu button) is a
+     bigger change than this band needs. nowrap is the actual fix — the rest is
+     what makes nowrap fit.
+
+     The home button is the cheapest 95px available: #logo-btn and
+     #nav-estimates are both wired to toEstimates in js/app.js, so its label is
+     a duplicate of the Estimates item two places to its right. The house icon
+     stays, and the button keeps its name through the aria-label added in
+     index.html for exactly this reason. */
+  #hdr-right {
+    gap: 12px;
+  }
+  .nav-link {
+    white-space: nowrap;
+    padding: 6px 8px;
+  }
+  #logo-btn .nav-label {
+    display: none;
+  }
+
+  /* The summary bar.
+
+     Five 1fr tracks, and 1fr's minimum is auto — so a track cannot shrink
+     below its content's min-content width. A five-figure total ("$128,450.00")
+     is 117px of unbreakable string at 19px, which forces each track to 153.6px:
+     692px of tracks inside a 671px box. .summary-bar is overflow:hidden, so the
+     overflow is not scrolled or wrapped, it is cut — at 768px the Tax Set-Aside
+     figure is simply gone, with nothing on screen to say so. The scratch data
+     tops out at $560, which is why this never showed up before; it was found by
+     substituting a realistic figure and re-measuring.
+
+     Three changes, each doing one job:
+       minmax(0,1fr)  stops a long value from widening its track at all;
+       the smaller value and padding make a five-figure total fit the track that
+         is left (16px is already in this design's vocabulary — GST carries an
+         inline 15px at desktop);
+       overflow-wrap is the backstop, so a value too big even for that wraps
+         onto a second line instead of disappearing. Nothing is ever lost
+         silently.
+
+     The inline `grid-column: span 2` on two items in the second bar is left
+     alone — overriding it would need !important, and at five columns the
+     2/1/2 arrangement is still correct. */
+  .summary-bar {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .sum-item {
+    padding: 13px 12px;
+  }
+  .sum-value {
+    font-size: 16px;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ── The mobile band, <768px ────────────────────────────────────────────────
+   Built 2026-09-13. 767px, not the 768 TASKS.md names, for the same reason the
+   band above is 1099 and not 992: 768 is the first pixel of the tablet band in
+   both TASKS.md and DESIGN_BRIEF.md, and claiming it for both would put two
+   layouts on one width.
+
+   The one rule in this section that is NOT a max-width query is the next one.
+   #nav-menu-btn is new markup — no desktop layout contains it — so hiding it
+   above the band is the same kind of rule as estimates.css's
+   `.btn .spinner{flex-shrink:0}`: global in form, but it can only reach
+   something the desktop app never had. It is here rather than in a screen's
+   stylesheet because the compact nav is a feature of this band and splitting it
+   across two files would hide half of it from whoever reads this one. */
+@media (min-width: 768px) {
+  #nav-menu-btn {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  /* ── Gutters ─────────────────────────────────────────────────────────────
+     24px of the tablet band becomes 16px, which is 16px more content on a
+     375px screen. #connection-banner matches, as it does above. */
+  #main {
+    padding: 26px 16px;
+  }
+  #connection-banner {
+    padding: 10px 16px;
+  }
+  #app-header {
+    padding: 0 8px 0 16px;
+  }
+
+  /* ── The compact nav ─────────────────────────────────────────────────────
+     #hdr-right needs 515px and there are ~236px beside the wordmark at 375px,
+     so the header overflowed the viewport by 250px. That is worse than a
+     cosmetic overflow: with content wider than the layout viewport, the phone
+     zooms the whole page out to fit it (measured: window.innerWidth 625 against
+     a documentElement.clientWidth of 375). Every screen in the app was being
+     rendered shrunken because of the header alone.
+
+     The panel is #hdr-right itself, taken out of flow and parked under the
+     header — not a second copy of the nav. The buttons are the same elements
+     with the same handlers at every width, so the mobile menu cannot drift out
+     of step with the desktop header, and it inherits the unsaved-edit guards in
+     js/app.js for free. display:none while closed takes the six buttons out of
+     the tab order and the accessibility tree with it.
+
+     No z-index: #app-header already carries z-index:100, so the panel paints
+     above the connection banner (99) and below the modal overlay (9000), which
+     is the order those three want. */
+  #nav-menu-btn {
+    display: inline-flex;
+    min-height: 44px;
+    padding: 6px 10px;
+  }
+  #hdr-right {
+    display: none;
+    position: fixed;
+    top: 52px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 6px 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    max-height: calc(100vh - 52px);
+    overflow-y: auto;
+  }
+  #hdr-right.open {
+    display: flex;
+  }
+  /* A menu row is a touch target, not a header item: 48px tall, full width,
+     text from the left. The 2px transparent bottom border app.css gives
+     .nav-link is left alone, so .active still marks the current screen —
+     as a full-width underline here rather than a tab. */
+  #hdr-right .nav-link {
+    justify-content: flex-start;
+    min-height: 48px;
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+  /* #logo-btn and #nav-estimates both call toEstimates. Side by side in the
+     header that redundancy is invisible; as two rows of a six-row menu it is
+     just a duplicate, and the wordmark beside the toggle already says whose app
+     this is. The Estimates row is the one that keeps the destination. */
+  #hdr-right #logo-btn {
+    display: none;
+  }
+
+  /* ── One column, everywhere it was two ───────────────────────────────────
+     minmax(0,1fr) rather than 1fr throughout: 1fr's minimum is auto, which is
+     what let a long money value push .summary-bar past its container in the
+     band above.
+
+     ⚠️ .cards-grid is NOT in this list, for the same reason the tablet task
+     didn't force it to two columns — see TASKS.md. It is already
+     repeat(auto-fill,minmax(260px,1fr)), which measures one column from ~534px
+     down, so every phone width gets the single column this task asks for
+     without a rule. Forcing it across the whole band would only change 534–767,
+     where it would render one 735px card holding a name and one number at 767px
+     against two 352px ones at 768px — a jump backwards at the boundary. It was
+     built, measured at 767px, and taken out again. One line here if the literal
+     reading is wanted. */
+  .form-grid,
+  .est-totals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* .pricing-grid is repeat(auto-fill,minmax(380px,1fr)) — a 380px floor, which
+     below ~428px is wider than the column it sits in. The rate card was
+     overflowing the page by 53px and taking every delete button off the right
+     edge with it. */
+  .pricing-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* ── Headings and header rows ────────────────────────────────────────────
+     A title and its actions side by side leaves ~105px for the title; at 32px
+     Delight that is three or four words per line with the buttons wrapping
+     beside it. Stacked, both get the full width. */
+  .page-head,
+  .est-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .page-title {
+    font-size: 24px;
+  }
+  .est-name {
+    font-size: 26px;
+  }
+  .est-header > div:last-child,
+  .form-actions,
+  .modal-actions,
+  .doc-type-bar {
+    flex-wrap: wrap;
+  }
+  .doc-gst-free {
+    margin-left: 0;
+  }
+
+  /* ── The summary bars ────────────────────────────────────────────────────
+     Five columns in 335px is 65px a track, and the band above only stopped the
+     figures being *cut* — it did not make them readable. One column, each item
+     a label/value row, so a seven-figure total has the full width and can never
+     need wrapping in the first place.
+
+     .sum-span2 is why estimate-editor.js stopped writing grid-column inline: at
+     one explicit column, `span 2` would create an implicit second column and
+     put half the bar off the screen. */
+  .summary-bar {
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 14px;
+  }
+  .summary-bar .sum-span2 {
+    grid-column: auto;
+  }
+  .sum-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 14px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .sum-item:last-child {
+    border-bottom: none;
+  }
+  .sum-label {
+    margin-bottom: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .sum-value {
+    flex: 0 0 auto;
+    text-align: right;
+  }
+
+  /* ── The editor's line-item tables become stacked label/value blocks ──────
+     The tablet band let these scroll sideways behind a 660px floor. Below 768px
+     that would be a 335px window onto a 660px table for the app's main editing
+     surface, with the Client Bill column — the number being decided — off the
+     right edge by default. So the grid stops being a table: the head row is
+     hidden and each cell prints its own column heading from the data-label that
+     estimate-editor.js now writes.
+
+     Both halves are needed. Hiding .gt-head without the labels would leave a
+     column of bare numbers; the labels without hiding .gt-head would print
+     every heading twice. */
+  .billing-block {
+    overflow-x: visible;
+  }
+  .billing-block .bb-head,
+  .billing-block .bb-picker,
+  .billing-block .gt-head,
+  .billing-block .gt-row,
+  .billing-block .gt-body > * {
+    min-width: 0;
+  }
+  .billing-block .gt-head {
+    display: none;
+  }
+  .gt-row {
+    display: block;
+    position: relative;
+    padding: 8px 14px 12px;
+  }
+  .gt-row > div,
+  .gt-row > div.right {
+    justify-content: space-between;
+    gap: 14px;
+    padding: 5px 0;
+  }
+  /* Never wrapped: these are column headings standing in for a hidden head row,
+     and "Client Bill" broken over two right-aligned lines reads as two labels.
+     The value beside it is a money figure or an input, both of which have the
+     room to give. */
+  .gt-row > div::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  /* The first cell is the row's subject — a service name, or the text input for
+     a crew member or deliverable. It gets its heading above it and the full
+     width beneath, rather than being squeezed against a label. */
+  .gt-row > div:first-child {
+    display: block;
+    padding-bottom: 9px;
+    /* Clear of the absolutely positioned delete button — see .del-cell. */
+    padding-right: 46px;
+  }
+  .gt-row > div:first-child::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+  .gt-row > div:first-child .text-inp {
+    width: 100%;
+  }
+  /* app.css sets .text-inp to width:100%, which in a label/value row would
+     leave the label nothing. */
+  .gt-row > div:not(:first-child) .text-inp {
+    width: auto;
+    flex: 1 1 90px;
+    min-width: 0;
+  }
+  /* app.css sets .gt-row .num-inp to width:100% — right for a 90px grid column,
+     wrong for a flex row where it leaves the label nothing and pushes the input
+     past the block. Fixed width, and tall enough to tap. */
+  .gt-row > div .num-inp {
+    flex: 0 0 auto;
+    width: 96px;
+    min-height: 44px;
+  }
+  .gt-row > div .text-inp {
+    min-height: 44px;
+  }
+  /* Crew and equipment rows have no mark-up: the column is an em dash under a
+     heading that is also an em dash. Legible as a table column, meaningless as
+     a line of its own. */
+  .gt-row .mu-cell {
+    display: none;
+  }
+  /* Removing the row is the row's own action once it is a block, so it moves to
+     the corner of the block rather than taking a sixth stacked line — which
+     across seven sections of rows is a lot of screen for one ×. Absolute rather
+     than floated so the 44px target can overhang the row's padding. */
+  .gt-row .del-cell {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    padding: 0;
+  }
+  .gt-row .del-cell::before {
+    content: none;
+  }
+  /* A block title, its tag and its subtotal do not fit on one 335px line. */
+  .bb-head {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  /* The picker's select and button share a row at every other width; here the
+     select would be squeezed to about 150px by a 44px-tall Add button beside
+     it. Stacked, both are full width and unmissable. */
+  .bb-picker {
+    flex-wrap: wrap;
+  }
+  .bb-picker .svc-select {
+    flex: 1 1 100%;
+    max-width: none;
+    min-height: 40px;
+  }
+  .bb-picker .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  /* ── The rate card's own rows ────────────────────────────────────────────
+     Stacked for the same reason as the tables above, and it was the narrowing
+     of columns that proved it. Five columns, four of them fixed, so the service
+     name input gets whatever is left: 90px at 375px, and every pixel clawed back
+     from the rate columns, the flag column and the padding only took it to
+     112px. At 320px it was **45px** — not enough of a name to read, let alone
+     edit. A rate card you cannot identify a row in is not a usable screen, so
+     this one stacks too. */
+  .pricing-table,
+  .pricing-table tbody,
+  .pricing-table tr {
+    display: block;
+  }
+  .pricing-table thead {
+    display: none;
+  }
+  .pricing-table tr {
+    position: relative;
+    padding: 4px 0 8px;
+    border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  }
+  .pricing-table tr:last-child {
+    border-bottom: none;
+  }
+  .pricing-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 4px 12px;
+    border-bottom: none;
+  }
+  .pricing-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  /* The name is the row's subject: its own line, full width, clear of the
+     delete button in the corner. */
+  .pricing-table td:first-child {
+    display: block;
+    /* app.css gives this cell width:99% to make it the flexible column; as a
+       block that is 99% of the table plus its own padding, which overflows. */
+    width: auto;
+    padding: 8px 12px;
+    padding-right: 46px;
+  }
+  .pricing-table td:first-child::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+  .pricing-table td.pricing-act {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    width: auto;
+    padding: 0;
+  }
+  .pricing-table td.pricing-act::before,
+  .pricing-table td.pricing-empty-td::before {
+    content: none;
+  }
+  .pricing-table input[type='number'] {
+    width: 96px;
+  }
+  /* Every bar on the Pricing screen is a flex row of a sentence and a button. */
+  .tax-setting,
+  .pricing-catalogue-bar,
+  .pricing-save-bar,
+  .pricing-sec-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .tax-setting input {
+    width: 100%;
+  }
+
+  /* ── The read-only estimate's tables ─────────────────────────────────────
+     🔴 These were losing a money figure, exactly as .summary-bar was in the
+     band above. .est-block is overflow:hidden, and with a realistic total in
+     it the five-column table measured 381px inside a 341px block — so the Bill
+     column, the number the client is charged, was **cut off rather than
+     scrolled to**, with nothing on screen to say so. The fixtures top out at
+     $560 and fit, which is the whole reason this survived to here.
+
+     Same fix as the editor's rows, and for the same reason a sideways scroll
+     would not do: a money column you have to go looking for is a money column
+     that gets missed. The head row is hidden and each cell prints the data-label
+     estimate-detail.js writes. .totals-card is left alone — two columns, and its
+     values measured 144px inside 343px with seven figures in them. */
+  .est-table,
+  .est-table tbody,
+  .est-table tr {
+    display: block;
+  }
+  .est-table thead {
+    display: none;
+  }
+  .est-table tr {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  }
+  .est-table tr:last-child {
+    border-bottom: none;
+  }
+  .est-table td,
+  .est-table td.right {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 4px 14px;
+    border-bottom: none;
+    text-align: left;
+  }
+  .est-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  /* The subject of the row, same as .gt-row's first cell in the editor. */
+  .est-table td:first-child {
+    display: block;
+    padding-top: 8px;
+  }
+  .est-table td:first-child::before {
+    display: block;
+    margin-bottom: 4px;
+  }
+  /* "No items" and the like, spanning every column. */
+  .est-table td[colspan]::before {
+    content: none;
+  }
+  .totals-card td {
+    padding: 9px 14px;
+  }
+
+  /* ── The Invoice Settings modal ──────────────────────────────────────────
+     css/settings.css already scrolls this overlay (the modal is 915px tall
+     here). At 375px the centred 95vw box wastes 19px of a screen that has none
+     to spare, so it goes full-bleed. */
+  #modal-invoice-settings {
+    padding: 0;
+  }
+  #modal-invoice-settings .modal-box {
+    width: 100%;
+    max-width: 100%;
+    padding: 24px 16px;
+    border-left: none;
+    border-right: none;
+  }
+
+  /* ── Touch targets ───────────────────────────────────────────────────────
+     TASKS.md asks for .btn-xs at >=44px; the same argument applies to every
+     control small enough to miss, and .del-btn (15.7 x 14px) was the worst of
+     them by some way. min-height rather than padding, so a button that is
+     already tall enough is untouched and nothing reflows around it.
+
+     No exceptions left: the rate card's delete button was the one control a
+     44px square would have distorted the layout for, and stacking that table
+     moved it into the row's corner where it has all the room it needs. */
+  .btn,
+  .btn-sm,
+  .btn-xs,
+  .back-btn,
+  .nav-link {
+    min-height: 44px;
+  }
+  .btn-sm,
+  .btn-xs {
+    padding: 8px 14px;
+  }
+  .del-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* Fields are ~36px tall everywhere in this app — fine under a mouse, small
+     under a thumb, and these screens are mostly form. Checkboxes are excluded:
+     they size themselves, and a 44px one would push its own row apart. */
+  .field input:not([type='checkbox']),
+  .field textarea,
+  .doc-type-select,
+  .inv-num-inp,
+  .tax-setting input,
+  .pricing-table input:not([type='checkbox']),
+  .pricing-sec-label-inp {
+    min-height: 44px;
+  }
+  /* Two targets that are not .btn and were missed by the list above: the
+     client-history row's link into an estimate (15px tall — the smallest thing
+     in the app that navigates), and the typeahead's suggestions. */
+  .client-history-link {
+    min-height: 44px;
+  }
+  .typeahead-list li {
+    min-height: 44px;
+    justify-content: center;
+  }
+  .back-btn {
+    align-items: center;
+  }
+
+  /* ── Odds and ends ───────────────────────────────────────────────────────*/
+  /* Fixed at 24px from two edges, which on a phone is a card floating in the
+     corner over the content it is reporting on. Full width reads as a bar. */
+  .export-toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+  }
+  .empty-state {
+    padding: 48px 18px;
+  }
+  /* Each step is a paragraph and a button; side by side the button takes the
+     width the paragraph needs. */
+  .first-run-step {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .first-run-step .btn {
+    justify-content: center;
+  }
+}

@@ -1,0 +1,25 @@
+/* Pricing screen — additive only. app.css already carries the whole rate-card
+   layout (.pricing-grid, .pricing-table, .tax-setting, .pricing-save-bar and
+   the rest), ported verbatim from the desktop build. Nothing here restyles it. */
+
+/* The desktop app reported a rejected save with alert(), which covers the very
+   fields the message is naming. Same treatment as the estimate editor's
+   #editor-error: inline, above the save bar, next to the work it refused. */
+#pricing-error {
+  display: none;
+  margin: 18px 0 0;
+  padding: 10px 14px;
+  border: 1px solid #7a2222;
+  background: #1f1414;
+  color: #f0a0a0;
+  font-size: 12px;
+}
+#pricing-error.show {
+  display: block;
+}
+
+/* The save bar sits directly under the error when one is showing, so it loses
+   the margin the grid above would otherwise have given it. */
+#pricing-error.show + .pricing-save-bar {
+  margin-top: 10px;
+}
