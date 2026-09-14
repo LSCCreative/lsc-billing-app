@@ -5,17 +5,45 @@ memoryless Electron desktop app into a real website. Read before touching anythi
 
 ## Start here
 
-1. [`.design/nas-hosted-billing/HANDOVER.md`](.design/nas-hosted-billing/HANDOVER.md) — **the
-   current build**, what's done, what's next, exactly where to pick up.
-2. [`.design/nas-hosted-billing/DESIGN_BRIEF.md`](.design/nas-hosted-billing/DESIGN_BRIEF.md) —
-   why, architecture, experience principles. Binding unless HANDOVER.md says otherwise.
-3. [`.design/nas-hosted-billing/TASKS.md`](.design/nas-hosted-billing/TASKS.md) — the ordered
-   checklist. Work top-down through the unchecked items unless told otherwise.
+`.design/` holds one self-contained folder per feature track — each has its own `DESIGN_BRIEF.md`,
+`TASKS.md`, and (once any work has happened on it) `HANDOVER.md`. Two tracks exist right now:
 
-Two other docs exist and are **superseded, historical context only**:
-`BILLING_APP_PLAN.md` (JSON-file storage — superseded by SQLite) and
-`.design/overhead-profit-goals/` (a separate, paused feature track — not part of this overhaul,
-do not touch unless explicitly asked to resume it).
+1. [`.design/nas-hosted-billing/`](.design/nas-hosted-billing/) — the base website rewrite
+   (Electron → GitHub Pages + NAS-hosted API/SQLite). Largely complete and **live** (Cloudflare
+   Tunnel + GitHub Pages); remaining work is in its own `TASKS.md` (design review, font/asset
+   cleanup). Read its `HANDOVER.md` first.
+2. [`.design/overhead-finance/`](.design/overhead-finance/) — new Finance area (Overhead tracking,
+   Goals, and cost-basis pricing feeding into the Pricing screen), built on top of the now-live
+   site from (1). Fully planned as of 2026-09-15 (brief, IA, and tasks all written and
+   accounting-reviewed); the first two tasks (SQLite schema v4, and the Overhead/Goals calc
+   functions in `calc.js`) are **done and tested** — read its `HANDOVER.md` first, then start at
+   the first unchecked item in its `TASKS.md`.
+
+**Superseded docs are deleted, not kept around.** A brief or task list that no longer describes
+what's being built (the old `localStorage`/Electron-targeted overhead brief, the old
+JSON-file-storage app plan) gets removed from the repo entirely once its replacement is written,
+rather than left in place marked "historical" — a stale doc sitting next to the current one is
+exactly what confuses a fresh agent into treating two specs as both live. Git history is the
+record if an old version is ever needed again; don't recreate a "kept for context" folder as a
+substitute for checking `git log`.
+
+## Handover discipline
+
+Two standing rules for anyone (human or agent) picking up work in this repo, on any track:
+
+1. **Before starting a task**, state which model/effort bucket it falls into (see "Model / effort"
+   below) and pause for the user to switch if the session isn't already running at that setting.
+   Sessions don't switch models mid-conversation on their own — saying "this is a money-math task,
+   Opus/high" out loud is what actually gets the right model in the seat, not just knowing the rule
+   exists.
+2. **When you finish a task or a session ends**, update that feature's `HANDOVER.md` before
+   stopping: check off what's done in `TASKS.md`, note any decisions made or seams left open, and
+   name the exact next unchecked item. If the feature folder has no `HANDOVER.md` yet, create one
+   modeled on [`.design/nas-hosted-billing/HANDOVER.md`](.design/nas-hosted-billing/HANDOVER.md) —
+   its structure (where the design flow is in the sequence, resolved decisions not to re-litigate,
+   how to verify your work) is the template. The goal is that a fresh agent with no memory of this
+   session can read one file and know exactly where things stand — never leave that to a diff or
+   this file alone.
 
 ## Two codebases in this repo — do not confuse them
 
@@ -37,8 +65,10 @@ was a conscious call — don't re-raise it as a concern unprompted.
 ## Model / effort for picking up this work
 
 This is a multi-session build spanning backend API work, a full UI port, and infra/deploy work —
-not a quick task. Set expectations per the *kind* of work in front of you, not for the whole
-project at once:
+not a quick task, on either track. Set expectations per the *kind* of work in front of you, not
+for the whole project at once. `.design/overhead-finance/TASKS.md` already tags each of its own
+tasks with the bucket it falls into (per this same list) — check there first before re-deriving it
+for a task on that track.
 
 - **Backend API routes, tests, config/infra changes (current phase: PDF export, backups)** —
   `Sonnet, effort: high`. Pattern-matches the existing `server/src/routes/*.js` files closely;

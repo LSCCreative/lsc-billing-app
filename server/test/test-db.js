@@ -22,7 +22,8 @@ test('creates a fresh database with every table the app needs', () => {
   ).all().map((r) => r.name);
 
   for (const expected of
-    ['account', 'clients', 'estimates', 'pricing', 'schema_version', 'sessions', 'settings']) {
+    ['account', 'clients', 'estimates', 'goals', 'overhead_items', 'overhead_snapshots',
+      'pricing', 'schema_version', 'sessions', 'settings']) {
     assert.ok(tables.includes(expected), `missing table: ${expected}`);
   }
 
@@ -151,6 +152,75 @@ test('an estimate cannot be saved with a status the pipeline does not have', () 
     db.prepare('INSERT INTO estimates (id, status, created_at, updated_at) VALUES (?,?,?,?)')
       .run(newId('est'), 'archived', nowIso(), nowIso());
   }, /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('an overhead item is confined to the fixed category and frequency lists', () => {
+  const file = tempDbPath('overhead-category');
+  const db = openDatabase(file);
+
+  const insert = (category, frequency) => db.prepare(`
+    INSERT INTO overhead_items (id, name, category, cost, frequency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(newId('ovh'), 'Adobe Creative Cloud', category, 79.99, frequency, nowIso(), nowIso());
+
+  assert.throws(() => insert('subscriptions', 'monthly'), /CHECK constraint failed/);
+  assert.throws(() => insert('software', 'yearly'), /CHECK constraint failed/);
+
+  insert('software', 'monthly');
+  const row = db.prepare('SELECT * FROM overhead_items').get();
+  assert.equal(row.category, 'software');
+  assert.equal(row.frequency, 'monthly');
+
+  db.close();
+});
+
+test('overhead snapshots are an append-only log, ordered by time', () => {
+  const file = tempDbPath('overhead-snapshots');
+  const db = openDatabase(file);
+
+  const insert = db.prepare(`
+    INSERT INTO overhead_snapshots (id, ts, total_annual, by_category_json) VALUES (?, ?, ?, ?)
+  `);
+  insert.run(newId('snap'), '2026-09-01T00:00:00.000Z', 20000, JSON.stringify({ software: 20000 }));
+  insert.run(newId('snap'), '2026-09-15T00:00:00.000Z', 24000, JSON.stringify({ software: 24000 }));
+
+  const rows = db.prepare('SELECT total_annual FROM overhead_snapshots ORDER BY ts').all();
+  assert.deepEqual(rows.map((r) => r.total_annual), [20000, 24000]);
+
+  db.close();
+});
+
+test('only one goals row can ever exist, matching pricing/settings', () => {
+  const file = tempDbPath('goals');
+  const db = openDatabase(file);
+
+  db.prepare(`
+    INSERT INTO goals
+      (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+       created_at, updated_at)
+    VALUES (1, 80000, 20, 25, ?, ?)
+  `).run(nowIso(), nowIso());
+
+  assert.throws(() => {
+    db.prepare(`
+      INSERT INTO goals
+        (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+         created_at, updated_at)
+      VALUES (2, 80000, 20, 25, ?, ?)
+    `).run(nowIso(), nowIso());
+  }, /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('a fresh database has no goals row until the app writes one', () => {
+  const file = tempDbPath('goals-unset');
+  const db = openDatabase(file);
+
+  const row = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.equal(row, undefined, 'goals must start empty, like pricing/settings, not pre-seeded');
 
   db.close();
 });

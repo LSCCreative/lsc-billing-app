@@ -5,7 +5,17 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
-const { computeTotals, gstTreatment } = require('../src/calc');
+const {
+  computeTotals,
+  gstTreatment,
+  round2,
+  annualisedCost,
+  annualOverheadTotal,
+  overheadRatePerHour,
+  minimumJobPrice,
+  targetAnnualRevenue,
+  WEEKS_PER_YEAR,
+} = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
 
 /**
@@ -217,6 +227,160 @@ test('without a rate card, only the rows that carry their own costs still bill',
   assert.equal(t.passThroughCost, 1300);
   assert.equal(t.totalIncGst, 1300);
   assert.equal(t.estTakeHome, 0);
+});
+
+/**
+ * OVERHEAD, GOALS AND THE COST BASIS
+ *
+ * The second worked example, and the one the brief names: an overhead book
+ * totalling $24,000 a year against 960 billable hours gives a $25/hr cost
+ * basis. The fixture is built to hit that figure through all five frequencies
+ * at once, so a broken multiplier cannot hide behind a right-looking total:
+ *
+ *   weekly     50 × 52 =  2600
+ *   monthly  1000 × 12 = 12000
+ *   quarterly 900 ×  4 =  3600
+ *   annual   4300 ×  1 =  4300
+ *   one-off  1500 ×  1 =  1500
+ *                        -----
+ *                        24000
+ *
+ * The 960 hours are 20 billable hrs/week × WEEKS_PER_YEAR (48, not 52 — four
+ * weeks of the year bill nothing; see decision 2 in calc.js's header).
+ */
+const OVERHEAD = [
+  { name: 'Music licence', category: 'software', cost: 50, frequency: 'weekly' },
+  { name: 'Adobe CC', category: 'software', cost: 1000, frequency: 'monthly' },
+  { name: 'Bookkeeper', category: 'admin_legal', cost: 900, frequency: 'quarterly' },
+  { name: 'Insurance', category: 'admin_legal', cost: 4300, frequency: 'annual' },
+  { name: 'Website build', category: 'marketing', cost: 1500, frequency: 'one_off' },
+];
+
+test('annualises every frequency onto one yearly overhead total', () => {
+  assert.equal(annualOverheadTotal(OVERHEAD), 24000);
+
+  // Each multiplier on its own, so a compensating pair of errors can't pass.
+  assert.equal(annualisedCost(OVERHEAD[0]), 2600);
+  assert.equal(annualisedCost(OVERHEAD[1]), 12000);
+  assert.equal(annualisedCost(OVERHEAD[2]), 3600);
+  assert.equal(annualisedCost(OVERHEAD[3]), 4300);
+});
+
+test('a one-off cost counts once in the year, not never and not monthly', () => {
+  assert.equal(annualisedCost(OVERHEAD[4]), 1500);
+});
+
+test('an unrecognised frequency contributes nothing rather than being guessed', () => {
+  // Unreachable for a stored row (the schema CHECKs it), so if one turns up
+  // here something upstream is wrong: it should read as missing, not as a
+  // plausible number quietly folded into the rate every job is priced off.
+  assert.equal(annualisedCost({ cost: 999, frequency: 'fortnightly' }), 0);
+  assert.equal(annualisedCost({ cost: 999 }), 0);
+  assert.equal(annualisedCost({ frequency: 'monthly' }), 0);
+});
+
+test('no overhead items at all totals zero, from any shape of empty', () => {
+  assert.equal(annualOverheadTotal([]), 0);
+  assert.equal(annualOverheadTotal(undefined), 0);
+  assert.equal(annualOverheadTotal(null), 0);
+});
+
+test('the cost basis: $24,000 of overhead over 960 billable hours is $25/hr', () => {
+  assert.equal(overheadRatePerHour(annualOverheadTotal(OVERHEAD), 20), 25);
+});
+
+test('billable capacity annualises at 48 weeks, not 52', () => {
+  // The whole difference between the two conventions, pinned: at 52 weeks the
+  // same inputs would give 23.08, and every rate on the card would sit ~8% low.
+  assert.equal(WEEKS_PER_YEAR, 48);
+  assert.equal(overheadRatePerHour(24000, 20), 25);
+  assert.notEqual(overheadRatePerHour(24000, 20), round2(24000 / (20 * 52)));
+});
+
+test('no billable capacity gives no rate — never Infinity, NaN or zero', () => {
+  // The case that would otherwise divide by zero and put "$Infinity" on a rate
+  // card. Null is what the screens render as an em dash.
+  for (const capacity of [0, -5, null, undefined, '', 'twenty']) {
+    const rate = overheadRatePerHour(24000, capacity);
+    assert.equal(rate, null, `capacity ${JSON.stringify(capacity)} should give null`);
+  }
+});
+
+test('no overhead recorded gives no rate, rather than a $0.00 cost basis', () => {
+  // "$0.00" on the rate card would read as a computed answer meaning an hour
+  // costs nothing, instead of "you haven't set this up yet".
+  assert.equal(overheadRatePerHour(0, 20), null);
+  assert.equal(overheadRatePerHour(annualOverheadTotal([]), 20), null);
+  assert.equal(overheadRatePerHour(null, 20), null);
+});
+
+test('minimum job price covers direct costs, overhead allocation and margin', () => {
+  // The JOB fixture above, priced against the cost basis: its own expenses
+  // ($1560) plus its 14 hours' share of overhead (14 × $25 = $350), then a 25%
+  // margin on the lot. (1560 + 350) × 1.25 = 2387.50.
+  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  assert.equal(minimumJobPrice(t.expenseTotal, t.totalHours, 25, 25), 2387.5);
+});
+
+test('a 0% target margin is a real answer: break even on the job', () => {
+  assert.equal(minimumJobPrice(1560, 14, 25, 0), 1910);
+});
+
+test('the profit margin is a percent, not a fraction', () => {
+  // The units trap: taxRate elsewhere in calc.js is a fraction (0.35 = 35%)
+  // while profitMarginPct is a percent (25 = 25%). Passing 0.25 here must mean
+  // a quarter of one percent, not a quarter — guessing between the two would
+  // silently under-price every job by 25%.
+  assert.equal(minimumJobPrice(1560, 14, 25, 0.25), 1914.78);
+});
+
+test('no cost basis yet means no minimum job price, not a floor missing overhead', () => {
+  // A number computed with the overhead term silently dropped would read as the
+  // real minimum while being too low by exactly the part that matters here.
+  for (const rate of [null, undefined, 0, -25, 'NaN']) {
+    assert.equal(minimumJobPrice(1560, 14, rate, 25), null);
+  }
+  assert.equal(minimumJobPrice(1560, 14, 25, null), null);
+  assert.equal(minimumJobPrice(1560, 14, 25, -10), null);
+});
+
+test('the minimum job price never moves what the client is billed', () => {
+  // Advisory only. The editor's toggle shows and hides this line; nothing in
+  // computeTotals reads it, so the quoted price cannot follow it.
+  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  const floor = minimumJobPrice(t.expenseTotal, t.totalHours, 25, 25);
+  const again = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+
+  // This job quotes $3560 against a $2387.50 floor — it clears it. The point is
+  // that the two numbers are independent: computing the floor left every
+  // client-facing figure byte-for-byte where it was.
+  assert.equal(floor, 2387.5);
+  assert.equal(again.clientPriceExGst, 3560);
+  assert.deepEqual(again, t);
+});
+
+test('target annual revenue covers overhead and leaves the net income after tax', () => {
+  // (24000 + 70000) / (1 - 0.35) = 144615.38. Tax as a flat slice of revenue,
+  // matching the tax set-aside model the rest of this file already uses.
+  assert.equal(targetAnnualRevenue(24000, 70000, 0.35), 144615.38);
+  assert.equal(targetAnnualRevenue(24000, 70000, 0), 94000);
+});
+
+test('an impossible tax rate gives no revenue target', () => {
+  // At 1 the division is infinite; above it the sign flips and the "target"
+  // comes back negative, which is worse than showing nothing.
+  assert.equal(targetAnnualRevenue(24000, 70000, 1), null);
+  assert.equal(targetAnnualRevenue(24000, 70000, 1.2), null);
+  assert.equal(targetAnnualRevenue(24000, 70000, -0.1), null);
+  assert.equal(targetAnnualRevenue(24000, 70000, null), null);
+});
+
+test('no overhead recorded gives no revenue target either', () => {
+  // Computing against a zero overhead total would put a real-looking number on
+  // the Goals screen that is wrong by the entire cost of running the business.
+  assert.equal(targetAnnualRevenue(0, 70000, 0.35), null);
+  assert.equal(targetAnnualRevenue(null, 70000, 0.35), null);
+  assert.equal(targetAnnualRevenue(24000, null, 0.35), null);
 });
 
 /**

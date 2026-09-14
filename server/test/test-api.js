@@ -114,6 +114,91 @@ test('settings: round-trips', async () => {
   assert.equal(get.settings.gst.registered, true);
 });
 
+test('overhead items: create, list, update, delete — each write appends a snapshot', async () => {
+  const before = await api('/api/overhead-snapshots').then((r) => r.json());
+  const snapshotsBefore = before.snapshots.length;
+
+  const created = await api('/api/overhead-items', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Adobe CC', category: 'software', cost: 100, frequency: 'monthly' }),
+  }).then((r) => r.json());
+  assert.equal(created.item.name, 'Adobe CC');
+  assert.equal(created.item.category, 'software');
+
+  const created2 = await api('/api/overhead-items', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Office rent', category: 'other', cost: 500, frequency: 'monthly' }),
+  }).then((r) => r.json());
+
+  const list = await api('/api/overhead-items').then((r) => r.json());
+  assert.ok(list.items.some((i) => i.id === created.item.id));
+  assert.ok(list.items.some((i) => i.id === created2.item.id));
+
+  const updated = await api(`/api/overhead-items/${created.item.id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name: 'Adobe CC', category: 'software', cost: 120, frequency: 'monthly' }),
+  }).then((r) => r.json());
+  assert.equal(updated.item.cost, 120);
+
+  // Every write above (2 creates + 1 update) must have appended a snapshot —
+  // no separate recalculate step, per the brief.
+  const afterWrites = await api('/api/overhead-snapshots').then((r) => r.json());
+  assert.equal(afterWrites.snapshots.length, snapshotsBefore + 3);
+  const latest = afterWrites.snapshots[afterWrites.snapshots.length - 1];
+  assert.equal(latest.totalAnnual, (120 + 500) * 12);
+  assert.equal(latest.byCategory.software, 120 * 12);
+  assert.equal(latest.byCategory.other, 500 * 12);
+
+  const del = await api(`/api/overhead-items/${created.item.id}`, { method: 'DELETE' }).then((r) => r.json());
+  assert.equal(del.ok, true);
+  const afterDelete = await api('/api/overhead-snapshots').then((r) => r.json());
+  assert.equal(afterDelete.snapshots.length, snapshotsBefore + 4);
+
+  const missing = await api(`/api/overhead-items/${created.item.id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name: 'x', category: 'other', cost: 1, frequency: 'monthly' }),
+  });
+  assert.equal(missing.status, 404);
+
+  await api(`/api/overhead-items/${created2.item.id}`, { method: 'DELETE' });
+});
+
+test('overhead items: an out-of-enum category is rejected, not silently stored', async () => {
+  const res = await api('/api/overhead-items', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Bad', category: 'not_a_category', cost: 10, frequency: 'monthly' }),
+  });
+  assert.equal(res.status, 500);
+});
+
+test('goals: unsaved singleton reads as nulls, then round-trips after PUT', async () => {
+  const empty = await api('/api/goals').then((r) => r.json());
+  assert.equal(empty.updatedAt, null);
+  assert.equal(empty.goals.desiredNetIncome, null);
+  assert.equal(empty.goals.targetProfitMarginPct, null);
+  assert.equal(empty.goals.billableCapacityHrsPerWeek, null);
+
+  const put = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ desiredNetIncome: 80000, targetProfitMarginPct: 25, billableCapacityHrsPerWeek: 20 }),
+  }).then((r) => r.json());
+  assert.equal(put.goals.desiredNetIncome, 80000);
+  assert.equal(put.goals.targetProfitMarginPct, 25);
+  assert.equal(put.goals.billableCapacityHrsPerWeek, 20);
+  assert.ok(put.updatedAt);
+
+  const get = await api('/api/goals').then((r) => r.json());
+  assert.equal(get.goals.desiredNetIncome, 80000);
+  assert.equal(get.updatedAt, put.updatedAt);
+
+  // A second PUT updates in place — still the same singleton row.
+  const put2 = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ desiredNetIncome: 90000, targetProfitMarginPct: 25, billableCapacityHrsPerWeek: 20 }),
+  }).then((r) => r.json());
+  assert.equal(put2.goals.desiredNetIncome, 90000);
+});
+
 test('estimates: create, list, get, update, duplicate, delete — with computed totals', async () => {
   // Reset GST state so this test doesn't depend on running after the settings
   // test above.

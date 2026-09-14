@@ -140,6 +140,73 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 4,
+    name: 'overhead items, overhead snapshots, and goals',
+    up(db) {
+      // Foundation for the Finance area (.design/overhead-finance/): an
+      // Overhead page tracking real recurring costs, a Goals page stating
+      // income/margin targets, and a computed Overhead Rate/hr that replaces
+      // the Pricing screen's manually-guessed per-row `rate`. See
+      // DESIGN_BRIEF.md for the full rationale. Schema only — nothing here
+      // changes what an existing estimate bills.
+      db.exec(`
+        -- One row per recurring cost. 'category' is a fixed list by design
+        -- (the brief's Out of Scope explicitly rules out making it
+        -- user-editable), enforced here rather than trusted to the UI alone.
+        -- 'frequency' has no list specified anywhere in the brief or its
+        -- superseded predecessor as of this migration — weekly/monthly/
+        -- quarterly/annual/one_off is this migration's own choice, covering
+        -- every recurrence a subscription or annual fee could have. If the
+        -- Overhead route/view lands on a different set, add a new migration
+        -- to change it rather than editing this one.
+        CREATE TABLE overhead_items (
+          id         TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          category   TEXT NOT NULL
+                       CHECK (category IN
+                         ('software', 'admin_legal', 'marketing', 'hosting', 'tax', 'other')),
+          cost       REAL NOT NULL,
+          frequency  TEXT NOT NULL
+                       CHECK (frequency IN
+                         ('weekly', 'monthly', 'quarterly', 'annual', 'one_off')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_overhead_items_category ON overhead_items (category);
+
+        -- Append-only history, one row per overhead add/edit/delete, written by
+        -- the CRUD handlers in routes/overhead.js — not its own write route.
+        -- Feeds the Overhead tab's trend chart. No update/delete route by
+        -- design: it's a log, not editable state.
+        CREATE TABLE overhead_snapshots (
+          id               TEXT PRIMARY KEY,
+          ts               TEXT NOT NULL,
+          total_annual     REAL NOT NULL,
+          by_category_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_overhead_snapshots_ts ON overhead_snapshots (ts);
+
+        -- Singleton, same pattern as pricing/settings: no row is seeded here.
+        -- GET /api/goals falls back to defaults with updatedAt: null until the
+        -- first PUT, matching the "a never-saved row is not an empty one"
+        -- convention pricing/settings already use.
+        --
+        -- Deliberately no tax column: Tax Reserve Target reads/writes
+        -- pricing.taxSetAsideRate via the existing /api/pricing route. A
+        -- second tax field here would violate "one number, one truth" — see
+        -- the brief's Design Principles.
+        CREATE TABLE goals (
+          id                             INTEGER PRIMARY KEY CHECK (id = 1),
+          desired_net_income             REAL NOT NULL,
+          target_profit_margin_pct       REAL NOT NULL,
+          billable_capacity_hrs_per_week REAL NOT NULL,
+          created_at                     TEXT NOT NULL,
+          updated_at                     TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
