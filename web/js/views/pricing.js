@@ -22,6 +22,28 @@
  * read it as `parseFloat(v)/100 || 0.35`, which quietly turned a deliberate 0%
  * into 35% — 0 is falsy. It is validated here instead, and a blank or
  * out-of-range value blocks the save rather than being guessed at.
+ *
+ * THE COMPUTED RATE COLUMN
+ * Every labour row's Rate ($/hr) is now the one Overhead Rate/hr — Annual
+ * Overhead Total / Annual Billable Hours — read from Overhead and Goals, shown
+ * read-only, and identical down the whole card. Travel rows are untouched and
+ * still manually priced. This collapses the card's old $30-$110 per-row cost
+ * differentiation on purpose: it is a standard flat overhead-absorption rate
+ * per direct-labour-hour, confirmed against real-world accounting practice
+ * before it was built, not a shortcut.
+ *
+ * It is safe to do this to a field the estimator reads because `rate` feeds no
+ * billing calculation anywhere — computeTotals prices labour off `mu` alone.
+ * If that ever stops being true, this whole column needs re-examining rather
+ * than assuming the argument still holds.
+ *
+ * NOTHING HERE WRITES THE COMPUTED RATE BACK
+ * The displayed figure is derived at mount and never enters the working copy,
+ * so payload() still ships each row's own stored `rate` untouched. Persisting
+ * it instead would flatten every row's saved rate to one number on the next
+ * save of any unrelated edit — irreversible, invisible in the UI (which shows
+ * the computed figure either way), and impossible in the empty state, where
+ * there is no number to write at all. The stored value is simply inert.
  */
 
 const PricingView = (() => {
@@ -74,6 +96,22 @@ const PricingView = (() => {
      result is snapped to 6 decimal places, far finer than the field's 0.5 step
      and coarse enough to absorb the artifact without rounding a real value. */
   const toPercent = (rate) => String(Math.round(num(rate) * 1e8) / 1e6);
+
+  /* The Overhead Rate/hr every labour row shows in place of its stored rate.
+     null is "not set up yet" — LSCCalc returns null rather than 0 for an empty
+     overhead list or an unset billable capacity, and that has to survive all
+     the way to the screen: a rate card reading "$0.00" looks like a computed
+     answer meaning an hour of your time costs nothing, rather than a question
+     nobody has answered.
+
+     Read once per mount, not per render. Nothing on this screen can change an
+     overhead item or a goal; the only screens that can are the other two
+     Finance sub-tabs, and visiting one and coming back re-mounts this view
+     through FinanceView. So it cannot go stale between two renders, and
+     mount() is what the brief's "recomputed fresh on every page load" means. */
+  let computedRate = null;
+
+  const rateDisplay = () => (computedRate === null ? '—' : computedRate.toFixed(2));
 
   function newSectionId(taken) {
     let n = 1;
@@ -176,6 +214,15 @@ const PricingView = (() => {
      whatever is left: 112px at 375px and 45px at 320px, which is not enough of a
      name to edit or even recognise. Inert above 768px. */
 
+  /* The Rate cell is type=text, not a readonly number input: a number input
+     cannot render an em dash, and the empty state is an em dash. The only
+     alternative would be an empty value with "—" as a placeholder, which is a
+     hint rather than a value and is announced as one.
+
+     It also carries no data-si/data-ri/data-field. Those are what bindFieldEdits
+     uses to find the row an input writes to, and this one writes to no row —
+     leaving them off means that even if the readonly attribute were ever lost,
+     there would still be nothing for an edit to land on. */
   function labourSectionMarkup(sec, si) {
     let rows = '';
     if (!sec.rows.length) {
@@ -186,9 +233,10 @@ const PricingView = (() => {
         '<tr><td data-label="Service"><input class="pricing-name-inp" type="text" value="' + esc(row.name) +
         '" placeholder="Service name" aria-label="Service name" data-si="' + si + '" data-ri="' + ri +
         '" data-field="name" data-type="labour"></td>' +
-        '<td style="text-align:right" data-label="Rate ($/hr)"><input type="number" min="0" step="0.01" value="' + num(row.rate) +
-        '" aria-label="Internal rate for ' + esc(row.name) + '" data-si="' + si + '" data-ri="' + ri +
-        '" data-field="rate" data-type="labour"></td>' +
+        '<td style="text-align:right" data-label="Rate ($/hr)"><input type="text" readonly' +
+        ' aria-readonly="true" aria-describedby="pricing-rate-note" class="pricing-rate-ro' +
+        (computedRate === null ? ' pricing-rate-none' : '') + '" value="' + rateDisplay() +
+        '" aria-label="Internal rate for ' + esc(row.name) + ', calculated automatically"></td>' +
         '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01" value="' + num(row.mu) +
         '" aria-label="Client rate for ' + esc(row.name) + '" data-si="' + si + '" data-ri="' + ri +
         '" data-field="mu" data-type="labour"></td>' +
@@ -270,7 +318,22 @@ const PricingView = (() => {
       '<div class="pricing-catalogue-bar">' +
       '<span class="pricing-hint">These categories and services are exactly what you pick from when building an estimate.</span>' +
       '<button type="button" class="btn btn-ghost btn-sm" id="js-add-cat">+ Add Category</button>' +
-      '</div><div class="pricing-grid">';
+      '</div>' +
+      /* Directly above the tables, so it is read before the first read-only
+         field is reached rather than after. #pricing-rate-note is the target of
+         every labour rate input's aria-describedby, which makes it a
+         document-unique id with the same constraint #tax-inp carries (see
+         onScreen above): no other screen may reuse it. */
+      '<p class="pricing-rate-note" id="pricing-rate-note">' +
+      'Rate is calculated automatically from your Overhead and Goals settings and can’t be ' +
+      /* &nbsp; before the dash so a wrap can't start a line with it — the copy
+         is unchanged, the break just moves to after the dash instead. */
+      'edited here&nbsp;— update it on the ' +
+      '<button type="button" class="pricing-rate-note-link" data-go-tab="overhead">Overhead</button>' +
+      ' / ' +
+      '<button type="button" class="pricing-rate-note-link" data-go-tab="goals">Goals</button>' +
+      ' tabs. Mark-Up stays yours to set.</p>' +
+      '<div class="pricing-grid">';
 
     card.labourSections.forEach((sec, si) => {
       html += labourSectionMarkup(sec, si);
@@ -334,7 +397,11 @@ const PricingView = (() => {
      deleting a row or category — re-render, because the data-si/data-ri indices
      every other input carries would otherwise be stale. */
   function bindFieldEdits() {
-    root.querySelectorAll('.pricing-table input, .pricing-sec-label-inp').forEach((input) => {
+    /* :not([readonly]) skips the computed rate column. An `input` event never
+       fires on a readonly field anyway, so this changes no behaviour — it says
+       at the binding site that the field is not part of the working copy,
+       instead of leaving it to be inferred from a missing data-field. */
+    root.querySelectorAll('.pricing-table input:not([readonly]), .pricing-sec-label-inp').forEach((input) => {
       const event = input.type === 'checkbox' ? 'change' : 'input';
       input.addEventListener(event, () => {
         const field = input.dataset.field;
@@ -429,6 +496,17 @@ const PricingView = (() => {
         if (!window.confirm('Delete “' + row.name + '”?' + usedNote(countUsingRow('travel', row.name)))) return;
         card.travelRows.splice(ri, 1);
         render();
+      });
+    });
+
+    /* The note's Overhead / Goals links. onGoTab is FinanceView's selectTab,
+       which asks LSCUnsaved before it swaps screens — so following one of these
+       from a half-edited rate card offers to save it, exactly as clicking the
+       sub-tab itself would. Absent if this view is ever mounted outside
+       Finance, in which case the links do nothing rather than throw. */
+    root.querySelectorAll('[data-go-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (handlers.onGoTab) handlers.onGoTab(btn.dataset.goTab);
       });
     });
 
@@ -576,6 +654,13 @@ const PricingView = (() => {
       travelRows: pricing.travelRows || [],
     });
     taxRaw = toPercent(pricing.taxSetAsideRate);
+    /* Deliberately outside the working copy and outside snapshot(): this is
+       derived, read-only and unsaveable, so it must not make the card look
+       dirty or be shipped by payload(). */
+    computedRate = LSCCalc.overheadRatePerHour(
+      LSCCalc.annualOverheadTotal(LSCData.overheadItems()),
+      LSCData.goals().billableCapacityHrsPerWeek
+    );
     baseline = snapshot();
 
     render();

@@ -97,7 +97,14 @@ const FinanceView = (() => {
         ' isn’t built yet</h3><p>This screen is still to come. Pricing is the one that works today.</p></div>';
       return;
     }
-    View.mount(sub, { onAuthLost: handlers.onAuthLost });
+    /* onGoTab is selectTab, which is the in-router equivalent of app.js's
+       toFinance(tab): same destination, same LSCUnsaved.confirmLeave() guard,
+       without tearing down and rebuilding this router to land one div lower.
+       Pricing's rate-card note is the first caller — its two inline links name
+       Overhead and Goals. Wrapped rather than passed by reference so a child
+       that ever hands it a click event doesn't have that event read as a tab
+       id (selectTab's own isTab() check is the second half of that belt). */
+    View.mount(sub, { onAuthLost: handlers.onAuthLost, onGoTab: (id) => selectTab(id) });
   }
 
   function selectTab(id) {

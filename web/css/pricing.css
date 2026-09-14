@@ -23,3 +23,75 @@
 #pricing-error.show + .pricing-save-bar {
   margin-top: 10px;
 }
+
+/* ── The computed rate column ───────────────────────────────────────────────
+   Every labour row's Rate ($/hr) is one derived figure now, not a field. It
+   stays an <input> so it can carry aria-readonly and the aria-describedby link
+   to the note below — a screen-reader user needs to be told the field stopped
+   accepting input — but it should not go on *looking* like a box you can type
+   in when it isn't. So the chrome comes off and the value stays put.
+
+   border-color rather than `border:none`: the transparent border keeps the same
+   border-box, so the number sits on exactly the x it did as an editable field
+   and the column doesn't shift. width matches what app.css gives the number
+   inputs beside it. Below 768px the rate-card rows stack into flex rows that
+   right-align their value, so the width stops mattering there and this needs no
+   responsive rule of its own. */
+.pricing-table input.pricing-rate-ro {
+  width: 72px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: default;
+}
+/* The "no Overhead or Goals data yet" em dash. Muted because it is an absence,
+   where the figure above is an answer — and never $0.00, which would read as a
+   computed answer meaning an hour of your time costs nothing. */
+.pricing-table input.pricing-rate-ro.pricing-rate-none {
+  color: var(--muted);
+}
+/* Focus is still worth showing: the field is reachable by keyboard on purpose,
+   so a screen-reader user can land on it and hear the note it points at.
+   a11y.css's ring does the work; this restores the accent edge the transparent
+   border would otherwise swallow. */
+.pricing-table input.pricing-rate-ro:focus {
+  border-color: var(--accent);
+}
+
+/* The note sits between the catalogue bar and the grid, so it is read before
+   the first read-only field is reached rather than after it. max-width keeps it
+   at a readable measure on a wide screen instead of running the full width of a
+   three-column grid. */
+.pricing-rate-note {
+  margin: 0 0 14px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 78ch;
+}
+/* Buttons, not anchors: these navigate inside the app, and a real href would
+   offer a page load the router doesn't want. Styled as the inline links they
+   read as — the same rest/hover pair .client-history-link already uses.
+
+   --text rather than --accent at rest, which is the one place this departs from
+   .toast-link: measured on this background, the accent is 3.71:1, under the
+   4.5:1 this feature's brief sets for body text, and 11px muted copy is exactly
+   where that bar matters. --text is 15.2:1, and against the --muted sentence
+   around them the links come out brighter than their surroundings rather than
+   dimmer. The underline is permanent for the same reason it is on nothing else
+   here: these sit mid-sentence, where there is no row or button shape to say
+   they can be clicked. */
+.pricing-rate-note-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.pricing-rate-note-link:hover,
+.pricing-rate-note-link:focus-visible {
+  color: var(--accent);
+}

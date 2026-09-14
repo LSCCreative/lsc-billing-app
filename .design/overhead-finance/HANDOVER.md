@@ -17,7 +17,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
-progress — the nav shell is in, 9 UI tasks to go)** → Design Review (not applicable yet).
+progress — the nav shell and the Pricing rate column are in, 8 UI tasks to go)** → Design Review
+(not applicable yet).
 
 **Completed, 2026-09-15:**
 1. Grill Me — no file output; every structural decision folded into the brief (see "Resolved
@@ -77,16 +78,40 @@ progress — the nav shell is in, 9 UI tasks to go)** → Design Review (not app
    round-trip from inside the sub-container, 375px, and a clean console. `npm test` still 91/91
    (no backend change in this task).
 
-**Not started:** everything else in TASKS.md, starting with **Pricing screen: computed rate column
-+ explanatory note**. `web/js/calc.js` is byte-identical to the server money model and must be
+10. **Pricing screen: computed rate column + explanatory note** — `web/js/views/pricing.js`
+    (+95 lines), `web/css/pricing.css` (+72), and one line in `web/js/views/finance.js`. Every
+    labour row's Rate ($/hr) is now the single Overhead Rate/hr, read-only, `aria-readonly="true"`,
+    `aria-describedby` the note above the grid; travel rows are untouched and still manually
+    editable. **The computed figure is never written back** — see resolved decision 19, this was
+    the one open question in the task and the user settled it explicitly. No backend change, so
+    `npm test` is unchanged at 91/91 and `calc.js` did not need re-copying.
+
+    Verified in a browser against `api-scratch`, both states, not just over the diff: with no
+    overhead/goals rows all 18 labour rates render a muted `—` (no `$0`, `NaN` or `Infinity`
+    anywhere); with the brief's worked example seeded they all render `25.00`. A real save with an
+    unrelated Mark-Up edit (56 → 57) round-tripped through the API and left every stored `rate`
+    byte-identical — `[[40,30],[100,80,60],[35,45,...,110]]` before and after — which is the
+    specific regression this task could have caused. Both note links navigate (Overhead / Goals,
+    `aria-current` follows), ask `LSCUnsaved` first from a dirty card, stay put when that is
+    declined, and stay silent from a clean one. Finance → Estimates → Clients → Finance prompts
+    nothing (decision 16's stale-watcher case, re-checked). Contrast measured live, not assumed:
+    note 6.15:1, computed rate 15.21:1, links 15.21:1 — the first draft's accent links were
+    3.71:1 and were changed for it (decision 21). 375px: no horizontal overflow, rate and Mark-Up
+    right edges agree to the pixel, both 44px tall. Console clean.
+
+**Not started:** everything else in TASKS.md, starting with **Overhead expense table + Add/Edit
+modal + Summary Card**. `web/js/calc.js` is byte-identical to the server money model and must be
 re-copied (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Pricing
-screen: computed rate column + explanatory note**, `money math — Opus/high`), state its
-model/effort bucket out loud before writing code, and work top-down. Everything that task needs
-now exists: `toFinance('overhead')` / `toFinance('goals')` are the cross-links its note calls (both
-verified working), `overheadRatePerHour()` is in `web/js/calc.js`, and its inputs are in
-`LSCData.overheadItems()` / `LSCData.goals()` before the first paint.
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Overhead
+expense table + Add/Edit modal + Summary Card**, `frontend — Opus/high`), state its model/effort
+bucket out loud before writing code, and work top-down. Everything that task needs exists: the
+routes are live, `LSCData.overheadItems()` / `setOverheadItems()` / `setOverheadSnapshots()` are
+in place, `annualisedCost()` and `FREQUENCY_MULTIPLIERS` are exported from `web/js/calc.js` for the
+monthly-equivalent column, and the enum spellings it must put in its `<select>`s are in resolved
+decisions 8 and 11. Note that the Pricing screen reads its rate from `LSCData` at mount, so an
+expense added on the Overhead tab shows up on Pricing as soon as that screen is re-entered — as
+long as the Overhead view calls `LSCData.setOverheadItems()` after each write (decision 19).
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -215,6 +240,50 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     `initialTab` (`FinanceView` also falls back to Pricing on a non-tab value, so both ends are
     defensive; there's a check for it in the verification run).
 
+19. **The computed rate is displayed, never persisted.** TASKS.md and the brief both left this
+    open; it was put to the user on 2026-09-15 and settled before any code: the rate column is
+    derived at mount and never enters Pricing's working copy, so `payload()` still ships each row's
+    own stored `rate` untouched. Persisting instead would flatten all 18 rows' saved rates to one
+    number on the next save of any unrelated edit — irreversible, invisible in a UI that shows the
+    computed figure either way, and impossible in the empty state where there is no number to
+    write. The stored values are simply inert now (decision 6: nothing prices off `rate`). A row
+    added with "+ Add Service" still stores `rate: 0` and displays the computed figure; that 0 is
+    inert for the same reason. **A consequence for the screens still to be built:** because the
+    rate is read from `LSCData` at mount, the Overhead and Goals views must call
+    `LSCData.setOverheadItems()` / `setGoals()` after every write, or the Pricing tab one click
+    away will compute against a stale cache. The setters exist for exactly this.
+20. **The rate cell is `<input type="text" readonly>`, not a readonly number input.** A number
+    input cannot render an em dash, and the empty state is an em dash — the only alternative would
+    be an empty value with `—` as a *placeholder*, which is a hint rather than a value and is
+    announced as one. It stays an `<input>` at all (rather than becoming a `<span>`) because the
+    brief requires `aria-readonly` and an `aria-describedby` link to the note, which is the whole
+    guard against a screen-reader user hitting a field that silently stopped accepting input. It
+    also deliberately carries **no `data-si`/`data-ri`/`data-field`**: those are what
+    `bindFieldEdits` uses to find the row an input writes to, so their absence means that even if
+    the `readonly` attribute were ever lost, there is still nothing for an edit to land on.
+21. **The note's two links are `--text` + a permanent underline at rest, not `--accent`.** The
+    first draft followed `.toast-link` (accent, underlined) and measured **3.71:1** against this
+    background — under the 4.5:1 the brief sets for body text, and 11px muted copy is exactly where
+    that bar matters. `--text` is 15.21:1 and, against the `--muted` sentence around them, makes
+    the links read brighter than their surroundings rather than dimmer. The rest/hover pair now
+    matches `.client-history-link`, which is this codebase's existing inline-link idiom, rather
+    than inventing a third one. **Still open for the accessibility pass:** accent-on-hover is
+    itself 3.71:1, and that is a *pre-existing site-wide pattern* (`.toast-link`,
+    `.client-history-link`) rather than something this task introduced — flagged there rather than
+    diverged from here.
+22. **`#pricing-rate-note` is now a second document-unique id on this screen**, alongside
+    `#tax-inp` (decision 16). Every labour rate input's `aria-describedby` points at it, so no
+    other screen may reuse the id — the Goals screen in particular, which already has to rename its
+    `.tax-setting` input for the same reason.
+23. **Pricing reaches Overhead/Goals through `FinanceView`'s `selectTab`, not `app.js`'s
+    `toFinance`.** TASKS.md wrote the cross-links as `toFinance('overhead')` /
+    `toFinance('goals')`; `FinanceView` now passes `onGoTab` down to every child it mounts instead.
+    Same destination and the same `LSCUnsaved.confirmLeave()` guard, without tearing down and
+    rebuilding the router to land one div lower. It is wrapped (`(id) => selectTab(id)`) rather
+    than passed by reference so a child that ever hands it a click event doesn't have that event
+    read as a tab id, and `selectTab`'s own `isTab()` check is the second half of that belt — the
+    same defensiveness decision 18 applied to `onGoPricing`.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -233,13 +302,28 @@ line, and both charts are all things a person *looks at* — verify them in a br
 
 - **Nothing is blocked.** The previous session's one open item (the category/frequency enum
   spellings) was put to the user and confirmed as-is — see resolved decision 11.
-- **The calc functions still haven't been looked at by a human in a browser.** The shell proved the
-  *data* arrives — `LSCData.goals()` reads back the three nulls unmodified, `overheadItems()` is
-  `[]` on a fresh account — but nothing yet *renders* a computed figure. The em-dash empty states
-  (resolved decision 13) and the goals-nulls shape (decision 15) remain the specific things to
-  check by eye as each screen lands: a `null` leaking through as "$0.00", "NaN" or "$Infinity" is
-  the failure mode these are shaped to prevent, and only a person looking at the screen will catch
-  it if a view coerces the value on its way out.
+- **The calc functions have now been seen rendering in a browser — for the first time, on the
+  Pricing rate column.** Both states were checked by eye against `api-scratch`: `null` renders as a
+  muted em dash and `25` renders as `25.00`, with no `$0.00`, `NaN` or `$Infinity` anywhere. That
+  closes this item for `overheadRatePerHour()` specifically. It stays open for
+  `minimumJobPrice()` and `targetAnnualRevenue()`, which still have no screen rendering them —
+  keep checking it by eye as the Goals stat and the estimate-editor line land, since a view
+  coercing `null` on its way out is the failure mode decision 13 is shaped to prevent and only a
+  person looking at the screen will catch it.
+- **The `api-scratch` database is now seeded with the brief's worked example**, so the screens
+  still to be built have something to render: four `overhead_items` totalling **$24,000/yr**
+  (Adobe CC $100/mo, Accountant $750/qtr, hosting $1800/yr, studio rent $1500/mo — four different
+  categories and three different frequencies), one matching `overhead_snapshots` row, and a `goals`
+  singleton at $90,000 net / 25% margin / 20 hrs per week, which is what makes the rate come out at
+  exactly $25/hr. Written straight into the SQLite file rather than through the API, but in the
+  shape `writeSnapshot()` produces, so `by_category_json` adds back to `total_annual` — it is not a
+  state the app couldn't have reached itself. Reset it by deleting `/tmp/lsc-billing-scratch` and
+  re-seeding per `.claude/launch.json`.
+- **Browser caching bit hard during verification.** `python3 -m http.server` serves the static
+  files with no cache-busting, and an edited `css/pricing.css` kept loading from cache across
+  ordinary reloads — long enough to look like the CSS simply wasn't working. If new styles or
+  scripts seem not to apply, re-fetch them with `fetch(url, { cache: 'reload' })` before
+  `location.reload()` rather than assuming the change is wrong.
 - **The sub-tab row's active underline sits ~12px below its label below 768px**, because
   `.nav-link` gets `min-height:44px` there (responsive.css's touch-target rule) while the text
   stays vertically centred. It is legible and consistent with the rest of the system — the header's
@@ -253,6 +337,7 @@ line, and both charts are all things a person *looks at* — verify them in a br
   ("once the server is back, reload the page") is right either way, so it was left alone rather
   than reworded mid-task; worth a second look during the design review.
 - `server/src/calc.js` is 428 lines, `server/src/db.js` ~290, and there are now two new route files
-  (`overhead.js` ~95 lines, `goals.js` ~45 lines) plus ~90 new lines in `test-api.js`. None need
-  splitting yet — see resolved decision 12 for why `calc.js` specifically should stay one file —
-  but check before assuming that still holds after the next big addition.
+  (`overhead.js` ~95 lines, `goals.js` ~45 lines) plus ~90 new lines in `test-api.js`. On the
+  frontend `web/js/views/pricing.js` is now ~690 lines. None need splitting yet — see resolved
+  decision 12 for why `calc.js` specifically should stay one file — but check before assuming that
+  still holds after the next big addition.
