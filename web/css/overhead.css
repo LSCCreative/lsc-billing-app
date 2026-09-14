@@ -1,0 +1,135 @@
+/* Overhead screen — additive only. app.css already carries the card surface
+   (.proj-card), the table (.est-block, .est-table), the modal shell
+   (.modal-overlay, .modal-box, .modal-title, .modal-actions) and the form
+   fields (.form-grid, .field). Nothing here restyles them; this file is the
+   handful of things those components don't already do. */
+
+/* ── The Summary Card ───────────────────────────────────────────────────────
+   A .proj-card with its navigation affordances taken back off. The card is a
+   tile everywhere else in the app — click it and an estimate or a client
+   opens — so it carries cursor:pointer, a hover border and an accent underline
+   that sweeps in. Nothing happens when you click this one: it is a stat
+   display wearing the card's surface, per the IA doc's Component Reuse Map.
+   Leaving the affordances on would promise a destination that isn't there. */
+.oh-summary {
+  display: flex;
+  gap: 48px;
+  flex-wrap: wrap;
+  cursor: default;
+  margin-bottom: 14px;
+}
+.oh-summary:hover {
+  border-color: var(--border);
+}
+.oh-summary:hover::after {
+  transform: scaleX(0);
+}
+
+.oh-stat-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 26px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+/* The GST convention, stated where the totals are rather than only inside the
+   modal — the number it affects is the one directly above it. */
+.oh-note {
+  margin: 0 0 14px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 78ch;
+}
+
+/* ── The expense table ──────────────────────────────────────────────────────
+   Edit and delete share the last cell. width:1% shrink-wraps it so the five
+   data columns keep the rest, the same trick .pricing-act uses on the rate
+   card. */
+.oh-table td.oh-act {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  padding: 7px 14px 7px 6px;
+}
+.oh-table td.oh-act .btn {
+  margin-right: 6px;
+}
+/* .est-table's rows are 12px; a first column that is the row's subject reads
+   better at the weight the rate card gives its own. */
+.oh-table td:first-child {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.oh-empty {
+  padding: 16px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* ── The Add / Edit modal ───────────────────────────────────────────────────
+   app.css styles .field input and .field textarea but never had a .field
+   select to style — the app's other selects (.svc-select, .doc-type-select)
+   live outside .field and carry their own rules. These are the first, and the
+   Goals form will want the same, so it is written as the general case rather
+   than scoped to this modal. font:inherit because a bare <select> otherwise
+   renders in the UA's font at the UA's size, which on a dark surface reads as
+   a control from a different application. */
+.field select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 9px 12px;
+  outline: none;
+  width: 100%;
+  transition: 0.15s;
+}
+.field select:focus {
+  border-color: var(--accent);
+}
+
+/* Sits under the Cost field it describes, inside the same .field, so the
+   6px .field gap doesn't double up into a paragraph break. */
+.oh-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ── Errors ─────────────────────────────────────────────────────────────────
+   Same treatment as #pricing-error and #settings-error: inline, next to the
+   work it is refusing, rather than an alert() covering the fields it names.
+   Two of them because there are two surfaces — the screen (a failed delete)
+   and the modal (a failed or rejected save) — and a message about one shown on
+   the other would point at nothing. */
+#overhead-error,
+#oh-modal-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid #7a2222;
+  background: #1f1414;
+  color: #f0a0a0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+#oh-modal-error {
+  margin: 18px 0 0;
+}
+#overhead-error.show,
+#oh-modal-error.show {
+  display: block;
+}
+/* The actions bar sits directly under the error when one is showing, so it
+   drops the top border it would otherwise double up on. */
+#oh-modal-error.show + .modal-actions {
+  border-top: 0;
+  padding-top: 12px;
+  margin-top: 12px;
+}

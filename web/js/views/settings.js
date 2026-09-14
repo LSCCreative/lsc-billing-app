@@ -343,40 +343,13 @@ const SettingsView = (() => {
 
   // ── Opening and closing ───────────────────────────────────────────────────
 
-  /* Every element in the box a keyboard user can land on, in DOM order. Called
-     fresh on each Tab rather than cached, because disabling the GST fields
-     changes this set while the modal is open (registered ↔ unregistered). */
-  function focusable() {
-    return Array.prototype.filter.call(
-      overlay.querySelectorAll('input, textarea, button, [tabindex]'),
-      (el) => !el.disabled && el.tabIndex !== -1 && el.offsetParent !== null
-    );
-  }
-
-  /* The focus trap: Tab and Shift+Tab wrap inside the box instead of escaping
-     to whatever #main happens to render behind it. Without this, a keyboard
-     user tabbing off the last field lands on the estimate editor underneath —
-     reachable and even usable, invisibly, while a modal dialog is supposedly
-     on screen. Escape-to-close and focus-return already existed; this is the
-     rest of what TASKS.md's accessibility pass calls a real focus trap. */
-  function trapTab(event) {
-    if (event.key !== 'Tab') return;
-    const els = focusable();
-    if (!els.length) return;
-    const first = els[0];
-    const last = els[els.length - 1];
-    const active = document.activeElement;
-    if (event.shiftKey) {
-      if (active === first || !overlay.contains(active)) {
-        event.preventDefault();
-        last.focus();
-      }
-    } else if (active === last || !overlay.contains(active)) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
+  /* The focus trap — Tab and Shift+Tab wrap inside the box instead of escaping
+     to the estimate editor underneath — now lives in js/modal.js, because the
+     Overhead screen's Add/Edit Expense dialog needs the same one and TASKS.md's
+     accessibility pass asks for this exact implementation rather than a second
+     derivation of it. Behaviour here is unchanged; see that file for what moved
+     and what didn't. Escape-to-close and focus-return stay below, since they
+     are about this modal's own lifecycle rather than about trapping. */
   function onKeydown(event) {
     // Hidden behind the login screen after a lost session: Escape there must
     // not throw away the edits being kept for after sign-in, and Tab has
@@ -384,7 +357,7 @@ const SettingsView = (() => {
     if (overlay.closest('[hidden]')) return;
     // Escape closes, but not out from under a save that is already in flight.
     if (event.key === 'Escape' && !saving) return dismiss();
-    trapTab(event);
+    LSCModal.trapTab(overlay, event);
   }
 
   /* The three ways a user throws this modal away: Cancel, Escape, and a click

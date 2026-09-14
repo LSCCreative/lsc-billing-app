@@ -17,7 +17,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
-progress — the nav shell and the Pricing rate column are in, 8 UI tasks to go)** → Design Review
+progress — the nav shell, the Pricing rate column and the Overhead screen are in, 7 UI tasks to
+go)** → Design Review
 (not applicable yet).
 
 **Completed, 2026-09-15:**
@@ -99,19 +100,46 @@ progress — the nav shell and the Pricing rate column are in, 8 UI tasks to go)
     3.71:1 and were changed for it (decision 21). 375px: no horizontal overflow, rate and Mark-Up
     right edges agree to the pixel, both 44px tall. Console clean.
 
-**Not started:** everything else in TASKS.md, starting with **Overhead expense table + Add/Edit
-modal + Summary Card**. `web/js/calc.js` is byte-identical to the server money model and must be
+11. **Overhead expense table + Add/Edit modal + Summary Card** — `web/js/views/overhead.js` (new,
+    ~484 lines), `web/css/overhead.css` (new, ~135), `web/js/modal.js` (new, ~65 — see decision 24),
+    plus four wiring lines in `web/index.html` and a small edit to `web/js/views/settings.js`. The
+    screen is the page head + Add Expense button, the Summary Card (Monthly / Annual), the GST
+    convention note, and the expense table; **neither chart is here** — those are their own two
+    tasks and the screen simply ends after the table for now. No backend change: `npm test` is
+    unchanged at 91/91 and `calc.js` was not touched.
+
+    Verified against `api-scratch` by driving the real screen, not by reading the diff. Table and
+    Summary Card against the seeded fixture: 4 rows, monthly equivalents correct per frequency
+    ($750/qtr → $250, $1800/yr → $150), Monthly $2,000.00 / Annual $24,000.00. Add: validation
+    blocks an empty form with all three messages at once, then a real POST landed with the right
+    enum values, closed the modal, and re-rendered the card to $24,600 with a snapshot appended.
+    Edit: opens pre-filled and titled "Edit Expense", cost 600 → 900 updated in place without
+    adding a row. Delete: names the item and the annual amount at stake, declining leaves it
+    alone, accepting returns the total to $24,000. Empty state: $0.00 card, "0 expenses", the
+    first-run message, no table. Focus trap: wraps both directions, pulls focus back when it
+    escapes to the header behind, Escape closes and returns focus to the control that opened it, a
+    dirty form asks before discarding and keeps the edits when that is declined. **And the
+    cross-screen promise from decision 19 actually holds** — editing an expense to $24,900 and
+    clicking back to Pricing showed $25.94/hr (24900 ÷ 960) with no reload. 375px: table stacks on
+    its `data-label`s, summary card wraps, no horizontal overflow. Console clean.
+
+**Not started:** everything else in TASKS.md, starting with **Goals form + shared Tax Reserve
+control**. `web/js/calc.js` is byte-identical to the server money model and must be
 re-copied (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Overhead
-expense table + Add/Edit modal + Summary Card**, `frontend — Opus/high`), state its model/effort
-bucket out loud before writing code, and work top-down. Everything that task needs exists: the
-routes are live, `LSCData.overheadItems()` / `setOverheadItems()` / `setOverheadSnapshots()` are
-in place, `annualisedCost()` and `FREQUENCY_MULTIPLIERS` are exported from `web/js/calc.js` for the
-monthly-equivalent column, and the enum spellings it must put in its `<select>`s are in resolved
-decisions 8 and 11. Note that the Pricing screen reads its rate from `LSCData` at mount, so an
-expense added on the Overhead tab shows up on Pricing as soon as that screen is re-entered — as
-long as the Overhead view calls `LSCData.setOverheadItems()` after each write (decision 19).
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Goals form
++ shared Tax Reserve control**, `money math — Opus/high` — it renders Target Annual Revenue), state
+its model/effort bucket out loud before writing code, and work top-down. Everything it needs
+exists: `GET/PUT /api/goals` is live and returns the three nulls unsaved (decision 15),
+`targetAnnualRevenue()` is in `web/js/calc.js`, `.field select` is now styled globally (decision
+27) if it wants a select, and `LSCModal` is there if it ever needs a dialog. Three specific traps
+for that task, all already written down: its `.tax-setting` input **must not** be `#tax-inp`
+(decision 16), `targetProfitMarginPct` is a **percent** while `taxSetAsideRate` is a **fraction**
+(decision 14), and its `onScreen()` sentinel must ask `document`, not its own `root` (decision 16
+again — `#finance-sub` is detached wholesale when Finance is left).
+
+The two chart tasks come after it and both now have real data to draw: the scratch database holds
+4 snapshots from this session's add/edit/delete round trip, not just one.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -284,6 +312,54 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     read as a tab id, and `selectTab`'s own `isTab()` check is the second half of that belt — the
     same defensiveness decision 18 applied to `onGoPricing`.
 
+24. **The modal focus trap now lives in `web/js/modal.js` (`LSCModal`), and `settings.js` was moved
+    onto it.** TASKS.md scoped this task to a new `overhead.js` only, so touching a working,
+    verified screen was a deliberate widening — the reason is that both this task and the
+    cost-breakdown task are told to "reuse the exact focus-trap implementation in
+    `web/js/views/settings.js`", and the literal way to reuse an implementation is to share it
+    rather than copy it a second and third time. Three copies would be three chances to disagree
+    about what counts as focusable. The move changed exactly two things: the container is an
+    argument instead of a closed-over `overlay`, and `select` joined the focusable selector (inert
+    for Invoice Settings, which has none; required here, which has two). **The Invoice Settings
+    modal was re-verified in a browser afterwards** — trap wraps both directions, the focusable set
+    still recomputes when the GST toggle enables its two controls (10 → 12), Escape still closes —
+    so this is a checked refactor, not an assumed-safe one. The cost-breakdown task should use
+    `LSCModal.trapTab(container, event)` and not write a third trap.
+25. **Every overhead write re-reads both lists rather than patching the cache locally.** POST and
+    PUT answer with the single item they touched and DELETE answers with nothing, but the server
+    also appends an `overhead_snapshots` row on all three and returns items in its own
+    `ORDER BY category, name COLLATE NOCASE`. Reproducing that sort and that append in the browser
+    would be two things that have to stay in step with the server forever, to save two round-trips
+    on a list the brief itself says stays small. So `refreshCache()` GETs both and puts them in
+    `LSCData` — which is also what keeps decision 19's promise that the Pricing tab one click away
+    computes against fresh data.
+26. **Category has a "Choose a category" placeholder; frequency defaults to Monthly.** A deliberate
+    asymmetry, not an inconsistency. Most overhead genuinely is monthly, and a wrong frequency is
+    visible immediately in the Monthly Equivalent column, so a default there saves a click and
+    corrects itself. There is no majority category, and a silently defaulted one is invisible once
+    saved — the studio rent would just be filed under Software forever for anyone who tabbed past
+    it. So category has to be chosen and `problems()` says so if it isn't.
+27. **`.field select` is styled in `overhead.css` as a general rule, not scoped to this modal.**
+    `app.css` styles `.field input` and `.field textarea` but never had a `.field select` to style
+    — the app's other selects (`.svc-select`, `.doc-type-select`) sit outside `.field` with their
+    own rules. These two are the first, and the Goals form is likely to want the same, so it is
+    written as the general case. `font: inherit` is load-bearing: a bare `<select>` otherwise
+    renders in the UA's font at the UA's size, which on this dark surface reads as a control
+    borrowed from another application.
+28. **The Summary Card shows `$0.00` when there are no expenses — not an em dash.** This looks like
+    it contradicts decision 13, and doesn't. Decision 13 is about figures that *cannot be computed*:
+    a rate with no billable capacity to divide by, where "$0.00" would assert that an hour of your
+    time costs nothing. An overhead total of zero is computable and true — you have recorded no
+    costs — and `annualOverheadTotal([])` returns `0`, not `null`, for exactly that reason.
+    TASKS.md specifies "$0 Summary Card" explicitly. The em-dash rule still governs everything
+    downstream: with zero overhead, `overheadRatePerHour()` still returns `null` and Pricing still
+    shows dashes.
+29. **The modal holds Cost as the string the field shows, not a number.** `num()` on every
+    keystroke would turn a half-typed "1." into `1` under the cursor, and — worse — an empty field
+    into a `0` that `problems()` could no longer tell apart from a deliberate zero, so a blank Cost
+    would save as a free expense and quietly drag the annual total down. It is parsed once, on the
+    way out, after validation. Same reason the Pricing screen keeps `taxRaw` as typed.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -324,6 +400,13 @@ line, and both charts are all things a person *looks at* — verify them in a br
   ordinary reloads — long enough to look like the CSS simply wasn't working. If new styles or
   scripts seem not to apply, re-fetch them with `fetch(url, { cache: 'reload' })` before
   `location.reload()` rather than assuming the change is wrong.
+- **Below 768px the expense table's action cell sits left while every other cell right-aligns its
+  value.** `responsive.css` turns each `.est-table` cell into a `justify-content: space-between`
+  flex row keyed off its `data-label`; the actions cell has no label, so Edit and × end up on the
+  left of the row instead of under the values above them. It is legible and nothing overlaps —
+  noted for the **Layout check at 1099px / 900px / 768px** task rather than tuned here, both
+  because new responsive rules belong in `responsive.css` inside a media query by convention and
+  so the whole Finance area gets measured in one pass instead of this cell being adjusted twice.
 - **The sub-tab row's active underline sits ~12px below its label below 768px**, because
   `.nav-link` gets `min-height:44px` there (responsive.css's touch-target rule) while the text
   stays vertically centred. It is legible and consistent with the rest of the system — the header's
@@ -338,6 +421,6 @@ line, and both charts are all things a person *looks at* — verify them in a br
   than reworded mid-task; worth a second look during the design review.
 - `server/src/calc.js` is 428 lines, `server/src/db.js` ~290, and there are now two new route files
   (`overhead.js` ~95 lines, `goals.js` ~45 lines) plus ~90 new lines in `test-api.js`. On the
-  frontend `web/js/views/pricing.js` is now ~690 lines. None need splitting yet — see resolved
+  frontend `web/js/views/pricing.js` is now ~690 lines and `web/js/views/overhead.js` ~484. None need splitting yet — see resolved
   decision 12 for why `calc.js` specifically should stay one file — but check before assuming that
   still holds after the next big addition.
