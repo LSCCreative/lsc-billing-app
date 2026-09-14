@@ -699,16 +699,23 @@ checklist line, and it's a standing task (`/design-review`) rather than build wo
        while the server used a new one, found 2026-09-10 during local dev against
        `python3 -m http.server`. A GitHub Pages deploy can hit the same failure on any repeat
        visit if the URL never changes, so every deploy now gets a new URL for every local asset.
-  - **Two one-time manual steps remain, and are dashboard-only** — nothing here could do either:
-    `Settings → Pages → Source: GitHub Actions`, and a repository secret `LSC_API_BASE` set to the
-    tunnel hostname from the Cloudflare step. Both are written up as the last steps in
-    `DEPLOYMENT.md` rather than repeated here.
-  - **Not verified end to end**, because it depends on those two manual steps and the tunnel
-    hostname existing: this session could dry-run the `config.js` templating and the cache-busting
-    `sed` locally against the real `web/index.html` (both correct), and lint the workflow file by
-    eye, but the actual GitHub Actions run, the live Pages URL, and a cross-origin login against
-    the real tunnel hostname all need the user to complete the dashboard steps first. `npm test`
-    68/68 — no `server/` or `web/` application code changed by this task.
+  - **The repo now exists**: [`LSCCreative/lsc-billing-app`](https://github.com/LSCCreative/lsc-billing-app),
+    public (GitHub Pages needs that on the free plan), created and pushed this session — the app
+    had no `.git` before this task. **Pages source is already set to GitHub Actions**, done via
+    `gh api -X POST repos/.../pages -f build_type=workflow` rather than the dashboard click, since
+    the API allowed it directly.
+  - **One manual step remains, and only one**: the `LSC_API_BASE` repository secret, which needs
+    the tunnel hostname from the Cloudflare step above and so can't be set until that's live.
+    Written up as the last step in `DEPLOYMENT.md`.
+  - **Partially verified end to end.** The `config.js` templating and the cache-busting `sed` were
+    dry-run locally against the real `web/index.html` before being trusted in CI (both correct —
+    every nested `js/views/*.js` path matched). The workflow then **actually ran** on the real push
+    to `main` and failed at exactly the expected point (`LSC_API_BASE repository secret is not
+    set`), which confirms the trigger, checkout, and Pages/OIDC permissions are all correctly
+    wired — only the secret and the tunnel hostname are missing, both of which need the user.
+    The live Pages URL, a cross-origin login against the real tunnel hostname, and a save
+    round-tripping to the NAS still need those two things to exist first. `npm test` 68/68 — no
+    `server/` or `web/` application code changed by this task.
 
 ~~**Open seam left by the estimates port**: the server has no column for `sectionLabels`.~~
 **Closed** by the schema v2 snapshot above, decided with the user on 2026-09-09.

@@ -87,13 +87,22 @@ the change: `docker compose restart` from `/volume4/lsc-billing/app`.
 ## 5. Publish `web/` to GitHub Pages
 
 Handled by [`.github/workflows/deploy-pages.yml`](../../.github/workflows/deploy-pages.yml) —
-automatic on every push to `main` that touches `web/`. Two one-time manual steps first, both in
-the GitHub repo's dashboard (can't be scripted from here):
+automatic on every push to `main` that touches `web/`. Repo:
+[`LSCCreative/lsc-billing-app`](https://github.com/LSCCreative/lsc-billing-app) (created and
+pushed 2026-09-14; the old Electron app files stay untracked on disk, gitignored, per the "being
+retired, not yet deleted" note in CLAUDE.md).
 
-1. **Settings → Pages → Source: GitHub Actions.**
-2. **Settings → Secrets and variables → Actions → New repository secret**, named `LSC_API_BASE`,
-   value `https://billing-api.<your-domain>` (from step 3, no trailing slash — see
-   `web/js/config.example.js`).
+**Pages source is already set to GitHub Actions** (done via the API during setup — no dashboard
+click needed). One manual step remains, and it needs the tunnel hostname from step 3 above, so it
+can't be done until that's live:
+
+- **Settings → Secrets and variables → Actions → New repository secret**, named `LSC_API_BASE`,
+  value `https://billing-api.<your-domain>` (no trailing slash — see `web/js/config.example.js`).
+
+The workflow already ran once on the initial push and failed at exactly this step with a clear
+`LSC_API_BASE repository secret is not set` error — confirming the trigger, checkout, and
+permissions are all correct; only the secret is missing. Once it's added, push anything touching
+`web/` (or re-run the workflow from the Actions tab) to deploy.
 
 What the workflow does on every run, so nothing here needs to be repeated by hand:
 
