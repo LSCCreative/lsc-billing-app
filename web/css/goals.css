@@ -1,0 +1,116 @@
+/* Goals screen — additive only. app.css already carries the form fields
+   (.form-grid, .field), the shared tax control (.tax-setting), the save bar
+   (.pricing-save-bar, .saved-msg, .spinner) and the card surface (.proj-card).
+   Nothing here restyles any of them; this file is the handful of things those
+   components don't already do. */
+
+/* ── The form ───────────────────────────────────────────────────────────────
+   .form-grid is a two-column grid built for the Invoice Settings modal, where
+   the fields are short labelled strings. These three are money and hours with
+   a sentence under each, and at three items a two-column grid leaves one
+   field orphaned beside a gap. Three columns on a wide screen puts them on one
+   line as the single group they are; responsive.css already collapses
+   .form-grid to one column below 768px, which this inherits by being one. */
+.goals-grid {
+  grid-template-columns: repeat(3, 1fr);
+  align-items: start;
+}
+
+/* Sits inside its own .field, under the input it describes, so the 6px .field
+   gap doesn't open into a paragraph break. Same treatment as .oh-hint on the
+   Overhead modal's Cost field. */
+.goals-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ── Target Annual Revenue ──────────────────────────────────────────────────
+   A .proj-card with its navigation affordances taken back off — no accent
+   border on hover, no underline sweeping in — because nothing happens when you
+   click it. The card is a tile everywhere else in the app and those two rules
+   promise a destination this one doesn't have.
+
+   These same two resets are on .oh-summary in overhead.css. Deliberately
+   repeated rather than hoisted into a shared .proj-card modifier: it is two
+   declarations, and hoisting means editing a verified screen's markup and CSS
+   from a task that doesn't otherwise touch it. If a third stat card appears,
+   hoist it then — that is the point where three copies start being three
+   chances to disagree. */
+.goals-outcome {
+  cursor: default;
+  margin-top: 20px;
+  max-width: 78ch;
+}
+.goals-outcome:hover {
+  border-color: var(--border);
+}
+.goals-outcome:hover::after {
+  transform: scaleX(0);
+}
+
+.goals-outcome-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 30px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+/* The em dash is a placeholder, not a figure, and at 30px in full --text it
+   reads as one of the screen's headline numbers. Muted says "nothing here
+   yet"; the note under it says why. */
+.goals-outcome-value.is-empty {
+  color: var(--muted);
+}
+
+.goals-outcome-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* The Overhead link inside that note. Button, not an anchor: it navigates
+   inside the app, and a real href would offer a page load the router doesn't
+   want. Styled as the inline link it reads as — the same rest/hover pair
+   .pricing-rate-note-link uses, which is --text rather than --accent at rest
+   because the accent measures 3.71:1 on this background, under the 4.5:1 this
+   feature's brief sets for body text, and 11px muted copy is exactly where
+   that bar matters. */
+.goals-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.goals-link:hover,
+.goals-link:focus-visible {
+  color: var(--accent);
+}
+
+/* ── Errors ─────────────────────────────────────────────────────────────────
+   Same treatment as #pricing-error and #overhead-error: inline, above the
+   button that refused, rather than an alert() covering the fields it names. */
+#goals-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid #7a2222;
+  background: #1f1414;
+  color: #f0a0a0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+#goals-error.show {
+  display: block;
+}
+/* No adjacent-sibling margin fix here, unlike #pricing-error's: this one
+   carries its own 14px bottom margin and sits between two blocks that already
+   space themselves the same way, so the save bar lands where it does with no
+   error showing. */

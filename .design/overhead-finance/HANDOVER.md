@@ -17,8 +17,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
-progress — the nav shell, the Pricing rate column and the Overhead screen are in, 7 UI tasks to
-go)** → Design Review
+progress — the nav shell, the Pricing rate column, the Overhead screen and the Goals form are
+in, 6 UI tasks to go)** → Design Review
 (not applicable yet).
 
 **Completed, 2026-09-15:**
@@ -123,23 +123,63 @@ go)** → Design Review
     clicking back to Pricing showed $25.94/hr (24900 ÷ 960) with no reload. 375px: table stacks on
     its `data-label`s, summary card wraps, no horizontal overflow. Console clean.
 
-**Not started:** everything else in TASKS.md, starting with **Goals form + shared Tax Reserve
-control**. `web/js/calc.js` is byte-identical to the server money model and must be
-re-copied (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
+12. **Goals form + shared Tax Reserve control** — `web/js/views/goals.js` (new, ~506 lines,
+    over half of it comment), `web/css/goals.css` (new, ~116), plus two wiring lines in `web/index.html`. Three fields
+    (Desired Net Income, Target Profit Margin %, Billable Capacity hrs/wk), the shared
+    `.tax-setting` control, one Save button, and a live Target Annual Revenue stat below the save
+    bar. No backend change: `npm test` is unchanged at **91/91** and `calc.js` was not touched, so
+    it did not need re-copying.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Goals form
-+ shared Tax Reserve control**, `money math — Opus/high` — it renders Target Annual Revenue), state
-its model/effort bucket out loud before writing code, and work top-down. Everything it needs
-exists: `GET/PUT /api/goals` is live and returns the three nulls unsaved (decision 15),
-`targetAnnualRevenue()` is in `web/js/calc.js`, `.field select` is now styled globally (decision
-27) if it wants a select, and `LSCModal` is there if it ever needs a dialog. Three specific traps
-for that task, all already written down: its `.tax-setting` input **must not** be `#tax-inp`
-(decision 16), `targetProfitMarginPct` is a **percent** while `taxSetAsideRate` is a **fraction**
-(decision 14), and its `onScreen()` sentinel must ask `document`, not its own `root` (decision 16
-again — `#finance-sub` is detached wholesale when Finance is left).
+    **The dangerous part of this task was not in the brief.** `PUT /api/pricing` is a
+    *whole-document* write — `server/src/routes/pricing.js` stores the request body verbatim and
+    `readPricing()` returns it with no merge against `DEFAULT_PRICING` — so writing the shared tax
+    field as `{ taxSetAsideRate }` would have replaced the entire rate card with an object holding
+    no `labourSections` and no `travelRows`, and `computeTotals` prices every labour and travel
+    line at zero against a card it can't find rows in. The body is the whole cached card with one
+    field swapped; see resolved decision 30.
 
-The two chart tasks come after it and both now have real data to draw: the scratch database holds
-4 snapshots from this session's add/edit/delete round trip, not just one.
+    Verified against `api-scratch` by driving the real screen, not by reading the diff. Empty
+    state: three blank fields (not `0`, not `null`), tax pre-filled at 35 from the stored 0.35, and
+    Target Annual Revenue a muted em dash naming the Overhead tab. Validation blocks an empty form
+    with all three messages at once and writes nothing; every bound rejects — capacity 0, capacity
+    960 (a year typed into a weekly field), margin −5, net −1, tax 101. The live stat tracks every
+    keystroke and matches `LSCCalc.targetAnnualRevenue()` called directly ($175,384.62 on
+    24000/90000/0.35); 0% tax gives $114,000 with no gross-up, and 100% gives an em dash with its
+    own sentence rather than `$Infinity`. **The rate card survived every tax write** — 3 sections /
+    18 labour rows / 5 travel rows byte-identical by fingerprint before and after, across four
+    separate saves. Both directions of the shared field round-trip: saving 30% here put 30 in
+    Pricing's own field, and saving 27.5% on Pricing put 27.5 here. **The cross-screen promise
+    holds** — saving 20 hrs/wk and clicking straight to Pricing showed all 18 labour rates at
+    `25.00` (24000 ÷ 960) with no reload. The partial-failure path was forced by failing only the
+    pricing write: the goals landed, the message said exactly that, the screen stayed dirty on the
+    one field that didn't, and a retry recovered cleanly. Unsaved guard in all four states,
+    including typed-then-undone reading clean, and **the decision-16 stale-watcher case**: leaving
+    Finance from a dirty Goals prompted once, then Clients → Estimates → Finance prompted zero
+    times. Contrast measured live with the alpha composited (`--muted` is `rgba(...,0.6)`, so
+    reading its channels raw measures `--text` by mistake): hints and labels 6.15:1 on `--bg`, the
+    card and save-bar copy 5.2:1 on `--surface`, the headline figure 11.49:1, the Overhead link
+    11.49:1. Focus rings: all five controls plus the link get a11y.css's `2px solid var(--accent)`
+    @2px — see the note in "Open items" about how to measure that without a false negative. Tab
+    order is the visual order. 375px: no horizontal overflow, the form collapses to one column,
+    every input 44px. Console clean.
+
+**Not started:** everything else in TASKS.md, starting with the **Historical Overhead Trend chart
+(SVG line)**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
+(`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
+
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Historical
+Overhead Trend chart (SVG line)**, `frontend — Opus/high`), state its model/effort bucket out loud
+before writing code, and work top-down. It and the **Category Breakdown donut** after it both have
+real data to draw: the scratch database holds one snapshot per overhead write plus the four items
+of the brief's worked example, and `overhead.js` already calls both `LSCData.setOverheadItems()`
+and `setOverheadSnapshots()` on every write, so a chart reading the cache stays live without
+fetching anything itself. Both charts mount inside the Overhead screen below the expense table —
+note that `OverheadView.render()` rewrites `root.innerHTML` wholesale on every write, so a chart
+built there is torn down and rebuilt with it and must not hold element references across a render.
+
+After the two charts come the last money-math tasks, the estimate-editor toggle and the cost
+breakdown modal. `minimumJobPrice()` still has no screen rendering it, which is the open item
+flagged below.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -360,6 +400,64 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     would save as a free expense and quietly drag the annual total down. It is parsed once, on the
     way out, after validation. Same reason the Pricing screen keeps `taxRaw` as typed.
 
+30. **The Goals screen's tax write sends the whole rate card, not just the field.** `PUT
+    /api/pricing` replaces `pricing.data_json` with the request body verbatim, and `readPricing()`
+    returns whatever is in there with no merge against `DEFAULT_PRICING` — so the obvious-looking
+    `LSCApi.put('/api/pricing', { taxSetAsideRate })` would not have updated one field, it would
+    have deleted every category, service and travel row on the card. `computeTotals` iterates
+    `pricing.labourSections` and skips rows it can't find, so the damage would have surfaced as
+    estimates quietly pricing labour and travel at zero, not as an error. The body is
+    `Object.assign({}, LSCData.pricing(), { taxSetAsideRate })` and must stay that way. Checked
+    rather than reasoned about: the stored card was fingerprinted before and after four separate
+    saves from this screen and came back identical each time (3 sections / 18 labour rows / 5
+    travel rows). Nothing in DESIGN_BRIEF.md or TASKS.md mentions this — they say "reuses
+    `.tax-setting` verbatim, reading/writing `pricing.taxSetAsideRate` via the existing
+    `/api/pricing` route", which reads like a field-level write and isn't one.
+31. **One Save button over two endpoints, run in sequence, with a partial-failure message.** The
+    brief asks for a single explicit Save and the IA doc groups the tax control with the other
+    rate-driving inputs, so the button writes `/api/goals` and then — only when the tax field
+    actually changed — `/api/pricing`. Sequential rather than `Promise.all` because a parallel pair
+    that half-fails cannot say which half, and "saved" meaning saved is the reason this whole
+    rewrite exists. When the second write fails the message says the goals were saved and the tax
+    reserve wasn't, the three goals fields go clean while the tax field stays dirty, and the Save
+    button re-enables for a retry. Forced and checked in a browser, not just written.
+32. **Target Annual Revenue recomputes on every keystroke, unlike Pricing's rate column.** Pricing
+    computes its rate once at mount because its inputs live on another screen and cannot move while
+    you look at it. These three inputs are directly above the figure they produce, and a planning
+    number that only appears after a save makes the screen read as broken. Neither is persisted, so
+    there is nothing for a live figure to disagree with — decision 19 is about persistence, not
+    about when a derived figure is allowed to recompute. The form deliberately does **not**
+    re-render on input; only the value and its note are replaced, so focus never leaves the field
+    being typed into.
+33. **All three goals fields are required, and Billable Capacity is capped at 168.** The route
+    coerces a blank with `Number(x) || 0`, so a half-filled save would store a 0 capacity, and
+    `overheadRatePerHour()` returns `null` on a zero divisor — meaning every labour rate on Pricing
+    would go back to an em dash under a note telling you to come here and set it, having just come
+    here and set it. The 168 ceiling is not pedantry: these are hours inside one week, and a year's
+    worth typed into a weekly field (960, say) divides the annual overhead by fifty times too many
+    hours and under-recovers it on every job afterwards with nothing on any screen looking wrong.
+    Target Profit Margin deliberately has **no** upper bound — `minimumJobPrice()` accepts any
+    margin from 0 up, and a view should not be stricter than the function it feeds.
+34. **The tax field uses Pricing's exact 0-100 rule, including accepting 100.** Two screens writing
+    one stored number must not disagree about what a valid one is, so this validation is copied from
+    `pricing.js` rather than tightened. A rate of exactly 100 still leaves Target Annual Revenue
+    uncomputable (`targetAnnualRevenue` guards `rate >= 1`), and the stat says so in its own
+    sentence instead of the save being blocked for it.
+35. **`.goals-outcome` repeats `.oh-summary`'s two hover resets rather than hoisting them.** Both
+    are a `.proj-card` with its navigation affordances taken back off, and decision 24's rule —
+    the literal way to reuse an implementation is to share it — argued for a shared modifier. It
+    was not applied here because this is two CSS declarations, not a focus trap, and hoisting means
+    editing a verified screen's markup and CSS from a task that otherwise doesn't touch it. **If a
+    third stat card appears, hoist it then** — that is the point where the copies start being
+    chances to disagree.
+36. **The screen calls its shared field "Tax Reserve Target (%)" while Pricing calls the same
+    stored number "Tax Set-Aside Rate (%)".** The brief and TASKS.md both name it Tax Reserve
+    Target, so that name is used here rather than silently renaming a verified screen's label. The
+    caption under it says out loud that it is the rate card's Tax Set-Aside Rate and that changing
+    one changes the other, which is what ties the two names together for anyone who notices. Two
+    names for one number is still a "one number, one truth" wart — flagged for the design review
+    below rather than resolved by widening this task.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -419,8 +517,35 @@ line, and both charts are all things a person *looks at* — verify them in a br
   so a 500 from `/api/overhead-items` shows a message naming the rate card. The remedy it gives
   ("once the server is back, reload the page") is right either way, so it was left alone rather
   than reworded mid-task; worth a second look during the design review.
+- **`:focus-visible` cannot be read with `getComputedStyle` immediately after `.focus()`.** Doing
+  so during this session's accessibility check reported the browser's default ring on three fields
+  and the Save button, and looked exactly like a real regression — it survived a cross-check
+  against another screen's button, which failed the same way for the same reason. The pseudo-class
+  needs a style recalc first: `await` two `requestAnimationFrame`s between focusing and reading and
+  every control reports a11y.css's `2px solid var(--accent)` @2px correctly. Worth knowing before
+  the **Accessibility pass** task, which is going to measure exactly this on a dozen elements.
+- **`--muted` is `rgba(240, 237, 232, 0.6)`, not an opaque colour.** Any contrast check that reads
+  its three channels and ignores the alpha measures `--text` by mistake and reports every muted
+  string as 15.21:1. Composite it over the background first. Correct figures on this feature's
+  surfaces: muted on `--bg` is **6.15:1**, muted on `--surface` (inside a `.proj-card` or the save
+  bar) is **5.2:1** — both over the brief's 4.5:1 bar, but the second one is the tighter of the two
+  and is where a smaller type size would start to matter.
+- **Two names for the shared tax field** — "Tax Reserve Target" on Goals, "Tax Set-Aside Rate" on
+  Pricing, one stored `pricing.taxSetAsideRate`. Both names come from the source documents (see
+  resolved decision 36). Worth settling on one during the design review.
+- **The Goals form keeps three columns from 768px up**, where the columns measure 231px and the
+  longest field hint runs four lines. Legible and not overflowing — measured at 1400/900/768/375px
+  — but tight enough to be worth a look during the **Layout check at 1099px / 900px / 768px** task,
+  which is where a new `max-width` rule would belong anyway.
+- **The live Target Annual Revenue figure carries no `aria-live`**, so a screen-reader user typing
+  into the fields is not told it changed. This matches the estimate editor's `.summary-bar`, which
+  recomputes the same way on every keystroke and announces nothing either — it is a site-wide gap
+  rather than something this screen introduced, so it is flagged for the **Accessibility pass**
+  where both can be decided together, rather than diverged from here (the same call decision 21
+  made about accent-on-hover contrast).
 - `server/src/calc.js` is 428 lines, `server/src/db.js` ~290, and there are now two new route files
   (`overhead.js` ~95 lines, `goals.js` ~45 lines) plus ~90 new lines in `test-api.js`. On the
-  frontend `web/js/views/pricing.js` is now ~690 lines and `web/js/views/overhead.js` ~484. None need splitting yet — see resolved
+  frontend `web/js/views/pricing.js` is now ~690 lines, `web/js/views/overhead.js` ~484 and
+  `web/js/views/goals.js` ~506. None need splitting yet — see resolved
   decision 12 for why `calc.js` specifically should stay one file — but check before assuming that
   still holds after the next big addition.
