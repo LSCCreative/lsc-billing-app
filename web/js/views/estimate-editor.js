@@ -14,6 +14,14 @@
  * Per-row and per-section figures come from rows.js, which follows calc.js's
  * lookup rule so the rows always add up to the total under them.
  *
+ * THE MINIMUM JOB PRICE IS ADVISORY AND MUST STAY THAT WAY
+ * The floor under the summary bar is a second opinion, never a price. It is
+ * computed by LSCCalc.minimumJobPrice() from the current Overhead Rate/hr and
+ * Target Profit Margin, it is not persisted with the estimate, and neither it
+ * nor its toggle is allowed to move clientPriceExGst or totalIncGst by a cent
+ * in either position. Everything it needs is read off the totals computeTotals
+ * already returned — it never recomputes a headline figure of its own.
+ *
  * CLIENT FIELDS
  * The estimate carries a client *snapshot* — {businessName, contactName, email,
  * phone, abn, address} — not the desktop app's flat businessName/clientName/
@@ -37,6 +45,15 @@ const EstimateEditor = (() => {
   let saving = false;
   let link = null; // { id, name } of the client record this estimate points at
   let baseline = ''; // the form as it was at mount, for the unsaved-edit check
+
+  /* The two Finance figures the advisory floor is built from, resolved once at
+     mount. Same reasoning as pricing.js's computedRate: nothing reachable from
+     this screen can change an overhead item or a goal — the only screens that
+     can are the Finance sub-tabs, and getting to one means leaving this editor,
+     which re-mounts it on the way back. They are deliberately outside
+     payload(), so they are never saved and never make the form look dirty. */
+  let overheadRate = null;
+  let profitMarginPct = null;
 
   const rid = () => 'r' + ++rowCounter;
   const $ = (id) => root.querySelector('#' + id);
@@ -301,8 +318,41 @@ const EstimateEditor = (() => {
      Hours / Labour / Expenses / Net Invoice / Internal Tax, with Gross Profit
      below it; "Net Invoice" was pre-GST and "Gross Profit" counted pass-through
      as margin. Same two-bar shape, honest labels. */
+  /* The app's existing switch idiom — a <label> wrapping a checkbox and a
+     <span>, exactly as .doc-gst-free and settings' .set-check do it. The brief
+     asks for "an inline switch"; building a new sliding-pill control for it
+     would be the one place in the app that has one. */
+  function overheadToggleMarkup() {
+    return (
+      '<div class="mjp-toggle-row">' +
+      '<label class="mjp-toggle" for="f-include-overhead">' +
+      '<input type="checkbox" id="f-include-overhead" checked ' +
+      'aria-describedby="mjp-toggle-hint">' +
+      '<span>Include Overhead &amp; Profit Margin in Calculation</span></label>' +
+      '<span class="mjp-toggle-hint" id="mjp-toggle-hint">Advisory only — it never changes what ' +
+      'the client is billed.</span></div>'
+    );
+  }
+
+  /* Hidden rather than rebuilt when the toggle is off. The brief asks for the
+     line to be "removed entirely", and [hidden] takes it out of the
+     accessibility tree as well as off the screen — which an opacity or a
+     visibility rule would not. estimates.css carries the [hidden] display rule
+     it needs, because a display:flex on the class would otherwise beat the
+     browser's own [hidden] default. */
+  function minimumLineMarkup() {
+    return (
+      '<div class="mjp-line" id="mjp-line">' +
+      '<span class="mjp-line-label">Minimum Job Price</span>' +
+      '<span class="mjp-line-value" id="s-min-price">—</span>' +
+      '<span class="mjp-line-note" id="s-min-note"></span>' +
+      '</div>'
+    );
+  }
+
   function summaryMarkup() {
     return (
+      overheadToggleMarkup() +
       '<div class="summary-bar">' +
       '<div class="sum-item"><div class="sum-label">Total Hours</div><div class="sum-value" id="s-hours">0</div></div>' +
       '<div class="sum-item"><div class="sum-label">Labour Subtotal</div><div class="sum-value" id="s-labour">$0.00</div></div>' +
@@ -323,7 +373,10 @@ const EstimateEditor = (() => {
       '<div class="sum-item sum-span2">' +
       '<div class="sum-label">Est. Take-Home <span style="font-size:9px;color:var(--muted2)">(labour revenue ex GST, less set-aside — pass-through excluded)</span></div>' +
       '<div class="sum-value" id="s-takehome" style="color:#6fcf6f">$0.00</div></div>' +
-      '</div>'
+      '</div>' +
+      /* Under the bars, not inside them: a sixth .sum-item would read as one
+         more headline figure, and this one is explicitly not that. */
+      minimumLineMarkup()
     );
   }
 
@@ -519,6 +572,55 @@ const EstimateEditor = (() => {
     setText('s-total', fmt(totals.totalIncGst));
     setText('s-tax', fmt(totals.taxSetAside));
     setText('s-takehome', fmt(totals.estTakeHome));
+
+    // Reads the totals above rather than recomputing anything of its own.
+    paintMinimum(totals);
+  }
+
+  const includeOverheadNow = () => {
+    const box = $('f-include-overhead');
+    // Defaults ON, per the brief — including for the instant before bind() runs.
+    return box ? box.checked : true;
+  };
+
+  /* The advisory floor. Everything here is display: the arithmetic is
+     minimumJobPrice()'s, and the inputs are the totals computeTotals just
+     returned. directJobCosts is expenseTotal and estimatedHours is totalHours,
+     which is what calc.js's own docblock for this function specifies. */
+  function paintMinimum(totals) {
+    const line = $('mjp-line');
+    if (!line) return; // left mid-edit, or a screen that has no summary bar
+
+    const on = includeOverheadNow();
+    line.hidden = !on;
+    if (!on) return;
+
+    const floor = LSCCalc.minimumJobPrice(
+      totals.expenseTotal,
+      totals.totalHours,
+      overheadRate,
+      profitMarginPct
+    );
+
+    /* null is "cannot be computed", and it has to survive the trip to the
+       screen as an em dash and a prompt — not as $0.00, which reads as a real
+       answer meaning this job could be done for nothing. Per the IA doc there
+       is deliberately no link out of here: an in-progress estimate is the wrong
+       moment to send somebody to another screen. */
+    if (floor === null) {
+      setText('s-min-price', '—');
+      setText('s-min-note', 'Set up Overhead & Goals to see this.');
+      line.classList.add('mjp-unset');
+      return;
+    }
+
+    setText('s-min-price', fmt(floor));
+    setText(
+      's-min-note',
+      'to cover ' + fmt(overheadRate) + '/hr of overhead across ' + totals.totalHours +
+        (totals.totalHours === 1 ? ' hour' : ' hours') + ' and a ' + profitMarginPct + '% margin'
+    );
+    line.classList.remove('mjp-unset');
   }
 
   // ── Saving ────────────────────────────────────────────────────────────────
@@ -777,6 +879,13 @@ const EstimateEditor = (() => {
     const gstFreeBox = $('f-gstfree');
     if (gstFreeBox) gstFreeBox.addEventListener('change', recalc);
 
+    /* Straight to recalc() like any other input that feeds the bar — not a
+       lighter show/hide path. The toggle changes nothing computeTotals reads,
+       so running the full pass is the cheap way to be certain of it: if this
+       ever did move a headline figure, it would show up here rather than in a
+       shortcut that skipped the comparison. */
+    $('f-include-overhead').addEventListener('change', recalc);
+
     sections.forEach((section) => {
       const add = $('add-' + section.id);
       if (!add) return; // archived categories have no picker
@@ -815,6 +924,14 @@ const EstimateEditor = (() => {
         : null;
 
     const pricing = LSCData.pricing();
+    /* Resolved once, before the first recalc(). Both stay null when Finance has
+       not been set up, and minimumJobPrice() turns either null into a null
+       floor, which paintMinimum() renders as the set-up prompt. */
+    overheadRate = LSCCalc.overheadRatePerHour(
+      LSCCalc.annualOverheadTotal(LSCData.overheadItems()),
+      LSCData.goals().billableCapacityHrsPerWeek
+    );
+    profitMarginPct = LSCData.goals().targetProfitMarginPct;
     const activeRows = (estimate && estimate.activeRows) || {};
     sections = sectionsFor(activeRows, pricing, estimate && estimate.sectionLabels);
 

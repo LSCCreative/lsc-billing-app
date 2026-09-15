@@ -144,3 +144,99 @@
   max-width: 520px;
   font-size: 11px;
 }
+
+/* ── The advisory Minimum Job Price ─────────────────────────────────────────
+   A second opinion sitting under the totals, never a price. The whole visual
+   job here is to be legible and obviously secondary: no accent fill, no card,
+   no green or red. --accent is spoken for by "Total (inc GST)" one row up —
+   the figure a client actually pays — and lending it to an advisory number
+   would put the two in competition. There is deliberately no pass/fail
+   indicator either: that needs a green/up and a red/down this palette does not
+   have, and inventing the pair is the second scoped palette exception the brief
+   reserves for the donut alone (HANDOVER.md decision 42). The comparison is the
+   reader's, against Client Price (ex GST) directly above. */
+
+.mjp-toggle-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 10px;
+}
+
+/* The same label-wraps-a-checkbox construction as .doc-gst-free above and
+   settings' .set-check — the app's existing switch, not a new one. */
+.mjp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+/* app.css's `.field input { width: 100% }` does not reach here, but the editor
+   sets widths on inputs liberally; pinning it is cheaper than checking. */
+.mjp-toggle input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.mjp-toggle-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Bordered like a .summary-bar so it reads as part of the same block, but one
+   row of flowing text rather than a grid of cells — a sixth .sum-item would
+   read as one more headline figure, which is the one thing it is not. */
+.mjp-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  /* No top margin: the second .summary-bar's own 24px bottom margin is the gap,
+     so this sits on the spacing rhythm the editor already uses rather than
+     inventing a second one. A negative margin was tried first, to pull it flush
+     against the bar — it left a 10px gap between two bordered boxes, which is
+     the worst of both readings: too close to be a separate block, too far to be
+     the same one. Measured, not eyeballed; the pane was hidden at the time and
+     a screenshot would have shown nothing at all. */
+  margin: 0 0 24px;
+  padding: 12px 18px;
+  border: 1px solid var(--border);
+}
+/* Required: the display:flex above would otherwise beat the browser's own
+   [hidden] rule, and switching the toggle off would hide nothing. */
+.mjp-line[hidden] {
+  display: none;
+}
+
+.mjp-line-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+/* Delight, like every other money figure in the app, but at 17px against the
+   bar's 19px — close enough to belong, small enough to sit below it. */
+.mjp-line-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.mjp-line-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Nothing to show yet. The figure is already an em dash; this keeps the two
+   halves from reading as a real number with a footnote. */
+.mjp-unset .mjp-line-value {
+  color: var(--muted);
+}

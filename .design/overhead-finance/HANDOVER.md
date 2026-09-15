@@ -17,8 +17,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
-progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form and both
-Overhead charts are in, 4 UI tasks to go)** → Design Review
+progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form, both
+Overhead charts and the estimate-editor floor are in, 3 UI tasks to go)** → Design Review
 (not applicable yet).
 
 **Completed, 2026-09-15:**
@@ -232,25 +232,56 @@ Overhead charts are in, 4 UI tasks to go)** → Design Review
     reaches seven figures. The first fit constant was itself wrong for a second reason worth
     knowing here — it was measured before `Delight` had loaded, so it described Georgia.
 
-**Not started:** everything else in TASKS.md, starting with the **Estimate-editor Overhead/Profit
-toggle + Minimum Job Price line**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
+15. **Estimate-editor Overhead/Profit toggle + Minimum Job Price line** — ~70 new lines in
+    `web/js/views/estimate-editor.js` and ~90 in `web/css/estimates.css`. An "Include Overhead &
+    Profit Margin in Calculation" checkbox above the summary bars, defaulting ON, and an advisory
+    Minimum Job Price line below them. No new files. No backend change: `npm test` is unchanged at
+    **91/91** and `calc.js` was not touched, so it did not need re-copying.
+
+    **`minimumJobPrice()` now has a screen, which closes the last of the three calc functions'
+    "never been rendered" open item.** Both of its states were checked by eye against
+    `api-scratch`: a `null` floor renders as a muted em dash under "Set up Overhead & Goals to see
+    this", and a real one renders as money — no `$0.00`, `NaN`, `Infinity`, `null` or `undefined`
+    reached the screen in any state.
+
+    Verified against `api-scratch` by driving the real form, not by reading the diff. **The screen
+    reproduces the calc suite's own worked example exactly**: a 14-hour job with $1,560 of crew
+    against the seeded $25/hr rate and 25% margin renders `$2,387.50`, the figure
+    `server/test/test-calc.js` pins — entered through the real row pickers, not stubbed. The
+    quote's own price ($3,520.00) clears it, which is the story the feature exists to tell. **The
+    invariant holds**: all eight headline figures (hours, labour, expenses, client price ex GST,
+    GST, total inc GST, tax set-aside, take-home) are byte-identical with the toggle on, off, and
+    back on. Off genuinely removes the line — `hidden`, no layout box, zero height — rather than
+    hiding it visually. Toggling never makes the form dirty (0 prompts on the way out), while the
+    control case of a real edit still prompts. Empty states forced both ways, by stubbing goals to
+    `{}` and overhead to `[]` separately. The saved estimate round-tripped and the **read-only
+    detail view renders the same money as the editor** with no floor line and no toggle — the
+    scope call in decision 56. 375px: no horizontal overflow, the line wraps to two rows and stays
+    inside the viewport. Console clean; the only errors in the buffer were `ERR_CONNECTION_REFUSED`
+    from the app stopping the preview servers mid-session, and every API call after the last reload
+    returned 200.
+
+    **Two process notes that cost real time here**, both worth reading before the next browser
+    session — see "Open items": the preview servers were stopped by the app twice mid-verification,
+    and a `location.reload()` re-served `estimates.css` from cache so the new rules were silently
+    absent while the file on disk and on the server both had them.
+
+**Not started:** everything else in TASKS.md, starting with the **Cost breakdown modal**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
 (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently
-**Estimate-editor Overhead/Profit toggle + Minimum Job Price line**, `money math — Opus/high`),
-state its model/effort bucket out loud before writing code, and work top-down.
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Cost
+breakdown modal**, `money math — Opus/high`), state its model/effort bucket out loud before writing
+code, and work top-down.
 
-That task and the cost breakdown modal after it are the last two money-math ones, and they are
-where **`minimumJobPrice()` finally gets a screen** — it is the one calc function still never
-rendered anywhere, which is the open item flagged below. Read decision 13's null-handling rule
-before writing the line: the failure mode is a view coercing `null` to `0` on its way out, and only
-a person looking at the screen catches it. The two things the task itself is most likely to get
-wrong are already named in TASKS.md — `clientPriceExGst`/`totalIncGst` must not move in either
-toggle state, and the read-only `estimate-detail.js` needs the same treatment as the editor.
+The modal has a line to hang off already: `minimumLineMarkup()` in `estimate-editor.js` builds
+`#mjp-line` as label / value / note, and the `(?)` trigger goes next to the value. It was
+deliberately **not** added with the line — TASKS.md scopes it to its own task, so the line shipped
+without it. Read decision 57 before styling the trigger, and reuse `settings.js`'s focus trap via
+`LSCModal.trapTab` rather than rebuilding it, the same way `overhead.js`'s Add/Edit Expense modal
+does — that is the closest working precedent and it is two screens old now.
 
-Both Overhead charts are done and the screen is complete; the remaining work on it is the
-**Layout check** and **Accessibility pass** tasks, which have a small backlog of measured items
-waiting for them in "Open items" below.
+After the modal, everything left is the **Layout check** and **Accessibility pass**, which have a
+backlog of already-measured items waiting for them in "Open items" below.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -686,6 +717,59 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     alone on its line and does nothing before that, since auto margins only take leftover free
     space and `.oh-legend`'s flex-grow has already taken it on a wide row.
 
+56. **The Minimum Job Price line is editor-only; `estimate-detail.js` was deliberately left
+    untouched.** TASKS.md hedged this ("possibly `web/js/views/estimate-detail.js`") and the brief's
+    only sentence about the detail view is about `clientPriceExGst`/`totalIncGst` not moving, which
+    reads both ways. **Put to the user and settled on 2026-09-16: editor only.** Three reasons, in
+    order of weight: the floor is a pricing-*decision* aid and the decision happens in the editor;
+    it is recomputed from **today's** Overhead Rate and margin rather than the ones current when the
+    estimate was saved, so on a quote sent months ago it would show a floor that estimate was never
+    actually judged against; and there is no toggle on a read-only screen, so the brief's own
+    promise that switching it off removes the line could not be kept there. The brief's "verify in
+    both edit and read-only" requirement was still honoured as written — the saved estimate's
+    detail view renders money identical to the editor's. **If this is ever revisited, the honest
+    version is the third option the user was offered and declined for now: persist the floor and
+    the rate/margin it used with the estimate**, which is a schema change and its own backend task,
+    not a view tweak.
+57. **The `(?)` cost-breakdown trigger is not in this task, and the line shipped without it.** Both
+    the brief and the old 2026-09-07 brief describe the line as carrying a `(?)`, which makes it
+    look like an omission. TASKS.md splits them into two tasks on purpose and the modal is the next
+    unchecked item, so the trigger lands with the thing it opens rather than as a dead control for
+    one commit. `#mjp-line`'s three spans (label / value / note) are where it goes.
+58. **The toggle is the app's existing switch — a `<label>` wrapping a checkbox — not a new sliding
+    control.** The brief says "inline switch", which invites building a pill. `.doc-gst-free` two
+    sections up in the same file and settings' `.set-check` are both label-wraps-checkbox, and a
+    custom switch here would be the only one in the app. It also inherits `a11y.css`'s focus ring
+    for free: that file's selector list ends in a bare `input:focus-visible`, so every input in the
+    app is already covered and **no new focus CSS was needed or added**. The 13×13px checkbox is
+    under 44px at phone widths, which is `responsive.css`'s own documented, deliberate exemption
+    ("Checkboxes are excluded: they size themselves, and a 44px one would push its own row apart"),
+    not a new gap introduced here.
+59. **Toggling runs the full `recalc()` rather than a lighter show/hide path.** The toggle changes
+    nothing `computeTotals` reads, so re-running the whole pass is the cheap way to keep proving
+    it: if this ever did start moving a headline figure, it surfaces in the bar immediately instead
+    of hiding behind a shortcut that skipped the comparison. Verified as byte-identical across on →
+    off → on for all eight figures.
+60. **The overhead rate and margin are resolved once at mount, but the floor repaints on every
+    keystroke.** Same split as `pricing.js`'s `computedRate` (decision 19's neighbourhood): nothing
+    reachable from the editor can change an overhead item or a goal, so those two are fixed for the
+    life of the screen; the hours and expenses they are multiplied by change constantly, so the
+    line is painted from the totals `recalc()` already has rather than recomputed independently.
+    Both live outside `payload()`, so they are never saved and — checked, not assumed — toggling
+    never marks the form dirty while a real edit still does.
+61. **An empty estimate shows `$0.00`, not an em dash, and that is correct.** The em dash is
+    reserved for "cannot be computed" — no overhead rate, or no margin. A new estimate with no rows
+    genuinely floors at zero, and every other figure in the bar above it reads `$0.00` in that same
+    state, so a dash here would be the odd one out. The set-up prompt is strictly about Finance not
+    being configured.
+62. **`expenseTotal` is the `directJobCosts` input, and that is specified rather than chosen.**
+    `calc.js`'s own docblock for `minimumJobPrice()` names it and TASKS.md repeats it. Worth knowing
+    what it means: `expenseTotal` is the *billed* expense figure, so a marked-up travel row
+    contributes its marked-up amount rather than its cost, which makes the floor slightly higher —
+    the conservative direction, consistent with the rest of the file. A GST-inclusive rate card was
+    checked directly rather than reasoned about and **does not skew it**: `computeTotals` derives
+    `expenseTotal` before the GST split, so it is the same number under either setting.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -715,8 +799,34 @@ line, and both charts are all things a person *looks at* — verify them in a br
   that was wrong by 5% and looked entirely correct on screen. This sits alongside the
   `:focus-visible` note below as the second "measured it, still got a false reading" trap on this
   feature.
-- **Nothing is blocked.** The previous session's one open item (the category/frequency enum
+- **Nothing is blocked.**
+- **The app stopped both preview servers twice mid-verification**, ~3 minutes into each run, with a
+  clean `SIGTERM received, shutting down.` in the log — not a crash, and nothing to do with the
+  code under test. It surfaces in the browser as "The server could not be reached" on a screen that
+  was working a moment earlier, and in `javascript_tool` as a bare `TypeError: Failed to fetch`.
+  If a verification run suddenly starts failing that way, check `preview_logs` before debugging the
+  app: `preview_start` brings it straight back, and the session cookie survives.
+- **A `location.reload()` re-serves the stylesheet from cache, so new CSS can be silently absent.**
+  `web/README.md` already warns about this for scripts; it bit again here for `css/estimates.css`
+  and cost a round of confused measurements — the rule was on disk, on the dev server and in the
+  `<link>`, and simply not in `document.styleSheets`. **`fetch(url, {cache:'reload'})` first, then
+  reload** — and the cheap way to be sure is to assert the rule is really live before measuring
+  anything: `[...document.styleSheets].some(s => [...s.cssRules].some(r => r.selectorText === '.your-class'))`.
+- **Two browser-measurement traps in one feature, both of which look like real bugs.** Neither is
+  about this app's code: `requestAnimationFrame` **never fires while the Browser pane is hidden**,
+  so the two-rAF `:focus-visible` trick noted below hangs rather than returning a wrong answer; and
+  a hidden pane reports `window.innerWidth === 0`, which makes every `getBoundingClientRect()` read
+  like a catastrophic layout collapse (a full-width bar measuring 2px). Set an explicit viewport
+  with `resize_window` before measuring, and prefer `read_page` to screenshots while the pane is
+  hidden — a screenshot of a hidden pane is a blank rectangle, not an error. The previous session's one open item (the category/frequency enum
   spellings) was put to the user and confirmed as-is — see resolved decision 11.
+- **CLOSED: every calc function has now been seen rendering in a browser, in both its states.**
+  `overheadRatePerHour()` closed on the Pricing rate column, `targetAnnualRevenue()` on the Goals
+  stat, and `minimumJobPrice()` on the estimate-editor line as of 2026-09-16 — em dash for `null`,
+  money for a real figure, with no `$0.00`, `NaN` or `$Infinity` reaching any screen in any state.
+  The failure mode decision 13 is shaped to prevent — a view coercing `null` to `0` on its way out
+  — is now checked by eye on all three. Keep the habit for anything new that renders one. The
+  original wording of this item follows, for the history:
 - **The calc functions have now been seen rendering in a browser — for the first time, on the
   Pricing rate column.** Both states were checked by eye against `api-scratch`: `null` renders as a
   muted em dash and `25` renders as `25.00`, with no `$0.00`, `NaN` or `$Infinity` anywhere. That
