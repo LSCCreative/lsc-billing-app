@@ -133,3 +133,95 @@
   padding-top: 12px;
   margin-top: 12px;
 }
+
+/* ── The charts ─────────────────────────────────────────────────────────────
+   The trend chart (and, next, the donut) sit in an .est-block like the table
+   above them, so the screen reads as three framed blocks rather than a table
+   and then some loose graphics. Only the inside of the block is new. */
+.oh-chart {
+  padding: 18px 16px 14px;
+}
+
+/* width:100% on top of the svg's own width/height attributes: the attributes
+   are the size it was drawn at — one user unit to one CSS pixel, which is what
+   keeps the axis labels at their real size — and this scales it smoothly if
+   the window is dragged between redraws. height:auto keeps that proportional. */
+.oh-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Horizontal only. Vertical gridlines on an event-ordered axis would imply
+   regular time intervals that aren't there. --muted2 is app.css's own
+   "structural, not informational" tone, which is exactly what these are. */
+.oh-chart-grid {
+  stroke: var(--muted2);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.oh-chart-tick,
+.oh-chart-date {
+  fill: var(--muted);
+  font-family: 'Funnel Sans', 'FunnelSans', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.oh-chart-date {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.oh-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* A wash, not a block of colour: the fill is there to give the line a floor to
+   sit on, and anything heavier competes with the table above it for the eye. */
+.oh-chart-area {
+  fill: var(--accent);
+  fill-opacity: 0.09;
+  stroke: none;
+}
+
+/* Ringed rather than solid, so a run of close points stays countable. The last
+   one is filled — it is the total the rate card is computed from right now. */
+.oh-chart-dot {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.oh-chart-dot.is-now {
+  fill: var(--accent);
+}
+/* The transparent hover target over each point. Nothing to draw; the cursor is
+   the only hint that there is something to hover. */
+.oh-chart-hit {
+  cursor: help;
+}
+
+/* Says out loud that the horizontal spacing is event order, not elapsed time.
+   The chart would otherwise be quietly making a claim about time that its data
+   can't support — see the header comment in js/views/overhead-charts.js. */
+.oh-chart-caption {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 78ch;
+}
+
+/* No snapshots, or only one — a plain sentence rather than an axis drawn
+   around nothing, per the brief's empty-state rule for both charts. */
+.oh-chart-empty {
+  padding: 2px 0 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}

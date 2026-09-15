@@ -17,6 +17,9 @@ css/pricing.css          pricing screen, additive
 css/settings.css         invoice settings modal, additive
 css/clients.css          clients screen + typeahead dropdown, additive
 css/finance.css          the Finance sub-tab row, additive
+css/overhead.css         the Overhead screen: summary card, expense table,
+                         Add/Edit modal and the charts, additive
+css/goals.css            the Goals form, additive
 css/responsive.css       the responsive bands (tablet 768-1099, mobile
                          <768). Every rule is inside a media query
 css/a11y.css             accessibility pass: --muted contrast override,
@@ -35,6 +38,7 @@ js/data.js               rate card, settings, overhead and goals, cached for
                          the session and preloaded together
 js/toast.js              the corner toast
 js/connection.js         the connection-lost banner; subscribes to api.js
+js/modal.js              the shared modal focus trap (LSCModal.trapTab)
 js/unsaved.js            unsaved-edit warnings — confirm() on the way out of a
                          screen, beforeunload on the way out of the page
 js/views/login.js        the login screen
@@ -46,6 +50,10 @@ js/views/clients.js      the client list, one client's record + estimate history
 js/views/pricing.js      the rate card (Pricing & Services)
 js/views/finance.js      Finance: routes Pricing / Overhead / Goals into
                          #finance-sub. A router, not a screen
+js/views/overhead.js     the Overhead screen (expense CRUD + summary card)
+js/views/overhead-charts.js  the Overhead screen's hand-rolled inline SVG
+                         charts. Markup in, markup out — holds no state
+js/views/goals.js        the Goals form (income/margin/capacity + tax reserve)
 js/views/settings.js     the Invoice Settings modal (GST + payment details)
 js/app.js                boot + top-level view switching
 ```

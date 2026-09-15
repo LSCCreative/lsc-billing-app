@@ -17,8 +17,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
-progress — the nav shell, the Pricing rate column, the Overhead screen and the Goals form are
-in, 6 UI tasks to go)** → Design Review
+progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form and the
+Overhead Trend chart are in, 5 UI tasks to go)** → Design Review
 (not applicable yet).
 
 **Completed, 2026-09-15:**
@@ -163,23 +163,59 @@ in, 6 UI tasks to go)** → Design Review
     order is the visual order. 375px: no horizontal overflow, the form collapses to one column,
     every input 44px. Console clean.
 
-**Not started:** everything else in TASKS.md, starting with the **Historical Overhead Trend chart
-(SVG line)**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
+13. **Historical Overhead Trend chart (SVG line)** — `web/js/views/overhead-charts.js` (new, ~300
+    lines), ~85 new lines in `web/css/overhead.css`, four wiring lines in `web/js/views/overhead.js`
+    and one `<script>` tag in `web/index.html`. Hand-rolled inline SVG, no library, mounted at the
+    bottom of the Overhead screen. No backend change: `npm test` is unchanged at **91/91** and
+    `calc.js` was not touched, so it did not need re-copying. `web/README.md`'s file listing gained
+    the new file and the four earlier ones it was already missing (`css/overhead.css`,
+    `css/goals.css`, `js/modal.js`, `js/views/overhead.js`, `js/views/goals.js`).
+
+    **The chart is in its own file, not in `overhead.js`** — see resolved decision 37 — and the
+    donut belongs in there beside it. **The x axis is event order, not elapsed time** (decision 38),
+    which is the one thing to read before touching it.
+
+    Verified against `api-scratch` by driving the real screen, not by reading the diff. Every state
+    was rendered and read back: zero snapshots and exactly one snapshot each give a plain sentence
+    and no axis; two points falling, fourteen points crossing a year boundary, 120 points, and a
+    run where every total is `$0.00` (everything deleted) all draw without a `NaN`, an `$Infinity`
+    or a collapsed axis. **A real Add Expense through the modal** took the chart from 4 points to 5
+    with the head line moving $22,800 → $24,000 and the Summary Card to $25,200, with no reload;
+    deleting it again returned both. Axis ticks land on round money at every scale checked
+    ($0/$10k/$20k/$30k on the seeded data, $0/$250/$500/$750/$1k on the all-zero run). Contrast
+    measured live with the alpha composited: axis ticks and dates both **6.15:1** on `--bg`. 375px:
+    `body.scrollWidth` 375, no horizontal overflow, labels at their real 11px/10px. Console clean
+    apart from the app's pre-existing pre-login `401` on `/api/session`. Pricing re-checked
+    afterwards: all 18 labour rates still `25.00`, so the write round-trip left the worked example
+    intact.
+
+    **Three bugs were caught by measuring rather than by looking**, all in the geometry: the svg was
+    drawn to `clientWidth`, which includes the container's padding, so it rendered 998 user units
+    into 966 pixels and scaled every label by 0.968 — the exact fractional scaling the measured-width
+    approach exists to remove; a `Math.max(320, …)` floor did the same thing again at a 375px
+    viewport, where the real box is 309px; and a fourteen-point fixture spanning Jan 2025 → Feb 2026
+    labelled its ends "12 Jan" and "12 Feb", which reads as ten months backwards. All three look
+    right in a screenshot.
+
+**Not started:** everything else in TASKS.md, starting with the **Category Breakdown donut +
+legend**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
 (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Historical
-Overhead Trend chart (SVG line)**, `frontend — Opus/high`), state its model/effort bucket out loud
-before writing code, and work top-down. It and the **Category Breakdown donut** after it both have
-real data to draw: the scratch database holds one snapshot per overhead write plus the four items
-of the brief's worked example, and `overhead.js` already calls both `LSCData.setOverheadItems()`
-and `setOverheadSnapshots()` on every write, so a chart reading the cache stays live without
-fetching anything itself. Both charts mount inside the Overhead screen below the expense table —
-note that `OverheadView.render()` rewrites `root.innerHTML` wholesale on every write, so a chart
-built there is torn down and rebuilt with it and must not hold element references across a render.
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Category
+Breakdown donut + legend**, `frontend — Opus/high`), state its model/effort bucket out loud before
+writing code, and work top-down. The donut has real data to draw and a file to live in:
+`web/js/views/overhead-charts.js` is already the charts module (decision 37), and the donut is
+computed from `LSCData.overheadItems()` grouped by category — not from `overhead_snapshots`'
+`by_category_json`, which is the historical record rather than the live one. **It mounts between
+the expense table and the trend chart**, per the IA doc's content order ("what's costing me" above
+"is it getting better or worse"); `overhead.js`'s `markup()` has a comment marking the spot. Follow
+the trend chart's shape: a `*Markup()` that returns the block with an empty canvas div, and a
+`draw*()` that fills it after the markup is in the document, because `OverheadView.render()`
+rewrites `root.innerHTML` wholesale on every write and nothing may hold an element reference across
+that. `contentWidth()` and `bindResize()` are already there to reuse.
 
-After the two charts come the last money-math tasks, the estimate-editor toggle and the cost
-breakdown modal. `minimumJobPrice()` still has no screen rendering it, which is the open item
-flagged below.
+After the donut come the last money-math tasks, the estimate-editor toggle and the cost breakdown
+modal. `minimumJobPrice()` still has no screen rendering it, which is the open item flagged below.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -458,6 +494,85 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     names for one number is still a "one number, one truth" wart — flagged for the design review
     below rather than resolved by widening this task.
 
+37. **The charts live in `web/js/views/overhead-charts.js`, not in `overhead.js`.** TASKS.md scoped
+    the task to "a new component" without naming a file. `overhead.js` was already ~484 lines of
+    CRUD — a table, a modal and four write paths — and the charts share none of that state: they
+    are markup in, markup out over the same cache. Putting both of them inside it would have taken
+    it past 850 lines, which is the size the last session's own note said to check for. The module
+    holds no element references at all, because `OverheadView.render()` rewrites `root.innerHTML`
+    wholesale on every write and anything kept across that is a reference to a node no longer in
+    the document. **The donut goes in this file too** — that is half the reason it exists.
+38. **The trend chart's x axis is event order, not elapsed time, and the chart says so in its own
+    caption.** `overhead_snapshots` gets a row per add/edit/delete whenever those happen, not on a
+    schedule: the four rows in the scratch database are **twelve milliseconds apart**. On a true
+    time axis they stack into one vertical line, and one edit made a year later would own the whole
+    width while everything before it collapsed to a dot — a chart that is technically accurate and
+    tells you nothing. Points are therefore spaced evenly in order, with the dates under the line
+    carrying the elapsed time. The honest fix for the resulting distortion is to *state* it rather
+    than to encode it, which is what `.oh-chart-caption` is for: "spaced evenly in the order the
+    changes happened, not by how far apart in time they were." **Don't silently switch it to a time
+    axis** — the data shape that makes that unreadable hasn't changed. The same applies to the
+    donut if it ever grows a time dimension.
+39. **The y axis always starts at zero, and a stepped line was considered and rejected.** A money
+    chart auto-scaled to its own minimum turns a 2% rise into a cliff, and this is the number the
+    rate card is computed from. On the line shape: overhead is really a step function (a total
+    holds until the next change), but with event-ordered spacing a plateau's *width* means nothing,
+    so a step implies a duration that is as fake as a slope implies a drift. Both are fake; the
+    plain line is the conventional reading of "trend" and the caption carries the caveat.
+40. **The svg is drawn at the container's measured pixel width, not scaled from a fixed `viewBox`.**
+    One user unit is one CSS pixel, so an 11px axis label is 11px at every breakpoint. The usual
+    hand-rolled alternative — one fixed `viewBox` plus `width:100%` — renders that same label at
+    ~15px on a 1000px screen and **under 4px at 375px**, which is how a chart like this becomes
+    unreadable on a phone. Two things this cost, both caught by measuring and both easy to
+    reintroduce: `clientWidth` **includes the container's padding**, so drawing to it produced an
+    svg 32px wider than its box that `width:100%` then scaled back down (998 user units rendered
+    into 966 pixels); and a `Math.max(320, …)` floor did the same thing again at a 375px viewport,
+    where the real content box is 309px. `contentWidth()` now subtracts the padding and only floors
+    a box with no layout at all. The CSS keeps `width:100%` deliberately — that is the graceful
+    path for a window dragged between redraws, not the sizing mechanism.
+41. **The axis labels are abbreviated money (`$24k`), not `fmt()`.** `fmt()` is right in the
+    tooltip and the head line — exact dollars and cents — and wrong down the side of a chart:
+    "$24,000.00" five times is more precision than an axis carries and pushes the plot into the
+    margin. Tick *values* still come off a 1/2/2.5/5 ladder so they are round money rather than a
+    quarter of whatever the largest total happens to be.
+42. **The direction of travel is stated in words ("Up $22,800.00 since 15 Sep 2026"), never in a
+    colour.** There is no green and no red in this palette, and inventing a pair for up/down would
+    be a second scoped palette exception on the same screen as the donut's — which the brief
+    reserves for the donut alone. It is also the accessible form: nothing in this chart is carried
+    by colour only, since every point has a `<title>` and the `<svg>` has a `role="img"` and an
+    `aria-label` naming the count, the endpoints and their dates.
+43. **The trend line is `--accent` at a measured 3.71:1 against `--bg`, which is under the brief's
+    blanket 4.5:1 for chart colours and over WCAG 1.4.11's 3:1 for graphical objects.** Flagged
+    rather than diverged from, for the same reason decision 21 flagged accent-on-hover: 4.5:1 is a
+    *text* threshold, the applicable rule for a 2px chart stroke is the 3:1 one, and this palette
+    has no lighter accent to reach for — `--ah` is darker. Hitting 4.5:1 would mean inventing a
+    colour, which is precisely the exception the brief scopes to the donut. The axis text, which
+    *is* text, measures 6.15:1. Decide it in the **Accessibility pass** alongside the accent items
+    already queued there, not by quietly introducing a second accent here.
+44. **One point is not a trend, and it gets a sentence instead of a chart.** Two empty states, not
+    one: no snapshots at all ("the line starts as soon as you add your first expense") and exactly
+    one ("One change recorded so far, on 4 Mar 2026 — $8,400.00 a year"). The single-point case is
+    the state the screen is in for the whole of a first session, so it is worth its own copy rather
+    than an axis drawn around one value.
+45. **Markers come off above 40 points or below 14px of spacing, and the hover targets shrink with
+    the spacing.** Years of edits put hundreds of points across 600px; a solid bar of overlapping
+    circles is noise, so the line and the tooltips stay and the dots go. The transparent hit circles
+    (`fill="transparent"`, not `fill="none"` — "none" stops pointer events and would make the
+    tooltip unreachable) scale from r=11 down to r=4, because overlapping targets hand every hover
+    to whichever was drawn last and the tooltip would name a point several steps from the cursor.
+46. **Axis date labels carry a 2-digit year only when the chart crosses one.** A fourteen-point
+    fixture running Jan 2025 → Feb 2026 labelled its ends "12 Jan" and "12 Feb", which reads as ten
+    months backwards. Within a single year the year is noise, and the full date is in every
+    tooltip regardless. Related: when *every* point falls on one day — which is exactly what a
+    first session of data entry produces — the axis prints one centred full date instead of the
+    same short date four times.
+47. **One `resize` listener for the life of the page, added on first mount.** It re-queries
+    `#oh-trend-canvas` each time rather than closing over it, so it survives the wholesale
+    re-render and does nothing at all when Overhead isn't the screen on show; it is handed a
+    *getter* for the snapshot list rather than today's array, so a resize after a write redraws
+    what the screen is actually showing. Debounced at 150ms. Verified by driving the viewport 375px
+    → desktop and reading the redrawn `viewBox` (309 → 895, 1:1 both times).
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -484,7 +599,14 @@ line, and both charts are all things a person *looks at* — verify them in a br
   keep checking it by eye as the Goals stat and the estimate-editor line land, since a view
   coercing `null` on its way out is the failure mode decision 13 is shaped to prevent and only a
   person looking at the screen will catch it.
-- **The `api-scratch` database is now seeded with the brief's worked example**, so the screens
+- **`api-scratch` now holds six snapshots, not the four it was seeded with.** Verifying the trend
+  chart's live-update path meant a real Add Expense and a real Delete through the modal, and each
+  appended a snapshot — so the chart's line now rises to $25,200 and comes back to $24,000. That is
+  a state the app produces itself, not a corrupted fixture, and the four `overhead_items` and the
+  goals singleton are untouched (Pricing re-checked afterwards: all 18 labour rates still `25.00`).
+  Reset it by deleting `/tmp/lsc-billing-scratch` and re-seeding if a clean four-point line is
+  wanted for the donut work.
+- **The `api-scratch` database is seeded with the brief's worked example**, so the screens
   still to be built have something to render: four `overhead_items` totalling **$24,000/yr**
   (Adobe CC $100/mo, Accountant $750/qtr, hosting $1800/yr, studio rent $1500/mo — four different
   categories and three different frequencies), one matching `overhead_snapshots` row, and a `goals`
@@ -545,7 +667,20 @@ line, and both charts are all things a person *looks at* — verify them in a br
   made about accent-on-hover contrast).
 - `server/src/calc.js` is 428 lines, `server/src/db.js` ~290, and there are now two new route files
   (`overhead.js` ~95 lines, `goals.js` ~45 lines) plus ~90 new lines in `test-api.js`. On the
-  frontend `web/js/views/pricing.js` is now ~690 lines, `web/js/views/overhead.js` ~484 and
-  `web/js/views/goals.js` ~506. None need splitting yet — see resolved
-  decision 12 for why `calc.js` specifically should stay one file — but check before assuming that
-  still holds after the next big addition.
+  frontend `web/js/views/pricing.js` is now ~690 lines, `web/js/views/overhead.js` ~490,
+  `web/js/views/goals.js` ~506 and `web/js/views/overhead-charts.js` ~300. None need splitting yet
+  — see resolved decision 12 for why `calc.js` specifically should stay one file, and decision 37
+  for why the charts were split out of `overhead.js` *before* they made it one of these — but check
+  before assuming that still holds after the next big addition.
+- **The trend chart has only been measured at 1400px and 375px**, which is where its own two
+  failure modes were (a scaled `viewBox`, and a floor fighting the real box width). The **Layout
+  check at 1099px / 900px / 768px** task still owns the middle band: the chart redraws itself at
+  the measured width on resize, so what to check there is the *content* at those widths — how many
+  date labels survive (the rule is one per ~120px, so 5 on desktop and 2 on a phone), whether the
+  head line "Up $22,800.00 since 15 Sep 2026" still fits beside "OVERHEAD TREND" in an
+  `.est-block-head` at 768px, and whether 200px of chart height is still enough once the donut sits
+  above it.
+- **The trend line's `--accent` measures 3.71:1 on `--bg`** — over WCAG's 3:1 bar for a graphical
+  object, under the brief's blanket 4.5:1 for chart colours. See resolved decision 43 for why it
+  was flagged rather than changed; it belongs in the **Accessibility pass** with the accent items
+  decision 21 already queued there, and it is the same question the donut's palette will raise.

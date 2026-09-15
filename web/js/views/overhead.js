@@ -83,6 +83,7 @@ const OverheadView = (() => {
   const $ = (id) => root.querySelector('#' + id);
   const $m = (id) => overlay.querySelector('#' + id);
   const items = () => LSCData.overheadItems();
+  const snapshots = () => LSCData.overheadSnapshots();
 
   const failureText = (err, action) =>
     err.kind === 'network'
@@ -171,7 +172,11 @@ const OverheadView = (() => {
       '<p class="oh-note">Enter costs GST-exclusive. The app assumes you claim GST back on business ' +
       'expenses, so including it would overstate every rate computed from this total.</p>' +
       '<div id="overhead-error" role="alert"></div>' +
-      tableMarkup()
+      tableMarkup() +
+      /* The Category Breakdown donut goes between the table and the trend when
+         its own task lands — the IA doc puts "what's costing me" above "is it
+         getting better or worse", the most retrospective content last. */
+      OverheadCharts.trendMarkup(snapshots())
     );
   }
 
@@ -469,6 +474,9 @@ const OverheadView = (() => {
 
   function render() {
     root.innerHTML = markup();
+    // After the markup is in the document, not before: the chart is drawn at
+    // the container's measured pixel width, which a detached div doesn't have.
+    OverheadCharts.drawTrend(snapshots());
     bind();
   }
 
@@ -477,6 +485,9 @@ const OverheadView = (() => {
     handlers = viewHandlers || {};
     overlay = document.getElementById('modal-overhead-item');
     saving = false;
+    // Reads the cache when it fires rather than closing over today's list, so a
+    // resize after a write redraws the chart the screen is actually showing.
+    OverheadCharts.bindResize(snapshots);
     render();
   }
 
