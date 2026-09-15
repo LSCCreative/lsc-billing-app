@@ -225,3 +225,159 @@
   line-height: 1.7;
   color: var(--muted);
 }
+
+/* ── The Category Breakdown donut ───────────────────────────────────────────
+   THE ONE PLACE THIS FEATURE BREAKS THE SINGLE-ACCENT RULE.
+   The brief scopes the exception to this chart and nothing else: terracotta
+   (--accent) marks the largest category, and the rest run a small, desaturated
+   warm ramp — ochre, warm grey, pale sand, rose-taupe, light grey — that reads
+   as "the one chart with colour" rather than as a rainbow. The classes are
+   ranks, not categories: .oh-c1 is always the biggest slice, so the accent
+   always lands on the number that matters most and the palette does not
+   re-order itself when the expenses do.
+
+   MEASURED, NOT EYEBALLED. Against --bg (#181818, which is what an .est-block
+   actually sits on — it has a border and no background of its own) the five
+   ramp steps are 6.23, 7.08, 9.96, 6.41 and 10.14:1, and against --surface
+   4.71, 5.35, 7.53, 4.84 and 7.66:1 — every step clears the brief's 4.5:1 on
+   both. --accent itself is 3.71:1 on --bg: that is the app's existing accent at
+   the app's existing background, already flagged in HANDOVER.md decision 43 for
+   the accessibility pass rather than forked into a second, lighter terracotta
+   here. Hitting 4.5:1 on the largest slice would mean inventing a colour, which
+   is the exact thing this exception is scoped to avoid doing twice.
+
+   Adjacent slices are separated by a 2px --bg stroke, so no slice is ever
+   judged against the colour beside it — each one is read against the page. */
+.oh-donut-wrap {
+  --oh-c1: var(--accent);
+  --oh-c2: #ce8a4f;
+  --oh-c3: #a8a39b;
+  --oh-c4: #dcbe8b;
+  --oh-c5: #b0968a;
+  --oh-c6: #c9c3b9;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px 32px;
+}
+
+/* One custom property per rank, set once and read by both the slice and its
+   legend swatch — so a swatch cannot drift out of step with the segment it
+   stands for, which is the whole job a legend has. */
+.oh-c1 { --seg: var(--oh-c1); }
+.oh-c2 { --seg: var(--oh-c2); }
+.oh-c3 { --seg: var(--oh-c3); }
+.oh-c4 { --seg: var(--oh-c4); }
+.oh-c5 { --seg: var(--oh-c5); }
+.oh-c6 { --seg: var(--oh-c6); }
+
+/* margin-inline:auto centres the ring once the legend has wrapped below it,
+   and does nothing before that: auto margins only take *leftover* free space,
+   and on a wide row .oh-legend's flex-grow has already taken all of it. So the
+   same rule gives a centred donut on a phone and a left-aligned one on a
+   desktop without a media query deciding which. Checked both, not reasoned
+   about — the svg's left edge is unmoved at 1280px. */
+.oh-donut {
+  flex: 0 0 auto;
+  margin-inline: auto;
+}
+/* No width:100% here, unlike .oh-chart-svg. The trend scales because it is
+   drawn to its container; this is a fixed square, and stretching it would blow
+   a 200px ring up to 900px on a desktop and make a restrained chart the loudest
+   thing on the screen. */
+.oh-donut-svg {
+  display: block;
+}
+
+.oh-seg {
+  fill: var(--seg);
+  /* Not decoration: it is what keeps two slices from being read against each
+     other rather than against the page. */
+  stroke: var(--bg);
+  stroke-width: 2;
+  cursor: help;
+}
+/* One category owning the whole ring — a stroked circle rather than a sector,
+   because a 360° arc paints nothing. See wholeRing() in overhead-charts.js. */
+.oh-ring {
+  fill: none;
+  stroke: var(--seg);
+  cursor: help;
+}
+
+/* No font-size here on purpose — centreSize() sets it per figure as a
+   presentation attribute, because how big it can be depends on how long the
+   number is. A rule here would win over the attribute and undo that. */
+.oh-donut-total {
+  fill: var(--text);
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+/* 10px tracked uppercase — the app's own smallest label size (.est-table th,
+   .card-gross-label), not a new smaller one invented for the hole. */
+.oh-donut-total-label {
+  fill: var(--muted);
+  font-family: 'Funnel Sans', 'FunnelSans', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+
+/* ── The legend ─────────────────────────────────────────────────────────────
+   The same figures as text. The brief asks for this by name and for a reason:
+   it is what makes the chart readable without the colours, so the scoped
+   palette is an aid rather than the only carrier of the data. Deliberately not
+   interactive — nothing happens on click, and a focusable row that does nothing
+   costs a keyboard user a stop for no return. */
+.oh-legend {
+  flex: 1 1 260px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.oh-legend-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 52px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  font-size: 12px;
+}
+.oh-legend-row:last-child {
+  border-bottom: none;
+}
+/* Square, not a dot: it reads as a sample of the fill rather than as a bullet,
+   and a 10px square holds its colour better than a 10px circle does. */
+.oh-swatch {
+  width: 10px;
+  height: 10px;
+  background: var(--seg);
+}
+.oh-legend-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oh-legend-amt {
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* The share is the secondary reading — the dollars are the number people act
+   on — so it sits muted and in its own fixed column, where a run of them lines
+   up as a column rather than ragging against the amounts. */
+.oh-legend-pct {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The caption spans the full row under both, rather than being squeezed into
+   the legend column beside the ring. */
+.oh-donut-caption {
+  flex: 1 1 100%;
+  margin: 0;
+}

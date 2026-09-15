@@ -7,14 +7,19 @@
  * WHY THIS IS ITS OWN FILE
  * overhead.js is the CRUD screen: a table, a modal, four write paths. The
  * charts are pure presentation over the same cache and share none of that
- * state, so they sit beside it rather than inside it. The Category Breakdown
- * donut is the next task and belongs in here too.
+ * state, so they sit beside it rather than inside it.
  *
  * MARKUP IN, MARKUP OUT — NOTHING HELD
  * OverheadView.render() rewrites root.innerHTML wholesale on every write, so
  * anything built here is torn down and rebuilt with it. Nothing in this module
  * keeps an element reference across a render; drawTrend() re-queries the
  * container every time it runs, including on window resize.
+ *
+ * TWO CHARTS, TWO SHAPES — ON PURPOSE
+ * The trend is trendMarkup() + drawTrend(), because it is drawn at the
+ * container's measured pixel width. The donut is donutMarkup() alone, because
+ * it is a fixed square with nothing to measure. The reason is written out above
+ * donutMarkup(); the split is not a house style to copy for its own sake.
  *
  * THE X AXIS IS EVENT ORDER, NOT ELAPSED TIME
  * overhead_snapshots gets one row per add/edit/delete, whenever those happen —
@@ -28,6 +33,9 @@
 
 const OverheadCharts = (() => {
   const { esc, fmt } = LSCUtil;
+  /* The donut slices by annual cost, not by the cost as typed — see the note
+     above donutMarkup(). Same function the Monthly Equivalent column uses. */
+  const { annualisedCost } = LSCCalc;
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -350,5 +358,249 @@ const OverheadCharts = (() => {
     });
   }
 
-  return { trendMarkup, drawTrend, bindResize };
+
+  // ── The category donut ────────────────────────────────────────────────────
+
+  /* THIS ONE IS MARKUP ONLY — NO draw() PHASE, DELIBERATELY
+     The trend chart is split into trendMarkup() + drawTrend() because it has to
+     be measured: its axis labels are text inside the svg, so it is drawn at the
+     container's real pixel width to keep an 11px label 11px. The donut has no
+     text inside the ring except the total in its hole, and it is a fixed square
+     at a fixed size — there is nothing to measure, so there is nothing to defer
+     to a second phase. Splitting it anyway would add a draw() that can silently
+     no-op when its canvas isn't there, to buy nothing. The legend beside it is
+     ordinary HTML and wraps on its own, which is also why the donut is not in
+     bindResize(): a resize changes where the legend sits, not what is drawn.
+
+     SIZES ARE ANNUALISED, NOT AS-ENTERED
+     A $1,500 monthly rent and a $1,800 annual hosting bill are $18,000 and
+     $1,800 of the year. Slicing the ring by the `cost` column as typed would
+     draw those two as nearly equal, which is the one wrong answer this chart
+     can give. Every figure here runs through annualisedCost(), the same
+     function the Monthly Equivalent column and the rate itself are built on. */
+
+  const DONUT_SIZE = 200;
+  const DONUT_OUTER = 92;
+  const DONUT_INNER = 64;
+
+  /* Annual cost per category, largest first, with a colour rank each.
+     The tie-break is the category enum's own order rather than nothing: two
+     categories on identical totals would otherwise swap places — and therefore
+     swap colours — between two renders of the same data. */
+  function byCategory(items, categories) {
+    const order = new Map(categories.map((entry, index) => [entry.value, index]));
+    const totals = new Map();
+    (items || []).forEach((item) => {
+      const key = item && item.category ? item.category : 'other';
+      totals.set(key, (totals.get(key) || 0) + annualisedCost(item));
+    });
+
+    const groups = Array.from(totals, ([value, annual]) => ({
+      value,
+      label: labelOf(categories, value),
+      annual: Math.round(annual * 100) / 100,
+      rank: order.has(value) ? order.get(value) : categories.length,
+    }));
+    groups.sort((a, b) => b.annual - a.annual || a.rank - b.rank);
+
+    const total = groups.reduce((sum, group) => sum + group.annual, 0);
+    const shares = sharePercents(groups.map((group) => group.annual), total);
+    groups.forEach((group, index) => {
+      group.pct = shares[index];
+      // 1-based so the class names read as ranks, and so .oh-c1 is always the
+      // accent — the largest category, per the brief's scoped exception.
+      group.colour = 'oh-c' + Math.min(index + 1, 6);
+    });
+    return { groups, total };
+  }
+
+  /* An unrecognised stored category is shown as itself rather than blanked,
+     the same call overhead.js's table makes and for the same reason: it means
+     the database holds a value this list doesn't know about, and hiding it
+     makes it unfindable. */
+  const labelOf = (categories, value) => {
+    const found = (categories || []).find((entry) => entry.value === value);
+    return found ? found.label : String(value || 'Uncategorised');
+  };
+
+  /* Percentages to one decimal place by largest remainder, so the legend adds
+     up to exactly 100.0. Rounding each share on its own gives a column that
+     sums to 99.9 or 100.1, which on the screen the rate card is computed from
+     reads as an arithmetic error rather than as rounding. */
+  function sharePercents(values, total) {
+    if (!(total > 0)) return values.map(() => 0);
+    const tenths = values.map((value) => (value / total) * 1000);
+    const floors = tenths.map(Math.floor);
+    let spare = 1000 - floors.reduce((sum, value) => sum + value, 0);
+    tenths
+      .map((value, index) => ({ index, fraction: value - floors[index] }))
+      .sort((a, b) => b.fraction - a.fraction || a.index - b.index)
+      .forEach((entry) => {
+        if (spare > 0) {
+          floors[entry.index] += 1;
+          spare -= 1;
+        }
+      });
+    return floors.map((value) => value / 10);
+  }
+
+  const onArc = (radius, angle) => [
+    DONUT_SIZE / 2 + radius * Math.cos(angle),
+    DONUT_SIZE / 2 + radius * Math.sin(angle),
+  ];
+
+  /* An annular sector: out along the outer edge, in, back along the inner one.
+     Angles run from -90° (twelve o'clock) and increase clockwise, because
+     svg's y grows downwards. */
+  function sectorPath(from, to) {
+    const large = to - from > Math.PI ? 1 : 0;
+    const [x0o, y0o] = onArc(DONUT_OUTER, from);
+    const [x1o, y1o] = onArc(DONUT_OUTER, to);
+    const [x1i, y1i] = onArc(DONUT_INNER, to);
+    const [x0i, y0i] = onArc(DONUT_INNER, from);
+    const n = (value) => value.toFixed(2);
+    return (
+      'M' + n(x0o) + ',' + n(y0o) +
+      'A' + DONUT_OUTER + ',' + DONUT_OUTER + ' 0 ' + large + ' 1 ' + n(x1o) + ',' + n(y1o) +
+      'L' + n(x1i) + ',' + n(y1i) +
+      'A' + DONUT_INNER + ',' + DONUT_INNER + ' 0 ' + large + ' 0 ' + n(x0i) + ',' + n(y0i) + 'Z'
+    );
+  }
+
+  const segTitle = (group) =>
+    '<title>' + esc(group.label + ' — ' + fmt(group.annual) + ' a year, ' +
+      group.pct.toFixed(1) + '% of overhead') + '</title>';
+
+  /* One category owning everything is a closed ring, and a sector path can't
+     draw one: a 360° arc starts and ends at the same point, which svg reads as
+     a zero-length arc and paints nothing. A stroked circle is the ring, and it
+     needs no separators because it has no neighbour to be separated from. */
+  function wholeRing(group) {
+    return (
+      '<circle class="oh-ring ' + group.colour + '" cx="' + DONUT_SIZE / 2 + '" cy="' +
+      DONUT_SIZE / 2 + '" r="' + (DONUT_OUTER + DONUT_INNER) / 2 + '" stroke-width="' +
+      (DONUT_OUTER - DONUT_INNER) + '">' + segTitle(group) + '</circle>'
+    );
+  }
+
+  /* The figure in the hole is sized to fit it rather than set once and hoped
+     for. At 19px, "$24,000.00" measures 119.3px against a 128px hole — four
+     pixels of air each side, and a seven-figure overhead ("$1,240,000.00", 13
+     characters) would run out over the ring at the same size. Measured in the
+     browser rather than guessed, and measured twice: the first reading came
+     back 113.4px because the serif had not loaded yet, and Georgia is narrower
+     than Delight. 119.3px over ten characters is 0.628em per character for
+     these glyphs, which are only digits, commas, a dollar sign and a point.
+     116 is the hole's 128 less six pixels of air a side. */
+  const CENTRE_EM_PER_CHAR = 0.628;
+  const centreSize = (text) =>
+    Math.max(11, Math.min(19, Math.floor(116 / (text.length * CENTRE_EM_PER_CHAR))));
+
+  function donutSvg(groups, total) {
+    const drawable = groups.filter((group) => group.annual > 0);
+    let angle = -Math.PI / 2;
+    const segments =
+      drawable.length === 1
+        ? wholeRing(drawable[0])
+        : drawable
+            .map((group) => {
+              const from = angle;
+              angle += (group.annual / total) * Math.PI * 2;
+              return (
+                '<path class="oh-seg ' + group.colour + '" d="' + sectorPath(from, angle) + '">' +
+                segTitle(group) + '</path>'
+              );
+            })
+            .join('');
+
+    /* The hole carries the annual total. The Summary Card at the top of the
+       screen says the same number, but it is two blocks and a table away by
+       the time this chart is on screen, and a share of an unstated total is
+       only half a figure. */
+    const money = fmt(total);
+    const centre =
+      '<text class="oh-donut-total" x="' + DONUT_SIZE / 2 + '" y="' + (DONUT_SIZE / 2 - 2) +
+      '" text-anchor="middle" dominant-baseline="middle" font-size="' + centreSize(money) +
+      '">' + esc(money) + '</text>' +
+      '<text class="oh-donut-total-label" x="' + DONUT_SIZE / 2 + '" y="' + (DONUT_SIZE / 2 + 18) +
+      '" text-anchor="middle" dominant-baseline="middle">A YEAR</text>';
+
+    return (
+      '<svg class="oh-donut-svg" viewBox="0 0 ' + DONUT_SIZE + ' ' + DONUT_SIZE + '" width="' +
+      DONUT_SIZE + '" height="' + DONUT_SIZE + '" role="img" aria-label="' +
+      esc('Category breakdown of ' + fmt(total) + ' of annual overhead. Every category and its ' +
+        'share is listed beside the chart.') + '">' +
+      segments + centre + '</svg>'
+    );
+  }
+
+  /* The same figures as text, which is what makes the chart readable without
+     relying on the colours at all — the scoped palette is an aid to reading the
+     ring, never the only place a number lives. Not interactive: there is
+     nothing for a click to do here, and a focusable row that does nothing is
+     worse for a keyboard user than a plain list. */
+  function legendMarkup(groups) {
+    const rows = groups
+      .map(
+        (group) =>
+          '<li class="oh-legend-row">' +
+          '<span class="oh-swatch ' + group.colour + '" aria-hidden="true"></span>' +
+          '<span class="oh-legend-name">' + esc(group.label) + '</span>' +
+          '<span class="oh-legend-amt">' + esc(fmt(group.annual)) + '</span>' +
+          '<span class="oh-legend-pct">' + group.pct.toFixed(1) + '%</span>' +
+          '</li>'
+      )
+      .join('');
+    return '<ul class="oh-legend">' + rows + '</ul>';
+  }
+
+  function donutEmpty(message) {
+    return '<div class="oh-chart"><p class="oh-chart-empty">' + message + '</p></div>';
+  }
+
+  /**
+   * The Category Breakdown block, complete — see the note above on why this one
+   * has no separate draw phase.
+   *
+   * @param {Array} items — LSCData.overheadItems().
+   * @param {Array<{value:string,label:string}>} categories — the enum, owned by
+   *   overhead.js and passed in rather than copied: the database CHECK-constrains
+   *   these spellings, and a second list here is a second thing to keep in step.
+   */
+  function donutMarkup(items, categories) {
+    const { groups, total } = byCategory(items, categories);
+    const head =
+      '<div class="est-block-head"><span class="est-block-label">Category Breakdown</span>' +
+      '<span class="est-block-sum" style="color:var(--muted)">' +
+      (groups.length ? groups.length + ' categor' + (groups.length === 1 ? 'y' : 'ies') : '') +
+      '</span></div>';
+
+    let body;
+    if (!groups.length) {
+      body = donutEmpty(
+        'Nothing to break down yet. Once you have added an expense or two, this shows where ' +
+        'the money actually goes — which is usually not where you would guess.'
+      );
+    } else if (!(total > 0)) {
+      // Cost accepts a deliberate 0, so a table with rows and a zero total is a
+      // real state rather than a bug. A ring of zero-width slices is not.
+      body = donutEmpty(
+        'Every expense is recorded at $0 a year, so there are no shares to draw. Give them their ' +
+        'real costs and the breakdown appears here.'
+      );
+    } else {
+      body =
+        '<div class="oh-chart oh-donut-wrap">' +
+        '<div class="oh-donut">' + donutSvg(groups, total) + '</div>' +
+        legendMarkup(groups) +
+        '<p class="oh-chart-caption oh-donut-caption">Shares of your annual overhead. Costs are ' +
+        'annualised first, so a $1,500 monthly rent counts as $18,000 of the year and a $1,800 ' +
+        'annual bill counts as $1,800. Hover a segment for its exact figure.</p>' +
+        '</div>';
+    }
+
+    return '<div class="est-block oh-chart-block" id="oh-donut-block">' + head + body + '</div>';
+  }
+
+  return { trendMarkup, drawTrend, donutMarkup, bindResize };
 })();

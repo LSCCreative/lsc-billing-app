@@ -17,8 +17,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
-progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form and the
-Overhead Trend chart are in, 5 UI tasks to go)** → Design Review
+progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form and both
+Overhead charts are in, 4 UI tasks to go)** → Design Review
 (not applicable yet).
 
 **Completed, 2026-09-15:**
@@ -197,25 +197,60 @@ Overhead Trend chart are in, 5 UI tasks to go)** → Design Review
     labelled its ends "12 Jan" and "12 Feb", which reads as ten months backwards. All three look
     right in a screenshot.
 
-**Not started:** everything else in TASKS.md, starting with the **Category Breakdown donut +
-legend**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
+14. **Category Breakdown donut + legend** — ~200 new lines in `web/js/views/overhead-charts.js`,
+    ~150 new lines in `web/css/overhead.css`, and two wiring lines in `web/js/views/overhead.js`.
+    Hand-rolled inline SVG donut with an HTML legend beside it, mounted between the expense table
+    and the trend chart per the IA doc's content order. No new files and no `index.html` change —
+    the charts module and its stylesheet were already wired by task 13. No backend change:
+    `npm test` is unchanged at **91/91** and `calc.js` was not touched, so it did not need
+    re-copying.
+
+    **Three things to read before touching it:** the scoped palette is measured and written up in
+    `overhead.css`'s own comment block (decision 48); this chart has **no `draw()` phase** unlike
+    its sibling, on purpose (decision 49); and the percentages are largest-remainder rounded so the
+    legend sums to exactly 100.0 (decision 51).
+
+    Verified against `api-scratch` by driving the real screen, not by reading the diff — and first
+    against a 20-case Node harness over the pure markup functions, which is where the arc geometry
+    and the rounding were pinned down before a browser was involved. Every state was rendered in
+    place and read back: no expenses, every expense at $0, one category (a closed ring, not a
+    sector — a 360° arc paints nothing), a category sitting at $0 alongside real ones, an
+    unrecognised stored category, four categories and all six. Percentages sum to exactly 100.0 in
+    every case including three equal thirds, and the legend's dollar column sums to exactly the
+    figure in the hole. **A real Add Expense through the modal** took the donut from 4 categories
+    to 5 and the hole from $24,000.00 to $24,720.00 with the Summary Card and the trend chart
+    (6 → 7 points) moving with it, no reload; deleting it again returned all three, and Pricing
+    re-checked afterwards still showed all 18 labour rates at `25.00`. Contrast measured live with
+    the alpha composited: the five ramp steps are 6.23, 7.08, 9.96, 6.41 and 10.14:1 on `--bg`,
+    legend names and amounts 15.21:1, shares and caption 6.15:1. 375px: `body.scrollWidth` 375, no
+    horizontal overflow, the legend stacks under a centred ring. Console clean apart from the app's
+    pre-existing pre-login `401` on `/api/session`.
+
+    **The figure in the donut's hole is sized to fit it** (decision 50) — that came out of
+    measuring, not looking: at a fixed 19px it was 119.3px inside a 128px hole, which looks
+    perfectly fine on the seeded data and runs out over the ring the moment somebody's overhead
+    reaches seven figures. The first fit constant was itself wrong for a second reason worth
+    knowing here — it was measured before `Delight` had loaded, so it described Georgia.
+
+**Not started:** everything else in TASKS.md, starting with the **Estimate-editor Overhead/Profit
+toggle + Minimum Job Price line**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
 (`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Category
-Breakdown donut + legend**, `frontend — Opus/high`), state its model/effort bucket out loud before
-writing code, and work top-down. The donut has real data to draw and a file to live in:
-`web/js/views/overhead-charts.js` is already the charts module (decision 37), and the donut is
-computed from `LSCData.overheadItems()` grouped by category — not from `overhead_snapshots`'
-`by_category_json`, which is the historical record rather than the live one. **It mounts between
-the expense table and the trend chart**, per the IA doc's content order ("what's costing me" above
-"is it getting better or worse"); `overhead.js`'s `markup()` has a comment marking the spot. Follow
-the trend chart's shape: a `*Markup()` that returns the block with an empty canvas div, and a
-`draw*()` that fills it after the markup is in the document, because `OverheadView.render()`
-rewrites `root.innerHTML` wholesale on every write and nothing may hold an element reference across
-that. `contentWidth()` and `bindResize()` are already there to reuse.
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently
+**Estimate-editor Overhead/Profit toggle + Minimum Job Price line**, `money math — Opus/high`),
+state its model/effort bucket out loud before writing code, and work top-down.
 
-After the donut come the last money-math tasks, the estimate-editor toggle and the cost breakdown
-modal. `minimumJobPrice()` still has no screen rendering it, which is the open item flagged below.
+That task and the cost breakdown modal after it are the last two money-math ones, and they are
+where **`minimumJobPrice()` finally gets a screen** — it is the one calc function still never
+rendered anywhere, which is the open item flagged below. Read decision 13's null-handling rule
+before writing the line: the failure mode is a view coercing `null` to `0` on its way out, and only
+a person looking at the screen catches it. The two things the task itself is most likely to get
+wrong are already named in TASKS.md — `clientPriceExGst`/`totalIncGst` must not move in either
+toggle state, and the read-only `estimate-detail.js` needs the same treatment as the editor.
+
+Both Overhead charts are done and the screen is complete; the remaining work on it is the
+**Layout check** and **Accessibility pass** tasks, which have a small backlog of measured items
+waiting for them in "Open items" below.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -573,6 +608,84 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     what the screen is actually showing. Debounced at 150ms. Verified by driving the viewport 375px
     → desktop and reading the redrawn `viewBox` (309 → 895, 1:1 both times).
 
+48. **The scoped palette is five measured colours, and the accent is knowingly the weakest of the
+    six.** The brief reserves its one exception to the single-accent rule for this chart:
+    `--accent` marks the largest category and the rest run a desaturated warm ramp. The ramp is
+    `#ce8a4f` ochre, `#a8a39b` warm grey, `#dcbe8b` pale sand, `#b0968a` rose-taupe, `#c9c3b9`
+    light grey, measured at **6.23, 7.08, 9.96, 6.41 and 10.14:1 against `--bg`** and 4.71 to
+    7.66:1 against `--surface` — every step over the brief's 4.5:1 on both. The background that
+    actually matters is `--bg`: an `.est-block` has a border and no background of its own, checked
+    by walking the tree rather than assumed. `--accent` itself is 3.71:1, which is decision 43's
+    already-flagged case and is deliberately *not* forked into a second, lighter terracotta here —
+    inventing a colour is the thing this exception exists to do once, not twice. Settle it in the
+    **Accessibility pass** with the other accent items, and settle it for both charts at once.
+    Two consequences worth keeping: the classes are **ranks, not categories** (`.oh-c1` is always
+    the biggest slice), so the accent always lands on the number that matters most and the palette
+    doesn't reshuffle when the expenses do; and each rank's colour is **one custom property read by
+    both the slice and its legend swatch**, so a swatch cannot drift out of step with the segment
+    it stands for, which is the only job a legend has. Adjacent slices carry a 2px `--bg` stroke,
+    so no slice is ever judged against the colour beside it — six mutually-3:1 colours do not exist
+    inside a restrained warm band, and separating them against the page is the answer that does.
+49. **The donut has no `draw()` phase, unlike the trend chart beside it in the same file.** The
+    previous session's handover suggested copying the trend's `*Markup()` + `draw*()` split. That
+    split exists for one reason — the trend is drawn at its container's *measured* pixel width, so
+    it cannot be built before it is in the document (decision 40). The donut is a fixed 200px
+    square with no text in the ring but the total in its hole, so there is nothing to measure and
+    nothing to defer; a second phase would only add a `draw()` that can silently no-op when its
+    canvas isn't there, in exchange for nothing. It is also why the donut is **not** in
+    `bindResize()`: a resize changes where the HTML legend wraps, not what is drawn. The file's
+    header comment says all of this out loud, because two shapes in one module otherwise reads as
+    an oversight.
+50. **The figure in the hole is sized to fit the hole, not set once at a fixed size.** At 19px,
+    "$24,000.00" measures 119.3px inside a 128px hole — four pixels of air a side, which looks
+    perfectly fine on the seeded data and runs out over the ring the moment an overhead total
+    reaches seven figures ("$1,240,000.00" is 13 characters). `centreSize()` divides a 116px budget
+    by a measured 0.628em-per-character, clamped to 11–19px, and it was checked in the browser from
+    $900 to $124,000,000 — every figure lands with at least 10px of air each side. **The first
+    constant was wrong and looked right**: 0.597, measured before `Delight` had loaded, describing
+    the Georgia fallback. Anything measuring text in this app should `await document.fonts.ready`
+    first. The size is a presentation attribute rather than CSS on purpose — a `font-size` in
+    `overhead.css` would win over it and quietly undo the fit.
+51. **Percentages are largest-remainder rounded, so the legend sums to exactly 100.0.** Rounding
+    each share on its own gives a column that adds to 99.9 or 100.1, which on the screen the rate
+    card is computed from reads as an arithmetic error rather than as rounding — and "one number,
+    one truth" is this feature's second stated principle. Verified against three equal thirds
+    (33.4/33.3/33.3) and against the live six-category state. The dollar column is not rounded at
+    all: it is `annualisedCost()` per category, and it sums to exactly the figure in the hole.
+52. **The donut slices by annualised cost, never by the `cost` column as typed.** A $1,500 monthly
+    rent and a $1,800 annual hosting bill are $18,000 and $1,800 of the year; slicing by the typed
+    figure would draw them as nearly equal, which is the one wrong answer this chart can give. It
+    runs every figure through `annualisedCost()` — the same function the Monthly Equivalent column
+    and the rate itself are built on — and the caption states the convention with those two
+    examples in it, rather than leaving the reader to infer it.
+53. **The legend is a static list, deliberately not interactive.** The brief's accessibility
+    section lists "chart legend items" among the elements needing a focus ring, which reads as an
+    expectation that they are focusable. Nothing happens when you click one — there is no filter,
+    no drill-down and no highlight in this feature — and a focusable row that does nothing costs a
+    keyboard user a stop for no return, which is worse than not having it. Checked rather than
+    asserted: the block contains **zero** tabbable nodes. If a legend interaction is ever wanted,
+    it needs a purpose first.
+54. **Three states get sentences instead of a ring, and a fourth gets a slice-less legend row.** No
+    expenses at all, and every expense recorded at `$0` (Cost accepts a deliberate zero, so a table
+    with rows and a zero total is a real state, not a bug) — a ring of zero-width slices is not a
+    chart. Separately: **one category owning everything is a closed `<circle>`, not a sector**,
+    because a 360° arc starts and ends at the same point and svg paints nothing at all for it. And
+    a category holding items that sum to `$0` alongside real ones keeps its legend row at
+    `$0.00 / 0.0%` with no arc — the legend accounts for every expense in the table above it, which
+    is what makes it the accessible form of the chart rather than a caption for it.
+55. **The legend wraps below the ring on its own, with no media query — and the brief's 900px rule
+    is left for the responsive task to settle, because measuring suggests it is wrong.** `flex-wrap`
+    plus `flex: 1 1 260px` puts the legend under a centred donut at about a 606px viewport and
+    below, which covers the phone band for free. The brief and TASKS.md both ask for the stack to
+    start **below 900px**; measured at 768px the side-by-side arrangement is comfortable (legend
+    439px, no name truncation, no overflow) and reads *better* than it does at 1280px, where the
+    legend stretches across 734px. Stacking it there would be a downgrade. New responsive rules
+    belong in `responsive.css` inside a media query by convention anyway, so this is flagged for
+    the **Layout check** task to decide with the measurements in hand rather than implemented blind
+    from the brief here. `margin-inline: auto` on `.oh-donut` is what centres the ring once it is
+    alone on its line and does nothing before that, since auto margins only take leftover free
+    space and `.oh-legend`'s flex-grow has already taken it on a wide row.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -589,6 +702,19 @@ line, and both charts are all things a person *looks at* — verify them in a br
 
 ## Open items for whoever picks this up next
 
+- **The donut's legend stacking point is an open question for the Layout check task, not a
+  settled one.** The brief asks for it below 900px; measuring says side-by-side still reads well at
+  768px and the natural wrap already happens at ~606px. See resolved decision 55 — it wants a
+  decision with the measurements in hand, not a rule applied from the brief.
+- **`--accent` at 3.71:1 is now the fill of the donut's largest slice as well as the trend line's
+  stroke.** Same colour, same background, same already-flagged gap against the brief's blanket
+  4.5:1 for chart colours (decision 43, now also decision 48). It is one decision covering both
+  charts and it belongs to the **Accessibility pass**; don't settle it for one chart alone.
+- **Measure text only after `await document.fonts.ready`.** A `getBBox()` taken before `Delight`
+  loads describes the Georgia fallback, which is narrower — it produced a fit constant this session
+  that was wrong by 5% and looked entirely correct on screen. This sits alongside the
+  `:focus-visible` note below as the second "measured it, still got a false reading" trap on this
+  feature.
 - **Nothing is blocked.** The previous session's one open item (the category/frequency enum
   spellings) was put to the user and confirmed as-is — see resolved decision 11.
 - **The calc functions have now been seen rendering in a browser — for the first time, on the
@@ -599,13 +725,14 @@ line, and both charts are all things a person *looks at* — verify them in a br
   keep checking it by eye as the Goals stat and the estimate-editor line land, since a view
   coercing `null` on its way out is the failure mode decision 13 is shaped to prevent and only a
   person looking at the screen will catch it.
-- **`api-scratch` now holds six snapshots, not the four it was seeded with.** Verifying the trend
-  chart's live-update path meant a real Add Expense and a real Delete through the modal, and each
-  appended a snapshot — so the chart's line now rises to $25,200 and comes back to $24,000. That is
-  a state the app produces itself, not a corrupted fixture, and the four `overhead_items` and the
-  goals singleton are untouched (Pricing re-checked afterwards: all 18 labour rates still `25.00`).
-  Reset it by deleting `/tmp/lsc-billing-scratch` and re-seeding if a clean four-point line is
-  wanted for the donut work.
+- **`api-scratch` now holds eight snapshots, not the four it was seeded with.** Verifying each
+  chart's live-update path meant a real Add Expense and a real Delete through the modal — the trend
+  chart's session added two and the donut's added two more — and every one of those appends a
+  snapshot. The line now rises to $25,200, returns to $24,000, rises to $24,720 and returns again.
+  That is a state the app produces itself, not a corrupted fixture, and the four `overhead_items`
+  and the goals singleton are untouched (Pricing re-checked after each: all 18 labour rates still
+  `25.00`). Reset it by deleting `/tmp/lsc-billing-scratch` and re-seeding if a clean four-point
+  line is wanted.
 - **The `api-scratch` database is seeded with the brief's worked example**, so the screens
   still to be built have something to render: four `overhead_items` totalling **$24,000/yr**
   (Adobe CC $100/mo, Accountant $750/qtr, hosting $1800/yr, studio rent $1500/mo — four different

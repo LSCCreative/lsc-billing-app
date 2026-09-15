@@ -173,9 +173,13 @@ const OverheadView = (() => {
       'expenses, so including it would overstate every rate computed from this total.</p>' +
       '<div id="overhead-error" role="alert"></div>' +
       tableMarkup() +
-      /* The Category Breakdown donut goes between the table and the trend when
-         its own task lands — the IA doc puts "what's costing me" above "is it
-         getting better or worse", the most retrospective content last. */
+      /* Between the table and the trend, per the IA doc's content order:
+         "what's costing me" above "is it getting better or worse", the most
+         retrospective content last. CATEGORIES is handed over rather than
+         copied into the charts module — these are the spellings the database
+         CHECK-constrains, and a second list of them is a second thing to keep
+         in step with the migration. */
+      OverheadCharts.donutMarkup(items(), CATEGORIES) +
       OverheadCharts.trendMarkup(snapshots())
     );
   }
