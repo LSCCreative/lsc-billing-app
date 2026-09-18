@@ -19,7 +19,8 @@ Sequence: Grill Me → Design Brief → Information Architecture → Design Toke
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
 progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form, both
 Overhead charts, the estimate-editor floor and its cost breakdown dialog are in, and the layout
-check is done; 1 task to go, the Accessibility pass)** → Design Review (after that).
+check and the accessibility pass are done — every build task in TASKS.md is checked off)** →
+**Design Review (next)**.
 
 **Completed, 2026-09-15:**
 1. Grill Me — no file output; every structural decision folded into the brief (see "Resolved
@@ -352,20 +353,53 @@ check is done; 1 task to go, the Accessibility pass)** → Design Review (after 
     `LSCData.setOverheadSnapshots` instead of the array — a test-harness mistake, gone after
     reload). **`api-scratch` now holds 12 snapshots** — see Open items.
 
-**Not started:** the **Accessibility pass** — the last build item in TASKS.md, a verification pass
-over what is already built rather than new components — then the Design review. `web/js/calc.js` is byte-identical
+18. **Accessibility pass** — one new token and five changed lines in `web/css/overhead.css`; nothing
+    else in the code changed. No backend change.
+
+    **Focus rings: all 162 interactive controls, zero gaps.** Header (6), Pricing (134), Overhead
+    (12), Goals (8), the Add Expense dialog (6), the estimate editor's toggle and `(?)`, and the
+    cost breakdown dialog — every one showed a11y.css's `2px solid var(--accent)` under a genuine
+    `:focus-visible`, and `.nav-link`s the 3px offset. **How it was measured matters** — see Open
+    items: one real Tab to put the browser in keyboard mode, then every focusable element focused
+    by script, read after the `.btn` transition settles.
+
+    **Contrast: every text style on all three Finance screens clears its bar.** A tree walk over
+    every visible text node in `#main`, alpha composited through the whole background stack, large
+    text judged at 3:1 and the rest at 4.5:1: 51 distinct styles, **0 failures, lowest 4.78:1**.
+    Chart text 6.15:1, the donut's centre figure 15.21:1.
+
+    **The one colour under the brief's bar was `--accent` in both charts, and it is fixed** — the
+    trend line, its dots and wash, and the donut's largest slice now use `--oh-chart-accent`
+    (`#c26b5d`), **4.70:1 on `--bg`** against `--accent`'s 3.71:1. Every chart colour is now ≥4.70:1;
+    the ramp is unchanged at 6.23–10.14:1; swatches still match their slices exactly. See decision
+    72 — this was the user's call.
+
+    **Pricing's computed rates confirmed:** all 18 are `readonly` + `aria-readonly="true"`, all
+    `aria-describedby="pricing-rate-note"`, which exists and holds the brief's copy, and each one's
+    accessible name ends "calculated automatically". **Both new dialogs confirmed:** `role="dialog"`,
+    `aria-modal="true"`, a resolving `aria-labelledby`, Escape closes, focus returns to the trigger
+    (the cost breakdown's trap was verified in depth in entry 16; the Add Expense dialog's in
+    entry 11, re-checked here). **The toggle** has a `<label for>` naming it and an
+    `aria-describedby` hint saying it is advisory.
+
+    **`npm test` 91/91** — on the third attempt. The first two hung with no code change behind
+    them and the third passed in 13s untouched; see Open items.
+
+**Not started:** the **Design review** — `/design-review` against DESIGN_BRIEF.md. Every build and
+verification task before it is done. `web/js/calc.js` is byte-identical
 to the server money model and must be re-copied (`cp server/src/calc.js web/js/calc.js`) after
 *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently
-**Accessibility pass**, `frontend — Opus/high`), state its model/effort bucket out loud before
-writing code, and work top-down.
+**To resume:** open [TASKS.md](TASKS.md) — the only unchecked item left is the **Design review**.
+TASKS.md gives it no model/effort tag; it is a critique of the finished UI against the brief, so the
+nearest CLAUDE.md bucket is the UI one (`Opus/high`) — say so out loud before starting, per the
+handover rule.
 
-**The Accessibility pass has a backlog waiting for it in "Open items" below** — read those first;
-they are most of the work. It owns a standing decision about `--accent`'s 3.71:1 that spans both
-charts and should be settled once, not per chart, and the missing `aria-live` on the live-recomputing
-figures. **Read the two browser-harness traps in Open items before concluding any keyboard behaviour
-is broken** — real key events reach the pane with an empty `event.key`.
+**The design review has a short list of items deliberately left for it** in "Open items" below:
+the live-recomputing figures carry no `aria-live` (decision 74), the two names for the shared tax
+field, and the preload failure copy that still names only the rate card. Two things it should
+**not** reopen without asking the user: the chart-only terracotta (decision 72) and the accent
+link-hover idiom (decision 73) — both were put to them explicitly on 2026-09-18.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -916,6 +950,34 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     list and the underline question does not arise; the sub-tab row is the only horizontal row of
     them left in that band. Changing the shared class would have touched the header for no gain.
 
+72. **Both charts draw their terracotta from a chart-only tint, `--oh-chart-accent` (`#c26b5d`),
+    not from `--accent`. Put to the user on 2026-09-18 and chosen by them** over the alternative
+    two earlier sessions had leaned towards (keep `--accent` and read the brief's 4.5:1 as a text
+    threshold, since WCAG 1.4.11's bar for graphics is 3:1). The brief's line is "Chart colours
+    (including the scoped donut palette) … must hit ≥4.5:1", and the user preferred meeting it as
+    written. `--accent` mixed 12% toward white keeps its hue; `#c06759` (11%) is the lightest that
+    clears at all but sits on 4.50 exactly, so this is one step past it for margin. It measures
+    3.55:1 on `--surface`, which is moot — neither chart sits on `--surface`. The brand `--accent`
+    is untouched everywhere else, including the active tab underline and focus rings. Cost worth
+    knowing: the largest slice is now 1.33:1 from the ochre beside it (was 1.73:1), which the 2px
+    `--bg` separators and the legend carry, per decision 48. **This supersedes decisions 43 and
+    48's "flagged, not changed" status on the accent.**
+73. **The accent link-hover idiom stays, including on the two Finance links. User's call,
+    2026-09-18.** `.pricing-rate-note-link` and `.goals-link` go `--accent` (3.71:1) on
+    `:hover`/`:focus-visible`, as `.client-history-link` and `.toast-link` do site-wide. The resting
+    state is `--text` with a permanent underline (decision 21), the underline stays in every state,
+    and keyboard focus also gets the ring, so the state is never carried by colour alone. Offered
+    and declined: fixing the Finance links only (would diverge from the rest of the site) or
+    site-wide (out of this feature's scope). **This closes decision 21's "still open" note.**
+74. **No `aria-live` on the live-recomputing figures, for now. User's call, 2026-09-18.** Goals'
+    Target Annual Revenue, the editor's summary bar and the Minimum Job Price line all repaint on
+    every keystroke and announce nothing. The brief does not require announcements and sets "the
+    bar already built site-wide" as the standard, which this matches. Offered and deferred: a
+    debounced (~1s), visually hidden `aria-live="polite"` region announcing the headline figure
+    once typing pauses — the right shape if it is ever wanted, since a plain `aria-live` on a
+    figure that changes per keystroke reads out every intermediate value. **Left for the design
+    review** to raise again, not closed.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -936,8 +998,8 @@ line, and both charts are all things a person *looks at* — verify them in a br
   settled one.~~ The brief asks for it below 900px; measuring says side-by-side still reads well at
   768px and the natural wrap already happens at ~606px. See resolved decision 55 — it wants a
   decision with the measurements in hand, not a rule applied from the brief.
-- **`--accent` at 3.71:1 is now the fill of the donut's largest slice as well as the trend line's
-  stroke.** Same colour, same background, same already-flagged gap against the brief's blanket
+- **CLOSED 2026-09-18 by the Accessibility pass — both charts now use `--oh-chart-accent` at 4.70:1; see decision 72.** ~~`--accent` at 3.71:1 is now the fill of the donut's largest slice as well as the trend line's
+  stroke.~~ Same colour, same background, same already-flagged gap against the brief's blanket
   4.5:1 for chart colours (decision 43, now also decision 48). It is one decision covering both
   charts and it belongs to the **Accessibility pass**; don't settle it for one chart alone.
 - **Measure text only after `await document.fonts.ready`.** A `getBBox()` taken before `Delight`
@@ -945,6 +1007,29 @@ line, and both charts are all things a person *looks at* — verify them in a br
   that was wrong by 5% and looked entirely correct on screen. This sits alongside the
   `:focus-visible` note below as the second "measured it, still got a false reading" trap on this
   feature.
+- **The `npm test` gate hung twice on 2026-09-18 with no code change behind it.** Three runs earlier
+  the same session passed 91/91 in ~11s; then `test/test-api.js` and `test/test-pdf.js` sat idle at
+  0% CPU indefinitely, and a rerun did the same. No `server/` file changed in between — the
+  accessibility pass touched only `web/css/overhead.css`. The repo lives on a Google Drive-backed
+  filesystem, and the `api-scratch` preview server was running against `/tmp` at the time; either
+  could plausibly be involved, neither was proved. **The third run, with nothing changed, passed
+  91/91 in 13s** — so it is transient, not a broken test. If it happens: `pkill -f "node --test"`
+  and rerun (backgrounded, so a hang does not eat the tool timeout) before suspecting the code.
+- **Three focus-ring measurement traps from the accessibility pass**, each producing a result that
+  looks like a real bug:
+  1. **A `focusin` recorder that reads each element after a timeout reports `outline: none` on
+     everything** when real Tabs are sent with `repeat`: the presses outrun the reads, so each
+     element is measured after focus has already left it. Only the last stop reads correctly.
+  2. **`.btn` has `transition: .15s` on all properties, so the ring animates in.** A read 15ms
+     after focus reports colours like `rgba(227, 203, 195, 0.66)` — the outline mid-fade from
+     currentColor to accent. Wait ~220ms and every one settles to `rgb(184, 84, 68)`.
+  3. **`requestAnimationFrame` never fires while the Browser pane is hidden** (already noted
+     below) — a sweep awaiting two rAFs per element hung the tool for 45s. Use timers.
+  **The method that works:** one *real* Tab (the harness's key events carry an empty `event.key`,
+  but focus movement is genuine and flips the browser into keyboard mode), then focus every
+  element by script — Chromium keeps `:focus-visible` on scripted focus while the last real input
+  was a keypress — and assert `el.matches(':focus-visible')` on each, so a stop that silently lost
+  keyboard mode is caught rather than read as a missing ring.
 - **A contrast helper that treats the first non-transparent ancestor background as opaque reports
   a false catastrophe.** The summary bar's "Total (inc GST)" cell is `rgba(184,84,68,0.08)` and its
   text is `--accent`; a helper that stops at that first background and ignores its alpha composites
@@ -1062,7 +1147,7 @@ line, and both charts are all things a person *looks at* — verify them in a br
   longest field hint runs four lines.~~ Legible and not overflowing — measured at 1400/900/768/375px
   — but tight enough to be worth a look during the **Layout check at 1099px / 900px / 768px** task,
   which is where a new `max-width` rule would belong anyway.
-- **The live Target Annual Revenue figure carries no `aria-live`**, so a screen-reader user typing
+- **DEFERRED TO THE DESIGN REVIEW by the user on 2026-09-18 — see decision 74.** The live Target Annual Revenue figure carries no `aria-live`, so a screen-reader user typing
   into the fields is not told it changed. This matches the estimate editor's `.summary-bar`, which
   recomputes the same way on every keystroke and announces nothing either — it is a site-wide gap
   rather than something this screen introduced, so it is flagged for the **Accessibility pass**
@@ -1089,7 +1174,7 @@ line, and both charts are all things a person *looks at* — verify them in a br
   head line "Up $22,800.00 since 15 Sep 2026" still fits beside "OVERHEAD TREND" in an
   `.est-block-head` at 768px, and whether 200px of chart height is still enough once the donut sits
   above it.
-- **The trend line's `--accent` measures 3.71:1 on `--bg`** — over WCAG's 3:1 bar for a graphical
+- **CLOSED 2026-09-18 — see decision 72.** ~~The trend line's `--accent` measures 3.71:1 on `--bg`~~ — over WCAG's 3:1 bar for a graphical
   object, under the brief's blanket 4.5:1 for chart colours. See resolved decision 43 for why it
   was flagged rather than changed; it belongs in the **Accessibility pass** with the accent items
   decision 21 already queued there, and it is the same question the donut's palette will raise.

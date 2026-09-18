@@ -134,6 +134,28 @@
   margin-top: 12px;
 }
 
+/* ── The chart accent ───────────────────────────────────────────────────────
+   Both charts draw their terracotta from this one token, not from --accent.
+   --accent is 3.71:1 on --bg: over WCAG 1.4.11's 3:1 for graphics, under the
+   brief's 4.5:1 for "chart colours". Put to the user in the accessibility pass
+   (HANDOVER.md decision 72) and settled as a chart-only tint rather than
+   reading the brief's figure as text-only: --accent mixed 12% toward white,
+   which keeps its hue and measures **4.70:1 on --bg**. #c06759 is the lightest
+   that clears 4.5:1 at all and sits on 4.50 exactly — no margin for a
+   rounding difference between browsers — so this is one step past it.
+
+   Against --surface it is 3.55:1, and that is deliberate rather than missed:
+   neither chart ever sits on --surface (an .est-block has a border and no
+   background, checked by walking the tree), and reaching 4.5:1 there too would
+   take the colour most of the way to pink. --accent everywhere else in the app
+   is untouched; this is a chart colour, not a second brand accent.
+
+   One token for the line, its dots, its wash and the donut's largest slice, so
+   the two charts cannot drift apart on which terracotta they mean. */
+:root {
+  --oh-chart-accent: #c26b5d;
+}
+
 /* ── The charts ─────────────────────────────────────────────────────────────
    The trend chart (and, next, the donut) sit in an .est-block like the table
    above them, so the screen reads as three framed blocks rather than a table
@@ -176,7 +198,7 @@
 
 .oh-chart-line {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--oh-chart-accent);
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -185,7 +207,7 @@
 /* A wash, not a block of colour: the fill is there to give the line a floor to
    sit on, and anything heavier competes with the table above it for the eye. */
 .oh-chart-area {
-  fill: var(--accent);
+  fill: var(--oh-chart-accent);
   fill-opacity: 0.09;
   stroke: none;
 }
@@ -194,11 +216,11 @@
    one is filled — it is the total the rate card is computed from right now. */
 .oh-chart-dot {
   fill: var(--bg);
-  stroke: var(--accent);
+  stroke: var(--oh-chart-accent);
   stroke-width: 2;
 }
 .oh-chart-dot.is-now {
-  fill: var(--accent);
+  fill: var(--oh-chart-accent);
 }
 /* The transparent hover target over each point. Nothing to draw; the cursor is
    the only hint that there is something to hover. */
@@ -240,16 +262,17 @@
    actually sits on — it has a border and no background of its own) the five
    ramp steps are 6.23, 7.08, 9.96, 6.41 and 10.14:1, and against --surface
    4.71, 5.35, 7.53, 4.84 and 7.66:1 — every step clears the brief's 4.5:1 on
-   both. --accent itself is 3.71:1 on --bg: that is the app's existing accent at
-   the app's existing background, already flagged in HANDOVER.md decision 43 for
-   the accessibility pass rather than forked into a second, lighter terracotta
-   here. Hitting 4.5:1 on the largest slice would mean inventing a colour, which
-   is the exact thing this exception is scoped to avoid doing twice.
+   both. The largest slice is --oh-chart-accent (see its own block above), 4.70:1
+   on --bg: the brand --accent it replaced was 3.71:1, and the accessibility pass
+   settled that with the user as a chart-only tint (HANDOVER.md decision 72).
+   It sits closer to the ochre beside it than --accent did (1.33:1 between them
+   against 1.73:1), which is why the 2px --bg separators below matter: rank is
+   carried by the separators, the hue shift and the legend, never by luminance.
 
    Adjacent slices are separated by a 2px --bg stroke, so no slice is ever
    judged against the colour beside it — each one is read against the page. */
 .oh-donut-wrap {
-  --oh-c1: var(--accent);
+  --oh-c1: var(--oh-chart-accent);
   --oh-c2: #ce8a4f;
   --oh-c3: #a8a39b;
   --oh-c4: #dcbe8b;
