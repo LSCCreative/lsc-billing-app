@@ -18,8 +18,9 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
 progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form, both
-Overhead charts and the estimate-editor floor are in, 3 UI tasks to go)** → Design Review
-(not applicable yet).
+Overhead charts, the estimate-editor floor and its cost breakdown dialog are in; 2 tasks to go,
+both of them verification passes rather than new components)** → Design Review (not applicable
+yet).
 
 **Completed, 2026-09-15:**
 1. Grill Me — no file output; every structural decision folded into the brief (see "Resolved
@@ -266,22 +267,70 @@ Overhead charts and the estimate-editor floor are in, 3 UI tasks to go)** → De
     and a `location.reload()` re-served `estimates.css` from cache so the new rules were silently
     absent while the file on disk and on the server both had them.
 
-**Not started:** everything else in TASKS.md, starting with the **Cost breakdown modal**. `web/js/calc.js` is byte-identical to the server money model and must be re-copied
-(`cp server/src/calc.js web/js/calc.js`) after *any* edit to `calc.js`.
+16. **Cost breakdown modal** — ~140 new lines in `web/js/views/estimate-editor.js`, ~120 in
+    `web/css/estimates.css`, one overlay div in `web/index.html`, and one rule in
+    `web/css/responsive.css`. A `(?)` beside the Minimum Job Price figure opening a read-only
+    `.modal-box` with the three-line math. No new files. No backend change: `npm test` is unchanged
+    at **91/91** and `calc.js` was not touched, so it did not need re-copying.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Cost
-breakdown modal**, `money math — Opus/high`), state its model/effort bucket out loud before writing
-code, and work top-down.
+    **Three things to read before touching it:** the dialog computes nothing of its own and is
+    handed the figures the line just painted (decision 63); the margin row is a *remainder*, not
+    its own multiplication, so the printed column always adds to the printed total (decision 64);
+    and the total is `--text`, deliberately not `--accent` (decision 65).
 
-The modal has a line to hang off already: `minimumLineMarkup()` in `estimate-editor.js` builds
-`#mjp-line` as label / value / note, and the `(?)` trigger goes next to the value. It was
-deliberately **not** added with the line — TASKS.md scopes it to its own task, so the line shipped
-without it. Read decision 57 before styling the trigger, and reuse `settings.js`'s focus trap via
-`LSCModal.trapTab` rather than rebuilding it, the same way `overhead.js`'s Add/Edit Expense modal
-does — that is the closest working precedent and it is two screens old now.
+    Verified against `api-scratch` by driving the real form, not by reading the diff. **The screen
+    reproduces the calc suite's worked example exactly**: a 14-hour job with $1,560 of crew against
+    the seeded $25/hr rate and 25% margin gives $1,560.00 + $350.00 + $477.50 = **$2,387.50**,
+    entered through the real row pickers. The dialog's total always equals the line it hangs off.
+    Rounding was pinned down first in a **2,240-case Node sweep** over the exact expression
+    `setBreakdown()` uses — 0 column-sum mismatches, worst margin drift $0.01 at a $2.2M floor —
+    and then the half-cent case was forced live in the browser (17 hrs/wk → $29.41/hr, 7.5 hours →
+    an unrounded $220.575 allocation): the column still summed to the cent with zero drift.
 
-After the modal, everything left is the **Layout check** and **Accessibility pass**, which have a
-backlog of already-measured items waiting for them in "Open items" below.
+    Focus trap via `LSCModal.trapTab`, not a third copy: wraps both directions on a single-control
+    dialog, and pulls focus back when it escapes to the form behind. All three exits (Escape, the
+    Close button, the backdrop) close it and return focus to the `(?)`; a click that lands inside
+    the box does not. Listeners are removed on close — a later Escape does nothing. **The invariant
+    holds**: all eight headline figures are byte-identical across opening, closing and a full
+    toggle cycle, and using the dialog leaves the form clean (0 prompts on the way out, while a
+    real edit still prompts once). Empty states forced both ways by stubbing goals to `{}` and
+    overhead to `[]`: em dash, trigger `hidden` and out of the focusable set, and `openBreakdown()`
+    refuses even when the trigger is forced visible, so no dialog of `undefined`s exists. Toggling
+    off takes the trigger out of layout with the line.
+
+    Contrast measured live with the alpha composited: dialog title, row labels and row values
+    **11.49:1**, the total **11.49:1**, row notes and the caption **5.2:1** on `--surface`, the
+    `(?)` glyph **6.15:1** on `--bg`. The ring is `--border` at 1.97:1, which is exactly what every
+    `.btn` in the app already uses for its boundary with `--muted` text on it — the app's existing
+    control convention, not a new gap. Focus rings confirmed with **real** keyboard input:
+    a11y.css's `2px solid var(--accent)` @2px offset. 375px: `body.scrollWidth` 375, no horizontal
+    overflow, the box fits at 9–366px, labels never collide with values, and the hit target is
+    44×44 while the ring stays 20px. Optical centres of the figure and the `(?)` agree to 0.0px.
+    Console clean apart from the app's pre-existing pre-login `401` on `/api/session`; every API
+    call after the last reload returned 200.
+
+    **One measurement bug of my own is worth knowing about** — see "Open items": a contrast helper
+    that finds the first non-transparent ancestor background and treats it as opaque reads the
+    summary bar's accent total as **1:1**, because that cell's background is `rgba(184,84,68,0.08)`
+    and the accent text composited against it unchanged. It looks exactly like a catastrophic
+    finding in the existing app. Composite the whole stack down to `--bg` instead; the real figure
+    there is 3.46:1.
+
+**Not started:** the **Layout check at 1099px / 900px / 768px** and the **Accessibility pass** —
+the last two items in TASKS.md, both verification passes over what is already built rather than new
+components. Every component the feature called for now exists. `web/js/calc.js` is byte-identical
+to the server money model and must be re-copied (`cp server/src/calc.js web/js/calc.js`) after
+*any* edit to `calc.js`.
+
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Layout
+check at 1099px / 900px / 768px**, `frontend — Opus/high`), state its model/effort bucket out loud
+before writing code, and work top-down.
+
+**Both remaining tasks have a backlog waiting for them in "Open items" below** — measured findings
+that were deliberately noted rather than tuned in place, so the whole Finance area gets adjusted in
+one pass instead of each screen twice. Read those before starting either one; between them they are
+most of the work. The Accessibility pass in particular owns a standing decision about `--accent`'s
+3.71:1 that spans both charts and should be settled once, not per chart.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -770,6 +819,44 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     checked directly rather than reasoned about and **does not skew it**: `computeTotals` derives
     `expenseTotal` before the GST split, so it is the same number under either setting.
 
+63. **The dialog is handed the figures the line just painted, and computes nothing of its own.**
+    `setBreakdown()` runs inside `paintMinimum()`, storing what it just put on screen; the modal
+    renders that. Recomputing on open would be a second route to the same number and so a second
+    chance to disagree with the line the `(?)` is attached to — the one thing a "here is how that
+    was worked out" panel cannot afford to do. It also means the dialog cannot drift while open,
+    since nothing behind a trapped modal can change the form.
+64. **The Profit Margin row is a remainder, not its own multiplication.** The dialog's whole claim
+    is that its three rows add to the figure under them, so the arithmetic a reader can do on it has
+    to come out. Direct Job Costs arrives already rounded by `computeTotals`, but the overhead
+    allocation is `hours × rate` and lands on sub-cent values routinely (7.5 × $29.41 = $220.575);
+    rounding all three independently makes the printed column miss the printed total by a cent often
+    enough to notice. So the two inputs are shown rounded and the margin is what is left of the
+    floor after them. **Measured, not assumed**: a 2,240-case sweep over the exact expression the
+    view uses found 0 column-sum mismatches and a worst-case drift from the true margin figure of
+    $0.01, at a $2.2M floor. This is the same trade decision 51 made for the donut's
+    largest-remainder percentages — both prefer the visible sum.
+65. **The total is `--text`, not `--accent`, and the first draft was wrong about this.** Accent is
+    spoken for by "Total (inc GST)", the figure a client actually pays; `estimates.css`'s own block
+    comment above `.mjp-toggle-row` already settled that the advisory line does not wear it, and a
+    dialog explaining that line should not out-dress it. The draft that did also measured **2.8:1**
+    on `--surface`, under WCAG's 3:1 for large text, where `--text` is 11.49:1 — so the same change
+    fixed a contrast miss and a hierarchy mistake. The rule above the figure and its 19px are what
+    mark it as the sum.
+66. **The `(?)` is hidden whenever the floor is `null`, rather than opening a dialog of em dashes.**
+    The IA doc's flow says the unset state is a plain sentence, and there is no breakdown to show of
+    a figure that could not be computed. `openBreakdown()` refuses independently of the trigger's
+    visibility, so forcing the button visible still cannot produce a dialog of `undefined`s. It also
+    leaves the focusable set, so a keyboard user never lands on a trigger for a line that is not
+    there.
+67. **The `(?)`'s touch target grows without the ring growing.** A 20px ring is the point — it
+    annotates a number, and a 44px one beside a 17px figure outweighs what it points at. So
+    `responsive.css` gives it an absolutely-positioned 44×44 `::after` inside the existing
+    touch-target block rather than a `min-height`, which adds no layout box and leaves the line's
+    height alone. This is the one responsive rule that was written now instead of being left to the
+    **Layout check** task, because it closes a gap this task would otherwise have opened; it
+    overhangs the figure to its left by ~4px, which costs nothing since that is a span, not a
+    control.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -799,6 +886,25 @@ line, and both charts are all things a person *looks at* — verify them in a br
   that was wrong by 5% and looked entirely correct on screen. This sits alongside the
   `:focus-visible` note below as the second "measured it, still got a false reading" trap on this
   feature.
+- **A contrast helper that treats the first non-transparent ancestor background as opaque reports
+  a false catastrophe.** The summary bar's "Total (inc GST)" cell is `rgba(184,84,68,0.08)` and its
+  text is `--accent`; a helper that stops at that first background and ignores its alpha composites
+  accent over accent and reports **1:1** — which reads as the worst contrast bug in the app, in code
+  nobody touched this session. Composite the whole ancestor stack down to `--bg`; the real figure is
+  **3.46:1**, comfortably over the 3:1 bar that 19px/700 large text has to clear. This is the third
+  "measured it, still got a false reading" trap on this feature, alongside the `:focus-visible`
+  recalc and the `document.fonts.ready` one — and the only one that incriminates existing code, so
+  it is the one most likely to send the next session chasing a ghost.
+- **Real key events reach the Browser pane with an empty `event.key`.** Pressing Return on a focused
+  `<button>` through the pane's `computer` tool delivers a keydown the page sees as `key: ""`, so the
+  browser never synthesizes the button's click and any handler reading `event.key` (every Escape
+  handler in this app) never fires. It looks exactly like a broken control: this session's first
+  reading was "Enter does not open the dialog", which was the harness, not the app. **Focus movement
+  from a real Tab is genuine**, and it is the only way to get `:focus-visible` to resolve, so the
+  working split is: real Tab for focus and focus-ring checks, dispatched `KeyboardEvent`s of the
+  right shape for Escape/Enter behaviour, dispatched `.click()` for activation. The **Accessibility
+  pass** is going to measure exactly this on a dozen elements, so read this before concluding that
+  any keyboard interaction is broken.
 - **Nothing is blocked.**
 - **The app stopped both preview servers twice mid-verification**, ~3 minutes into each run, with a
   clean `SIGTERM received, shutting down.` in the log — not a crash, and nothing to do with the
@@ -905,7 +1011,13 @@ line, and both charts are all things a person *looks at* — verify them in a br
 - `server/src/calc.js` is 428 lines, `server/src/db.js` ~290, and there are now two new route files
   (`overhead.js` ~95 lines, `goals.js` ~45 lines) plus ~90 new lines in `test-api.js`. On the
   frontend `web/js/views/pricing.js` is now ~690 lines, `web/js/views/overhead.js` ~490,
-  `web/js/views/goals.js` ~506 and `web/js/views/overhead-charts.js` ~300. None need splitting yet
+  `web/js/views/goals.js` ~506, `web/js/views/overhead-charts.js` ~300 and
+  **`web/js/views/estimate-editor.js` ~1138, which is now the largest file in the app** — the
+  cost breakdown dialog added ~140 to a file that was already the biggest. It is still one screen's
+  worth of one screen's concerns, and the dialog is genuinely part of the editor's summary block, so
+  it was not split; but it is the file to look at first if anything here grows again, and decision
+  37's reasoning about splitting the charts out of `overhead.js` *before* they made it unmanageable
+  is the precedent for how to do it. None need splitting yet
   — see resolved decision 12 for why `calc.js` specifically should stay one file, and decision 37
   for why the charts were split out of `overhead.js` *before* they made it one of these — but check
   before assuming that still holds after the next big addition.

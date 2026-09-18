@@ -20,7 +20,9 @@
  * Target Profit Margin, it is not persisted with the estimate, and neither it
  * nor its toggle is allowed to move clientPriceExGst or totalIncGst by a cent
  * in either position. Everything it needs is read off the totals computeTotals
- * already returned — it never recomputes a headline figure of its own.
+ * already returned — it never recomputes a headline figure of its own. The (?)
+ * beside it opens the cost breakdown dialog, which shows the three lines that
+ * make up that figure and likewise computes nothing of its own.
  *
  * CLIENT FIELDS
  * The estimate carries a client *snapshot* — {businessName, contactName, email,
@@ -54,6 +56,14 @@ const EstimateEditor = (() => {
      payload(), so they are never saved and never make the form look dirty. */
   let overheadRate = null;
   let profitMarginPct = null;
+
+  /* The cost breakdown modal. `breakdown` is the last set of figures the
+     Minimum Job Price line painted — see setBreakdown() for why the modal reads
+     that rather than working them out again — and is null whenever the floor
+     could not be computed, which is also when the (?) is hidden. */
+  let breakdownOverlay = null;
+  let breakdown = null;
+  let breakdownOpener = null; // the control that opened it, to hand focus back to
 
   const rid = () => 'r' + ++rowCounter;
   const $ = (id) => root.querySelector('#' + id);
@@ -340,11 +350,25 @@ const EstimateEditor = (() => {
      visibility rule would not. estimates.css carries the [hidden] display rule
      it needs, because a display:flex on the class would otherwise beat the
      browser's own [hidden] default. */
+  /* The figure and its (?) are wrapped together rather than sitting as two more
+     children of .mjp-line, because the row's 12px column gap is the spacing
+     between label, figure and note — and the trigger belongs to the figure, not
+     beside it at the same distance. The wrapper carries its own 8px instead.
+
+     The trigger starts hidden and paintMinimum() reveals it only for a real
+     floor: there is no breakdown to show of a figure that could not be
+     computed, and a (?) that opens a modal of em dashes is worse than no (?).
+     Per the IA doc's flow, the unset state stays a plain sentence. */
   function minimumLineMarkup() {
     return (
       '<div class="mjp-line" id="mjp-line">' +
       '<span class="mjp-line-label">Minimum Job Price</span>' +
+      '<span class="mjp-line-fig">' +
       '<span class="mjp-line-value" id="s-min-price">—</span>' +
+      '<button type="button" class="mjp-help" id="mjp-help" hidden ' +
+      'aria-haspopup="dialog" aria-label="How the Minimum Job Price is calculated">' +
+      '<span aria-hidden="true">?</span></button>' +
+      '</span>' +
       '<span class="mjp-line-note" id="s-min-note"></span>' +
       '</div>'
     );
@@ -601,6 +625,7 @@ const EstimateEditor = (() => {
       overheadRate,
       profitMarginPct
     );
+    setBreakdown(totals, floor);
 
     /* null is "cannot be computed", and it has to survive the trip to the
        screen as an em dash and a prompt — not as $0.00, which reads as a real
@@ -621,6 +646,139 @@ const EstimateEditor = (() => {
         (totals.totalHours === 1 ? ' hour' : ' hours') + ' and a ' + profitMarginPct + '% margin'
     );
     line.classList.remove('mjp-unset');
+  }
+
+  // ── The cost breakdown modal ──────────────────────────────────────────────
+
+  /* WHY THE MODAL DOESN'T COMPUTE ANYTHING OF ITS OWN
+     It is handed the figures paintMinimum() just put on the screen, at the
+     moment it put them there. Recomputing them on open would be a second route
+     to the same number and therefore a second chance to disagree with the line
+     the (?) is attached to — the one thing a "here is how that was worked out"
+     panel cannot afford to do.
+
+     WHY THE MARGIN LINE IS A REMAINDER RATHER THAN ITS OWN MULTIPLICATION
+     The modal's whole claim is that its three rows add up to the figure under
+     them, so the arithmetic a reader can do on it has to come out. Direct Job
+     Costs arrives already rounded by computeTotals, but the overhead allocation
+     is hours x rate and lands on sub-cent values routinely (7.5 x $25.33 =
+     $189.975). Rounding all three independently then makes the printed column
+     miss the printed total by a cent often enough to notice.
+
+     So the two inputs are shown rounded and the margin is what is left of the
+     floor after them. It is never more than a cent from margin% of the two
+     lines above, and the column is always exactly right — the same trade the
+     donut's largest-remainder percentages make (HANDOVER.md decision 51) to
+     keep its legend summing to 100.0. Both prefer the visible sum. */
+  function setBreakdown(totals, floor) {
+    const help = $('mjp-help');
+
+    if (floor === null) {
+      breakdown = null;
+      if (help) help.hidden = true;
+      return;
+    }
+
+    const direct = LSCCalc.round2(totals.expenseTotal);
+    const alloc = LSCCalc.round2(totals.totalHours * overheadRate);
+    breakdown = {
+      direct,
+      alloc,
+      profit: LSCCalc.round2(floor - direct - alloc),
+      floor,
+      hours: totals.totalHours,
+      rate: overheadRate,
+      margin: profitMarginPct,
+    };
+    if (help) help.hidden = false;
+  }
+
+  const $b = (id) => breakdownOverlay.querySelector('#' + id);
+
+  function breakdownRow(label, value, note) {
+    return (
+      '<div class="cb-row"><div class="cb-row-head">' +
+      '<span class="cb-row-label">' + label + '</span>' +
+      '<span class="cb-row-value">' + fmt(value) + '</span></div>' +
+      '<p class="cb-row-note">' + note + '</p></div>'
+    );
+  }
+
+  function breakdownMarkup() {
+    const b = breakdown;
+    const hours = b.hours + (b.hours === 1 ? ' hour' : ' hours');
+    const margin = esc(b.margin);
+    return (
+      '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="cb-title">' +
+      '<div class="modal-title" id="cb-title">How this is calculated</div>' +
+      '<div class="cb-rows">' +
+      breakdownRow(
+        'Direct Job Costs',
+        b.direct,
+        'Expenses as billed — travel, crew and equipment. Labour is not here: it is what the ' +
+          'floor is testing, not an input to it.'
+      ) +
+      breakdownRow(
+        'Overhead Allocation',
+        b.alloc,
+        hours + ' × ' + fmt(b.rate) + '/hr — this job’s share of what the business costs to run.'
+      ) +
+      breakdownRow('Profit Margin', b.profit, margin + '% on the two lines above.') +
+      '</div>' +
+      '<div class="cb-total"><span class="cb-total-label">Minimum Job Price</span>' +
+      '<span class="cb-total-value">' + fmt(b.floor) + '</span></div>' +
+      /* The one place in the app that names the Overhead Rate as a figure of its
+         own, per the IA doc's naming table — everywhere else it is just "Rate". */
+      '<p class="cb-note">The Overhead Rate of ' + fmt(b.rate) + '/hr and the ' + margin +
+      '% margin come from your Overhead and Goals settings. Advisory only — nothing here ' +
+      'changes what the client is billed.</p>' +
+      '<div class="modal-actions">' +
+      '<button type="button" class="btn btn-accent" id="cb-close">Close</button></div></div>'
+    );
+  }
+
+  function onBreakdownKeydown(event) {
+    // Hidden behind the login screen after a lost session: there is nothing on
+    // screen to trap focus into, and Escape there belongs to that screen.
+    if (breakdownOverlay.closest('[hidden]')) return;
+    if (event.key === 'Escape') return closeBreakdown();
+    LSCModal.trapTab(breakdownOverlay, event);
+  }
+
+  function onBreakdownClick(event) {
+    // A click that started inside the box and ended on the backdrop doesn't count.
+    if (event.target === breakdownOverlay) closeBreakdown();
+  }
+
+  /* No LSCUnsaved watcher, unlike Overhead's Add/Edit dialog: there is nothing
+     to type in here and nothing to discard, so closing it can never lose work
+     and must not ask as though it could. */
+  function closeBreakdown() {
+    if (!breakdownOverlay || !breakdownOverlay.classList.contains('open')) return;
+    breakdownOverlay.classList.remove('open');
+    breakdownOverlay.innerHTML = '';
+    document.removeEventListener('keydown', onBreakdownKeydown);
+    breakdownOverlay.removeEventListener('click', onBreakdownClick);
+    // Focus would otherwise land on <body>, leaving a keyboard user to tab back
+    // down the whole form to get where they were.
+    if (breakdownOpener && breakdownOpener.isConnected) breakdownOpener.focus();
+    breakdownOpener = null;
+  }
+
+  function openBreakdown(openedBy) {
+    // Defensive: the trigger is hidden whenever this is null, so reaching here
+    // without one would mean rendering a dialog of undefineds.
+    if (!breakdownOverlay || !breakdown) return;
+    breakdownOpener = openedBy || null;
+
+    breakdownOverlay.innerHTML = breakdownMarkup();
+    breakdownOverlay.classList.add('open');
+    document.addEventListener('keydown', onBreakdownKeydown);
+    breakdownOverlay.addEventListener('click', onBreakdownClick);
+    $b('cb-close').addEventListener('click', closeBreakdown);
+
+    // The only control in the box, so it is both ends of the focus trap.
+    $b('cb-close').focus();
   }
 
   // ── Saving ────────────────────────────────────────────────────────────────
@@ -886,6 +1044,8 @@ const EstimateEditor = (() => {
        shortcut that skipped the comparison. */
     $('f-include-overhead').addEventListener('change', recalc);
 
+    $('mjp-help').addEventListener('click', (event) => openBreakdown(event.currentTarget));
+
     sections.forEach((section) => {
       const add = $('add-' + section.id);
       if (!add) return; // archived categories have no picker
@@ -918,6 +1078,13 @@ const EstimateEditor = (() => {
     existing = estimate || null;
     rowCounter = 0;
     saving = false;
+    breakdownOverlay = document.getElementById('modal-cost-breakdown');
+    /* The overlay lives outside `root`, so a re-mount replaces the form under
+       an open dialog instead of taking it with it. Nothing in the app can
+       currently navigate past the trap to get here, but the dialog would
+       outlive the figures it describes if anything ever could. */
+    closeBreakdown();
+    breakdown = null;
     link =
       estimate && estimate.clientId
         ? { id: estimate.clientId, name: (estimate.client && estimate.client.businessName) || '' }

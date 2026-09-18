@@ -240,3 +240,135 @@
 .mjp-unset .mjp-line-value {
   color: var(--muted);
 }
+
+/* ── The (?) and the cost breakdown dialog ──────────────────────────────────
+   The figure and its trigger are one unit inside .mjp-line's 12px row gap, so
+   they get their own tighter gap rather than sitting the same distance apart as
+   the label and the note do. */
+.mjp-line-fig {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* A 20px ring, sized off the 17px figure beside it rather than off nothing:
+   big enough to aim at with a mouse, small enough that it reads as an
+   annotation on the number instead of a second control competing with it.
+   Muted at rest and --text on hover, which is the same quiet-until-wanted
+   treatment the rate-card note's links got (HANDOVER.md decision 21) — accent
+   here would make a help affordance the loudest thing in the block.
+
+   No focus rule: a11y.css's selector list already covers every button in the
+   app, and adding one here would be a second opinion about the same ring. */
+.mjp-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  /* Nudges the circle onto the figure's optical centre: .mjp-line aligns its
+     children on the baseline, which for a 20px ring holding 11px text sits
+     lower than the money's own. */
+  align-self: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.mjp-help:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+/* Required for the same reason .mjp-line[hidden] is: the display above would
+   otherwise beat the browser's own [hidden] rule, and the trigger would show
+   over an em dash it has no breakdown for. */
+.mjp-help[hidden] {
+  display: none;
+}
+
+/* Each row is a money line with its working underneath, so the dialog reads as
+   three statements rather than a table needing a header to explain its columns.
+   The rule above the total is the only border inside the box: it is the one
+   place the reader is being asked to see a sum. */
+.cb-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cb-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cb-row-label {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.cb-row-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.cb-row-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  /* Clear of the value column, so a long note never runs under a figure. */
+  padding-right: 40px;
+}
+
+.cb-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.cb-total-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+/* --text, not --accent, for the same reason the line this dialog explains is
+   not accent either (see the block comment above .mjp-toggle-row): --accent is
+   spoken for by "Total (inc GST)", the figure a client actually pays, and an
+   advisory number wearing it competes with the one that isn't advisory. The
+   first draft of this rule used accent and was wrong on both counts — it also
+   measured 2.8:1 on --surface, under WCAG's 3:1 for large text, where --text
+   is 11.49:1. The rule above it and the 19px are what mark it as the sum.
+
+   19px matches the summary bar's own headline figure, and is two steps up from
+   the 15px rows above so the total reads as their conclusion. */
+.cb-total-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.cb-note {
+  margin: 18px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
