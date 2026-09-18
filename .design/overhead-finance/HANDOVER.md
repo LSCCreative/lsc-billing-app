@@ -18,9 +18,8 @@ screen's per-row internal cost basis. Full rationale, formulas, and architecture
 Sequence: Grill Me → Design Brief → Information Architecture → Design Tokens (skipped — the site's
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
 progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form, both
-Overhead charts, the estimate-editor floor and its cost breakdown dialog are in; 2 tasks to go,
-both of them verification passes rather than new components)** → Design Review (not applicable
-yet).
+Overhead charts, the estimate-editor floor and its cost breakdown dialog are in, and the layout
+check is done; 1 task to go, the Accessibility pass)** → Design Review (after that).
 
 **Completed, 2026-09-15:**
 1. Grill Me — no file output; every structural decision folded into the brief (see "Resolved
@@ -316,21 +315,57 @@ yet).
     finding in the existing app. Composite the whole stack down to `--bg` instead; the real figure
     there is 3.46:1.
 
-**Not started:** the **Layout check at 1099px / 900px / 768px** and the **Accessibility pass** —
-the last two items in TASKS.md, both verification passes over what is already built rather than new
-components. Every component the feature called for now exists. `web/js/calc.js` is byte-identical
+17. **Layout check at 1099px / 900px / 768px** — ~60 new lines in `web/css/responsive.css`, all
+    inside existing `max-width` media queries, nothing else touched. No backend change: `npm test`
+    unchanged at **91/91**.
+
+    **Measured first, at 1400 / 1099 / 900 / 768 / 767 / 375 / 320px**, on all three Finance
+    sub-tabs, with `getBoundingClientRect`/`getComputedStyle` against `api-scratch`. Most of the
+    task's checklist already held and needed nothing: no horizontal overflow on any Finance screen
+    at any width; both charts render at exactly **1.000** scale (viewBox width = box width) at every
+    width; the sub-tab row is one line everywhere, and at 320px it ends at 227px with 304px
+    available, so it never needs to wrap; the expense table already carried `data-label`s and
+    stacks below 768px; the Goals form is one column below 768px with 44px inputs.
+
+    **Three real bugs, fixed:**
+    - **The expense table's actions cell overflowed its own box below 768px.** `overhead.css`'s
+      desktop `width: 1%` (0,2,1) outranks `.est-table td`'s stacking rule (0,1,1), so the stacked
+      cell was **20px wide with 118px of Edit and × spilling out of it**, on the left of a row whose
+      values are all on the right. Now full-width, right-aligned, and the buttons end exactly where
+      the values above them do (both 14px in) at 767, 375 and 320px.
+    - **"Save Goals", "Save Services" and "Reset Defaults" broke onto two lines** in the tablet band
+      (found by eye in a 768px screenshot, then measured — the numbers alone had not been looking
+      at buttons). The save bar is a flex row of a sentence and a button group that both shrink,
+      and the sentence won: 569px against the group's 105px. The group now holds its width and the
+      sentence wraps; zero wrapped buttons on any Finance screen at any width.
+    - **The active sub-tab's underline sat 16px under its label below 768px**, against 8px at every
+      wider width — the 44px touch target grew the button with the label centred in it. The label
+      now sits at the bottom of the same 44px button: **8px at every width**, target kept.
+
+    **Two things deliberately not changed, both with measurements** — decisions 68 and 69: the
+    donut legend's stacking point (the brief's 900px rule is **not** applied), and the Goals form's
+    three columns down to 768px.
+
+    Desktop verified unmoved: 1400px and 1099px figures identical before and after (actions cell
+    92px, save bar 603/111px, tab button 28px with an 8px gap). Console clean except one error from
+    this session's own measuring script (it passed the API's `{ok, snapshots}` envelope to
+    `LSCData.setOverheadSnapshots` instead of the array — a test-harness mistake, gone after
+    reload). **`api-scratch` now holds 12 snapshots** — see Open items.
+
+**Not started:** the **Accessibility pass** — the last build item in TASKS.md, a verification pass
+over what is already built rather than new components — then the Design review. `web/js/calc.js` is byte-identical
 to the server money model and must be re-copied (`cp server/src/calc.js web/js/calc.js`) after
 *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently **Layout
-check at 1099px / 900px / 768px**, `frontend — Opus/high`), state its model/effort bucket out loud
-before writing code, and work top-down.
+**To resume:** open [TASKS.md](TASKS.md), start at the first unchecked item (currently
+**Accessibility pass**, `frontend — Opus/high`), state its model/effort bucket out loud before
+writing code, and work top-down.
 
-**Both remaining tasks have a backlog waiting for them in "Open items" below** — measured findings
-that were deliberately noted rather than tuned in place, so the whole Finance area gets adjusted in
-one pass instead of each screen twice. Read those before starting either one; between them they are
-most of the work. The Accessibility pass in particular owns a standing decision about `--accent`'s
-3.71:1 that spans both charts and should be settled once, not per chart.
+**The Accessibility pass has a backlog waiting for it in "Open items" below** — read those first;
+they are most of the work. It owns a standing decision about `--accent`'s 3.71:1 that spans both
+charts and should be settled once, not per chart, and the missing `aria-live` on the live-recomputing
+figures. **Read the two browser-harness traps in Open items before concluding any keyboard behaviour
+is broken** — real key events reach the pane with an empty `event.key`.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -857,6 +892,30 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     overhangs the figure to its left by ~4px, which costs nothing since that is a span, not a
     control.
 
+68. **The donut legend's stacking point is the natural flex wrap at ~606px, not the brief's 900px —
+    this settles decision 55.** Measured side by side: at 900px the legend is 571px wide, at 768px
+    439px, at 767px 469px, with **no category name truncated at any of them**, and it stacks under
+    a centred ring at 375px. Stacking at 900px would trade a legend that reads comfortably beside
+    its ring for a 200px ring alone on a line with ~500px of empty space beside it, then the
+    legend below — a longer, emptier screen for no legibility gain. So no media query was added.
+    **This departs from the letter of the brief and TASKS.md**, which is why it is recorded here;
+    if the user wants the brief's rule anyway it is one `flex-basis: 100%` on `.oh-legend` inside
+    `@media (max-width: 900px)`.
+69. **The Goals form keeps three columns from 768px up.** At 768px the columns are 231px, the
+    longest hint runs four lines at ~38 characters, and the three inputs stay top-aligned because
+    each hint sits under its input rather than above it. Checked in a screenshot as well as by
+    measurement. The alternatives were worse: two columns orphan the third field beside a gap
+    (which is why `.goals-grid` is three in the first place), and one column at 703px puts a
+    two-digit percentage in a 703px input. Below 768px it is already one column.
+70. **The save-bar fix is in the ≤1099px band, not ≤900px, and covers Pricing as well as Goals.**
+    Goals reuses `.pricing-save-bar`, so the bug and the fix are shared. It is latent at 1099px
+    (nothing wraps there) and engages where the sentence starts winning. Pricing is in scope because
+    it is a Finance sub-tab now, even though the screen predates this feature.
+71. **The Finance tab-underline fix is scoped to `.finance-tabs .nav-link`, not all `.nav-link`s.**
+    The header's own nav collapses into the menu panel below 768px, where its links are a vertical
+    list and the underline question does not arise; the sub-tab row is the only horizontal row of
+    them left in that band. Changing the shared class would have touched the header for no gain.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -873,8 +932,8 @@ line, and both charts are all things a person *looks at* — verify them in a br
 
 ## Open items for whoever picks this up next
 
-- **The donut's legend stacking point is an open question for the Layout check task, not a
-  settled one.** The brief asks for it below 900px; measuring says side-by-side still reads well at
+- **CLOSED 2026-09-18 by the Layout check — see decision 68.** ~~The donut's legend stacking point is an open question for the Layout check task, not a
+  settled one.~~ The brief asks for it below 900px; measuring says side-by-side still reads well at
   768px and the natural wrap already happens at ~606px. See resolved decision 55 — it wants a
   decision with the measurements in hand, not a rule applied from the brief.
 - **`--accent` at 3.71:1 is now the fill of the donut's largest slice as well as the trend line's
@@ -941,6 +1000,7 @@ line, and both charts are all things a person *looks at* — verify them in a br
   keep checking it by eye as the Goals stat and the estimate-editor line land, since a view
   coercing `null` on its way out is the failure mode decision 13 is shaped to prevent and only a
   person looking at the screen will catch it.
+- **As of 2026-09-18 `api-scratch` was re-seeded from scratch** (the `/tmp` directory had been cleared) with the same four items and goals singleton, **plus eleven hand-written historical snapshots** from Jul 2025 to Aug 2026 so the trend chart has a real line across a year boundary to measure — 12 in total. Each row's `by_category_json` sums to its `total_annual` and no category is negative, so it is a state the app could have produced. Reset by deleting `/tmp/lsc-billing-scratch` and re-seeding. The older note follows:
 - **`api-scratch` now holds eight snapshots, not the four it was seeded with.** Verifying each
   chart's live-update path meant a real Add Expense and a real Delete through the modal — the trend
   chart's session added two and the donut's added two more — and every one of those appends a
@@ -963,14 +1023,14 @@ line, and both charts are all things a person *looks at* — verify them in a br
   ordinary reloads — long enough to look like the CSS simply wasn't working. If new styles or
   scripts seem not to apply, re-fetch them with `fetch(url, { cache: 'reload' })` before
   `location.reload()` rather than assuming the change is wrong.
-- **Below 768px the expense table's action cell sits left while every other cell right-aligns its
-  value.** `responsive.css` turns each `.est-table` cell into a `justify-content: space-between`
+- **CLOSED 2026-09-18 by the Layout check — it was worse than noted: the cell overflowed its own 20px box. Fixed; see entry 17.** ~~Below 768px the expense table's action cell sits left while every other cell right-aligns its
+  value.~~ `responsive.css` turns each `.est-table` cell into a `justify-content: space-between`
   flex row keyed off its `data-label`; the actions cell has no label, so Edit and × end up on the
   left of the row instead of under the values above them. It is legible and nothing overlaps —
   noted for the **Layout check at 1099px / 900px / 768px** task rather than tuned here, both
   because new responsive rules belong in `responsive.css` inside a media query by convention and
   so the whole Finance area gets measured in one pass instead of this cell being adjusted twice.
-- **The sub-tab row's active underline sits ~12px below its label below 768px**, because
+- **CLOSED 2026-09-18 by the Layout check — measured at 16px, now 8px at every width; see entry 17 and decision 71.** ~~The sub-tab row's active underline sits ~12px below its label below 768px~~, because
   `.nav-link` gets `min-height:44px` there (responsive.css's touch-target rule) while the text
   stays vertically centred. It is legible and consistent with the rest of the system — the header's
   own nav does the same thing — but it reads a little loose. Noted for the **Layout check at
@@ -998,8 +1058,8 @@ line, and both charts are all things a person *looks at* — verify them in a br
 - **Two names for the shared tax field** — "Tax Reserve Target" on Goals, "Tax Set-Aside Rate" on
   Pricing, one stored `pricing.taxSetAsideRate`. Both names come from the source documents (see
   resolved decision 36). Worth settling on one during the design review.
-- **The Goals form keeps three columns from 768px up**, where the columns measure 231px and the
-  longest field hint runs four lines. Legible and not overflowing — measured at 1400/900/768/375px
+- **CLOSED 2026-09-18 by the Layout check — kept deliberately; see decision 69.** ~~The Goals form keeps three columns from 768px up, where the columns measure 231px and the
+  longest field hint runs four lines.~~ Legible and not overflowing — measured at 1400/900/768/375px
   — but tight enough to be worth a look during the **Layout check at 1099px / 900px / 768px** task,
   which is where a new `max-width` rule would belong anyway.
 - **The live Target Annual Revenue figure carries no `aria-live`**, so a screen-reader user typing
@@ -1021,7 +1081,7 @@ line, and both charts are all things a person *looks at* — verify them in a br
   — see resolved decision 12 for why `calc.js` specifically should stay one file, and decision 37
   for why the charts were split out of `overhead.js` *before* they made it one of these — but check
   before assuming that still holds after the next big addition.
-- **The trend chart has only been measured at 1400px and 375px**, which is where its own two
+- **CLOSED 2026-09-18 by the Layout check:** scale 1.000 at every width, 5 date labels from 767px up and 2 at 375px, the head line ("Up $5,400.00 since 3 Jul 2025") on one line beside the title at every width including 375px, height 240px down to 767px and 200px on a phone. Nothing needed changing. Original item: ~~The trend chart has only been measured at 1400px and 375px~~, which is where its own two
   failure modes were (a scaled `viewBox`, and a floor fighting the real box width). The **Layout
   check at 1099px / 900px / 768px** task still owns the middle band: the chart redraws itself at
   the measured width on resize, so what to check there is the *content* at those widths — how many

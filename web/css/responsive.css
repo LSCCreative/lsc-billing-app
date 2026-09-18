@@ -65,6 +65,22 @@
   .billing-block .gt-body > * {
     min-width: 660px;
   }
+
+  /* The save bar under the rate card, which Goals reuses. It is a flex row of
+     a sentence and a button group, and both default to flex-shrink:1 — so as
+     the band narrows the long sentence keeps its width and the button group is
+     the one squeezed, until "Save Goals", "Save Services" and "Reset Defaults"
+     each break onto two lines inside their buttons (measured at 768px: the
+     group was 105px against the sentence's 569px). Same failure the header
+     nav had at ~865px, same fix: the controls hold their width and the prose
+     wraps instead. Below 768px the bar is a column and none of this applies.
+     Latent through most of the band; nothing wraps at 1099px. */
+  .pricing-save-bar > :last-child {
+    flex-shrink: 0;
+  }
+  .pricing-save-bar .btn {
+    white-space: nowrap;
+  }
 }
 
 /* ── below ~900px ─────────────────────────────────────────────────────────── */
@@ -594,6 +610,38 @@
   }
   .totals-card td {
     padding: 9px 14px;
+  }
+
+  /* ── Finance ─────────────────────────────────────────────────────────────
+     The Overhead expense table's actions cell. It stacks like every other
+     .est-table cell, but overhead.css's desktop `width: 1%` shrink-wrap
+     (0,2,1) outranks the stacking rule above (0,1,1) — so the stacked cell was
+     20px wide with 118px of Edit and × spilling out of it, on the left of a row
+     whose every value sits on the right. Not clipped, but overflowing its own
+     box. It also has no data-label, so the empty ::before would still have
+     taken the space-between's first slot. Right-aligned instead, under the
+     values it acts on. */
+  .oh-table td.oh-act {
+    width: auto;
+    justify-content: flex-end;
+    padding: 8px 14px;
+  }
+  .oh-table td.oh-act::before {
+    content: none;
+  }
+  .oh-table td.oh-act .btn:last-child {
+    margin-right: 0;
+  }
+
+  /* The Finance sub-tabs are the one horizontal row of .nav-links left in this
+     band — the header's own collapse into the menu panel. The 44px touch
+     target above grows the button while the label stays centred in it, which
+     put the active tab's accent underline 16px under its label against 8px at
+     every wider width: loose enough to read as a rule under the row rather than
+     a mark on the tab. Seating the label at the bottom keeps the 44px target
+     and brings the gap back to what it is above 768px. */
+  .finance-tabs .nav-link {
+    align-items: flex-end;
   }
 
   /* ── The Invoice Settings modal ──────────────────────────────────────────
