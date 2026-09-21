@@ -24,7 +24,7 @@ css/responsive.css       the responsive bands (tablet 768-1099, mobile
                          <768). Every rule is inside a media query
 css/a11y.css             accessibility pass: --muted contrast override,
                          global focus-visible rings. Loaded LAST of all
-fonts/Delight-*.ttf      extracted from the old app's base64 @font-face blobs
+fonts/*.woff2          Delight 400/700 (from the old app) + Funnel Sans variable (OFL, Google Fonts)
 js/config.js             the API address. Gitignored — copy from
                          config.example.js
 js/api.js                the only place that calls fetch; classifies failures.
