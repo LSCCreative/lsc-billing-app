@@ -11,9 +11,9 @@
   display: none;
   margin-top: 18px;
   padding: 10px 14px;
-  border: 1px solid #7a2222;
-  background: #1f1414;
-  color: #f0a0a0;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
   font-size: 12px;
 }
 #editor-error.show,
@@ -30,13 +30,42 @@
   vertical-align: middle;
 }
 
-/* The cards are the only route into an estimate, so they take focus. app.css
-   gives .proj-card a hover border; this matches it for the keyboard. */
-.proj-card:focus-visible {
+/* The cards (estimates and clients) are the only route into a record, so each
+   one's title is a real <button class="card-open"> — announced as something
+   to activate, rather than a focusable list item that says nothing about
+   opening. Its ::before is stretched over the whole card, so the card stays
+   one click target exactly as before. The button is reset to render as the
+   bare .card-name text it replaced.
+
+   The ring goes on the card, not the button: a ring round the title alone
+   would not say "this card", and .proj-card's overflow:hidden would clip one
+   drawn on the stretched pseudo. Same ring as a11y.css everywhere else, plus
+   the hover state's border and underline so the two inputs still agree. */
+.card-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.card-open::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.card-open:focus-visible {
   outline: none;
+}
+.proj-card:has(.card-open:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
   border-color: var(--accent);
 }
-.proj-card:focus-visible::after {
+.proj-card:has(.card-open:focus-visible)::after {
   transform: scaleX(1);
 }
 
@@ -371,4 +400,39 @@
   font-size: 11px;
   line-height: 1.6;
   color: var(--muted);
+}
+
+/* ── Editor and detail: labour without a Rate column (2026-09-21) ───────────
+   See estimate-editor.js's buildLabourRow. app.css's six-track grid loses its
+   Rate track; Service takes the width back, so Mark-Up and Client Bill still
+   sit exactly under the expense sections' Mark-Up and Client Bill. */
+.labour-grid {
+  grid-template-columns: 3fr 90px 90px 110px 32px;
+}
+
+/* Every detail-view section table is four columns; one fixed set of widths
+   lines their edges up down the page instead of each table sizing its columns
+   to its own contents. Inert below 768px, where these tables stack. */
+.est-table-4 {
+  table-layout: fixed;
+}
+.est-table-4 th:not(:first-child) {
+  width: 17%;
+}
+
+/* Were inline styles. The Take-Home note used --muted2 (1.67:1); --muted is
+   6.15:1 on --bg. The accent labels read --accent-text (a11y.css). */
+.sum-label-note {
+  font-size: 9px;
+  color: var(--muted);
+}
+.field label.label-accent,
+.inv-num-wrap label.label-accent {
+  color: var(--accent-text);
+}
+/* "Total (inc GST)" sits on the cell's own accent tint, which costs
+   --accent-text its margin (4.29:1 at 9px). The tint and the accent figure
+   under it already carry the emphasis; the label reads --text. */
+.sum-label.sum-label-strong {
+  color: var(--text);
 }

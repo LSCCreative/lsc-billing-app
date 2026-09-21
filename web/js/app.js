@@ -112,8 +112,9 @@
       return;
     }
 
-    // The rate card and GST settings price every estimate, so the app view
-    // cannot render an estimate before they arrive.
+    // The rate card and GST settings price every estimate, and overhead and
+    // goals set the rate card's labour rates, so the app view cannot render an
+    // estimate before all of them arrive.
     if (!LSCData.loaded()) {
       main.innerHTML = '<div class="empty-state"><h3>Loading…</h3></div>';
       try {
@@ -121,8 +122,8 @@
       } catch (err) {
         if (err instanceof LSCApi.ApiError && err.kind === 'auth') return onAuthLost();
         main.innerHTML =
-          '<div class="empty-state"><h3>Couldn’t load your rate card</h3>' +
-          '<p>Estimates can’t be priced without it. Once the server is back, reload the page.</p></div>';
+          '<div class="empty-state"><h3>Couldn’t load your pricing and finance settings</h3>' +
+          '<p>Estimates can’t be priced without them. Once the server is back, reload the page.</p></div>';
         return;
       }
     }

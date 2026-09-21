@@ -28,7 +28,7 @@ const EstimateDetail = (() => {
     const client = estimate.client || {};
     const invoiceBadge =
       estimate.docType === 'invoice'
-        ? ' &nbsp;<span style="font-size:9px;padding:2px 7px;border:1px solid var(--accent);color:var(--accent);letter-spacing:.05em">INVOICE ' +
+        ? ' &nbsp;<span style="font-size:9px;padding:2px 7px;border:1px solid var(--accent);color:var(--accent-text);letter-spacing:.05em">INVOICE ' +
           esc(estimate.invoiceNumber || '—') +
           '</span>'
         : '';
@@ -37,12 +37,12 @@ const EstimateDetail = (() => {
       '<div class="est-header"><div>' +
       '<div class="est-upid">' + esc(estimate.upid || '—') + invoiceBadge + '</div>' +
       '<div style="color:var(--muted);font-size:11px;margin-bottom:4px">' + esc(estimate.date || '') + '</div>' +
-      '<div class="est-name">' + esc(estimate.name) + '</div>' +
+      '<h1 class="est-name">' + esc(estimate.name) + '</h1>' +
       (client.businessName ? '<div class="est-client">' + esc(client.businessName) + '</div>' : '') +
       (client.contactName
         ? '<div class="est-client" style="margin-top:2px">' + esc(client.contactName) +
           (client.email
-            ? ' &nbsp;&middot;&nbsp; <span style="color:var(--accent)">' + esc(client.email) + '</span>'
+            ? ' &nbsp;&middot;&nbsp; <span style="color:var(--accent-text)">' + esc(client.email) + '</span>'
             : '') +
           '</div>'
         : '') +
@@ -71,6 +71,10 @@ const EstimateDetail = (() => {
   /* A line whose service is no longer on the rate card carries no price — see
      the header comment in rows.js. It is still listed, so the estimate reads as
      the record of what was quoted. */
+  /* Every section table is four columns (labour lost its Rate column on
+     2026-09-21 — see estimate-editor.js's buildLabourRow), and .est-table-4
+     gives them one shared set of column edges, so Hours, Mark-Up and Bill line
+     up down the page the way a printed rate card does. */
   function labourBlocks(estimate, pricing) {
     const activeRows = estimate.activeRows || {};
     let html = '';
@@ -90,7 +94,6 @@ const EstimateDetail = (() => {
           return (
             '<tr><td data-label="Service">' + esc(line.name) + '</td>' +
             '<td class="right muted-td" data-label="Hours">' + esc(line.qty) + '</td>' +
-            '<td class="right muted-td" data-label="Rate">' + (def && def.rate > 0 ? fmt(def.rate) : '—') + '</td>' +
             '<td class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</td>' +
             '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
           );
@@ -99,10 +102,10 @@ const EstimateDetail = (() => {
 
       html +=
         '<div class="est-block"><div class="est-block-head">' +
-        '<span class="est-block-label">' + esc(section.label) + '</span>' +
+        '<h2 class="est-block-label">' + esc(section.label) + '</h2>' +
         '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
-        '<table class="est-table"><thead><tr><th>Service</th><th class="right">Hours</th>' +
-        '<th class="right">Rate</th><th class="right">Mark-Up</th><th class="right">Bill</th>' +
+        '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">Hours</th>' +
+        '<th class="right">Mark-Up</th><th class="right">Bill</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     });
 
@@ -124,9 +127,9 @@ const EstimateDetail = (() => {
 
     return (
       '<div class="est-block"><div class="est-block-head">' +
-      '<span class="est-block-label">' + label + '</span>' +
+      '<h2 class="est-block-label">' + label + '</h2>' +
       '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
-      '<table class="est-table"><thead><tr><th>' + columns[0] + '</th>' +
+      '<table class="est-table est-table-4"><thead><tr><th>' + columns[0] + '</th>' +
       '<th class="right">' + columns[1] + '</th><th class="right">' + columns[2] + '</th>' +
       '<th class="right">Total</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
     );
@@ -153,9 +156,9 @@ const EstimateDetail = (() => {
 
     return (
       '<div class="est-block"><div class="est-block-head">' +
-      '<span class="est-block-label">Travel &amp; Accommodation</span>' +
+      '<h2 class="est-block-label">Travel &amp; Accommodation</h2>' +
       '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
-      '<table class="est-table"><thead><tr><th>Service</th><th class="right">Qty</th>' +
+      '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">Qty</th>' +
       '<th class="right">Rate</th><th class="right">Bill</th></tr></thead><tbody>' +
       rows + '</tbody></table></div>'
     );
@@ -166,10 +169,10 @@ const EstimateDetail = (() => {
     if (!lines.length) return '';
     return (
       '<div class="est-block"><div class="est-block-head">' +
-      '<span class="est-block-label">Deliverables</span>' +
+      '<h2 class="est-block-label">Deliverables</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
       lines.length + ' item' + (lines.length !== 1 ? 's' : '') + '</span></div>' +
-      '<table class="est-table"><thead><tr><th>Deliverable</th><th class="right">Format</th>' +
+      '<table class="est-table est-table-4"><thead><tr><th>Deliverable</th><th class="right">Format</th>' +
       '<th class="right">Duration</th><th class="right">Qty</th></tr></thead><tbody>' +
       lines
         .map(
@@ -200,12 +203,12 @@ const EstimateDetail = (() => {
       '<tr><td class="tl">GST</td><td class="tv">' + (gstFree ? 'GST-free' : fmt(t.gst)) + '</td></tr>' +
       '<tr class="net-row"><td>Total (inc GST)</td><td class="tv">' + fmt(t.totalIncGst) + '</td></tr>' +
       '<tr><td class="tl">Tax Set-Aside</td><td class="tv">' + fmt(t.taxSetAside) + '</td></tr>' +
-      '<tr><td class="tl" style="color:#6fcf6f">Est. Take-Home</td>' +
-      '<td class="tv" style="color:#6fcf6f">' + fmt(t.estTakeHome) + '</td></tr>' +
+      '<tr><td class="tl" style="color:var(--ok)">Est. Take-Home</td>' +
+      '<td class="tv" style="color:var(--ok)">' + fmt(t.estTakeHome) + '</td></tr>' +
       '<tr><td class="tl">Total Hours</td><td class="tv">' + esc(t.totalHours || 0) + '</td></tr>' +
       '</table></div>' +
       '<div class="notes-card"><h4>Internal Notes</h4><p>' +
-      (notes ? esc(notes) : '<em style="color:var(--muted2)">No notes added.</em>') +
+      (notes ? esc(notes) : '<em style="color:var(--muted)">No notes added.</em>') +
       '</p></div></div>'
     );
   }

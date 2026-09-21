@@ -59,7 +59,9 @@
     <button type="button" class="btn btn-sm" id="connection-banner-retry">Try Again</button>
   </div>
 
-  <div id="main"></div>
+  <!-- <main> so there is a main landmark once signed in: #login-view is the
+       only other one and it is hidden by then. Every screen mounts here. -->
+  <main id="main"></main>
 
   <!-- Invoice Settings. Filled by js/views/settings.js when it opens; inside
        #app-view so it can never surface over the login screen. -->

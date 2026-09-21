@@ -73,6 +73,15 @@ const ConnectionBanner = (() => {
       /* handled by the subscriber */
     }
     setChecking(false);
+    // Back up: a list screen whose own load failed while the server was down
+    // is still showing "Couldn't load", with its own Try Again (#js-retry).
+    // Press that one for the user, so one Try Again recovers the whole view.
+    // Deliberately not a blanket re-mount: the editor keeps every unsaved
+    // keystroke through a lost connection, and re-rendering it would drop them.
+    if (!showing) {
+      const pageRetry = document.querySelector('#main #js-retry');
+      if (pageRetry) pageRetry.click();
+    }
   }
 
   /* Writes are blocked here rather than by disabling buttons, because the

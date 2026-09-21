@@ -134,7 +134,7 @@ const GoalsView = (() => {
 
     const net = parseFloat(form.net);
     if (!Number.isFinite(net) || net < 0) {
-      found.push('Desired Net Income must be a number of dollars, 0 or more.');
+      found.push({ msg: 'Desired Net Income must be a number of dollars, 0 or more.', field: $('goals-net') });
     }
 
     /* No upper bound, deliberately: minimumJobPrice() accepts any margin from 0
@@ -144,7 +144,10 @@ const GoalsView = (() => {
        number that silently prices a quarter of one percent. */
     const margin = parseFloat(form.margin);
     if (!Number.isFinite(margin) || margin < 0) {
-      found.push('Target Profit Margin must be a number, 0 or more — it’s a percent, so 25 means 25%.');
+      found.push({
+        msg: 'Target Profit Margin must be a number, 0 or more — it’s a percent, so 25 means 25%.',
+        field: $('goals-margin'),
+      });
     }
 
     /* Upper bound of 168 because these are hours inside one week and there are
@@ -154,7 +157,10 @@ const GoalsView = (() => {
        from then on, with nothing on any screen looking wrong. */
     const capacity = parseFloat(form.capacity);
     if (!Number.isFinite(capacity) || capacity <= 0 || capacity > 168) {
-      found.push('Billable Capacity is hours in one week: more than 0, and no more than 168.');
+      found.push({
+        msg: 'Billable Capacity is hours in one week: more than 0, and no more than 168.',
+        field: $('goals-capacity'),
+      });
     }
 
     /* The same 0-100 rule pricing.js applies to the same stored field, on
@@ -164,7 +170,7 @@ const GoalsView = (() => {
        by (1 - rate). The stat says so; the save is not blocked for it. */
     const tax = parseFloat(form.tax);
     if (!Number.isFinite(tax) || tax < 0 || tax > 100) {
-      found.push('The tax reserve target must be a number between 0 and 100.');
+      found.push({ msg: 'The tax reserve target must be a number between 0 and 100.', field: $('goals-tax-inp') });
     }
 
     return found;
@@ -243,8 +249,9 @@ const GoalsView = (() => {
     return (
       '<div class="field">' +
       '<label for="' + id + '">' + label + '</label>' +
-      '<input type="number" id="' + id + '" ' + attrs + ' value="' + esc(value) + '">' +
-      '<p class="goals-hint">' + hint + '</p>' +
+      '<input type="number" id="' + id + '" ' + attrs + ' aria-describedby="' + id + '-hint" value="' +
+      esc(value) + '">' +
+      '<p class="goals-hint" id="' + id + '-hint">' + hint + '</p>' +
       '</div>'
     );
   }
@@ -253,7 +260,7 @@ const GoalsView = (() => {
     const value = computeTarget();
 
     return (
-      '<div class="page-head"><div><div class="page-title">Goals</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Goals</h1>' +
       '<div class="page-sub">What the business needs to earn, and the hours you have to earn it in</div>' +
       '</div></div>' +
 
@@ -326,10 +333,7 @@ const GoalsView = (() => {
   }
 
   function clearError() {
-    const el = $('goals-error');
-    if (!el) return;
-    el.textContent = '';
-    el.classList.remove('show');
+    LSCUtil.clearFieldErrors($('goals-error'));
   }
 
   // ── Saving ────────────────────────────────────────────────────────────────
@@ -373,7 +377,7 @@ const GoalsView = (() => {
     const found = problems();
     if (found.length) {
       // Inline rather than alert(), which would cover the fields it names.
-      showError('Fix this before saving: ' + found.join(' '));
+      LSCUtil.showFieldErrors($('goals-error'), found, 'Fix this before saving:');
       return;
     }
 

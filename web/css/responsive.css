@@ -81,6 +81,16 @@
   .pricing-save-bar .btn {
     white-space: nowrap;
   }
+  /* The estimate detail's Edit / Duplicate / Export row, same failure: at
+     768px "↑ Export Quote PDF" broke onto two lines inside a 142px button
+     while the title beside it kept its width (base design review,
+     2026-09-21). The group holds its width, the title wraps instead. */
+  .est-header > div:last-child {
+    flex-shrink: 0;
+  }
+  .est-header .btn {
+    white-space: nowrap;
+  }
 }
 
 /* ── below ~900px ─────────────────────────────────────────────────────────── */
@@ -291,6 +301,13 @@
     align-items: stretch;
     gap: 14px;
   }
+  /* Stretched to the full width, the page's primary button (+ New Estimate,
+     + New Client) is a 343px bar — and .btn is inline-flex with no
+     justify-content, so its label sat hard left while every other full-width
+     button on the same screens is centred. */
+  .page-head > .btn {
+    justify-content: center;
+  }
   .page-title {
     font-size: 24px;
   }
@@ -460,7 +477,7 @@
   .bb-picker .svc-select {
     flex: 1 1 100%;
     max-width: none;
-    min-height: 40px;
+    min-height: 44px;
   }
   .bb-picker .btn {
     flex: 1 1 100%;
@@ -610,6 +627,20 @@
   }
   .totals-card td {
     padding: 9px 14px;
+  }
+  /* A client's estimate history is the exception: its first column is the
+     UPID, but the row's subject is the project — a 44px link, which sat a
+     line below its own label while the UPID took the subject treatment. Every
+     cell here is a plain label/value pair, vertically centred on the link. */
+  #client-history .est-table td,
+  #client-history .est-table td:first-child {
+    display: flex;
+    align-items: center;
+    padding-top: 4px;
+  }
+  #client-history .est-table td:first-child::before {
+    display: inline;
+    margin-bottom: 0;
   }
 
   /* ── Finance ─────────────────────────────────────────────────────────────

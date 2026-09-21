@@ -61,20 +61,15 @@
   display: none;
   margin-top: 16px;
   padding: 10px 14px;
-  border: 1px solid var(--accent);
-  border-left-width: 3px;
-  background: rgba(184, 84, 68, 0.10);
-  color: var(--text);
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
   font-size: 12px;
   line-height: 1.5;
 }
 #login-error.show { display: block; }
 
-/* The base .field inputs signal focus by border colour alone, which is thin at
-   this size and is the only cue on the screen a user might land on cold. The
-   global focus-ring pass is a later task; this is scoped to the login card. */
-.login-card input:focus-visible,
-.login-card button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* The error box reads the shared --err-* tokens (a11y.css) like every other
+   form's, so the first thing that ever goes wrong looks like every later one.
+   The card's focus rings come from a11y.css's site-wide rule; this file used to
+   carry its own copy from before that existed. */

@@ -68,7 +68,7 @@ const SettingsView = (() => {
   function shell(body) {
     return (
       '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="settings-title">' +
-      '<div class="modal-title" id="settings-title">Invoice Settings</div>' +
+      '<h2 class="modal-title" id="settings-title">Invoice Settings</h2>' +
       body +
       '</div>'
     );
@@ -79,7 +79,7 @@ const SettingsView = (() => {
 
     return shell(
       '<div class="set-group">' +
-        '<div class="set-group-head">Business</div>' +
+        '<h3 class=\"set-group-head\">Business</h3>' +
         '<p class="set-hint">Printed under the logo on quotes and invoices. A tax invoice must show ' +
         'your ABN, so an invoice that charges GST won’t export without one.</p>' +
         '<div class="form-grid">' +
@@ -93,7 +93,7 @@ const SettingsView = (() => {
       '</div>' +
 
       '<div class="set-group">' +
-        '<div class="set-group-head">GST</div>' +
+        '<h3 class=\"set-group-head\">GST</h3>' +
         '<label class="set-check"><input type="checkbox" id="set-gst-reg"' +
         (form.registered ? ' checked' : '') +
         '><span>Registered for GST</span></label>' +
@@ -112,7 +112,7 @@ const SettingsView = (() => {
       '</div>' +
 
       '<div class="set-group">' +
-        '<div class="set-group-head">Payment Details</div>' +
+        '<h3 class=\"set-group-head\">Payment Details</h3>' +
         '<p class="set-hint">Printed on invoices only. A quote never shows them, and a block left ' +
         'blank is left off the document entirely.</p>' +
         '<div class="form-grid">' +
@@ -154,10 +154,7 @@ const SettingsView = (() => {
   }
 
   function clearError() {
-    const el = $('settings-error');
-    if (!el) return;
-    el.textContent = '';
-    el.classList.remove('show');
+    LSCUtil.clearFieldErrors($('settings-error'));
   }
 
   /* The connection banner is sticky under the app header at z-index 99, and this
@@ -233,19 +230,22 @@ const SettingsView = (() => {
     const found = [];
     const abn = abnDigits(form.abn);
     if (abn && !abnValid(abn)) {
-      found.push('That ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.');
+      found.push({
+        msg: 'That ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.',
+        field: $('set-abn'),
+      });
     }
     // Registration without an ABN can't happen, and every GST-bearing invoice
     // would then refuse to export. Better to say so here than at export time.
     if (form.registered && !abn) {
-      found.push('GST registration needs your ABN — add it under Business.');
+      found.push({ msg: 'GST registration needs your ABN — add it under Business.', field: $('set-abn') });
     }
     // Only when it is switched on. A blank rate on an unregistered business is
     // an inert field, and blocking a save on it would be nagging about nothing.
     if (form.registered) {
       const percent = parseFloat(form.rateRaw);
       if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-        found.push('The GST rate must be a number between 0 and 100.');
+        found.push({ msg: 'The GST rate must be a number between 0 and 100.', field: $('set-gst-rate') });
       }
     }
     return found;
@@ -299,7 +299,7 @@ const SettingsView = (() => {
 
     const found = problems();
     if (found.length) {
-      showError(found.join(' '));
+      LSCUtil.showFieldErrors($('settings-error'), found);
       return;
     }
 

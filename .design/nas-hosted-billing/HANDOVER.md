@@ -656,8 +656,90 @@ Electron app, being retired — leave alone except to port pieces per the task l
     (`#main` 1080px at `34px 40px`). `npm test` 68/68 (no server files touched).
 
 **Not started**: nothing — **every task in TASKS.md is now checked off**, including Deployment
-(closed 2026-09-14, see below). The remaining "Design review" item under Review is the only open
-checklist line, and it's a standing task (`/design-review`) rather than build work.
+(closed 2026-09-14, see below). ~~The remaining "Design review" item under Review is the only open
+checklist line~~ — done 2026-09-21, see the next entry. The fonts/embedded-assets task is also
+still unchecked in TASKS.md (partly done; see its own note there).
+
+- **Design review** (2026-09-21) — [DESIGN_REVIEW.md](DESIGN_REVIEW.md), **no code changed.** Run
+  with the `design-review` skill against DESIGN_BRIEF.md, live against `api-scratch` at 1280 /
+  1099 / 900 / 768 / 375px, covering every non-Finance screen (Finance had its own review,
+  `../overhead-finance/DESIGN_REVIEW.md`, whose site-wide fixes were already in). A throwaway
+  client + estimate were made through the real forms and deleted afterwards; scratch is back to
+  0 estimates / 0 clients. Screenshots were analysed but not written to disk — same built-in
+  browser pane limit the Finance review hit.
+  - **Verdict:** aesthetic fidelity high, responsive solid (no overflow anywhere), forms and
+    dialogs well built. **Two must-fix, both contrast against the brief's 4.5:1:** accent used as
+    *text* (the estimate card's headline total is 2.80:1, bill cells 3.71:1), and `--muted2`
+    carrying real instructions at 1.67:1.
+  - **The accent fix is the user's call** — it touches the brand colour, and Finance decision 72
+    lifted the accent for charts only at their request. The review gives measured options
+    (`--accent-text: #c1695a` = 4.60:1 on `--bg`; the card UPID needs `--muted` instead).
+  - **Should-fix 1 crosses into the Finance track and is money display (Opus/high):** the editor
+    and detail views still print each labour row's stored `rate`, which contradicts Pricing's
+    computed Overhead Rate/hr on the same data.
+  - ~~Next step: put must-fix 1's options and should-fix 1's two options to the user~~ — done,
+    see the next entry.
+
+- **Design review fixes** (2026-09-21, Opus) — the user chose `--accent-text: #c1695a` for
+  accent text and **removing** the labour Rate column, then said "go ahead with all fixes". Done:
+  both must-fix, all nine should-fix, could-improve 1, 2, 4, 5 and 6. Not done, on purpose:
+  could-improve 3 (a deliberate trade), 7 (matches the PDF), and 8 (the fonts task below). No
+  backend change and `calc.js` untouched, so `npm test` was not needed.
+  - **Decisions, so they aren't reopened:**
+    - **`--accent-text` is for text only.** It lives in `a11y.css` with the overrides for
+      `app.css`'s frozen accent-text rules. `--accent` itself still drives fills, borders,
+      underlines and focus rings, and the hover-to-accent link idiom (Finance decision 73) is
+      unchanged.
+    - Four places don't use `--accent-text`:
+      - The card UPID is `--muted`.
+      - The list card's INVOICE badge text is `--text`.
+      - Both "Total (inc GST)" labels on the accent tint are `--text`.
+      - The detail totals figure grew to 19px Delight so it counts as large text. On the tint,
+        `--accent-text` is only 4.29:1.
+    - **The labour Rate column is gone** from the editor and the detail view. Travel keeps its
+      Rate column, because travel rates are still entered by hand.
+      - The editor's `.labour-grid` is now five tracks (override in `estimates.css`). Labour
+        Mark-Up and Client Bill still land exactly under the expense sections' columns (measured).
+      - Every detail-view table is now four columns and shares one fixed set of column edges
+        (`.est-table-4`).
+    - **Cards open through a real `<button class="card-open">`** inside the `<h2>`. Its `::before`
+      stretches over the card, so the whole card stays clickable. The focus ring is drawn on the
+      card via `:has()`, because `overflow:hidden` would clip it on the pseudo-element. Box-level
+      identical to the old plain title (measured).
+    - **The banner's Try Again presses the page's own `#js-retry`** once the server answers. It
+      deliberately doesn't do a blanket re-mount, because the editor keeps unsaved keystrokes
+      through an outage and a re-mount would drop them.
+    - Other changes:
+      - `--muted2` is no longer used for any text.
+      - `::placeholder` is `--muted`.
+      - `--ok` names the Take-Home green (`app.css`'s two copies left as ported).
+      - The login error box uses the shared `--err-*` tokens.
+      - `login.css`'s own focus rule is gone.
+      - `.client-history-link` keeps the focus ring.
+      - The UPID field has lost its accent border; its label keeps the accent.
+  - **Verified against `api-scratch` by driving the real forms** (dispatched events; one real Tab
+    for the focus-ring checks). Checks and results:
+    - Contrast sweep of every visible text style on the Estimates list, estimate detail, editor,
+      Pricing, Overhead and Goals: **0 failures**. The lowest are the card total at 3.47:1 (large
+      text) and the UPID label at 4.60:1.
+    - The same estimate totals **$3,677.00** before and after the Rate column was removed.
+    - Focus-ring sweep over every control in the editor: **0 gaps**. The card and history-link
+      rings were checked by hand.
+    - Export button: one line at 768px.
+    - New Estimate label: centred to 0px at 375px.
+    - Service dropdowns: **44px** at 375px (the old 40px floor in `.bb-picker` is raised).
+    - The client-history row is a label/value pair on one line.
+    - No horizontal overflow at 1280, 1099, 768 or 375px.
+    - Banner flow: the page stays on "Could not load" while the server is still down, and one
+      retry recovers it to "1 estimate".
+    - Console clean. The throwaway client and estimate were deleted; scratch is at 0 / 0.
+  - ~~Next: fonts task, then deploy~~ — both done 2026-09-21, see the next entry.
+
+- **Fonts + deploy of the review fixes** (2026-09-21, Sonnet) — Funnel Sans embedded (variable
+  `.woff2`), Delight moved to `.woff2`, `.ttf` removed; the last unchecked TASKS.md item is closed,
+  so **every task on both tracks is done**. Committed in two commits (review/Finance fixes, then
+  fonts) and pushed to `main`, which triggers `deploy-pages.yml`. Check the live site loads
+  `fonts/*.woff2` with a `?v=` hash on `app.css`. Remaining: only the user's first real sign-in.
 
 - **Deployment** (2026-09-14) — `.gitignore` (new, repo's first — see below),
   `.github/workflows/deploy-pages.yml`, `.design/nas-hosted-billing/DEPLOYMENT.md` (new). Closes

@@ -49,8 +49,9 @@ const ClientsView = (() => {
 
   function cardMarkup(client) {
     return (
-      '<div class="proj-card" data-id="' + esc(client.id) + '" role="listitem" tabindex="0">' +
-      '<div class="card-name">' + esc(client.businessName || '—') + '</div>' +
+      '<div class="proj-card" data-id="' + esc(client.id) + '" role="listitem">' +
+      '<h2 class="card-name"><button type="button" class="card-open">' +
+      esc(client.businessName || '—') + '</button></h2>' +
       '<div class="card-client">' + esc(client.contactName || '—') + '</div>' +
       '<div class="card-foot"><div class="card-date">' + esc(client.email || '—') + '</div>' +
       (client.phone ? '<div class="tag">' + esc(client.phone) + '</div>' : '') +
@@ -60,7 +61,7 @@ const ClientsView = (() => {
 
   function listHead(sub, button) {
     return (
-      '<div class="page-head"><div><div class="page-title">Clients</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Clients</h1>' +
       '<div class="page-sub">' + sub + '</div></div>' + (button || '') + '</div>'
     );
   }
@@ -99,13 +100,9 @@ const ClientsView = (() => {
     root.querySelector('#js-new').addEventListener('click', () => showEditor(null));
     root.querySelectorAll('.proj-card').forEach((card) => {
       const client = clients.find((c) => c.id === card.dataset.id);
+      // Keyboard activation arrives here too: Enter/Space on the card's own
+      // .card-open button dispatch a click, which bubbles to the card.
       card.addEventListener('click', () => showEditor(client));
-      card.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          showEditor(client);
-        }
-      });
     });
   }
 
@@ -123,8 +120,8 @@ const ClientsView = (() => {
 
     return (
       '<button class="back-btn" id="js-back">← Clients</button>' +
-      '<div class="page-head"><div><div class="page-title">' +
-      (client ? esc(c.businessName || 'Client') : 'New Client') + '</div>' +
+      '<div class="page-head"><div><h1 class="page-title">' +
+      (client ? esc(c.businessName || 'Client') : 'New Client') + '</h1>' +
       '<div class="page-sub">' +
       (client ? 'Changes apply to new estimates — ones already saved keep their own copy' : 'Saved to your client list') +
       '</div></div></div>' +
@@ -150,7 +147,7 @@ const ClientsView = (() => {
 
   function historyMarkup(estimates) {
     const head =
-      '<div class="est-block-head"><span class="est-block-label">Estimate History</span>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Estimate History</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
       estimates.length + ' estimate' + (estimates.length !== 1 ? 's' : '') + '</span></div>';
     if (!estimates.length) {
@@ -225,11 +222,8 @@ const ClientsView = (() => {
       el.textContent = message;
       el.classList.add('show');
     };
-    const clearError = () => {
-      const el = $('client-error');
-      el.textContent = '';
-      el.classList.remove('show');
-    };
+    const clearError = () => LSCUtil.clearFieldErrors($('client-error'));
+    const fieldError = (msg, id) => LSCUtil.showFieldErrors($('client-error'), [{ msg, field: $(id) }]);
     const setSaving = (next) => {
       // The flag first: it has to be cleared even when the controls have gone.
       saving = next;
@@ -254,13 +248,11 @@ const ClientsView = (() => {
       clearError();
       const body = read();
       if (!body.businessName) {
-        showError('Enter a business name before saving.');
-        $('c-business').focus();
+        fieldError('Enter a business name before saving.', 'c-business');
         return;
       }
       if (body.abn && !abnValid(body.abn)) {
-        showError('That ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.');
-        $('c-abn').focus();
+        fieldError('That ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.', 'c-abn');
         return;
       }
 
@@ -274,8 +266,10 @@ const ClientsView = (() => {
         if (clash) {
           setSaving(false);
           Toast.hide();
-          showError('There’s already a client called “' + clash.businessName + '”. Edit that one instead, or use a different name.');
-          $('c-business').focus();
+          fieldError(
+            'There’s already a client called “' + clash.businessName + '”. Edit that one instead, or use a different name.',
+            'c-business'
+          );
           return;
         }
         const reply = client

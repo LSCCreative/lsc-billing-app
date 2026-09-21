@@ -19,8 +19,8 @@ Sequence: Grill Me → Design Brief → Information Architecture → Design Toke
 dark-editorial token set is locked and unchanged) → Brief to Tasks → **Frontend Design (in
 progress — the nav shell, the Pricing rate column, the Overhead screen, the Goals form, both
 Overhead charts, the estimate-editor floor and its cost breakdown dialog are in, and the layout
-check and the accessibility pass are done — every build task in TASKS.md is checked off)** →
-**Design Review (next)**.
+check and the accessibility pass are done)** → **Design Review (done 2026-09-18 —
+[DESIGN_REVIEW.md](DESIGN_REVIEW.md))**. Every item in TASKS.md is checked off.
 
 **Completed, 2026-09-15:**
 1. Grill Me — no file output; every structural decision folded into the brief (see "Resolved
@@ -385,21 +385,80 @@ check and the accessibility pass are done — every build task in TASKS.md is ch
     **`npm test` 91/91** — on the third attempt. The first two hung with no code change behind
     them and the third passed in 13s untouched; see Open items.
 
-**Not started:** the **Design review** — `/design-review` against DESIGN_BRIEF.md. Every build and
-verification task before it is done. `web/js/calc.js` is byte-identical
+19. **Design review** — [DESIGN_REVIEW.md](DESIGN_REVIEW.md), no code changed. Run with the
+    `design-review` skill against DESIGN_BRIEF.md, live against `api-scratch`, at 1280 / 768 /
+    375px plus the first-run empty states and the Add Expense validation state.
+
+    **Verdict: no must-fix issue in the Finance feature.** Aesthetic fidelity is high — it reads as
+    more pages of the same rate card, and every anti-reference in the brief is avoided. Five
+    should-fix and five could-improve items, **most of them site-wide and pre-existing** rather
+    than introduced here; the most important is that no screen in the app has a heading element or
+    (once signed in) a `<main>` landmark. See the review for each with its fix.
+
+    **The skill's screenshot files were not written.** It asks for PNGs in
+    `.design/overhead-finance/screenshots/`; the built-in browser pane shows captures to the
+    reviewer but cannot save them, no Playwright/Cursor browser MCP was available, and driving a
+    separate headless browser would have meant signing in to the app, which the agent does not do.
+    Every capture was still taken and analysed, and the review names each one so its findings stay
+    traceable. If a file record matters, re-run the review where Playwright MCP is available.
+
+20. **Design review follow-ups, 2026-09-21 — should-fix 1–5 and could-improve 4, all done.** The
+    user chose these five by name ("I want this app ready to go live"), run under the
+    `frontend-design` skill with the site's locked dark-editorial system as the direction — the
+    skill's mobile-first and light-mode rules were deliberately not applied (desktop-first and
+    dark-only are recorded decisions). No backend change: `npm test` **91/91**. `calc.js` untouched.
+
+    - **Headings + `<main>` (SF1), site-wide.** `index.html`'s `#main` is now `<main id="main">`.
+      Every `.page-title` is an `<h1>` (Estimates, Clients, client record, estimate editor,
+      Pricing, Overhead, Goals); the estimate detail's `.est-name` is its `<h1>`; `.est-block-label`,
+      `.bb-label`, Pricing's Travel `.pricing-sec-label`, both list screens' `.card-name` and all
+      three dialog `.modal-title`s are `<h2>`; Invoice Settings' `.set-group-head`s are `<h3>`; the
+      login wordmark is the login screen's `<h1>`. Classes unchanged — decision 75.
+    - **Field-level errors (SF2), every validating form.** New `LSCUtil.showFieldErrors(box, found,
+      lead)` / `clearFieldErrors(box)` in `web/js/util.js` — decision 76. Wired into Add/Edit
+      Expense, Goals, Invoice Settings, Pricing (flags the exact row/category input), client record
+      and estimate editor. Goals' hints are now also tied to their inputs by `aria-describedby`
+      (they weren't). Visible half: `[aria-invalid='true']` border in `--err-text` — decision 77.
+    - **Legend width (SF3).** `max-width: 480px` on `.oh-legend-row`, not `.oh-legend` — decision 78.
+    - **Error tokens (SF4).** `--err-border` / `--err-bg` / `--err-text` defined once in `a11y.css`;
+      all seven stylesheets' error boxes and the toast's error state read them — decision 79.
+    - **Startup message (SF5).** `app.js`: "Couldn't load your pricing and finance settings".
+    - **Reduced motion (CI4).** One rule in `a11y.css`, spinner exempt (a frozen one reads as a hung
+      save).
+
+    **Verified against `api-scratch` by driving every screen**, dispatched clicks per the
+    browser-pane notes. **Pixel identity measured, not assumed**: on each screen every new
+    heading was swapped back to its old `div`/`span` in place and every visible box in `#app-view`
+    re-measured — **0 differing boxes** across Estimates (empty and with a card), estimate detail,
+    estimate editor (7 `h2`s), Clients, client record, Pricing (359 boxes), Overhead, Goals and
+    Invoice Settings. Heading outline read back on each. Field errors: every form submitted bad,
+    each flagged field carries `aria-invalid` + `aria-describedby` → its own sentence, focus lands
+    on the first, editing one field clears only that field, the summary text is unchanged from
+    before. Legend at 1024px: rows 663 → 480px, donut x = 57 capped and uncapped. A throwaway
+    estimate made to reach the detail view and a list card was deleted afterwards; `api-scratch`
+    is as it was. Console clean.
+    **Not seen live:** the login `<h1>` (would need a sign-out) and the startup failure message
+    (needs `/api/session` up but the preload down) — both are markup/string-only changes.
+
+**Not started:** nothing in TASKS.md. Of the design review's follow-ups, **should-fix 1–5 and
+could-improve 4 are done** (entry 20). Still open, all optional polish: could-improve 1 (Goals
+result card's half-width row), 2 (echo Desired Net Income formatted), 3 (`aria-live` — deferred by
+the user, decision 74) and 5 (embed Funnel Sans — the base track's font task). `web/js/calc.js` is byte-identical
 to the server money model and must be re-copied (`cp server/src/calc.js web/js/calc.js`) after
 *any* edit to `calc.js`.
 
-**To resume:** open [TASKS.md](TASKS.md) — the only unchecked item left is the **Design review**.
-TASKS.md gives it no model/effort tag; it is a critique of the finished UI against the brief, so the
-nearest CLAUDE.md bucket is the UI one (`Opus/high`) — say so out loud before starting, per the
-handover rule.
+**To resume:** the user's stated goal is **going live**. Ask whether they want any of the four
+remaining could-improve items first; otherwise the next step is the base track's own remaining
+list ([`../nas-hosted-billing/TASKS.md`](../nas-hosted-billing/TASKS.md) — design review, font/asset
+cleanup) and a deploy of these changes to GitHub Pages. Two small seams from entry 20 worth
+knowing: Pricing's user-named labour categories have no heading (their name is an editable
+`<input>`, which can't sit inside one — only Travel, whose name is fixed, is an `<h2>`), and the
+`.empty-state` titles are still `<h3>` under an `<h1>` (their CSS is keyed to the tag).
 
-**The design review has a short list of items deliberately left for it** in "Open items" below:
-the live-recomputing figures carry no `aria-live` (decision 74), the two names for the shared tax
-field, and the preload failure copy that still names only the rate card. Two things it should
-**not** reopen without asking the user: the chart-only terracotta (decision 72) and the accent
-link-hover idiom (decision 73) — both were put to them explicitly on 2026-09-18.
+Buckets per CLAUDE.md: all of it is UI work (`Opus/high`); nothing touches money math. Two things
+**not** to reopen without asking: the chart-only terracotta (decision 72) and the accent link-hover
+idiom (decision 73), both put to the user on 2026-09-18. The review recommends closing the
+"two names for the tax field" open item as-is.
 
 ## Resolved decisions (do not re-litigate — these were deliberate calls, not oversights)
 
@@ -978,6 +1037,44 @@ Everything in DESIGN_BRIEF.md's decisions, plus, from the accounting-review roun
     figure that changes per keystroke reads out every intermediate value. **Left for the design
     review** to raise again, not closed.
 
+75. **Headings keep their old classes; only the tag changed.** Every class already sets its own
+    size, weight and family, and app.css's `*` reset zeroes margins, so the swap is inert by
+    construction; `a11y.css` adds `h1,h2,h3 { font-size/weight: inherit }` for the one class that
+    set no weight (`.set-group-head`) and `.bb-label { display: inline }` because it was a span
+    sitting inline beside its tag. Measured 0-box-diff (entry 20) — keep it that way: restyle via
+    the class, never via the tag.
+
+76. **Field errors go through one helper, and the summary box stays.** `showFieldErrors` writes
+    each message as its own `<span id="<box>-<n>">` inside the existing `role="alert"` box (reads
+    exactly like the old joined sentence), flags each named field with `aria-invalid="true"`,
+    *appends* that span's id to the field's `aria-describedby` (so existing hints survive), and
+    focuses the first flagged field. A field unflags on its own next `input`/`change`; the summary
+    clears at the next save attempt, as before. `problems()` in each view now returns
+    `{ msg, field }` (Pricing: `{ msg, fields }`, one sentence can cover several inputs).
+    Server-side failures still use plain `showError` — they aren't about a field. Login is
+    deliberately not wired: a wrong-credentials reply can't say which field is wrong.
+
+77. **The invalid border is `--err-text` (#f0a0a0) with `!important`, not `--err-border`.** The
+    box's #7a2222 is 1.33:1 on `--surface` — invisible as a field state; the pink is 6.54:1 and
+    matches the message text. `!important` because input families set border-colour at up to
+    (0,2,1), including on `:focus` and `.upid-field`'s own `!important`; focus is still shown by
+    the outline. **Measuring trap:** `.field input` transitions all properties over 0.15s and the
+    pane throttles transitions when hidden, so a read right after flagging returns the old
+    border colour — read with `transition: none` or after a screenshot.
+
+78. **The legend cap is on `.oh-legend-row`, not `.oh-legend`.** `.oh-donut`'s centring is
+    `margin-inline: auto`, which works only because the legend's flex-grow eats all free space
+    (see the comment above `.oh-donut`). Capping the list would hand ~290px back to the ring's
+    auto margins and slide it right at desktop; capping the rows doesn't (donut x measured
+    identical both ways).
+
+79. **The error tokens live in `a11y.css`, not app.css's `:root`.** app.css is frozen by the
+    Desktop Preservation Law; `--muted`'s override already set the precedent. The seven id-scoped
+    error rules keep their own layout (margins and line-height differ per screen) and only take
+    their colours from the tokens — a shared `.form-error` class would have meant fighting id
+    specificity for `display` in every file for no visual gain. app.css's ported
+    `.export-toast.err` still has the literal hexes; `a11y.css` re-points it at the tokens.
+
 ## Verifying your work
 
 Same acceptance gate as `nas-hosted-billing`: `cd server && npm test` after any backend change.
@@ -1122,7 +1219,7 @@ line, and both charts are all things a person *looks at* — verify them in a br
   1099px / 900px / 768px** task rather than tuned here, so the whole Finance area gets measured in
   one pass instead of this row being adjusted twice. Otherwise the row behaves at 375px: one line,
   no wrap, no horizontal overflow (`body.scrollWidth` 375 at a 375px viewport).
-- **The preload's failure copy is now slightly narrow.** `app.js`'s catch still says "Couldn't load
+- **CARRIED INTO THE DESIGN REVIEW as should-fix 5, not yet actioned.** **The preload's failure copy is now slightly narrow.** `app.js`'s catch still says "Couldn't load
   your rate card", but the `Promise.all` behind it now also fetches overhead, snapshots and goals —
   so a 500 from `/api/overhead-items` shows a message naming the rate card. The remedy it gives
   ("once the server is back, reload the page") is right either way, so it was left alone rather
@@ -1140,7 +1237,7 @@ line, and both charts are all things a person *looks at* — verify them in a br
   surfaces: muted on `--bg` is **6.15:1**, muted on `--surface` (inside a `.proj-card` or the save
   bar) is **5.2:1** — both over the brief's 4.5:1 bar, but the second one is the tighter of the two
   and is where a smaller type size would start to matter.
-- **Two names for the shared tax field** — "Tax Reserve Target" on Goals, "Tax Set-Aside Rate" on
+- **REVIEWED 2026-09-18 — the design review recommends closing this as-is**: the Goals hint already reconciles the two names on screen. Original item: **Two names for the shared tax field** — "Tax Reserve Target" on Goals, "Tax Set-Aside Rate" on
   Pricing, one stored `pricing.taxSetAsideRate`. Both names come from the source documents (see
   resolved decision 36). Worth settling on one during the design review.
 - **CLOSED 2026-09-18 by the Layout check — kept deliberately; see decision 69.** ~~The Goals form keeps three columns from 768px up, where the columns measure 231px and the

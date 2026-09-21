@@ -17,7 +17,7 @@ const LoginView = (() => {
   function markup() {
     return `
       <form class="login-card" id="login-form" novalidate>
-        <div class="login-wordmark">LSC CREATIVE<em>.</em></div>
+        <h1 class="login-wordmark">LSC CREATIVE<em>.</em></h1>
         <div class="login-sub">Project Billing</div>
 
         <div class="login-fields">

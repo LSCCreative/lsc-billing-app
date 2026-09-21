@@ -165,40 +165,48 @@ const PricingView = (() => {
      never validated. */
   function problems() {
     const found = [];
-    const add = (p) => {
-      if (found.indexOf(p) === -1) found.push(p);
+    // One sentence per problem, however many inputs share it; every one of
+    // those inputs is still flagged.
+    const add = (msg, field) => {
+      const hit = found.find((p) => p.msg === msg);
+      if (hit) hit.fields.push(field);
+      else found.push({ msg, fields: [field] });
     };
+    const q = (selector) => root.querySelector(selector);
 
     const percent = parseFloat(taxRaw);
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-      add('The tax set-aside rate must be a number between 0 and 100.');
+      add('The tax set-aside rate must be a number between 0 and 100.', $('tax-inp'));
     }
 
     const seenSection = {};
-    card.labourSections.forEach((sec) => {
+    card.labourSections.forEach((sec, si) => {
       const label = String(sec.label || '').trim();
-      if (!label) add('A category is missing a name.');
+      const labelInp = q('.pricing-sec-label-inp[data-si="' + si + '"]');
+      if (!label) add('A category is missing a name.', labelInp);
       const lower = label.toLowerCase();
-      if (lower && seenSection[lower]) add('Two categories are both called “' + label + '”.');
+      if (lower && seenSection[lower]) add('Two categories are both called “' + label + '”.', labelInp);
       seenSection[lower] = 1;
 
       const seenRow = {};
-      sec.rows.forEach((r) => {
+      sec.rows.forEach((r, ri) => {
         const name = String(r.name || '').trim();
         const key = name.toLowerCase();
-        if (!key) add('A service in “' + (label || 'a category') + '” is missing a name.');
-        else if (seenRow[key]) add('“' + name + '” is listed twice in “' + label + '”.');
+        const nameInp = q('input[data-type="labour"][data-si="' + si + '"][data-ri="' + ri + '"][data-field="name"]');
+        if (!key) add('A service in “' + (label || 'a category') + '” is missing a name.', nameInp);
+        else if (seenRow[key]) add('“' + name + '” is listed twice in “' + label + '”.', nameInp);
         seenRow[key] = 1;
       });
     });
 
     const seenTravel = {};
-    card.travelRows.forEach((r) => {
+    card.travelRows.forEach((r, ri) => {
       const name = String(r.name || '').trim();
       const key = name.toLowerCase();
-      if (!key) add('A travel item is missing a name.');
+      const nameInp = q('input[data-type="travel"][data-ri="' + ri + '"][data-field="name"]');
+      if (!key) add('A travel item is missing a name.', nameInp);
       else if (seenTravel[key])
-        add('“' + name + '” is listed twice under Travel & Accommodation.');
+        add('“' + name + '” is listed twice under Travel & Accommodation.', nameInp);
       seenTravel[key] = 1;
     });
 
@@ -290,7 +298,7 @@ const PricingView = (() => {
 
     return (
       '<div class="pricing-section"><div class="pricing-sec-head">' +
-      '<span class="pricing-sec-label">Travel &amp; Accommodation</span>' +
+      '<h2 class="pricing-sec-label">Travel &amp; Accommodation</h2>' +
       '<span style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Expenses</span></div>' +
       '<table class="pricing-table"><thead><tr><th>Item</th>' +
       '<th style="text-align:right">Rate ($)</th>' +
@@ -307,7 +315,7 @@ const PricingView = (() => {
 
   function markup() {
     let html =
-      '<div class="page-head"><div><div class="page-title">Pricing &amp; Services</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Pricing &amp; Services</h1>' +
       '<div class="page-sub">Add, rename, re-price or remove anything the estimator offers</div></div></div>' +
       '<div class="tax-setting"><div>' +
       '<div class="sum-label" style="margin-bottom:4px">Tax Set-Aside Rate (%)</div>' +
@@ -365,10 +373,7 @@ const PricingView = (() => {
   }
 
   function clearError() {
-    const el = $('pricing-error');
-    if (!el) return;
-    el.textContent = '';
-    el.classList.remove('show');
+    LSCUtil.clearFieldErrors($('pricing-error'));
   }
 
   function setSaving(next) {
@@ -548,7 +553,7 @@ const PricingView = (() => {
     if (found.length) {
       // The desktop app used alert() here. A blocking dialog hides the very
       // fields the message is describing.
-      showError('Fix this before saving: ' + found.join(' '));
+      LSCUtil.showFieldErrors($('pricing-error'), found, 'Fix this before saving:');
       return;
     }
 

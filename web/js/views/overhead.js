@@ -123,7 +123,7 @@ const OverheadView = (() => {
   function tableMarkup() {
     const list = items();
     const head =
-      '<div class="est-block-head"><span class="est-block-label">Recurring Costs</span>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Recurring Costs</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
       list.length + ' expense' + (list.length !== 1 ? 's' : '') + '</span></div>';
 
@@ -165,7 +165,7 @@ const OverheadView = (() => {
 
   function markup() {
     return (
-      '<div class="page-head"><div><div class="page-title">Overhead</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Overhead</h1>' +
       '<div class="page-sub">What it costs to keep the business open, before any job</div></div>' +
       '<button type="button" class="btn btn-accent" id="oh-add" data-write>+ Add Expense</button></div>' +
       summaryMarkup() +
@@ -194,10 +194,7 @@ const OverheadView = (() => {
   }
 
   function clearError() {
-    const el = $('overhead-error');
-    if (!el) return;
-    el.textContent = '';
-    el.classList.remove('show');
+    LSCUtil.clearFieldErrors($('overhead-error'));
   }
 
   // ── Reading the server back ───────────────────────────────────────────────
@@ -262,7 +259,7 @@ const OverheadView = (() => {
     const title = editingId ? 'Edit Expense' : 'Add Expense';
     return (
       '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="oh-modal-title">' +
-      '<div class="modal-title" id="oh-modal-title">' + title + '</div>' +
+      '<h2 class="modal-title" id="oh-modal-title">' + title + '</h2>' +
       '<div class="form-grid">' +
         '<div class="field full"><label for="oh-name">Expense Name</label>' +
         '<input id="oh-name" type="text" placeholder="e.g. Adobe Creative Cloud" value="' +
@@ -304,20 +301,19 @@ const OverheadView = (() => {
   }
 
   function clearModalError() {
-    const el = $m('oh-modal-error');
-    if (!el) return;
-    el.textContent = '';
-    el.classList.remove('show');
+    LSCUtil.clearFieldErrors($m('oh-modal-error'));
   }
 
   function problems() {
     const found = [];
-    if (!String(form.name || '').trim()) found.push('Give the expense a name.');
-    if (!form.category) found.push('Pick a category.');
+    if (!String(form.name || '').trim()) found.push({ msg: 'Give the expense a name.', field: $m('oh-name') });
+    if (!form.category) found.push({ msg: 'Pick a category.', field: $m('oh-category') });
     const cost = parseFloat(form.cost);
     // Checked rather than coerced: Number('') is 0, so an empty Cost field would
     // otherwise save as a free expense and quietly drag the annual total down.
-    if (!Number.isFinite(cost) || cost < 0) found.push('Cost must be a number of dollars, 0 or more.');
+    if (!Number.isFinite(cost) || cost < 0) {
+      found.push({ msg: 'Cost must be a number of dollars, 0 or more.', field: $m('oh-cost') });
+    }
     return found;
   }
 
@@ -338,7 +334,7 @@ const OverheadView = (() => {
 
     const found = problems();
     if (found.length) {
-      showModalError(found.join(' '));
+      LSCUtil.showFieldErrors($m('oh-modal-error'), found);
       return;
     }
 

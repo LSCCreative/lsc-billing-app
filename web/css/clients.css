@@ -84,9 +84,9 @@
   display: none;
   margin-top: 18px;
   padding: 10px 14px;
-  border: 1px solid #7a2222;
-  background: #1f1414;
-  color: #f0a0a0;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
   font-size: 12px;
 }
 #client-error.show {
@@ -113,6 +113,7 @@
 .client-history-link:hover,
 .client-history-link:focus-visible {
   color: var(--accent);
-  outline: none;
   text-decoration: underline;
 }
+/* No `outline: none` here: keyboard focus keeps a11y.css's ring as well as the
+   colour, the same as the Finance links (decision 73's premise). */

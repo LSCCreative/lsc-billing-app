@@ -113,9 +113,9 @@
   display: none;
   margin: 0 0 14px;
   padding: 10px 14px;
-  border: 1px solid #7a2222;
-  background: #1f1414;
-  color: #f0a0a0;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -359,11 +359,18 @@
   padding: 0;
   min-width: 0;
 }
+/* max-width on the rows, not on .oh-legend. Uncapped, a 1280px screen spread
+   each row ~700px and left "Hosting" ~350px from its $1,800.00. Capping the
+   list itself would do the same job visually but hand its freed space to
+   .oh-donut's auto margins (see the note above it) and slide the ring right;
+   the list keeps its flex-grow and only the rows stop growing. Inert at 768px
+   and below, where the legend is already narrower than this. */
 .oh-legend-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto 52px;
   align-items: center;
   gap: 10px;
+  max-width: 480px;
   padding: 7px 0;
   border-bottom: 1px solid rgba(61, 74, 92, 0.4);
   font-size: 12px;

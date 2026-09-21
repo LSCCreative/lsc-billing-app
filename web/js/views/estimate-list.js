@@ -25,13 +25,13 @@ const EstimateList = (() => {
     const totals = estimate.totals || {};
     const isInvoice = estimate.docType === 'invoice';
     const badge = isInvoice
-      ? '<span style="font-size:9px;padding:2px 7px;border:1px solid var(--accent);color:var(--accent);letter-spacing:.05em">INVOICE</span>'
+      ? '<span style="font-size:9px;padding:2px 7px;border:1px solid var(--accent);color:var(--text);letter-spacing:.05em">INVOICE</span>'
       : '<span style="font-size:9px;padding:2px 7px;border:1px solid var(--border);color:var(--muted);letter-spacing:.05em">ESTIMATE</span>';
 
     return (
-      '<div class="proj-card" data-id="' + esc(estimate.id) + '" role="listitem" tabindex="0">' +
+      '<div class="proj-card" data-id="' + esc(estimate.id) + '" role="listitem">' +
       '<div class="card-num">' + esc(estimate.upid || '—') + '</div>' +
-      '<div class="card-name">' + esc(estimate.name) + '</div>' +
+      '<h2 class="card-name"><button type="button" class="card-open">' + esc(estimate.name) + '</button></h2>' +
       '<div class="card-client">' + esc(client.businessName || '—') + '</div>' +
       '<div style="margin-bottom:8px">' + badge + '</div>' +
       '<div class="card-gross-label">Total (inc GST)</div>' +
@@ -108,7 +108,7 @@ const EstimateList = (() => {
   function markup(estimates) {
     const count = estimates.length;
     let html =
-      '<div class="page-head"><div><div class="page-title">Estimates</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Estimates</h1>' +
       '<div class="page-sub">' +
       (count ? count + ' estimate' + (count !== 1 ? 's' : '') : 'No estimates yet') +
       '</div></div>' +
@@ -127,14 +127,14 @@ const EstimateList = (() => {
 
   function loadingMarkup() {
     return (
-      '<div class="page-head"><div><div class="page-title">Estimates</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Estimates</h1>' +
       '<div class="page-sub">Loading…</div></div></div>'
     );
   }
 
   function failureMarkup(message) {
     return (
-      '<div class="page-head"><div><div class="page-title">Estimates</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Estimates</h1>' +
       '<div class="page-sub">Could not load</div></div>' +
       '<button class="btn btn-ghost" id="js-retry">Try Again</button></div>' +
       '<div class="empty-state"><h3>Couldn’t load your estimates</h3><p>' +
@@ -202,16 +202,12 @@ const EstimateList = (() => {
 
     root.querySelectorAll('.proj-card').forEach((card) => {
       const open = () => handlers.onOpen(card.dataset.id);
-      card.addEventListener('click', open);
       // The cards were div-only in the desktop app, where a mouse was the only
-      // input. On the web they are the sole route into an estimate, so they
-      // answer the keyboard too.
-      card.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          open();
-        }
-      });
+      // input. On the web they are the sole route into an estimate, so the
+      // title is a real <button> (.card-open, stretched over the card by
+      // estimates.css): it is announced as something you can activate, takes
+      // the site-wide focus ring, and its Enter/Space click bubbles up here.
+      card.addEventListener('click', open);
     });
   }
 

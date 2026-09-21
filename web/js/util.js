@@ -54,5 +54,68 @@ const LSCUtil = (() => {
     return /^\d{11}$/.test(digits) ? digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3 $4') : digits;
   }
 
-  return { fmt, esc, today, num, abnDigits, abnValid, abnFormat };
+  /* Field-level validation state, shared by every form so they all flag bad
+     input the same way. `found` is [{ msg, field }] — field an element (or
+     null for a problem no single input owns). Each message becomes its own
+     <span id> inside the form's role="alert" box, which reads exactly as the
+     old space-joined sentence did, and each named field (or each of `fields`,
+     when one sentence covers several inputs) gets
+     aria-invalid="true" plus aria-describedby pointing at *its* sentence, so a
+     screen reader tabbing back into the form hears why that field is wrong.
+     The flag clears on the field's own next edit; the summary stays until the
+     next save attempt, like it always has. Focus goes to the first flagged
+     field so nobody has to hunt for it. */
+  function showFieldErrors(box, found, lead) {
+    if (!box) return;
+    clearFieldErrors(box);
+    box.textContent = lead ? lead + ' ' : '';
+    let first = null;
+    found.forEach((p, i) => {
+      const span = document.createElement('span');
+      span.id = box.id + '-' + i;
+      span.textContent = p.msg;
+      if (i) box.append(' ');
+      box.append(span);
+      (p.fields || [p.field]).forEach((field) => {
+        if (!field) return;
+        field.setAttribute('aria-invalid', 'true');
+        field.setAttribute('data-err-box', box.id);
+        const ids = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+        if (ids.indexOf(span.id) === -1) ids.push(span.id);
+        field.setAttribute('aria-describedby', ids.join(' '));
+        field.addEventListener('input', clearField);
+        field.addEventListener('change', clearField);
+        if (!first) first = field;
+      });
+    });
+    box.classList.add('show');
+    if (first) first.focus();
+  }
+
+  function unflag(field, boxId) {
+    field.removeAttribute('aria-invalid');
+    field.removeAttribute('data-err-box');
+    field.removeEventListener('input', clearField);
+    field.removeEventListener('change', clearField);
+    const ids = (field.getAttribute('aria-describedby') || '')
+      .split(/\s+/)
+      .filter((id) => id && id.indexOf(boxId + '-') !== 0);
+    if (ids.length) field.setAttribute('aria-describedby', ids.join(' '));
+    else field.removeAttribute('aria-describedby');
+  }
+
+  function clearField(event) {
+    const field = event.currentTarget;
+    unflag(field, field.getAttribute('data-err-box') || '');
+  }
+
+  /* Clears the box and every field it flagged. Safe to call when neither exists. */
+  function clearFieldErrors(box) {
+    if (!box) return;
+    document.querySelectorAll('[data-err-box="' + box.id + '"]').forEach((f) => unflag(f, box.id));
+    box.textContent = '';
+    box.classList.remove('show');
+  }
+
+  return { fmt, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors };
 })();

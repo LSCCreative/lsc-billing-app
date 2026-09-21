@@ -10,14 +10,16 @@ memoryless Electron desktop app into a real website. Read before touching anythi
 
 1. [`.design/nas-hosted-billing/`](.design/nas-hosted-billing/) — the base website rewrite
    (Electron → GitHub Pages + NAS-hosted API/SQLite). Largely complete and **live** (Cloudflare
-   Tunnel + GitHub Pages); remaining work is in its own `TASKS.md` (design review, font/asset
-   cleanup). Read its `HANDOVER.md` first.
+   Tunnel + GitHub Pages); remaining work is font/asset cleanup (its `TASKS.md`) and the fixes
+   from its design review, done 2026-09-21
+   ([`DESIGN_REVIEW.md`](.design/nas-hosted-billing/DESIGN_REVIEW.md) — its fixes were all
+   done the same day). Read its `HANDOVER.md` first.
 2. [`.design/overhead-finance/`](.design/overhead-finance/) — new Finance area (Overhead tracking,
    Goals, and cost-basis pricing feeding into the Pricing screen), built on top of the now-live
-   site from (1). Fully planned as of 2026-09-15 (brief, IA, and tasks all written and
-   accounting-reviewed); the first two tasks (SQLite schema v4, and the Overhead/Goals calc
-   functions in `calc.js`) are **done and tested** — read its `HANDOVER.md` first, then start at
-   the first unchecked item in its `TASKS.md`.
+   site from (1). **Every task in its `TASKS.md` is done as of 2026-09-18**, including the design
+   review ([`DESIGN_REVIEW.md`](.design/overhead-finance/DESIGN_REVIEW.md)) and, as of 2026-09-21,
+   all five of its should-fix items; only four optional could-improve items remain. Read its
+   `HANDOVER.md` first.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes
 what's being built (the old `localStorage`/Electron-targeted overhead brief, the old

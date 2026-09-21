@@ -47,4 +47,4 @@ look at those in a browser against `api-scratch`, don't trust a passing test alo
 ## Review
 
 - [x] **`cd server && npm test`**: The repo's stated acceptance gate for any backend change — run after every task above that touches `server/`, not just once at the end.
-- [ ] **Design review**: Run `/design-review` against `.design/overhead-finance/DESIGN_BRIEF.md` once Core UI, Interactions & States, and Responsive & Polish are done.
+- [x] **Design review**: Run `/design-review` against `.design/overhead-finance/DESIGN_BRIEF.md` once Core UI, Interactions & States, and Responsive & Polish are done.

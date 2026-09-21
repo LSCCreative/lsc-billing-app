@@ -264,7 +264,7 @@ const OverheadCharts = (() => {
         : 'No change' + since;
     }
     return (
-      '<div class="est-block-head"><span class="est-block-label">Overhead Trend</span>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Overhead Trend</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' + esc(note) + '</span></div>'
     );
   }
@@ -570,7 +570,7 @@ const OverheadCharts = (() => {
   function donutMarkup(items, categories) {
     const { groups, total } = byCategory(items, categories);
     const head =
-      '<div class="est-block-head"><span class="est-block-label">Category Breakdown</span>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Category Breakdown</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
       (groups.length ? groups.length + ' categor' + (groups.length === 1 ? 'y' : 'ies') : '') +
       '</span></div>';

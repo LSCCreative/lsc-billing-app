@@ -97,6 +97,12 @@ const EstimateEditor = (() => {
      "Qty / Cost", crew is "Days"/"Day Rate", equipment is "Days"/"Cost/Day").
      Inert above 768px: nothing reads the attribute there. */
 
+  /* No Rate column on labour rows (2026-09-21). A row's stored `rate` has been
+     inert since the Finance track made the Pricing screen show one computed
+     Overhead Rate/hr for every labour row — nothing prices off it — so printing
+     it here contradicted Pricing on the same data. Travel rows keep theirs: a
+     travel rate is still entered by hand. The same column is gone from
+     estimate-detail.js. */
   function buildLabourRow(section, def, line) {
     const tr = document.createElement('div');
     tr.className = 'gt-row labour-grid';
@@ -114,7 +120,6 @@ const EstimateEditor = (() => {
       '<div data-label="Service">' + esc(line.name) + '</div>' +
       '<div class="right" data-label="Hours"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
       (line.qty || '') + '" aria-label="Hours for ' + esc(line.name) + '"></div>' +
-      '<div class="right muted-td" data-label="Rate">' + (def && def.rate > 0 ? fmt(def.rate) : '—') + '</div>' +
       '<div class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</div>' +
       '<div class="right" data-label="Client Bill"><span class="bill-cell">—</span>' + customCell + '</div>' +
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' +
@@ -264,11 +269,11 @@ const EstimateEditor = (() => {
 
     return (
       '<div class="billing-block">' +
-      '<div class="bb-head"><div><span class="bb-label">' + esc(section.label) + '</span>' + tag + '</div>' +
+      '<div class="bb-head"><div><h2 class="bb-label">' + esc(section.label) + '</h2>' + tag + '</div>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + esc(section.id) + '">$0.00</b></span></div>' +
       picker +
       '<div class="gt-head labour-grid"><div>Service</div><div class="right">Hours</div>' +
-      '<div class="right">Rate</div><div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
+      '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
       bodyMarkup(section.id, 'No services added. Use the selector above to add one.') +
       '</div>'
     );
@@ -282,7 +287,7 @@ const EstimateEditor = (() => {
 
     return (
       '<div class="billing-block">' +
-      '<div class="bb-head"><div><span class="bb-label">Travel &amp; Accommodation</span>' +
+      '<div class="bb-head"><div><h2 class="bb-label">Travel &amp; Accommodation</h2>' +
       '<span class="bb-label-tag">Expenses</span></div>' +
       '<span class="bb-sum">Subtotal <b id="sum-travel">$0.00</b></span></div>' +
       '<div class="bb-picker"><select class="svc-select" id="sel-travel" aria-label="Travel item to add">' +
@@ -298,7 +303,7 @@ const EstimateEditor = (() => {
   function costSectionMarkup(kind, label, addLabel, columns, emptyText) {
     return (
       '<div class="billing-block">' +
-      '<div class="bb-head"><div><span class="bb-label">' + label + '</span>' +
+      '<div class="bb-head"><div><h2 class="bb-label">' + label + '</h2>' +
       '<span class="bb-label-tag">Expenses</span></div>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + kind + '">$0.00</b></span></div>' +
       '<div class="bb-picker"><button type="button" class="btn btn-accent btn-sm" id="add-' + kind + '">' +
@@ -314,9 +319,9 @@ const EstimateEditor = (() => {
   function deliverablesSectionMarkup() {
     return (
       '<div class="billing-block" id="block-deliverables">' +
-      '<div class="bb-head"><div><span class="bb-label">Deliverables</span>' +
+      '<div class="bb-head"><div><h2 class="bb-label">Deliverables</h2>' +
       '<span class="bb-label-tag">PROJECT OUTPUT</span></div>' +
-      '<button type="button" class="btn-accent btn-sm" id="add-deliverables">+ Add Deliverable</button></div>' +
+      '<button type="button" class="btn btn-accent btn-sm" id="add-deliverables">+ Add Deliverable</button></div>' +
       '<div class="gt-head deliv-grid"><div>Deliverable Name</div><div>Format / Aspect Ratio</div>' +
       '<div>Duration / Length</div><div class="right">Qty</div><div></div></div>' +
       bodyMarkup('deliverables', 'No deliverables added yet — click “+ Add Deliverable” above.') +
@@ -390,13 +395,13 @@ const EstimateEditor = (() => {
          grid-column would have needed !important to undo — which would then be
          undoable by nothing. Identical at every other width. */
       '<div class="sum-item sum-span2" style="background:rgba(184,84,68,0.08);border:1px solid rgba(184,84,68,0.3)">' +
-      '<div class="sum-label" style="color:var(--accent)">Total (inc GST)</div>' +
+      '<div class="sum-label sum-label-strong">Total (inc GST)</div>' +
       '<div class="sum-value accent" id="s-total">$0.00</div></div>' +
       '<div class="sum-item"><div class="sum-label">Tax Set-Aside</div>' +
       '<div class="sum-value" id="s-tax" style="font-size:15px">$0.00</div></div>' +
       '<div class="sum-item sum-span2">' +
-      '<div class="sum-label">Est. Take-Home <span style="font-size:9px;color:var(--muted2)">(labour revenue ex GST, less set-aside — pass-through excluded)</span></div>' +
-      '<div class="sum-value" id="s-takehome" style="color:#6fcf6f">$0.00</div></div>' +
+      '<div class="sum-label">Est. Take-Home <span class="sum-label-note">(labour revenue ex GST, less set-aside — pass-through excluded)</span></div>' +
+      '<div class="sum-value" id="s-takehome" style="color:var(--ok)">$0.00</div></div>' +
       '</div>' +
       /* Under the bars, not inside them: a sixth .sum-item would read as one
          more headline figure, and this one is explicitly not that. */
@@ -410,12 +415,12 @@ const EstimateEditor = (() => {
 
     let html =
       '<button class="back-btn" id="js-back">← Back</button>' +
-      '<div class="page-head"><div><div class="page-title">' +
-      (estimate ? 'Edit Estimate' : 'New Estimate') + '</div>' +
+      '<div class="page-head"><div><h1 class="page-title">' +
+      (estimate ? 'Edit Estimate' : 'New Estimate') + '</h1>' +
       '<div class="page-sub">Select services from each category to build your estimate</div></div></div>' +
       '<div class="form-grid">' +
-      '<div class="field full"><label for="f-upid" style="color:var(--accent)">UPID — Unique Project Identifier *</label>' +
-      '<input id="f-upid" type="text" class="upid-field" value="' + esc(estimate ? estimate.upid : '') + '"></div>' +
+      '<div class="field full"><label for="f-upid" class="label-accent">UPID — Unique Project Identifier *</label>' +
+      '<input id="f-upid" type="text" value="' + esc(estimate ? estimate.upid : '') + '"></div>' +
       '<div class="field"><label for="f-name">Project Name *</label>' +
       '<input id="f-name" type="text" value="' + esc(estimate ? estimate.name : '') + '"></div>' +
       '<div class="field"><label for="f-date">Date</label>' +
@@ -447,7 +452,7 @@ const EstimateEditor = (() => {
       '<option value="invoice"' + (isInvoice ? ' selected' : '') + '>Invoice</option>' +
       '</select>' +
       '<div class="inv-num-wrap' + (isInvoice ? ' show' : '') + '" id="inv-num-wrap">' +
-      '<label for="f-invnum" style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent)">Invoice #</label>' +
+      '<label for="f-invnum" class="label-accent" style="font-size:10px;text-transform:uppercase;letter-spacing:.1em">Invoice #</label>' +
       '<input class="inv-num-inp" id="f-invnum" type="text" placeholder="e.g. INV-001" value="' +
       esc((estimate && estimate.invoiceNumber) || '') + '">' +
       '</div>' +
@@ -710,7 +715,7 @@ const EstimateEditor = (() => {
     const margin = esc(b.margin);
     return (
       '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="cb-title">' +
-      '<div class="modal-title" id="cb-title">How this is calculated</div>' +
+      '<h2 class="modal-title" id="cb-title">How this is calculated</h2>' +
       '<div class="cb-rows">' +
       breakdownRow(
         'Direct Job Costs',
@@ -791,10 +796,11 @@ const EstimateEditor = (() => {
   }
 
   function clearError() {
-    const el = $('editor-error');
-    if (!el) return;
-    el.textContent = '';
-    el.classList.remove('show');
+    LSCUtil.clearFieldErrors($('editor-error'));
+  }
+
+  function fieldError(msg, id) {
+    LSCUtil.showFieldErrors($('editor-error'), [{ msg, field: $(id) }]);
   }
 
   function setSaving(next) {
@@ -903,19 +909,16 @@ const EstimateEditor = (() => {
 
     const body = payload();
     if (!body.name) {
-      showError('Enter a project name before saving.');
-      $('f-name').focus();
+      fieldError('Enter a project name before saving.', 'f-name');
       return;
     }
     if (!body.upid) {
-      showError('Enter a UPID before saving.');
-      $('f-upid').focus();
+      fieldError('Enter a UPID before saving.', 'f-upid');
       return;
     }
     // The client's ABN prints on the invoice.
     if (body.client.abn && !abnValid(body.client.abn)) {
-      showError('That client ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.');
-      $('f-abn').focus();
+      fieldError('That client ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.', 'f-abn');
       return;
     }
 

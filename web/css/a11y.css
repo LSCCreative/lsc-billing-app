@@ -13,20 +13,74 @@
    both under the 4.5:1 body-text threshold. 0.6 clears both (6.15:1 / 5.2:1)
    without a visible shift large enough to read as a redesign — verified with
    the WCAG relative-luminance formula against both backgrounds this token is
-   used on. --muted2 is untouched: it is only ever a placeholder-style "empty"
-   row, not text carrying information. */
+   used on. --muted2 (1.67:1) is not a text colour: the base design review
+   (2026-09-21) found it carrying the editor's empty-row instructions, the
+   Take-Home note and "No notes added.", and all three now read --muted. It
+   stays for non-text marks (the trend chart's gridlines). */
 :root {
   --muted: rgba(240, 237, 232, 0.6);
+}
+.gt-body .empty-row {
+  color: var(--muted);
+}
+
+/* ── Accent as a text colour ────────────────────────────────────────────────
+   --accent (#B85444) is 3.71:1 on --bg and 2.80:1 on --surface — fine for
+   fills, borders, underlines and focus rings (3:1 non-text), under the 4.5:1
+   the brief sets for text. --accent-text is the same hue mixed 12% toward
+   white: 4.60:1 on --bg, and 3.47:1 on --surface, which clears the 3:1 bar for
+   large text (the card total). The user's call, 2026-09-21, extending the
+   chart-only lift (--oh-chart-accent, Finance decision 72) to text. --accent
+   itself is unchanged everywhere it isn't text, and the hover-to-accent link
+   idiom (Finance decision 73) is left as it was.
+
+   Small accent text on --surface would need a 28% lift (#cc8478), which starts
+   to read as the error pink — so the card's UPID moves to --muted instead. */
+:root {
+  --accent-text: #c1695a;
+  /* The Take-Home green, inherited from the desktop app (#6fcf6f, 9.9:1 on
+     --bg), named once instead of spelled out inline in four places. */
+  --ok: #6fcf6f;
+}
+.card-gross,
+.bill-cell,
+.sum-value.accent,
+.est-upid,
+.est-table .bill,
+.net-row td {
+  color: var(--accent-text);
+}
+/* The detail totals card's Total (inc GST) row sits on an accent tint, which
+   takes --accent-text to 4.29:1 — under 4.5 at 15px. The label reads --text
+   (the tint marks the row), and the figure goes to the editor's own 19px
+   headline size, where it counts as large text (3:1). */
+.net-row td:first-child {
+  color: var(--text);
+}
+.net-row td.tv {
+  font-family: 'Delight', 'Georgia', serif;
+  font-size: 19px;
+}
+.card-num {
+  color: var(--muted);
+}
+
+/* No stylesheet set ::placeholder, so every one rendered in the UA's #757575 —
+   2.9:1 on the inputs' --surface fill. Several carry the expected format (ABN,
+   BSB, invoice number), which is information. */
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 /* app.css sets `outline:none` on every text input, select and custom button in
    the app (.field input/textarea, .svc-select, .text-inp, .num-inp, the
    pricing-table/tax-setting/doc-type/invoice-number inputs) and leaves .btn /
    .nav-link / .back-btn / .del-btn to the UA default, which this theme's dark
-   background makes inconsistent at best. A handful of screens already added
-   their own scoped `:focus-visible` ring (login.css, connection.css,
-   estimates.css's card, clients.css's history link) with exactly this
-   treatment — this is that same ring, applied everywhere else so keyboard
+   background makes inconsistent at best. A few screens had added their own
+   scoped `:focus-visible` ring with exactly this treatment (connection.css
+   still does; estimates.css draws it on a whole card, see .card-open) — this
+   is that same ring, applied everywhere else so keyboard
    navigation is never guesswork about what's focused. `:focus-visible` rather
    than `:focus` so a mouse click still doesn't ring anything. */
 .btn:focus-visible,
@@ -59,4 +113,67 @@ a:focus-visible {
    the button so the two don't compete for the same edge. */
 .nav-link:focus-visible {
   outline-offset: 3px;
+}
+
+/* ── Shared error colours ───────────────────────────────────────────────────
+   The one error palette, defined once. Every inline error box (#client-error,
+   #editor-error, #export-error, #goals-error, #settings-error, #overhead-error,
+   #oh-modal-error, #pricing-error) reads these; they used to carry their own
+   copy of the hex triplet. Here rather than app.css's :root because that file
+   is frozen by the Desktop Preservation Law — the values are the desktop app's
+   own, unchanged. app.css's .export-toast.err still spells them out as ported;
+   it is pointed back at the tokens below so a change here reaches it too. */
+:root {
+  --err-border: #7a2222;
+  --err-bg: #1f1414;
+  --err-text: #f0a0a0;
+}
+.export-toast.err {
+  border-color: var(--err-border);
+  background: var(--err-bg);
+}
+
+/* ── Field-level errors ─────────────────────────────────────────────────────
+   LSCUtil.showFieldErrors() sets aria-invalid="true" on each field a failed
+   save names; this is its visible half. --err-text rather than --err-border:
+   the box's #7a2222 is 1.33:1 on --surface (1.69:1 on the pricing inputs'
+   #1a1c20), too faint to find a field by; this is 6.54:1 / 8.32:1, and is the
+   same pink the message itself is written in,
+   so the sentence and the field it means read as one thing. !important
+   because each input family (.field input, .pricing-table input,
+   .tax-setting input) sets its own border-colour at up to
+   (0,2,1) and on :focus, and the flag must survive being focused — the focus
+   ring is the outline above, so nothing is lost. Clears on the next edit. */
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--err-text) !important;
+}
+
+/* ── Headings ───────────────────────────────────────────────────────────────
+   Page titles are <h1>, block and section heads <h2>, the Invoice Settings
+   groups <h3> — for screen-reader navigation only. Every one keeps its old
+   class, and every class sets its own size and weight, so these two lines only
+   matter where a class sets neither (.set-group-head's weight) and stop the UA
+   bold/2em defaults leaking in. app.css's `*` reset already zeroes margins. */
+h1, h2, h3 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+/* Was a <span> sitting inline with its .bb-label-tag; a block heading would
+   push the tag onto its own line. */
+.bb-label {
+  display: inline;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+   The app's only motion is short colour fades and the toast's slide; honour
+   the OS setting for all of it in one place. The spinner is exempt: it is a
+   busy indicator, and a frozen one reads as a hung save. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.spinner), *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

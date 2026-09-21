@@ -101,9 +101,9 @@
   display: none;
   margin: 0 0 14px;
   padding: 10px 14px;
-  border: 1px solid #7a2222;
-  background: #1f1414;
-  color: #f0a0a0;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
   font-size: 12px;
   line-height: 1.5;
 }
