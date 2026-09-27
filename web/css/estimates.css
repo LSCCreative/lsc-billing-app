@@ -410,6 +410,23 @@
   grid-template-columns: 3fr 90px 90px 110px 32px;
 }
 
+/* What a labour row's quantity counts, under its name — only in a category
+   whose card has a day row (see buildLabourRow). The Rate Card's own
+   .pricing-row-meta size and colour, so the same words look the same on both
+   screens. app.css makes every .gt-row cell a centred flex row, which would
+   set the line beside the name; this stacks it underneath instead. Below 768px
+   the first cell is display:block already. */
+.gt-row > div.lab-svc {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+.lab-unit {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
 /* Every detail-view section table is four columns; one fixed set of widths
    lines their edges up down the page instead of each table sizing its columns
    to its own contents. Inert below 768px, where these tables stack. */

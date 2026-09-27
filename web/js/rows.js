@@ -93,6 +93,45 @@ const LSCRows = (() => {
     return num(line.days) * num(line.cost);
   }
 
+  /* ── What a labour row's quantity counts ──────────────────────────────────
+     Added 2026-09-27 (.design/price-calculator/). A labour row used to be
+     priced by the hour, full stop, so both estimate screens headed the quantity
+     column "Hours". Day rows broke that: a 2 on a full-day row is two shoot
+     days. These say which unit a row sells in, by the same rule calc.js's
+     labourHoursBreakdown uses — `dayUnit` marks a day row (never its name), and
+     hours other than one without a marker are a generic "unit" rather than
+     being passed off as hours. */
+  const UNIT_WORDS = {
+    hour: ['hour', 'hours'],
+    full: ['full day', 'full days'],
+    half: ['half day', 'half days'],
+    unit: ['unit', 'units'],
+  };
+
+  function labourUnit(def) {
+    const hoursPerUnit = LSCCalc.hoursPerUnitOf(def);
+    const dayUnit = def && (def.dayUnit === 'full' || def.dayUnit === 'half') ? def.dayUnit : null;
+    if (!dayUnit && hoursPerUnit === 1) return { kind: 'hour', hoursPerUnit: 1 };
+    return { kind: dayUnit || 'unit', hoursPerUnit };
+  }
+
+  /* The quantity's name where there is no column heading to lean on — the
+     stacked mobile label, and the input's accessible name. */
+  const QTY_LABELS = { hour: 'Hours', full: 'Full days', half: 'Half days', unit: 'Units' };
+  const qtyLabel = (kind) => QTY_LABELS[kind] || QTY_LABELS.unit;
+
+  function unitWord(kind, qty) {
+    const words = UNIT_WORDS[kind] || UNIT_WORDS.unit;
+    return num(qty) === 1 ? words[0] : words[1];
+  }
+
+  /* Whether a category's quantity column can still just say "Hours". Judged on
+     the live card's rows for the category, not on the lines an estimate happens
+     to hold, so the heading doesn't change under the user as they add a row. */
+  function sectionHasUnits(section) {
+    return ((section && section.rows) || []).some((r) => labourUnit(r).kind !== 'hour');
+  }
+
   return {
     RESERVED_SECTION_IDS,
     sectionsFor,
@@ -101,5 +140,9 @@ const LSCRows = (() => {
     labourBill,
     travelBill,
     costBill,
+    labourUnit,
+    unitWord,
+    qtyLabel,
+    sectionHasUnits,
   };
 })();

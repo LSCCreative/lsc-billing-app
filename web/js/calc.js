@@ -507,6 +507,67 @@ function minimumJobPrice(directJobCosts, estimatedHours, overheadRate, profitMar
   return round2(cost * (1 + margin / 100));
 }
 
+/**
+ * Where a job's totalHours came from, for the sentence that explains the floor.
+ *
+ * The estimate editor's Minimum Job Price note says "across N hours", and once
+ * a job has day rows N is no longer something a reader can check against the
+ * quantities on screen: two shoot days read as "2" in the table and "16" in the
+ * note. This splits N back into its parts — so many full days at so many hours,
+ * so many hours of hourly work — so the note can show its working.
+ *
+ * It walks the labour rows exactly as computeTotals does (same lookup, same
+ * skipped rows, same hoursPerUnitOf), and a test pins `totalHours` here equal to
+ * computeTotals' own, so the explanation cannot drift from the number it
+ * explains. Display only: nothing prices off it.
+ *
+ * A row is a "unit" row when it carries a dayUnit or hours other than one; every
+ * other row is hourly. Unit rows are grouped by (dayUnit, hoursPerUnit), so two
+ * full-day rows of the same length read as one "3 full days at 8 hrs".
+ *
+ * @param {object} activeRows — as computeTotals takes it.
+ * @param {object} pricing — as computeTotals takes it.
+ * @returns {{ units: Array<{ dayUnit: string|null, hoursPerUnit: number,
+ *   qty: number, hours: number }>, hourlyHours: number, totalHours: number }}
+ *   units ordered full days, half days, then any other unit by length; groups
+ *   whose quantity sums to zero are left out.
+ */
+function labourHoursBreakdown(activeRows, pricing) {
+  const rows = activeRows || {};
+  const labourSections = (pricing && pricing.labourSections) || [];
+  const groups = new Map();
+  let hourlyHours = 0;
+  let totalHours = 0;
+
+  for (const section of labourSections) {
+    for (const line of rows[section.id] || []) {
+      const def = (section.rows || []).find((r) => r.name === line.name);
+      if (!def) continue; // same rule as computeTotals
+      const qty = num(line.qty);
+      const perUnit = hoursPerUnitOf(def);
+      totalHours += qty * perUnit;
+
+      const dayUnit = def.dayUnit === 'full' || def.dayUnit === 'half' ? def.dayUnit : null;
+      if (!dayUnit && perUnit === 1) {
+        hourlyHours += qty;
+        continue;
+      }
+      const key = (dayUnit || '') + '|' + perUnit;
+      const group = groups.get(key) || { dayUnit, hoursPerUnit: perUnit, qty: 0 };
+      group.qty += qty;
+      groups.set(key, group);
+    }
+  }
+
+  const rank = (g) => (g.dayUnit === 'full' ? 0 : g.dayUnit === 'half' ? 1 : 2);
+  const units = [...groups.values()]
+    .filter((g) => g.qty !== 0)
+    .sort((a, b) => rank(a) - rank(b) || b.hoursPerUnit - a.hoursPerUnit)
+    .map((g) => ({ ...g, qty: round2(g.qty), hours: round2(g.qty * g.hoursPerUnit) }));
+
+  return { units, hourlyHours: round2(hourlyHours), totalHours: round2(totalHours) };
+}
+
 /* ── The cost of the business, and the financial year ────────────────────────
    Added 2026-09-27 for .design/price-calculator/. Two things live here: the
    gear replacement reserve that joins operating costs to form the real annual
@@ -1033,6 +1094,7 @@ if (typeof module === 'object' && module.exports) {
     annualBillableHours,
     overheadRatePerHour,
     minimumJobPrice,
+    labourHoursBreakdown,
     targetAnnualRevenue,
     hourlyFloor,
     priceExGst,
@@ -1062,6 +1124,7 @@ if (typeof module === 'object' && module.exports) {
     annualBillableHours,
     overheadRatePerHour,
     minimumJobPrice,
+    labourHoursBreakdown,
     targetAnnualRevenue,
     hourlyFloor,
     priceExGst,

@@ -13,6 +13,7 @@ const {
   annualOverheadTotal,
   overheadRatePerHour,
   minimumJobPrice,
+  labourHoursBreakdown,
   targetAnnualRevenue,
   hoursPerUnitOf,
   annualBillableHours,
@@ -387,6 +388,94 @@ test('hoursPerUnit is fractional-safe: a half day is 4 hours, not half an hour',
   const t = computeTotals({ prod: [{ name: 'Half Day', qty: 3 }] }, card, settingsWith({ registered: false }));
 
   assert.equal(t.totalHours, 13.5);
+});
+
+/**
+ * THE HOURS BREAKDOWN
+ *
+ * labourHoursBreakdown is the working the estimate editor prints beside the
+ * Minimum Job Price ("across 23 hours (2 full days at 8 hrs, plus 7 hrs of
+ * hourly work)"). Its only job is to explain computeTotals' totalHours, so the
+ * test that matters is the first: the two must agree on every card, or the note
+ * would show working that doesn't reach the number it sits next to.
+ */
+const MIXED_CARD = {
+  taxSetAsideRate: 0.35,
+  travelRows: [],
+  labourSections: [
+    {
+      id: 'prod',
+      label: 'Production',
+      rows: [
+        { name: 'Full Day', rate: 0, mu: 1120, dayUnit: 'full', hoursPerUnit: 8 },
+        { name: 'Long Day', rate: 0, mu: 1400, dayUnit: 'full', hoursPerUnit: 10 },
+        { name: 'Second Shooter Day', rate: 0, mu: 900, dayUnit: 'full', hoursPerUnit: 8 },
+        { name: 'Half Day', rate: 0, mu: 640, dayUnit: 'half', hoursPerUnit: 4 },
+        { name: 'Video Capture', rate: 0, mu: 140 },
+        { name: 'Block', rate: 0, mu: 400, hoursPerUnit: 3 }, // hours without a day marker
+      ],
+    },
+    {
+      id: 'post',
+      label: 'Post',
+      rows: [{ name: 'Editing', rate: 0, mu: 120 }],
+    },
+  ],
+};
+const MIXED_JOB = {
+  prod: [
+    { name: 'Full Day', qty: 2 },
+    { name: 'Second Shooter Day', qty: 1 },
+    { name: 'Long Day', qty: 1 },
+    { name: 'Half Day', qty: 1.5 },
+    { name: 'Video Capture', qty: 3 },
+    { name: 'Block', qty: 2 },
+    { name: 'Gone from the card', qty: 5 },
+  ],
+  post: [{ name: 'Editing', qty: 4.5 }],
+};
+
+test('the hours breakdown reaches exactly the totalHours the floor is built on', () => {
+  const t = computeTotals(MIXED_JOB, MIXED_CARD, settingsWith({ registered: false }));
+  const b = labourHoursBreakdown(MIXED_JOB, MIXED_CARD);
+
+  // 3 × 8 + 1 × 10 + 1.5 × 4 + 2 × 3 + 3 + 4.5 = 53.5; the orphaned row counts nowhere.
+  assert.equal(t.totalHours, 53.5);
+  assert.equal(b.totalHours, t.totalHours);
+  const parts = b.units.reduce((sum, u) => sum + u.hours, 0) + b.hourlyHours;
+  assert.equal(parts, t.totalHours);
+
+  // And on the default card and the pre-day-row job, where everything is hourly.
+  const d = computeTotals(JOB, DEFAULT_PRICING, settingsWith({ registered: false }));
+  const db = labourHoursBreakdown(JOB, DEFAULT_PRICING);
+  assert.equal(db.totalHours, d.totalHours);
+  assert.deepEqual(db.units, []);
+  assert.equal(db.hourlyHours, d.totalHours);
+});
+
+test('day rows group by unit and length, full days first; hourly work is one figure', () => {
+  const b = labourHoursBreakdown(MIXED_JOB, MIXED_CARD);
+
+  assert.deepEqual(b.units, [
+    { dayUnit: 'full', hoursPerUnit: 10, qty: 1, hours: 10 },
+    // Two differently named 8-hour full-day rows are one group: 2 + 1.
+    { dayUnit: 'full', hoursPerUnit: 8, qty: 3, hours: 24 },
+    { dayUnit: 'half', hoursPerUnit: 4, qty: 1.5, hours: 6 },
+    // Hours on a row with no day marker are still not "hourly work".
+    { dayUnit: null, hoursPerUnit: 3, qty: 2, hours: 6 },
+  ]);
+  // Video Capture 3 + Editing 4.5, across two sections.
+  assert.equal(b.hourlyHours, 7.5);
+});
+
+test('a day row left at quantity 0 is not in the working', () => {
+  const b = labourHoursBreakdown(
+    { prod: [{ name: 'Full Day', qty: 0 }, { name: 'Video Capture', qty: 2 }] },
+    MIXED_CARD,
+  );
+  assert.deepEqual(b.units, []);
+  assert.equal(b.hourlyHours, 2);
+  assert.equal(b.totalHours, 2);
 });
 
 /**

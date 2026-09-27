@@ -385,7 +385,18 @@ change to it is two identical edits. A task that edits one and not the other is 
   the weekly field. Also retitled the page **Profit Goals** and corrected the save-bar copy (margin
   moves floors, not the overhead rate). See HANDOVER.
 
-- [ ] **Estimate editor — day-unit-aware floor copy** (money math — Opus/high): `minimumJobPrice` now receives an hours figure that can come from day rows, so the Minimum Job Price note ("to cover $X/hr of overhead across N hours and a Y% margin", `estimate-editor.js:650`) must read correctly when those hours came from two shoot days rather than twenty hourly lines. Verify the floor itself is right for a day-row estimate — this is the defect from the first Foundation task observed end to end, and it's the one place a reader can see whether that fix actually worked. Also confirm `clientPriceExGst` and `totalIncGst` are unchanged by all of this, in both the editor and `estimate-detail.js`. _Modifies: `web/js/views/estimate-editor.js`. Depends on: the `hoursPerUnit` fix, the Rate Card day rows._
+- [x] **Estimate editor — day-unit-aware floor copy** (money math — Opus/high): `minimumJobPrice` now receives an hours figure that can come from day rows, so the Minimum Job Price note ("to cover $X/hr of overhead across N hours and a Y% margin", `estimate-editor.js:650`) must read correctly when those hours came from two shoot days rather than twenty hourly lines. Verify the floor itself is right for a day-row estimate — this is the defect from the first Foundation task observed end to end, and it's the one place a reader can see whether that fix actually worked. Also confirm `clientPriceExGst` and `totalIncGst` are unchanged by all of this, in both the editor and `estimate-detail.js`. _Modifies: `web/js/views/estimate-editor.js`. Depends on: the `hoursPerUnit` fix, the Rate Card day rows._
+
+  **Done 2026-09-28.** The floor is right end to end: 2 full days (8 h) + 1 half day (4 h) + 3 h +
+  4 h editing = **27 hrs → $510.30** at $15.12/hr and 25% (the pre-fix arithmetic would have said
+  10 hrs → $189.00); client price and total inc GST unchanged by the toggle and identical to what the
+  server stored. The note now shows its working — "across 27 hours (2 full days of 8 hrs, 1 half day
+  of 4 hrs, plus 7 hrs of hourly work)" — from a new `calc.js` `labourHoursBreakdown()` whose total a
+  test pins to `computeTotals().totalHours`; hourly-only jobs read exactly as before. The cost
+  breakdown modal's Overhead Allocation line carries the same working. In a category whose card has
+  a day row, the editor and estimate detail head the quantity column **Qty** and name each row's unit
+  ("per full day · 8 billable hrs" under the name in the editor; "2 full days" in the detail);
+  hourly-only categories still say **Hours** with no extra line. 188 tests pass. See HANDOVER.
 
 ---
 

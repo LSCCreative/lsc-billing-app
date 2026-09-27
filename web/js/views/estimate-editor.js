@@ -103,6 +103,13 @@ const EstimateEditor = (() => {
      it here contradicted Pricing on the same data. Travel rows keep theirs: a
      travel rate is still entered by hand. The same column is gone from
      estimate-detail.js. */
+  /* DAY ROWS (2026-09-27, .design/price-calculator/). In a category whose card
+     has any day row, the quantity column is headed "Qty" and every row says
+     what its quantity counts on a line under its name — "per hour", "per full
+     day · 8 billable hrs" — the Rate Card's own wording. A category of hourly
+     rows only keeps its "Hours" heading and no extra line, exactly as before.
+     The stacked mobile label and the input's accessible name say the unit
+     either way ("Full days for …"), since neither can see the heading. */
   function buildLabourRow(section, def, line) {
     const tr = document.createElement('div');
     tr.className = 'gt-row labour-grid';
@@ -116,10 +123,18 @@ const EstimateEditor = (() => {
         (line.override || '') + '" title="Override bill ($)" aria-label="Override bill for ' + esc(line.name) + '">'
       : '';
 
+    const unit = LSCRows.labourUnit(def);
+    const qtyLabel = LSCRows.qtyLabel(unit.kind);
+    const unitLine = !def || !LSCRows.sectionHasUnits(section)
+      ? ''
+      : '<div class="lab-unit">per ' + LSCRows.unitWord(unit.kind, 1) +
+        (unit.kind === 'hour' ? '' : ' · ' + unit.hoursPerUnit + ' billable ' + (unit.hoursPerUnit === 1 ? 'hr' : 'hrs')) +
+        '</div>';
+
     tr.innerHTML =
-      '<div data-label="Service">' + esc(line.name) + '</div>' +
-      '<div class="right" data-label="Hours"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
-      (line.qty || '') + '" aria-label="Hours for ' + esc(line.name) + '"></div>' +
+      '<div data-label="Service"' + (unitLine ? ' class="lab-svc"' : '') + '>' + esc(line.name) + unitLine + '</div>' +
+      '<div class="right" data-label="' + qtyLabel + '"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
+      (line.qty || '') + '" aria-label="' + qtyLabel + ' for ' + esc(line.name) + '"></div>' +
       '<div class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</div>' +
       '<div class="right" data-label="Client Bill"><span class="bill-cell">—</span>' + customCell + '</div>' +
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' +
@@ -272,7 +287,8 @@ const EstimateEditor = (() => {
       '<div class="bb-head"><div><h2 class="bb-label">' + esc(section.label) + '</h2>' + tag + '</div>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + esc(section.id) + '">$0.00</b></span></div>' +
       picker +
-      '<div class="gt-head labour-grid"><div>Service</div><div class="right">Hours</div>' +
+      '<div class="gt-head labour-grid"><div>Service</div><div class="right">' +
+      (LSCRows.sectionHasUnits(section) ? 'Qty' : 'Hours') + '</div>' +
       '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
       bodyMarkup(section.id, 'No services added. Use the selector above to add one.') +
       '</div>'
@@ -590,7 +606,8 @@ const EstimateEditor = (() => {
     });
 
     // The headline figures, from the same code the server will run on save.
-    const totals = LSCCalc.computeTotals(collect(), pricing, LSCData.settings(), {
+    const active = collect();
+    const totals = LSCCalc.computeTotals(active, pricing, LSCData.settings(), {
       gstFree: gstFreeNow(),
     });
     setText('s-hours', totals.totalHours);
@@ -603,7 +620,26 @@ const EstimateEditor = (() => {
     setText('s-takehome', fmt(totals.estTakeHome));
 
     // Reads the totals above rather than recomputing anything of its own.
-    paintMinimum(totals);
+    paintMinimum(totals, hoursWorking(LSCCalc.labourHoursBreakdown(active, pricing), totals));
+  }
+
+  /* The job's hours, in words, when they aren't just a sum of the quantities on
+     screen — "2 full days of 8 hrs, plus 6 hrs of hourly work". Empty for a job
+     of hourly rows only, whose "across 14 hours" a reader can already add up,
+     so that note reads exactly as it did before day rows existed.
+
+     The parts come from labourHoursBreakdown, which walks the rows the way
+     computeTotals does, and a test pins its total to totalHours. The check here
+     is belt and braces: if they ever disagreed, the note would be showing
+     working for a number it isn't next to, so it says nothing instead. */
+  function hoursWorking(b, totals) {
+    if (!b.units.length || b.totalHours !== totals.totalHours) return '';
+    const hrs = (n) => n + (n === 1 ? ' hr' : ' hrs');
+    const parts = b.units.map(
+      (u) => u.qty + ' ' + LSCRows.unitWord(u.dayUnit || 'unit', u.qty) + ' of ' + hrs(u.hoursPerUnit)
+    );
+    const days = parts.join(', ');
+    return b.hourlyHours ? days + ', plus ' + hrs(b.hourlyHours) + ' of hourly work' : days;
   }
 
   const includeOverheadNow = () => {
@@ -615,8 +651,9 @@ const EstimateEditor = (() => {
   /* The advisory floor. Everything here is display: the arithmetic is
      minimumJobPrice()'s, and the inputs are the totals computeTotals just
      returned. directJobCosts is expenseTotal and estimatedHours is totalHours,
-     which is what calc.js's own docblock for this function specifies. */
-  function paintMinimum(totals) {
+     which is what calc.js's own docblock for this function specifies.
+     `working` is hoursWorking()'s sentence, or '' for an hourly-only job. */
+  function paintMinimum(totals, working) {
     const line = $('mjp-line');
     if (!line) return; // left mid-edit, or a screen that has no summary bar
 
@@ -630,7 +667,7 @@ const EstimateEditor = (() => {
       overheadRate,
       profitMarginPct
     );
-    setBreakdown(totals, floor);
+    setBreakdown(totals, floor, working);
 
     /* null is "cannot be computed", and it has to survive the trip to the
        screen as an em dash and a prompt — not as $0.00, which reads as a real
@@ -648,7 +685,8 @@ const EstimateEditor = (() => {
     setText(
       's-min-note',
       'to cover ' + fmt(overheadRate) + '/hr of overhead across ' + totals.totalHours +
-        (totals.totalHours === 1 ? ' hour' : ' hours') + ' and a ' + profitMarginPct + '% margin'
+        (totals.totalHours === 1 ? ' hour' : ' hours') + (working ? ' (' + working + ')' : '') +
+        ' and a ' + profitMarginPct + '% margin'
     );
     line.classList.remove('mjp-unset');
   }
@@ -675,7 +713,7 @@ const EstimateEditor = (() => {
      lines above, and the column is always exactly right — the same trade the
      donut's largest-remainder percentages make (HANDOVER.md decision 51) to
      keep its legend summing to 100.0. Both prefer the visible sum. */
-  function setBreakdown(totals, floor) {
+  function setBreakdown(totals, floor, working) {
     const help = $('mjp-help');
 
     if (floor === null) {
@@ -692,6 +730,7 @@ const EstimateEditor = (() => {
       profit: LSCCalc.round2(floor - direct - alloc),
       floor,
       hours: totals.totalHours,
+      working: working || '',
       rate: overheadRate,
       margin: profitMarginPct,
     };
@@ -711,7 +750,7 @@ const EstimateEditor = (() => {
 
   function breakdownMarkup() {
     const b = breakdown;
-    const hours = b.hours + (b.hours === 1 ? ' hour' : ' hours');
+    const hours = b.hours + (b.hours === 1 ? ' hour' : ' hours') + (b.working ? ' (' + esc(b.working) + ')' : '');
     const margin = esc(b.margin);
     return (
       '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="cb-title">' +

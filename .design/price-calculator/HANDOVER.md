@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 19 of 21 tasks done)
+## State as of 2026-09-28 (Phase 6 — 20 of 23 build tasks done, then a design review)
 
 `/design-flow` sequence position:
 
@@ -78,16 +78,21 @@ service business that sells shoot days rather than units.
       - [x] **Disposal flow** (money math — Opus/high) — done 2026-09-27. See "What landed —
             Disposal flow". **Live** — NAS redeployed and Pages pushed 2026-09-27 ~21:47 AEST.
       - [x] **Profit Goals — capacity becomes a derived read-only figure** (frontend — Opus/high) —
-            done 2026-09-27. See "What landed — Profit Goals". **Committed, not pushed** (web only).
-      - [ ] ← **NEXT: Estimate editor — day-unit-aware floor copy** (money math — Opus/high). The
-            Minimum Job Price note and the "Hours" column header must read right for day rows.
+            done 2026-09-27. See "What landed — Profit Goals". **Live** (Pages, pushed 2026-09-28).
+      - [x] **Estimate editor — day-unit-aware floor copy** (money math — Opus/high) — done
+            2026-09-28. See "What landed — Estimate editor day-unit wording". **Committed, not
+            pushed** (web plus an identical `server/src/calc.js` copy; no NAS redeploy needed).
+      - [ ] ← **NEXT: Responsive pass** (frontend — Opus/high). Then the accessibility pass and the
+            decline curve chart; the design review after those.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Nineteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
+Twenty of the 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
 lock, disposal), the shared info control, the GST mirror, the post-ratio readout, the double-count
-hint and Profit Goals' read-only capacity. **Profit Goals is committed but not pushed** (web only).
-Everything before it is live, NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
+hint, Profit Goals' read-only capacity and the estimate editor's day-unit wording. (Earlier versions
+of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design review — the count was
+wrong, not the list.) **The estimate editor task is committed but not pushed.** Profit Goals went to
+Pages on 2026-09-28. Everything before it is live, NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
 
@@ -418,6 +423,58 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-28) — Estimate editor day-unit wording
+
+`web/js/calc.js` (+ identical `server/src/calc.js`), `web/js/rows.js`,
+`web/js/views/estimate-editor.js`, `web/js/views/estimate-detail.js`, `web/css/estimates.css`,
+`server/test/test-calc.js`.
+
+- **The floor was already right**; this task made it legible. `computeTotals().totalHours` has been
+  Σ qty × hoursPerUnit since the first Foundation task, so a day-row estimate's Minimum Job Price
+  was correct but its note said "across 27 hours" beside quantities of 2, 1, 3 and 4. Verified end
+  to end on the scratch card (Full Day 8 h, Half Day 4 h, $15.12/hr, 25%): 2 full + 1 half + 3 h +
+  4 h editing → **27 hrs, $510.30** (the pre-fix sum-of-quantities would have given 10 hrs,
+  $189.00). The modal's three lines add to it ($0.00 + $408.24 + $102.06).
+- **New `labourHoursBreakdown(activeRows, pricing)` in calc.js.** Walks labour rows exactly as
+  `computeTotals` does and returns `{ units: [{ dayUnit, hoursPerUnit, qty, hours }], hourlyHours,
+  totalHours }`. A test pins its `totalHours` to `computeTotals`' on a mixed card and on
+  `DEFAULT_PRICING`; two mutations (orphan rows counted, grouping ignoring length) were checked to
+  fail it. Display only; nothing prices off it. The editor also refuses to print the working if the
+  two totals ever disagree.
+- **The note:** "to cover $15.12/hr of overhead across 27 hours (2 full days of 8 hrs, 1 half day of
+  4 hrs, plus 7 hrs of hourly work) and a 25% margin". **An hourly-only job gets no parenthesis**, so
+  every existing estimate's note reads as it did. The modal's Overhead Allocation line carries the
+  same working.
+- **The column heading is decided per category, from the live card**: "Qty" if any row the category
+  sells is a day row (or carries hours ≠ 1), else "Hours" as before. It's judged on the card, not
+  the estimate's lines, so it doesn't flip as rows are added. In a Qty category the editor puts
+  "per hour" / "per full day · 8 billable hrs" under each service name (the Rate Card's wording,
+  `.lab-unit`), and the detail view prints "2 full days" / "3 hours" in the cell. The stacked
+  mobile label and the input's `aria-label` always name the unit ("Full days for …").
+- **Shared helpers in `rows.js`**: `labourUnit(def)`, `unitWord(kind, qty)`, `qtyLabel(kind)`,
+  `sectionHasUnits(section)`. A row with hours ≠ 1 but no `dayUnit` is a generic "unit", never
+  passed off as hours. **Next tasks should use these** rather than re-deciding what a row's
+  quantity counts.
+- **Units come from the live card**, like the Mark-Up beside them. An estimate saved before a row
+  was switched hourly ↔ day would relabel; the Rate Card already warns before that switch.
+- **Nothing client-facing changed**: the PDF lists labour by name only.
+
+### Verified (local `api-scratch` + `web`, dispatched events)
+
+1280px: Production heads Qty with unit lines; Pre-Production and Post-Production still say Hours with
+no extra line. Toggling the overhead switch moved neither Client Price nor Total. Saved → detail
+shows "2 full days / 1 half day / 3 hours", Total Hours 27, $3,552.00 as the server stored it;
+re-opened in the editor with the same floor and note. 375px: editor and detail, no horizontal
+scroll, stacked labels Full days / Half days / Hours. No console errors after a cache-bypassing
+reload (a stale cached `rows.js` threw `sectionHasUnits is not a function` on the first load; the
+python dev server doesn't bust caches). The test estimate was deleted from the scratch DB afterwards.
+188 server tests pass.
+
+### Deploy note
+
+`server/src/calc.js` changed only to stay byte-identical with the browser copy; the server never
+calls the new function, so **Pages alone deploys this**. Redeploy the NAS whenever convenient.
 
 ## What landed (2026-09-27) — Profit Goals
 

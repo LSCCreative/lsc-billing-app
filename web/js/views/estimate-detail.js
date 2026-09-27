@@ -85,15 +85,22 @@ const EstimateDetail = (() => {
       const lines = (activeRows[section.id] || []).filter((line) => (line.qty || 0) > 0);
       if (!lines.length) return;
 
+      /* Day rows (2026-09-27): a category whose card has one heads the column
+         "Qty" and spells each quantity's unit — "2 full days", "3 hours" — as
+         the editor does. Hourly-only categories read exactly as before. The
+         unit is the live card's, like the Mark-Up beside it. */
+      const hasUnits = LSCRows.sectionHasUnits(section);
       let subtotal = 0;
       const rows = lines
         .map((line) => {
           const def = labourDef(section, line);
           const bill = labourBill(def, line);
           if (bill !== null) subtotal += bill;
+          const unit = LSCRows.labourUnit(def);
+          const qty = hasUnits && def ? line.qty + ' ' + LSCRows.unitWord(unit.kind, line.qty) : line.qty;
           return (
             '<tr><td data-label="Service">' + esc(line.name) + '</td>' +
-            '<td class="right muted-td" data-label="Hours">' + esc(line.qty) + '</td>' +
+            '<td class="right muted-td" data-label="' + (hasUnits ? 'Qty' : 'Hours') + '">' + esc(qty) + '</td>' +
             '<td class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</td>' +
             '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
           );
@@ -104,7 +111,8 @@ const EstimateDetail = (() => {
         '<div class="est-block"><div class="est-block-head">' +
         '<h2 class="est-block-label">' + esc(section.label) + '</h2>' +
         '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
-        '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">Hours</th>' +
+        '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">' +
+        (hasUnits ? 'Qty' : 'Hours') + '</th>' +
         '<th class="right">Mark-Up</th><th class="right">Bill</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     });
