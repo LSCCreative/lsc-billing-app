@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 12 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 13 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -62,17 +62,22 @@ service business that sells shoot days rather than units.
       - [x] **Overhead inner tabs + Depreciation asset register** (frontend — Opus/high) — done
             2026-09-27. See "What landed — Depreciation register". **Live** (pushed).
       - [x] **Depreciation schedule + FY selector** (money math — Opus/high) — done 2026-09-27. See
-            "What landed — Depreciation schedule". **Committed, not pushed.** Also fixes a live
-            defect from the register task (Edit/delete clipped at 768–1099px).
-      - [ ] ← **NEXT: CSV export + lodgement lock** (money math — Opus/high). Both routes exist and
-            are tested; this is the UI at the foot of the schedule. **Read "Seams the lock task
-            inherits" below first** — the schedule currently renders `reply.schedule` (live) even
-            for a locked FY, deliberately.
+            "What landed — Depreciation schedule". **Live** (pushed). Also fixed a live defect from
+            the register task (Edit/delete clipped at 768–1099px).
+      - [x] **CSV export + lodgement lock** (money math — Opus/high) — done 2026-09-27. See "What
+            landed — CSV export and lodgement lock". **Committed, not pushed — and it changes
+            `server/`, so the NAS needs a redeploy** (read that section's deploy note first).
+      - [ ] ← **NEXT: Info button + popover — shared component** (frontend — Opus/high). First of
+            the Interactions & States group. Its two instances: the Dashboard's floor comparison,
+            and the depreciation split on the Depreciation tab (the paragraph under the summary
+            card in `DepreciationView.summaryMarkup()` is the placeholder it replaces).
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Twelve tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
-Card's day rows, the Depreciation register and its schedule. **The schedule is committed but not
-pushed**; pushing `main` ships it (no server change). Everything before it is live. `server/src/defaults.js` did change (seeded day rows), which only
+Thirteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
+Card's day rows, and the whole Depreciation tab (register, schedule, CSV, lodgement lock). **The
+CSV/lock task is committed but not pushed, and it is the first since the Capacity deploy to change
+`server/`** — pushing `main` ships the screen; the NAS needs its own redeploy for the lock to be
+offered (the screen degrades safely until then — see that section). Everything before it is live. `server/src/defaults.js` did change (seeded day rows), which only
 matters to **Reset Defaults** and fresh databases — redeploy the NAS whenever convenient for Reset to
 include them.
 
@@ -391,6 +396,84 @@ can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longe
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
 
+## What landed (2026-09-27) — CSV export and lodgement lock
+
+The foot of the schedule on Overhead → Depreciation, plus server changes. Files:
+`server/src/routes/depreciation.js`, `server/src/depreciation.js` + `web/js/depreciation.js` (the
+byte-identical pair), `web/js/views/depreciation.js`, `web/js/api.js` (`getCsv`), `web/js/util.js`
+(`saveFile`, moved from `estimate-detail.js`), `web/css/depreciation.css`, and both test files.
+
+- **Download CSV — FY 2025–26**: `LSCApi.getCsv('/api/depreciation-schedule.csv?fy=…')` →
+  `LSCUtil.saveFile`, filename from the server (`depreciation-schedule-FY2025-26.csv`). Through
+  fetch, not an `<a href>`, because `download` is ignored on a cross-origin link and an expired
+  session would show a bare 401. Local download only.
+- **Mark FY 2025–26 as lodged**: only for a **finished, unlodged** year. `window.confirm` names the
+  figures being frozen and says there's no undo; then `POST /api/depreciation-locks`, refetch, focus
+  moves to the new "Lodged" statement (the button that had focus is gone). The current FY shows
+  "You can mark FY 2026–27 as lodged once it ends on 30 June 2027" instead.
+- **A lodged year renders `lockedFigures`, never the live recompute**, with a "Lodged" badge and
+  the date. If today's recompute disagrees, an accent-ruled block lists **each line and each figure
+  that moved** ("DJI Mavic 3 — disposal proceeds: lodged $1,000.00, now $1,200.00; balancing
+  adjustment: lodged −$561.10, now −$361.10") and the changed rows are tagged "Changed since
+  lodging". Deleted-since and added-since lines are listed too. Putting an asset back clears it.
+- **No unlock, no second lodgement from the UI** — per the task. The server still accepts a second
+  POST (append-only log, migration v5 decision 4); that is the "deliberate act outside this UI".
+
+### Decisions made here — read before touching the lock or the CSV
+
+1. **Divergence is line by line, not totals.** The Routes task compared only `totalDeductible` and
+   `totalBalancingAdjustment`, which misses edits that cancel across lines and can't say which asset
+   moved — the one thing the user needs for their accountant. `scheduleDivergences(lodged, live)` in
+   the route returns `[{kind, id, name, change: 'changed'|'removed'|'added', fields: [{field, lodged,
+   live}]}]`; `diverges` is kept as its boolean (null when unlocked). Exact comparison is correct:
+   both sides are round2'd cents through the same JSON round trip.
+2. **Schedule rows now carry their own inputs** — `businessUsePct`, `disposalDate`,
+   `disposalProceeds` — in the shared chain (`assetScheduleRows`). Without that, a lodged year's
+   Disposals block paired frozen figures with the asset's *current* proceeds and business use (the
+   seam the schedule task left). Locks taken before this change lack the fields; the view and the
+   CSV fall back to the live asset for them, and divergence skips fields the lodged row doesn't have.
+   No live locks existed when this landed, so that fallback is belt-and-braces.
+3. **The server refuses to lock an unfinished FY** (`400 fy_not_ended`, via `fyHasEnded()` comparing
+   FY start years through the shared helper). A year's figures still move until 30 June. The
+   schedule reply now carries `fyEnded` so the screen asks the same question.
+4. **CSV format changed**: columns are Name, Category, Method, Start Date, Days Held, Business Use %,
+   Opening Adjustable Value, Pool Additions, Decline in Value, Deductible, Closing Adjustable Value,
+   Disposal Date, Disposal Proceeds, Balancing Adjustment. Money to two places (`800.00`); a **UTF-8
+   BOM** so Excel doesn't mangle "—" in names; text cells starting `= + - @` get a leading apostrophe
+   (formula injection — numbers are never touched, so −561.10 stays a number); pools fill Pool
+   Additions so their row reconciles alone. The old `Disposed yes` column went — Disposal Date says it.
+   Category/method/start date still come from the live asset (descriptive); an asset deleted after
+   lodging keeps its frozen money row with those three blank.
+
+### Deploy note — this one needs the NAS
+
+`server/` changed (route + chain). **Order doesn't break anything either way**, checked: with new
+Pages on the old server, the reply has no `fyEnded`, so every year shows the "once it ends" note and
+**no lock button is offered** until the NAS is redeployed; the badge, lodged figures and CSV all work
+against the old server (the CSV in its old column format). No migration — no schema change. Deploy
+the NAS the same way as 2026-09-27 (tar `server/` excluding `node_modules`, `data`, `.env`,
+`docker-compose.yml`; `docker compose up -d --build`). This also brings `defaults.js`' day rows live
+for Reset Defaults.
+
+### Verified (local scratch DB, 2026-09-27)
+
+- `npm test` **178 pass** (new: row carries its inputs; line-level divergence with exact fields;
+  deleted-since divergence; locked CSV after delete; `fy_not_ended`; BOM checked on raw bytes —
+  `Response.text()` strips it; formula-name escaping).
+- FY 2026–27 (current): "once it ends on 30 June 2027" note, no lock button. FY 2025–26: CSV captured
+  in-page (not saved to disk) — BOM, filename, `DJI Mavic 3,…,2386.85,,825.75,825.75,1561.10,
+  2026-03-31,1000.00,-561.10` and `Small Business Pool,…,0.00,3080.00,462.00,462.00,2618.00`.
+- Locked it: confirm text named $1,287.75 and −$561.10; badge "Lodged … 27 Sept 2026"; focus on it.
+- Changed MacBook business use 70→60 **through the Edit modal** (exercises the cache drop) and the
+  drone's proceeds 1000→1200 via the API: two divergence lines with exactly the expected pairs (pool
+  additions $3,080→$2,640, decline $462→$396, closing $2,618→$2,244; proceeds $1,000→$1,200,
+  balancing −$561.10→−$361.10); totals stayed at the lodged $1,287.75 / −$561.10; the Disposals row
+  still read the lodged $1,000.00; the lodged CSV was unchanged. Reverting both cleared it
+  (`divergences: []`).
+- 1280px and 375px: no page-level horizontal scroll; CSV button 44px tall and on-screen at 375px.
+  No console errors. **The scratch DB now has FY 2025–26 locked** — fine for later tasks; re-seed if
+  you need it unlocked.
+
 ## What landed (2026-09-27) — Depreciation schedule
 
 Below the register on Overhead → Depreciation, in `web/js/views/depreciation.js` (`scheduleMarkup`,
@@ -442,20 +525,11 @@ depreciation tables. The **Responsive pass** should still decide whether this ba
 stacked instead; the scroller is the minimum that makes the buttons reachable. Also noticed at 800px,
 not fixed: Overhead's "+ Add Asset" / "+ Add Expense" head button wraps to two lines.
 
-### Seams the lock task inherits
+### Seams this left for the lock task — all closed by it
 
-- The reply already carries `locked`, `lockedAt`, `lockedFigures`, `diverges`. **The schedule
-  renders `reply.schedule` (the live recompute) even when `locked` is true** — showing frozen figures,
-  the badge and the divergence flag is the lock task's job, and doing half of it here would have shown
-  lodged figures with no badge saying so. When the lock task lands, render `lockedFigures` when
-  `locked`, badge it, and flag `diverges`.
-- The CSV button and "Mark FY as lodged" go at the foot of `scheduleBodyMarkup()`, after the three
-  blocks and before the `.dep-sched-foot` note (IA: "at the foot of the schedule where an
-  accountant's workflow ends").
-- Disposal date / proceeds in the Disposals block are read from the **current** asset
-  (`LSCData.depreciationAssets()`), not the schedule reply. For a locked year the lock task should
-  decide whether those stay live (descriptive, like the CSV's category/method) or come from the
-  snapshot — the snapshot doesn't carry them today.
+Rendering frozen figures, the badge and the divergence flag, placing the CSV and lock at the foot,
+and where a locked year's disposal inputs come from were all decided by the next task — see "What
+landed — CSV export and lodgement lock" above.
 
 ### Verified (local scratch DB, 2026-09-27)
 

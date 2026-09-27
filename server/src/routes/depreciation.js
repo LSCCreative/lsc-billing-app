@@ -67,66 +67,189 @@ function resolveFyParam(raw) {
   return bounds ? bounds.label : null;
 }
 
+/* Text cells that a spreadsheet would read as a formula (=, +, -, @, and the
+   tab/CR tricks) get a leading apostrophe. Only TEXT cells: a negative
+   balancing adjustment is a number and must stay one. The one person who
+   opens this is the user's accountant, but an asset named "=HYPERLINK(…)" is
+   still an asset name, not an instruction to their spreadsheet. */
+/* True once the FY's 30 June is behind us: its start year is before the
+   current FY's. Compared by FY, through the shared helper, not by date maths
+   here — the helper is the one place that knows where Australian years turn. */
+function fyHasEnded(label) {
+  const bounds = fyBounds(label);
+  const current = fyBounds(currentFinancialYear());
+  return Boolean(bounds && current && bounds.startYear < current.startYear);
+}
+
+function csvText(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+}
+
+/* Money as a fixed two-decimal string — 800.00, not 800 — so a column reads
+   as money when opened and nothing looks like it lost its cents. Blank, not
+   0.00, when there is no figure (a pool has no balancing adjustment). */
+function csvMoney(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '';
+}
+
 function csvField(value) {
   const s = value === null || value === undefined ? '' : String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 function csvRow(fields) {
   return fields.map(csvField).join(',');
 }
 
+const CSV_HEADER = [
+  'Name', 'Category', 'Method', 'Start Date', 'Days Held', 'Business Use %',
+  'Opening Adjustable Value', 'Pool Additions', 'Decline in Value', 'Deductible', 'Closing Adjustable Value',
+  'Disposal Date', 'Disposal Proceeds', 'Balancing Adjustment',
+];
+
+const POOL_NAMES = { small_business_pool: 'Small Business Pool', low_value_pool: 'Low Value Pool' };
+
 /**
  * One CSV row per asset for the FY, per the IA doc's "Download CSV → one row
  * per asset", PLUS one row per pool that has a balance that year. Leaving
  * pools out would silently drop every small-business-pool or low-value-pool
- * deduction from the accountant's export — the doc's wording describes the
- * common case, not a reason to omit the other one the schedule screen already
- * shows. category/method are read from the CURRENT assets table (descriptive,
- * not a frozen figure) even when the FY is locked; the money columns come from
- * `schedule`, which is either the live recompute or the frozen lock — see the
- * route below for which.
+ * deduction from the accountant's export. A pool row puts its opening and
+ * closing POOL balance under the adjustable-value headings and fills Pool
+ * Additions (at business share) so the row reconciles on its own; the
+ * per-asset columns it has no figure for stay blank rather than holding a
+ * different kind of number.
+ *
+ * Money and the row's own inputs (business use, disposal date and proceeds)
+ * come from `schedule` — the live recompute, or for a lodged FY the frozen
+ * snapshot, so an edit made since can't change what the export says was filed.
+ * Only the descriptive columns (category, method, start date) are read from
+ * the current assets table. A snapshot taken before rows carried their own
+ * inputs falls back to the asset for those, which is the best that lock has.
+ *
+ * UTF-8 with a byte-order mark: without it Excel opens the file as Windows-1252
+ * and "Sony FX6 — body" arrives as mojibake.
  */
 function buildCsv(schedule, assets) {
   const assetsById = new Map(assets.map((a) => [a.id, a]));
-  const lines = [csvRow([
-    'Name', 'Category', 'Method', 'Days Held', 'Opening Adjustable Value',
-    'Decline in Value', 'Deductible', 'Closing Adjustable Value', 'Disposed', 'Balancing Adjustment',
-  ])];
+  const lines = [csvRow(CSV_HEADER)];
 
   for (const row of schedule.assets) {
     const asset = assetsById.get(row.assetId);
+    const use = row.businessUsePct !== undefined ? row.businessUsePct : asset ? asset.business_use_pct : null;
+    const disposalDate = row.disposalDate !== undefined ? row.disposalDate : row.disposed && asset ? asset.disposal_date : null;
+    const proceeds = row.disposalProceeds !== undefined
+      ? row.disposalProceeds
+      : row.disposed && asset ? (asset.disposal_proceeds || 0) : null;
     lines.push(csvRow([
-      row.name,
+      csvText(row.name),
       asset ? asset.category : '',
       asset ? asset.method : '',
+      asset ? asset.start_date : '',
       row.daysHeld,
-      row.openingAdjustableValue,
-      row.decline,
-      row.deductible,
-      row.closingAdjustableValue,
-      row.disposed ? 'yes' : '',
-      row.balancingAdjustment === null ? '' : row.balancingAdjustment,
+      use === null || use === undefined ? '' : use,
+      csvMoney(row.openingAdjustableValue),
+      '',
+      csvMoney(row.decline),
+      csvMoney(row.deductible),
+      csvMoney(row.closingAdjustableValue),
+      disposalDate || '',
+      csvMoney(proceeds),
+      csvMoney(row.balancingAdjustment),
     ]));
   }
 
-  const poolNames = { small_business_pool: 'Small Business Pool', low_value_pool: 'Low Value Pool' };
   for (const row of schedule.pools) {
     lines.push(csvRow([
-      poolNames[row.pool] || row.pool,
+      POOL_NAMES[row.pool] || row.pool,
       'pool',
       row.pool,
       '',
-      row.openingBalance,
-      row.decline,
-      row.deductible,
-      row.closingBalance,
       '',
+      '',
+      csvMoney(row.openingBalance),
+      csvMoney(row.additions),
+      csvMoney(row.decline),
+      csvMoney(row.deductible),
+      csvMoney(row.closingBalance),
+      '',
+      row.disposalProceeds ? csvMoney(row.disposalProceeds) : '',
       '',
     ]));
   }
 
-  return lines.join('\r\n') + '\r\n';
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
+}
+
+/* ── Divergence: a lodged FY against today's recompute ─────────────────────
+
+   Line by line, not totals only. Comparing the two totals missed any edit
+   whose effects cancel out across lines, and even when the totals did move it
+   couldn't say WHICH asset moved — which is the one thing the user needs to
+   take to their accountant. Figures are compared exactly: both sides are
+   round2'd cents that went through the same JSON round trip, so a difference
+   of any size is a real one.
+
+   A line present on one side only is a divergence too: an asset deleted since
+   (the lodged line has no live counterpart) or one added or re-dated into the
+   year (the reverse). The input fields (business use, disposal date and
+   proceeds) are compared only when the lodged row carries them — a snapshot
+   from before rows carried their inputs can't be said to disagree about them. */
+const ASSET_FIELDS = [
+  'daysHeld', 'businessUsePct', 'openingAdjustableValue', 'decline', 'deductible',
+  'closingAdjustableValue', 'disposalDate', 'disposalProceeds', 'balancingAdjustment',
+];
+const POOL_FIELDS = ['openingBalance', 'additions', 'decline', 'deductible', 'disposalProceeds', 'closingBalance'];
+
+function lineChanges(lodged, live, fields) {
+  const changes = [];
+  for (const f of fields) {
+    if (lodged[f] === undefined) continue;
+    const was = lodged[f];
+    const now = live[f] === undefined ? null : live[f];
+    if (was !== now) changes.push({ field: f, lodged: was, live: now });
+  }
+  return changes;
+}
+
+function scheduleDivergences(lodged, live) {
+  const out = [];
+
+  const liveAssets = new Map(live.assets.map((r) => [r.assetId, r]));
+  const seen = new Set();
+  for (const was of lodged.assets || []) {
+    seen.add(was.assetId);
+    const now = liveAssets.get(was.assetId);
+    if (!now) {
+      out.push({ kind: 'asset', id: was.assetId, name: was.name, change: 'removed', fields: [] });
+      continue;
+    }
+    const fields = lineChanges(was, now, ASSET_FIELDS);
+    if (fields.length) out.push({ kind: 'asset', id: was.assetId, name: now.name || was.name, change: 'changed', fields });
+  }
+  for (const now of live.assets) {
+    if (!seen.has(now.assetId)) out.push({ kind: 'asset', id: now.assetId, name: now.name, change: 'added', fields: [] });
+  }
+
+  const livePools = new Map(live.pools.map((r) => [r.pool, r]));
+  const seenPools = new Set();
+  for (const was of lodged.pools || []) {
+    seenPools.add(was.pool);
+    const now = livePools.get(was.pool);
+    if (!now) {
+      out.push({ kind: 'pool', id: was.pool, name: POOL_NAMES[was.pool] || was.pool, change: 'removed', fields: [] });
+      continue;
+    }
+    const fields = lineChanges(was, now, POOL_FIELDS);
+    if (fields.length) out.push({ kind: 'pool', id: was.pool, name: POOL_NAMES[was.pool] || was.pool, change: 'changed', fields });
+  }
+  for (const now of live.pools) {
+    if (!seenPools.has(now.pool)) {
+      out.push({ kind: 'pool', id: now.pool, name: POOL_NAMES[now.pool] || now.pool, change: 'added', fields: [] });
+    }
+  }
+
+  return out;
 }
 
 function registerDepreciationRoutes(app, db) {
@@ -216,10 +339,10 @@ function registerDepreciationRoutes(app, db) {
   /**
    * Computed on read, every time — never stored, so it cannot drift from the
    * assets it describes (only the lodgement snapshot below is ever frozen).
-   * `diverges` compares the live totals against a lock's frozen ones so the
-   * screen can flag a lodged FY that an asset edit since has quietly changed,
-   * rather than silently showing the new numbers as if they were what was
-   * filed.
+   * For a lodged FY, `divergences` lists every line where today's recompute
+   * disagrees with what was lodged (see scheduleDivergences), so the screen
+   * can flag it rather than silently showing the new numbers as if they were
+   * what was filed. `diverges` is its boolean, null when the FY isn't lodged.
    */
   app.get('/api/depreciation-schedule', (req, res) => {
     const fy = resolveFyParam(req.query.fy);
@@ -229,10 +352,7 @@ function registerDepreciationRoutes(app, db) {
     const schedule = financialYearSchedule(assets, fy);
     const lock = latestLock(db, fy);
     const frozen = lock ? JSON.parse(lock.figures_json) : null;
-    const diverges = frozen
-      ? (frozen.totalDeductible !== schedule.totalDeductible
-        || frozen.totalBalancingAdjustment !== schedule.totalBalancingAdjustment)
-      : null;
+    const divergences = frozen ? scheduleDivergences(frozen, schedule) : null;
 
     res.json({
       ok: true,
@@ -240,7 +360,10 @@ function registerDepreciationRoutes(app, db) {
       locked: !!lock,
       lockedAt: lock ? lock.locked_at : null,
       lockedFigures: frozen,
-      diverges,
+      diverges: divergences ? divergences.length > 0 : null,
+      divergences,
+      // Whether this FY can be lodged yet — see the POST route below.
+      fyEnded: fyHasEnded(fy),
     });
   });
 
@@ -274,9 +397,20 @@ function registerDepreciationRoutes(app, db) {
 
   // Append-only — no update, no delete route. A wrong lodgement is an
   // amendment, handled by locking again, not by editing or removing history.
+  // (The screen offers no second lock: an amendment is a deliberate act done
+  // outside the UI — see the lock task in TASKS.md.)
   app.post('/api/depreciation-locks', (req, res) => {
     const fy = resolveFyParam((req.body || {}).fy);
     if (!fy) return res.status(400).json({ error: 'invalid_fy' });
+    /* A return can't be lodged for a year that hasn't finished — the figures
+       are still moving (a disposal next month changes them). Freezing them now
+       would record a lodgement that never happened. */
+    if (!fyHasEnded(fy)) {
+      return res.status(400).json({
+        error: 'fy_not_ended',
+        message: `${fy} hasn’t ended yet, so it can’t have been lodged.`,
+      });
+    }
 
     const schedule = financialYearSchedule(allAssets(db), fy);
     const id = newId('dlk');

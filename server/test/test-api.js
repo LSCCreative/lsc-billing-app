@@ -15,6 +15,7 @@ process.env.NODE_ENV = 'test';
 const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
+const { currentFinancialYear } = require('../src/calc');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -467,6 +468,8 @@ test('depreciation schedule, CSV and lodgement lock', async () => {
   assert.equal(schedule.schedule.totalDeductible, 200);
   assert.equal(schedule.locked, false);
   assert.equal(schedule.diverges, null);
+  assert.equal(schedule.divergences, null);
+  assert.equal(schedule.fyEnded, true, 'FY2025-26 ended on 30 June 2026');
   const row = schedule.schedule.assets.find((r2) => r2.assetId === assetId);
   assert.equal(row.openingAdjustableValue, 800);
   assert.equal(row.decline, 200);
@@ -478,9 +481,25 @@ test('depreciation schedule, CSV and lodgement lock', async () => {
   const csvRes = await api('/api/depreciation-schedule.csv?fy=FY2025-26');
   assert.equal(csvRes.status, 200);
   assert.match(csvRes.headers.get('content-disposition') || '', /depreciation-schedule-FY2025-26\.csv/);
-  const csvText = await csvRes.text();
-  assert.match(csvText, /^Name,Category,Method,Days Held/);
-  assert.match(csvText, /Schedule Camera,camera,prime_cost,365,800,200,200,600/);
+  // Raw bytes: Response.text() strips a leading BOM while decoding, which
+  // would make this assertion pass or fail for the wrong reason.
+  const csvBytes = Buffer.from(await csvRes.arrayBuffer());
+  // A BOM so Excel reads it as UTF-8; money to two places; the pool-only
+  // column and the disposal columns blank for a held asset.
+  assert.deepEqual([...csvBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  const csvText = csvBytes.subarray(3).toString('utf8');
+  assert.ok(csvText.startsWith('Name,Category,Method,Start Date,Days Held,Business Use %,'));
+  assert.match(csvText, /\r\nSchedule Camera,camera,prime_cost,2024-07-01,365,100,800\.00,,200\.00,200\.00,600\.00,,,\r\n/);
+
+  // Lodging a year that hasn't finished is refused: its figures still move.
+  const notEnded = await api('/api/depreciation-locks', {
+    method: 'POST',
+    body: JSON.stringify({ fy: currentFinancialYear() }),
+  });
+  assert.equal(notEnded.status, 400);
+  assert.equal((await notEnded.json()).error, 'fy_not_ended');
+  const current = await api('/api/depreciation-schedule').then((r) => r.json());
+  assert.equal(current.fyEnded, false);
 
   // Lock the FY, then change the asset in a way that moves the same FY's
   // recompute — a schedule is computed from the asset's CURRENT definition,
@@ -510,16 +529,50 @@ test('depreciation schedule, CSV and lodgement lock', async () => {
   assert.equal(afterEdit.locked, true);
   assert.equal(afterEdit.lockedFigures.totalDeductible, 200);
   assert.equal(afterEdit.diverges, true);
+  // Line by line, naming the asset and every figure that moved: life 10
+  // means FY2024-25 took 100, so FY2025-26 opens at 900, declines 100, and
+  // closes at 800 — against the lodged 800 / 200 / 200 / 600.
+  const moved = afterEdit.divergences.find((d) => d.id === assetId);
+  assert.equal(moved.change, 'changed');
+  assert.equal(moved.name, 'Schedule Camera');
+  assert.deepEqual(
+    Object.fromEntries(moved.fields.map((f) => [f.field, [f.lodged, f.live]])),
+    {
+      openingAdjustableValue: [800, 900],
+      decline: [200, 100],
+      deductible: [200, 100],
+      closingAdjustableValue: [600, 800],
+    }
+  );
 
   // The CSV for a locked FY must still read the FROZEN figures — editing
   // effective life in a later session cannot rewrite what was already filed.
   const lockedCsv = await api('/api/depreciation-schedule.csv?fy=FY2025-26').then((r) => r.text());
-  assert.match(lockedCsv, /Schedule Camera,camera,prime_cost,365,800,200,200,600/);
+  assert.match(lockedCsv, /\r\nSchedule Camera,camera,prime_cost,2024-07-01,365,100,800\.00,,200\.00,200\.00,600\.00,,,\r\n/);
+
+  // An asset deleted after lodging is a divergence, not a silent disappearance.
+  await api(`/api/depreciation-assets/${assetId}`, { method: 'DELETE' });
+  const afterDelete = await api('/api/depreciation-schedule?fy=FY2025-26').then((r) => r.json());
+  const gone = afterDelete.divergences.find((d) => d.id === assetId);
+  assert.equal(gone.change, 'removed');
+  assert.equal(gone.name, 'Schedule Camera');
+  // …and the lodged CSV still lists it, from the snapshot.
+  const csvAfterDelete = await api('/api/depreciation-schedule.csv?fy=FY2025-26').then((r) => r.text());
+  assert.match(csvAfterDelete, /\r\nSchedule Camera,,,,365,100,800\.00,,200\.00,200\.00,600\.00,,,\r\n/);
 
   const locks = await api('/api/depreciation-locks').then((r) => r.json());
   assert.ok(locks.locks.some((l) => l.id === lock.lock.id));
+});
 
-  await api(`/api/depreciation-assets/${assetId}`, { method: 'DELETE' });
+test('the depreciation CSV defuses a name a spreadsheet would run as a formula', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ name: '=HYPERLINK("x")', startDate: '2023-07-01', purchaseDate: '2023-07-01' })),
+  }).then((r) => r.json());
+  const csv = await api('/api/depreciation-schedule.csv?fy=FY2023-24').then((r) => r.text());
+  // Apostrophe-prefixed, then quoted because it contains quotes.
+  assert.match(csv, /\r\n"'=HYPERLINK\(""x""\)",camera,/);
+  await api(`/api/depreciation-assets/${created.asset.id}`, { method: 'DELETE' });
 });
 
 test('estimates: create, list, get, update, duplicate, delete — with computed totals', async () => {

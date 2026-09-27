@@ -251,18 +251,6 @@ const EstimateDetail = (() => {
     }
   }
 
-  function saveFile(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    // Revoking in the same tick can cancel the download in Safari and Firefox.
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  }
-
   /* Failures are explained inline under the header rather than in the toast:
      the ABN one needs a way to act on it, and every one of them should still be
      readable after the toast has gone. */
@@ -289,7 +277,7 @@ const EstimateDetail = (() => {
     try {
       const reply = await LSCApi.postPdf('/api/estimates/' + encodeURIComponent(estimate.id) + '/pdf');
       const fallback = (estimate.docType === 'invoice' ? estimate.invoiceNumber : estimate.upid) || 'estimate';
-      saveFile(reply.blob, reply.filename || fallback + '.pdf');
+      LSCUtil.saveFile(reply.blob, reply.filename || fallback + '.pdf');
       Toast.ok(label + ' PDF downloaded.');
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;

@@ -312,6 +312,31 @@ test('the balancing adjustment is apportioned by business use', () => {
   assert.equal(y2.balancingAdjustment, round2ish((1500 - y2.closingAdjustableValue) * 0.5));
 });
 
+test('a row carries the inputs it was computed from, so a lodged snapshot is self-contained', () => {
+  const sold = {
+    ...CAMERA, method: 'prime_cost', start_date: '2025-07-01', effective_life_years: 3,
+    business_use_pct: 50, disposal_date: '2026-12-31', disposal_proceeds: 1500,
+  };
+  const y1 = assetSchedule(sold, FY1);
+  assert.equal(y1.businessUsePct, 50);
+  assert.equal(y1.disposalDate, null, 'not disposed in the first year');
+  assert.equal(y1.disposalProceeds, null);
+
+  const y2 = assetSchedule(sold, FY2);
+  assert.equal(y2.businessUsePct, 50);
+  assert.equal(y2.disposalDate, '2026-12-31');
+  assert.equal(y2.disposalProceeds, 1500);
+  // The adjustment is recomputable from the row alone — what a reader of a
+  // frozen snapshot has to be able to do.
+  assert.equal(
+    y2.balancingAdjustment,
+    round2ish((y2.disposalProceeds - y2.closingAdjustableValue) * (y2.businessUsePct / 100))
+  );
+
+  const scrapped = { ...sold, disposal_proceeds: null };
+  assert.equal(assetSchedule(scrapped, FY2).disposalProceeds, 0, 'no proceeds entered is proceeds of nothing');
+});
+
 test('a disposal for nothing is a deduction, not income', () => {
   const scrapped = {
     ...CAMERA, method: 'prime_cost', start_date: '2025-07-01', effective_life_years: 6,

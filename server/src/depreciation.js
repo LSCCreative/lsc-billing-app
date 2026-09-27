@@ -310,20 +310,27 @@
         && epochDay(disposal) >= epochDay(bounds.start)
         && epochDay(disposal) <= epochDay(bounds.end);
 
+      const proceeds = numOrNull(field(asset, 'disposalProceeds', 'disposal_proceeds')) || 0;
+
       rows.push({
         fy: bounds.label,
         daysHeld,
+        /* The inputs a reader checks the row against travel WITH the row, so a
+           lodgement snapshot of it (depreciation_locks) is self-contained: a
+           business-use or proceeds edit made after lodging can't end up printed
+           beside figures that were computed from the old value. */
+        businessUsePct: round2(share * 100),
         openingAdjustableValue: round2(opening),
         decline: round2(decline),
         deductible: round2(deductible),
         closingAdjustableValue: round2(closing),
         disposed: disposedThisFy,
+        disposalDate: disposedThisFy ? disposal : null,
+        disposalProceeds: disposedThisFy ? round2(proceeds) : null,
         /* Belongs to the disposal year only. Proceeds are compared against the
            adjustable value AFTER that year's decline, then apportioned — the same
            business-use share, because only the business part was ever deducted. */
-        balancingAdjustment: disposedThisFy
-          ? round2(((numOrNull(field(asset, 'disposalProceeds', 'disposal_proceeds')) || 0) - closing) * share)
-          : null,
+        balancingAdjustment: disposedThisFy ? round2((proceeds - closing) * share) : null,
       });
 
       opening = closing;

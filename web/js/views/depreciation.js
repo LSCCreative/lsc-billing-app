@@ -40,11 +40,19 @@
  * The summary card above computes this year's deduction in the browser from
  * the same LSCDepreciation the server runs, which is fine for one headline
  * figure. The schedule is fetched from GET /api/depreciation-schedule instead,
- * because that route is where a lodged year's frozen figures and the
- * "diverges" flag come from (the lodgement lock is the next task) — rendering a
- * local recompute here would have to be torn out the moment a year is locked.
- * One reply is cached per selected FY and dropped on every asset write, so
- * ticking "Show disposed" doesn't refetch but adding an asset does.
+ * because that route is where a lodged year's frozen figures and its
+ * line-by-line divergences come from. One reply is cached per selected FY and
+ * dropped on every asset write, so ticking "Show disposed" doesn't refetch but
+ * adding an asset does.
+ *
+ * A LODGED YEAR SHOWS WHAT WAS LODGED
+ * "Mark FY as lodged" appends a depreciation_locks row freezing that year's
+ * figures. From then on the schedule renders the frozen snapshot, never
+ * today's recompute, badged as lodged; where the two disagree it lists each
+ * line and figure that moved, rather than silently showing new numbers as if
+ * they were filed. There is no unlock and no second lodgement from this
+ * screen — a wrong lodgement is an amendment, a deliberate act outside the UI.
+ * Only a finished FY can be marked (the server refuses the current one).
  *
  * ATO VOCABULARY IN EVERY COLUMN
  * "Decline in value", "adjustable value", "disposal" — the IA doc's glossary.
@@ -112,6 +120,7 @@ const DepreciationView = (() => {
   let schedLoadingFy = null;
   let schedSeq = 0; // a reply for an FY the user has since moved off is ignored
   let announcePending = false; // set by the FY <select>, spent by renderScheduleBody
+  let pendingFocus = null; // an id to focus once the next reply renders
 
   const $ = (id) => root.querySelector('#' + id);
   const $m = (id) => overlay.querySelector('#' + id);
@@ -292,23 +301,40 @@ const DepreciationView = (() => {
 
   const POOL_LABEL = { small_business_pool: 'Small business pool', low_value_pool: 'Low-value pool' };
 
-  function assetRowsMarkup(rows, byId) {
+  /* A row's own business use, disposal date and proceeds — the chain has put
+     them on every row since the lodgement-lock task, so a lodged snapshot
+     prints the values its figures were computed from. A lock taken before
+     that falls back to the asset as it is now; that is all such a lock has. */
+  function rowUse(r, asset) {
+    if (typeof r.businessUsePct === 'number') return r.businessUsePct;
+    return asset && asset.businessUsePct !== undefined ? num(asset.businessUsePct) : null;
+  }
+  function rowDisposal(r, asset) {
+    const a = asset || {};
+    return {
+      date: r.disposalDate !== undefined ? r.disposalDate : a.disposalDate || null,
+      proceeds: r.disposalProceeds !== undefined ? r.disposalProceeds : num(a.disposalProceeds),
+    };
+  }
+
+  const changedTag = (changed) => (changed ? ' <span class="dep-tag dep-tag-changed">Changed since lodging</span>' : '');
+
+  function assetRowsMarkup(rows, byId, changedIds) {
     let decline = 0;
     let deductible = 0;
     const body = rows
       .map((r) => {
         decline += r.decline;
         deductible += r.deductible;
-        const asset = byId.get(r.assetId);
-        const use = asset ? num(asset.businessUsePct) + '%' : '—';
+        const use = rowUse(r, byId.get(r.assetId));
         return (
           '<tr>' +
           '<td data-label="Asset">' + esc(r.name || 'Untitled') +
-          (r.disposed ? ' <span class="dep-tag">Disposed</span>' : '') + '</td>' +
+          (r.disposed ? ' <span class="dep-tag">Disposed</span>' : '') + changedTag(changedIds.has(r.assetId)) + '</td>' +
           '<td class="right muted-td" data-label="Days held">' + esc(String(r.daysHeld)) + '</td>' +
           '<td class="right" data-label="Opening adjustable value">' + fmt(r.openingAdjustableValue) + '</td>' +
           '<td class="right" data-label="Decline in value">' + fmt(r.decline) + '</td>' +
-          '<td class="right muted-td" data-label="Business use">' + esc(use) + '</td>' +
+          '<td class="right muted-td" data-label="Business use">' + (use === null ? '—' : esc(use + '%')) + '</td>' +
           '<td class="right dep-strong" data-label="Deductible">' + fmt(r.deductible) + '</td>' +
           '<td class="right" data-label="Closing adjustable value">' + fmt(r.closingAdjustableValue) + '</td>' +
           '</tr>'
@@ -342,7 +368,7 @@ const DepreciationView = (() => {
      would be a number the ATO never computes. What IS useful beside the pool
      balance is which gear went into it this year — the additions figure is
      otherwise a sum nobody can reconcile. */
-  function poolRowsMarkup(rows, fy) {
+  function poolRowsMarkup(rows, fy, changedIds) {
     const body = rows
       .map((r) => {
         const added = assets()
@@ -350,7 +376,7 @@ const DepreciationView = (() => {
           .map((a) => esc(a.name || 'Untitled'));
         return (
           '<tr>' +
-          '<td data-label="Pool">' + esc(POOL_LABEL[r.pool] || r.pool) +
+          '<td data-label="Pool">' + esc(POOL_LABEL[r.pool] || r.pool) + changedTag(changedIds.has(r.pool)) +
           (added.length ? '<div class="dep-pool-added">Added this year: ' + added.join(', ') + '</div>' : '') + '</td>' +
           '<td class="right" data-label="Opening pool balance">' + fmt(r.openingBalance) + '</td>' +
           '<td class="right" data-label="Additions (business share)">' + fmt(r.additions) + '</td>' +
@@ -377,22 +403,22 @@ const DepreciationView = (() => {
   /* Balancing adjustments for assets disposed of in this FY. Their own block,
      not a column on the asset table: most years it would be a column of dashes,
      and it is a different line on the return from the decline in value. The
-     date and proceeds come from the asset itself — the schedule row carries the
-     adjustment, not its inputs, and an accountant checks the inputs. */
+     date and proceeds are shown because an accountant checks the inputs, not
+     just the adjustment — read from the row (rowDisposal) so a lodged year
+     shows what was lodged. */
   function disposalRowsMarkup(rows, byId) {
     const body = rows
       .map((r) => {
-        const asset = byId.get(r.assetId) || {};
-        const proceeds = asset.disposalProceeds;
+        const asset = byId.get(r.assetId);
+        const disposal = rowDisposal(r, asset);
+        const use = rowUse(r, asset);
         return (
           '<tr>' +
           '<td data-label="Asset">' + esc(r.name || 'Untitled') + '</td>' +
-          '<td class="muted-td" data-label="Disposal date">' + esc(asset.disposalDate || '—') + '</td>' +
-          '<td class="right" data-label="Disposal proceeds">' +
-          (proceeds === null || proceeds === undefined ? fmt(0) : fmt(proceeds)) + '</td>' +
+          '<td class="muted-td" data-label="Disposal date">' + esc(disposal.date || '—') + '</td>' +
+          '<td class="right" data-label="Disposal proceeds">' + fmt(disposal.proceeds) + '</td>' +
           '<td class="right" data-label="Adjustable value at disposal">' + fmt(r.closingAdjustableValue) + '</td>' +
-          '<td class="right muted-td" data-label="Business use">' +
-          (asset.businessUsePct === undefined ? '—' : esc(num(asset.businessUsePct) + '%')) + '</td>' +
+          '<td class="right muted-td" data-label="Business use">' + (use === null ? '—' : esc(use + '%')) + '</td>' +
           '<td class="right dep-strong" data-label="Balancing adjustment">' + balancingText(r.balancingAdjustment) + '</td>' +
           '</tr>'
         );
@@ -410,6 +436,194 @@ const DepreciationView = (() => {
     );
   }
 
+  // ── Lodgement: the badge, the divergence list, and the foot actions ──────
+
+  const FIELD_LABEL = {
+    daysHeld: 'days held',
+    businessUsePct: 'business use',
+    openingAdjustableValue: 'opening adjustable value',
+    decline: 'decline in value',
+    deductible: 'deductible',
+    closingAdjustableValue: 'closing adjustable value',
+    disposalDate: 'disposal date',
+    disposalProceeds: 'disposal proceeds',
+    balancingAdjustment: 'balancing adjustment',
+    openingBalance: 'opening pool balance',
+    additions: 'additions',
+    closingBalance: 'closing pool balance',
+  };
+
+  function fieldValue(field, v) {
+    if (v === null || v === undefined) return 'none';
+    if (field === 'daysHeld') return String(v);
+    if (field === 'businessUsePct') return v + '%';
+    if (field === 'disposalDate') return String(v);
+    if (field === 'balancingAdjustment') return signedFmt(v);
+    return fmt(v);
+  }
+
+  /* lockedAt is an ISO timestamp; the date is what the user did it on. */
+  function lodgedOn(iso) {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function divergenceItem(d) {
+    // A pool by this screen's own label, so the list names it as the table does.
+    const label = d.kind === 'pool' ? POOL_LABEL[d.id] || d.name : d.name;
+    const name = '<strong>' + esc(label || 'Untitled') + '</strong>';
+    if (d.change === 'removed') return '<li>' + name + ' — deleted from the register since it was lodged.</li>';
+    if (d.change === 'added') {
+      return '<li>' + name + ' — now falls in this year, but wasn’t in what was lodged.</li>';
+    }
+    const parts = d.fields.map(
+      (f) =>
+        esc(FIELD_LABEL[f.field] || f.field) + ': lodged ' + esc(fieldValue(f.field, f.lodged)) +
+        ', now ' + esc(fieldValue(f.field, f.live))
+    );
+    return '<li>' + name + ' — ' + parts.join('; ') + '.</li>';
+  }
+
+  /* tabindex="-1": after "Mark as lodged" the button that had focus is gone,
+     so focus is put here — on the statement of what just happened — rather
+     than dropped to the top of the document. */
+  function lodgedMarkup(reply) {
+    const on = lodgedOn(reply.lockedAt);
+    const list = reply.divergences || [];
+    return (
+      '<div class="dep-lodged" id="dep-lodged" tabindex="-1">' +
+      '<span class="dep-lodged-badge">Lodged</span>' +
+      '<p>Marked as lodged' + (on ? ' on ' + esc(on) : '') + '. These are the figures as lodged, frozen — ' +
+      'later changes to your assets don’t rewrite them.</p></div>' +
+      (list.length
+        ? '<div class="dep-diverge" role="status"><p class="dep-diverge-h">Your assets have changed since ' +
+          esc(fyDisplay(selectedFy)) + ' was lodged. The figures below are still what was lodged; recomputed ' +
+          'today, ' + (list.length === 1 ? 'one line differs' : list.length + ' lines differ') + ':</p>' +
+          '<ul>' + list.map(divergenceItem).join('') + '</ul>' +
+          '<p>If an asset was edited by mistake, changing it back clears this. If what was lodged was wrong, ' +
+          'that’s an amendment — take this list to your accountant. The app has no way to re-lodge a year, on ' +
+          'purpose.</p></div>'
+        : '')
+    );
+  }
+
+  /* 30 June of an FY, for the "not yet" line — from the shared helper, so the
+     date and the label can never disagree. */
+  function fyEndText(fy) {
+    const bounds = fyBounds(fy);
+    const end = new Date(bounds.end + 'T00:00:00');
+    return end.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  /* At the foot of the schedule, where an accountant's workflow ends (IA doc):
+     download what you're about to hand over, then record that it was handed
+     over. The lock button exists only for a finished, unlodged year — there
+     is deliberately no unlock and no second lodgement from here. */
+  function actionsMarkup(reply, schedule) {
+    const fy = selectedFy;
+    const shown = esc(fyDisplay(fy));
+    let lodge = '';
+    if (reply.locked) {
+      lodge = '<p class="dep-actions-note">The download is the lodged figures.</p>';
+    } else if (!reply.fyEnded) {
+      lodge =
+        '<p class="dep-actions-note">You can mark ' + shown + ' as lodged once it ends on ' +
+        esc(fyEndText(fy)) + '. Until then its figures can still move.</p>';
+    } else {
+      lodge =
+        '<button type="button" class="btn btn-ghost btn-sm" id="dep-lodge" data-write>Mark ' + shown +
+        ' as lodged</button>' +
+        '<p class="dep-actions-note">Once your return is in. It freezes these figures — ' +
+        fmt(schedule.totalDeductible) + ' deductible — as what was filed. There’s no undo.</p>';
+    }
+    return (
+      '<div class="dep-actions">' +
+      '<div class="dep-actions-row">' +
+      '<button type="button" class="btn btn-accent btn-sm" id="dep-csv">' +
+      '<span class="spinner" id="dep-csv-spin"></span><span>Download CSV — ' + shown + '</span></button>' +
+      lodge +
+      '</div>' +
+      '<div id="dep-actions-error" role="alert"></div>' +
+      '</div>'
+    );
+  }
+
+  function showActionError(message) {
+    const el = $('dep-actions-error');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add('show');
+  }
+
+  let downloading = false;
+  let lodging = false;
+
+  /* The spreadsheet for the selected FY. Local download only — nothing is
+     emailed, uploaded or shared. The server builds it (the frozen figures for
+     a lodged year) and names it with the FY. */
+  async function downloadCsv() {
+    if (downloading) return;
+    const fy = selectedFy;
+    const btn = $('dep-csv');
+    LSCUtil.clearFieldErrors($('dep-actions-error'));
+    downloading = true;
+    if (btn) btn.disabled = true;
+    if ($('dep-csv-spin')) $('dep-csv-spin').style.display = 'inline-block';
+    try {
+      const reply = await LSCApi.getCsv('/api/depreciation-schedule.csv?fy=' + encodeURIComponent(fy));
+      LSCUtil.saveFile(reply.blob, reply.filename || 'depreciation-schedule-' + fy + '.csv');
+      Toast.ok(fyDisplay(fy) + ' schedule downloaded.');
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      showActionError(failureText(err, 'download the CSV'));
+    } finally {
+      downloading = false;
+      const again = $('dep-csv');
+      if (again) again.disabled = false;
+      if ($('dep-csv-spin')) $('dep-csv-spin').style.display = 'none';
+    }
+  }
+
+  async function lodge() {
+    if (lodging || !sched || sched.fy !== selectedFy) return;
+    const fy = selectedFy;
+    const s = sched.reply.schedule;
+    if (
+      !window.confirm(
+        'Mark ' + fyDisplay(fy) + ' as lodged?\n\n' +
+          'This freezes today’s figures — ' + fmt(s.totalDeductible) + ' deductible' +
+          (s.assets.some((r) => r.disposed) ? ', ' + signedFmt(s.totalBalancingAdjustment) + ' in balancing adjustments' : '') +
+          ' — as what you filed. Later changes to your assets won’t rewrite them; they’ll be flagged instead.\n\n' +
+          'There’s no undo in the app. Only do this once the return has actually been lodged.'
+      )
+    ) return;
+
+    LSCUtil.clearFieldErrors($('dep-actions-error'));
+    lodging = true;
+    const btn = $('dep-lodge');
+    if (btn) btn.disabled = true;
+    Toast.working('Recording the lodgement…');
+    try {
+      await LSCApi.post('/api/depreciation-locks', { fy });
+      dropSchedule();
+      Toast.ok(fyDisplay(fy) + ' marked as lodged.');
+      pendingFocus = 'dep-lodged';
+      renderScheduleBody();
+    } catch (err) {
+      Toast.hide();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      showActionError(failureText(err, 'mark it as lodged'));
+      const again = $('dep-lodge');
+      if (again) again.disabled = false;
+    } finally {
+      lodging = false;
+    }
+  }
+
   function scheduleBodyMarkup() {
     const fy = selectedFy;
     const shown = esc(fyDisplay(fy));
@@ -423,11 +637,12 @@ const DepreciationView = (() => {
       return '<p class="dep-sched-state" aria-busy="true">Working out ' + shown + '…</p>';
     }
 
-    /* The live recompute, even for a lodged year — on purpose, until the
-       lodgement-lock task renders reply.lockedFigures with its badge and the
-       `diverges` flag. Showing frozen figures without the badge that says so
-       would be worse than showing live ones. */
-    const schedule = sched.reply.schedule;
+    /* A lodged year shows what was LODGED — the frozen snapshot — never
+       today's recompute, which may since have moved (an effective life edited
+       in 2027 must not rewrite what was filed for 2026). Where the two now
+       disagree, lodgedMarkup says so line by line, above the figures. */
+    const reply = sched.reply;
+    const schedule = reply.locked && reply.lockedFigures ? reply.lockedFigures : reply.schedule;
     const assetRows = schedule.assets || [];
     const poolRows = schedule.pools || [];
     if (!assetRows.length && !poolRows.length) {
@@ -441,8 +656,12 @@ const DepreciationView = (() => {
     const byId = new Map(assets().map((a) => [a.id, a]));
     const disposed = assetRows.filter((r) => r.disposed);
     const bal = schedule.totalBalancingAdjustment;
+    const changedIds = new Set(
+      (reply.divergences || []).filter((d) => d.change === 'changed').map((d) => d.id)
+    );
 
     return (
+      (reply.locked ? lodgedMarkup(reply) : '') +
       '<div class="dep-sched-totals">' +
       '<div class="dep-sched-total"><div class="sum-label">Deductible decline in value</div>' +
       '<div class="dep-sched-figure">' + fmt(schedule.totalDeductible) + '</div>' +
@@ -454,9 +673,10 @@ const DepreciationView = (() => {
           ' — a separate line from the decline</div>'
         : '<div class="dep-sched-figure is-empty">—</div><div class="dep-stat-sub">Nothing disposed of this year</div>') +
       '</div></div>' +
-      (assetRows.length ? assetRowsMarkup(assetRows, byId) : '') +
-      (poolRows.length ? poolRowsMarkup(poolRows, fy) : '') +
+      (assetRows.length ? assetRowsMarkup(assetRows, byId, changedIds) : '') +
+      (poolRows.length ? poolRowsMarkup(poolRows, fy, changedIds) : '') +
       (disposed.length ? disposalRowsMarkup(disposed, byId) : '') +
+      actionsMarkup(reply, schedule) +
       '<p class="dep-sched-note dep-sched-foot">Adjustable value falls by the whole decline in value; only the ' +
       'business-use share of it is deductible. Days are counted from each asset’s start date and divided by 365, ' +
       'leap year or not — the ATO’s formula. Figures are to the cent; round on the return, not before.</p>'
@@ -519,6 +739,21 @@ const DepreciationView = (() => {
     const el = document.getElementById('dep-sched-body');
     if (!el || !root.contains(el)) return;
     el.innerHTML = scheduleBodyMarkup();
+    bindScheduleBody();
+  }
+
+  /* Called from both paths that put the body on screen: renderScheduleBody,
+     and render() — which builds it inside markup() when the reply is already
+     cached (ticking "Show disposed", or returning from the asset modal). */
+  function bindScheduleBody() {
+    const csv = $('dep-csv');
+    if (csv) csv.addEventListener('click', downloadCsv);
+    const lodgeBtn = $('dep-lodge');
+    if (lodgeBtn) lodgeBtn.addEventListener('click', lodge);
+    if (pendingFocus && $(pendingFocus)) {
+      $(pendingFocus).focus();
+      pendingFocus = null;
+    }
     const retry = $('dep-sched-retry');
     if (retry) {
       retry.addEventListener('click', () => {
@@ -529,11 +764,14 @@ const DepreciationView = (() => {
     const status = $('dep-sched-status');
     if (announcePending && status && sched && sched.fy === selectedFy) {
       announcePending = false;
-      const s = sched.reply.schedule;
+      const reply = sched.reply;
+      const s = reply.locked && reply.lockedFigures ? reply.lockedFigures : reply.schedule;
       const count = (s.assets || []).length + (s.pools || []).length;
+      const changed = (reply.divergences || []).length;
       status.textContent =
-        fyDisplay(selectedFy) + ': ' +
-        (count ? fmt(s.totalDeductible) + ' deductible across ' + count + (count === 1 ? ' line.' : ' lines.') : 'nothing held.');
+        fyDisplay(selectedFy) + (reply.locked ? ', lodged' : '') + ': ' +
+        (count ? fmt(s.totalDeductible) + ' deductible across ' + count + (count === 1 ? ' line.' : ' lines.') : 'nothing held.') +
+        (changed ? ' ' + changed + (changed === 1 ? ' line has' : ' lines have') + ' changed since lodging.' : '');
     }
     ensureSchedule();
   }
@@ -1071,7 +1309,7 @@ const DepreciationView = (() => {
     }
     root.innerHTML = markup();
     bind();
-    ensureSchedule();
+    bindScheduleBody();
   }
 
   function mount(container, viewHandlers) {

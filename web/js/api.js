@@ -74,8 +74,10 @@ const LSCApi = (() => {
     return plain ? plain[1] : null;
   }
 
-  // `expect` is 'json' (default) or 'pdf'. Errors are JSON either way, so only
-  // a successful PDF reply takes the binary path.
+  // `expect` is 'json' (default), 'pdf' or 'csv'. Errors are JSON either way,
+  // so only a successful file reply takes the binary path, and only when the
+  // server says it sent the kind of file that was asked for.
+  const FILE_TYPES = { pdf: /^application\/pdf\b/i, csv: /^text\/csv\b/i };
   async function perform(method, path, body, expect) {
     // Resolved before the try: base() throws when config.js is missing, and
     // inside the try that would be caught and relabelled 'network' — telling a
@@ -96,8 +98,8 @@ const LSCApi = (() => {
       throw new ApiError('network', 'Could not reach the server.', { cause: err });
     }
 
-    if (res.ok && expect === 'pdf') {
-      if (!/^application\/pdf\b/i.test(res.headers.get('Content-Type') || '')) {
+    if (res.ok && FILE_TYPES[expect]) {
+      if (!FILE_TYPES[expect].test(res.headers.get('Content-Type') || '')) {
         throw new ApiError('server', 'The server sent a reply this app could not read.');
       }
       let blob;
@@ -170,5 +172,10 @@ const LSCApi = (() => {
     /* Resolves to { blob, filename }; filename is null if the reply didn't
        name the file. */
     postPdf: (path) => request('POST', path, undefined, 'pdf'),
+    /* The same shape, for a CSV fetched with GET. Through here rather than an
+       <a href> to the API: `download` is ignored on a cross-origin link, so it
+       would navigate the app away to the file — and an expired session would
+       show a bare 401 page instead of the sign-in screen. */
+    getCsv: (path) => request('GET', path, undefined, 'csv'),
   };
 })();

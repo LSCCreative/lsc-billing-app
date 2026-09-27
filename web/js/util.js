@@ -117,5 +117,19 @@ const LSCUtil = (() => {
     box.classList.remove('show');
   }
 
-  return { fmt, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors };
+  /* Hand a Blob to the browser as a download. Moved here from
+     estimate-detail.js when the depreciation CSV became its second caller. */
+  function saveFile(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoking in the same tick can cancel the download in Safari and Firefox.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  return { fmt, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile };
 })();
