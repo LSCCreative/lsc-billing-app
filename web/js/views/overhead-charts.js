@@ -846,15 +846,18 @@ const OverheadCharts = (() => {
   }
 
   /* Every point as a table, for a screen reader — the <title>s are hover-only,
-     and the svg's label only gives the start, this year and the last value. */
+     and the svg's label only gives the start, this year and the last value.
+     .sr-only goes on a WRAPPING DIV, not the table: a table ignores width:1px
+     and lays out at its content width, which pushed a 375px page to 407px
+     (found by the design review). The div's overflow:hidden clips it. */
   function declineTable(name, origin, points) {
     const row = (head, value) => '<tr><th scope="row">' + esc(head) + '</th><td>' + esc(value) + '</td></tr>';
     return (
-      '<table class="sr-only"><caption>' + esc(name) + ': adjustable value at the end of each financial year' +
+      '<div class="sr-only"><table><caption>' + esc(name) + ': adjustable value at the end of each financial year' +
       '</caption><thead><tr><th scope="col">When</th><th scope="col">Adjustable value</th></tr></thead><tbody>' +
       row('First used ' + dayDate(origin.date) + ' (' + origin.what + ')', fmt(origin.value)) +
       points.map((point) => row(LSCCalc.fyDisplay(point.fy) + pointNote(point), fmt(point.value))).join('') +
-      '</tbody></table>'
+      '</tbody></table></div>'
     );
   }
 

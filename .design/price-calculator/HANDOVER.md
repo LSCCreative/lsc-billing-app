@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-28 (Phase 6 complete — all 23 build tasks done; the design review is next)
+## State as of 2026-09-28 (Phases 6 and 7 complete — built, reviewed; review fixes await the user's pick)
 
 `/design-flow` sequence position:
 
@@ -88,20 +88,26 @@ service business that sells shoot days rather than units.
       - [x] **Accessibility pass** (frontend — Opus/high) — done 2026-09-28. See "What landed —
             Accessibility pass". **Live** (Pages, pushed 2026-09-28, run 36357488624; web only).
       - [x] **Decline curve chart** (frontend — Opus/high) — done 2026-09-28. See "What landed —
-            Decline curve". **Committed, not pushed** (web only, no NAS redeploy needed).
-- [ ] ← **NEXT: Phase 7 — Design Review.** Run `/design-review` against `DESIGN_BRIEF.md` when the
-      user asks; screenshots to `.design/price-calculator/screenshots/`. Carry in the Accessibility
-      pass's "Known and left" (a real VoiceOver pass, especially the announcer regions inside the
-      `aria-modal` dialogs) and overhead-finance decision 74's still-open editor half.
+            Decline curve". **Live** (Pages, pushed 2026-09-28, run 36358829703; web only).
+- [x] **Phase 7 — Design Review.** Done 2026-09-28 → [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md), with
+      26 screenshots in `screenshots/`. Its one must-fix (the Depreciation tab 407px wide on a
+      375px phone, from the decline curve's screen-reader table) is **fixed and committed, not
+      pushed** — it is live on Pages until pushed.
+- [ ] ← **NEXT: the review's should-fix list, on the user's pick.** In the review's order: (1) the
+      Dashboard comparison table wraps through 1099–768 — hide Section, nowrap the numbers; (2)
+      "Below by $X" is a `<span>` styled like a link — make it a button to the Rate Card row, per the
+      IA's "Checking a day rate" flow; (3) 13px inputs zoom iOS Safari on focus — a **site-wide**
+      one-rule fix that needs the user's OK; (4) a real VoiceOver pass. Also still open:
+      overhead-finance decision 74's estimate-editor half (no announcements there).
 
 All 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
 lock, disposal), the shared info control, the GST mirror, the post-ratio readout, the double-count
 hint, Profit Goals' read-only capacity, the estimate editor's day-unit wording, the responsive
 pass, the accessibility pass and the decline curve chart. (Earlier versions of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design
-review — the count was wrong, not the list.) **The decline curve is committed but not pushed.**
-The accessibility pass, the responsive pass, Profit Goals and the estimate editor went to Pages on
-2026-09-28. Everything before them is live,
+review — the count was wrong, not the list.) **The design review's must-fix is committed but not
+pushed.** The decline curve, the accessibility pass, the responsive pass, Profit Goals and the
+estimate editor went to Pages on 2026-09-28. Everything before them is live,
 NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.

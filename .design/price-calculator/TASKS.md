@@ -457,4 +457,11 @@ change to it is two identical edits. A task that edits one and not the other is 
 
 ## Review
 
-- [ ] **Design review**: Run `/design-review` against `.design/price-calculator/DESIGN_BRIEF.md` once the Core UI is built. Screenshots to `.design/price-calculator/screenshots/`.
+- [x] **Design review**: Run `/design-review` against `.design/price-calculator/DESIGN_BRIEF.md` once the Core UI is built. Screenshots to `.design/price-calculator/screenshots/`.
+
+  **Done 2026-09-28** → [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md), 26 screenshots in `screenshots/`
+  (headless Chrome against `api-scratch`, the first review in this repo with files on disk). **One
+  must-fix, already fixed in the same change**: the decline curve's `.sr-only` table widened the
+  Depreciation tab to 407px on a 375px phone. **Open** — 4 should-fix (comparison table wraps
+  1099–768; "Below by $X" looks like a link but isn't; 13px inputs zoom iOS, site-wide; no real
+  VoiceOver pass) and 6 could-improve. None started; they wait on the user's pick.
