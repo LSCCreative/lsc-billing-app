@@ -1,6 +1,8 @@
 'use strict';
 
-/* The Pricing & Services screen — the rate card every estimate is priced from.
+/* The Rate Card screen — the rate card every estimate is priced from. Titled
+ * "Pricing & Services" until 2026-09-28, when its heading was brought in line
+ * with the Finance & Price rail item a screen reader user picks it by.
  *
  * Ported from renderPricing in the desktop app. Same layout, same grid, same
  * per-category tables; app.css already carries every rule they use. What
@@ -419,7 +421,7 @@ const PricingView = (() => {
 
   function markup() {
     let html =
-      '<div class="page-head"><div><h1 class="page-title">Pricing &amp; Services</h1>' +
+      '<div class="page-head"><div><h1 class="page-title">Rate Card</h1>' +
       '<div class="page-sub">Add, rename, re-price or remove anything the estimator offers</div></div></div>' +
       '<div class="tax-setting"><div>' +
       '<div class="sum-label" style="margin-bottom:4px">Tax Set-Aside Rate (%)</div>' +
@@ -445,6 +447,7 @@ const PricingView = (() => {
       ' / ' +
       '<button type="button" class="pricing-rate-note-link" data-go-tab="capacity">Capacity</button>' +
       ' tabs. Mark-Up stays yours to set.</p>' +
+      '<p class="sr-only" id="pricing-floor-live" aria-live="polite"></p>' +
       '<div class="pricing-grid">';
 
     card.labourSections.forEach((sec, si) => {
@@ -540,7 +543,18 @@ const PricingView = (() => {
         } else target[field] = num(input.value);
 
         if (input.dataset.type === 'labour' && (field === 'mu' || field === 'hoursPerUnit')) {
-          refreshFloorLine(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10));
+          const si = parseInt(input.dataset.si, 10);
+          const ri = parseInt(input.dataset.ri, 10);
+          refreshFloorLine(si, ri);
+          /* The line is the Mark-Up's description, so it is read on focus; this
+             is for the change while typing, spoken once typing pauses. */
+          const line = root.querySelector('#pfl-' + si + '-' + ri);
+          if (line) {
+            LSCUtil.announce(
+              $('pricing-floor-live'),
+              (String(target.name).trim() || 'This service') + ': ' + line.textContent.replace(/^floor —$/, 'no floor yet') + '.'
+            );
+          }
         }
       });
     });

@@ -337,7 +337,9 @@ const GoalsView = (() => {
       '<div class="goals-outcome-value' + (value === null ? ' is-empty' : '') + '" id="goals-tar-value">' +
       (value === null ? '—' : fmt(value)) + '</div>' +
       '<p class="goals-outcome-note" id="goals-tar-note">' + outcomeNote(value) + '</p>' +
-      '</div>'
+      '</div>' +
+      // Spoken once typing pauses — see LSCUtil.announce().
+      '<p class="sr-only" id="goals-tar-live" aria-live="polite"></p>'
     );
   }
 
@@ -487,6 +489,15 @@ const GoalsView = (() => {
       $(id).addEventListener('input', function () {
         form[fields[id]] = this.value;
         refreshOutcome();
+        // The margin field doesn't move this figure, so it announces nothing
+        // new — announce() skips text that hasn't changed.
+        const value = computeTarget();
+        LSCUtil.announce(
+          $('goals-tar-live'),
+          value === null
+            ? 'Target annual revenue: not set. ' + $('goals-tar-note').textContent
+            : 'Target annual revenue: ' + fmt(value) + '.'
+        );
       });
     });
 

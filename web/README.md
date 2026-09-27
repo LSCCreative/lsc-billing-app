@@ -47,7 +47,7 @@ js/views/estimate-list.js    the cards grid
 js/views/estimate-detail.js  the read-only estimate
 js/views/estimate-editor.js  the editor
 js/views/clients.js      the client list, one client's record + estimate history
-js/views/pricing.js      the rate card (Pricing & Services)
+js/views/pricing.js      the Rate Card
 js/views/finance.js      Finance: routes Pricing / Overhead / Goals into
                          #finance-sub. A router, not a screen
 js/views/overhead.js     the Overhead screen (expense CRUD + summary card)

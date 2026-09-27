@@ -131,5 +131,31 @@ const LSCUtil = (() => {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
-  return { fmt, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile };
+  /* Speak a figure that recomputes as the user types, once typing pauses.
+     `region` is a visually hidden aria-live="polite" element (class
+     sr-only, a11y.css) that the screen rendered empty with the rest of its
+     markup — a live region inserted already holding its text is not reliably
+     announced, so each caller owns one from the start rather than this
+     creating it on first use.
+
+     Why not aria-live on the visible figure itself: it repaints on every
+     keystroke, so typing 1,776 would read out 1, 17, 177 and 1,776 in turn.
+     This waits a second after the last call and writes once. The same text
+     twice is not a change, so nothing is re-announced when an edit leaves the
+     figure where it was. Finance decision 74 named this shape; the Finance &
+     Price brief made it a requirement (2026-09-28). */
+  const ANNOUNCE_AFTER_MS = 1000;
+  const announceTimers = new WeakMap();
+  function announce(region, text) {
+    if (!region) return;
+    clearTimeout(announceTimers.get(region));
+    announceTimers.set(
+      region,
+      setTimeout(() => {
+        if (region.isConnected) region.textContent = text;
+      }, ANNOUNCE_AFTER_MS)
+    );
+  }
+
+  return { fmt, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce };
 })();

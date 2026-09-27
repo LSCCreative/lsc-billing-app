@@ -453,9 +453,9 @@ const FinanceDashboardView = (() => {
   const b = (text) => '<strong>' + text + '</strong>';
   const hrsOf = (n) => hrs(Math.abs(n)) + ' hr' + (Math.abs(n) === 1 ? '' : 's');
 
-  /* The sentence for the current inputs. Rewritten on every keystroke inside
-     an aria-live region, so it is announced as it changes — the same way
-     Profit Goals announces its target revenue. */
+  /* The sentence for the current inputs. Rewritten on every keystroke, and
+     spoken through #dash-post-live once typing pauses (bindPost) — the same
+     way Profit Goals announces its target revenue. */
   function postOutcome() {
     const goals = LSCData.goals();
     if (annualBillableHours(goals) === null) {
@@ -503,7 +503,9 @@ const FinanceDashboardView = (() => {
 
   function postMarkup() {
     const dayHours = parseFloat(LSCData.goals().billableHoursPerDay);
-    const dayText = Number.isFinite(dayHours) && dayHours > 0 ? hrs(dayHours) + ' hrs' : 'your Capacity day';
+    /* "are each 8 hrs, your Capacity day." — or, with capacity unset, just
+       the name: the old fallback put "your Capacity day" in both slots. */
+    const dayText = Number.isFinite(dayHours) && dayHours > 0 ? hrs(dayHours) + ' hrs, your Capacity day' : 'one Capacity day';
     return (
       '<section class="dash-section" aria-labelledby="dash-post-h">' +
       '<div class="dash-panel dash-post">' +
@@ -514,9 +516,10 @@ const FinanceDashboardView = (() => {
       '<div class="field"><label for="dash-post-ratio">Edit days per shoot day</label>' +
       '<input type="number" id="dash-post-ratio" min="0" step="0.5" inputmode="decimal" value="' + esc(post.ratio) + '"></div>' +
       '</div>' +
-      '<div id="dash-post-out" aria-live="polite">' + postOutcome() + '</div>' +
+      '<div id="dash-post-out">' + postOutcome() + '</div>' +
+      '<p class="sr-only" id="dash-post-live" aria-live="polite"></p>' +
       '<p class="dash-panel-note">A what-if — nothing here is saved, and it resets when you leave. A shoot day and ' +
-      'an edit day are each ' + dayText + ', your Capacity day. Post can run from about one edit day per shoot ' +
+      'an edit day are each ' + dayText + '. Post can run from about one edit day per shoot ' +
       'day (a corporate interview) to three (a wedding), so nothing here caps how many shoot days you sell.</p>' +
       '</div></section>'
     );
@@ -528,7 +531,19 @@ const FinanceDashboardView = (() => {
       if (id !== 'dash-post-shoot' && id !== 'dash-post-ratio') return;
       post[id === 'dash-post-shoot' ? 'shoot' : 'ratio'] = event.target.value;
       const out = document.getElementById('dash-post-out');
-      if (out) out.innerHTML = postOutcome();
+      if (!out) return;
+      out.innerHTML = postOutcome();
+      /* The sentence and the ceiling, not the "shooting + post of N hrs"
+         working between them — or, while there's no answer, the note that
+         says what's missing. */
+      const sentence = out.querySelector('.dash-post-sentence');
+      const lines = sentence.classList.contains('is-empty')
+        ? [out.querySelector('.dash-panel-note')]
+        : [sentence, out.querySelector('.dash-post-detail:last-child')];
+      LSCUtil.announce(
+        document.getElementById('dash-post-live'),
+        lines.map((el) => el.textContent).join(' ')
+      );
     });
   }
 

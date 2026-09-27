@@ -418,7 +418,24 @@ change to it is two identical edits. A task that edits one and not the other is 
   area was 42px, not 44 — fixed in `info.css`. Also touched `finance-dashboard.js` (the toggle) and
   `finance-dashboard`-scoped rules. No server change. See HANDOVER.
 
-- [ ] **Accessibility pass** (frontend — Opus/high): Every info control is a button with `aria-expanded`, Tab-reachable popover, Escape to close, focus returned to the trigger — no hover-only path anywhere. Rail is `<nav>` + `aria-current="page"`, real buttons in the tab order, no roving tabindex (these are not ARIA tabs). `:focus-visible` rings from `a11y.css` on every new interactive element including rail items and info buttons. Derived figures that change while typing — annual billable hours, the floors — sit in `aria-live="polite"` regions, matching how Goals announces Target Annual Revenue. Contrast: body text ≥4.5:1 on both `--bg` and `--surface`; `--muted` is the `0.6` from `a11y.css`, not `app.css`'s `0.42`; below-floor badges use `--accent-text`, never raw `--accent` (3.71:1 — fills and rings only). Verify every step of the decline-curve ramp, not just the accent. The asset modal uses the existing trap from `settings.js` with the focusable set recomputed each Tab. Empty and unset states render an em dash plus an explanation, never `$0.00`. _Depends on: all Core UI and Interactions._
+- [x] **Accessibility pass** (frontend — Opus/high): Every info control is a button with `aria-expanded`, Tab-reachable popover, Escape to close, focus returned to the trigger — no hover-only path anywhere. Rail is `<nav>` + `aria-current="page"`, real buttons in the tab order, no roving tabindex (these are not ARIA tabs). `:focus-visible` rings from `a11y.css` on every new interactive element including rail items and info buttons. Derived figures that change while typing — annual billable hours, the floors — sit in `aria-live="polite"` regions, matching how Goals announces Target Annual Revenue. Contrast: body text ≥4.5:1 on both `--bg` and `--surface`; `--muted` is the `0.6` from `a11y.css`, not `app.css`'s `0.42`; below-floor badges use `--accent-text`, never raw `--accent` (3.71:1 — fills and rings only). Verify every step of the decline-curve ramp, not just the accent. The asset modal uses the existing trap from `settings.js` with the focusable set recomputed each Tab. Empty and unset states render an em dash plus an explanation, never `$0.00`. _Depends on: all Core UI and Interactions._
+
+  **Done 2026-09-28.** Scripted audit of all six screens plus both info popovers and all three
+  modals (text contrast against the composited background, accessible names, dangling ARIA refs,
+  duplicate ids, `$0.00` / `NaN`, focus rings via one real Tab then scripted focus — 246 controls,
+  none missing). Already met, verified rather than rebuilt: info controls, rail semantics, the
+  `LSCModal` trap, `--accent-text` on below-floor text. **Fixed:** (1) derived figures now speak
+  through a shared **debounced** announcer, `LSCUtil.announce()` + an `.sr-only` region per screen —
+  Capacity's annual hours, Profit Goals' target revenue, the Dashboard's post-ratio sentence, each
+  Rate Card floor line, the asset modal's reserve line and the disposal preview. Plain `aria-live` on
+  the visible figure was removed where it existed (Capacity, post-ratio, disposal): it read out
+  every half-typed value. (2) **Focus fell to `<body>`** after saving an edited asset or expense and
+  after deleting either — now back on that row's Edit, or the Add button. (3) The Rate Card's `<h1>`
+  read "Pricing & Services" under a rail item named Rate Card. (4) A Dashboard copy slip ("your
+  Capacity day, your Capacity day") with capacity unset. **Left, on purpose:** the GST mirror's
+  dimmed labels (4.02:1, inactive controls — exempt), empty-list totals reading `$0.00` (Finance
+  decision 28), the decline ramp (every step ≥3.55:1 on both backgrounds, checked for the chart
+  task). See HANDOVER.
 
 - [ ] **Decline curve chart** (frontend — Opus/high): Hand-rolled inline SVG on the Depreciation tab, one point per FY of an asset's adjustable value, no chart library — matching the app's zero-dependency pattern in `overhead-charts.js`. Applies the scoped palette exception already granted to the category donut, on the same terms: `--accent` marks the current FY, everything else uses the muted warm tonal ramp. Hover shows FY + value via `<title>`. Empty state: a plain message, not a broken axis. _New. Reuses: `overhead-charts.js`'s ramp and axis helpers. Depends on: the schedule._
 

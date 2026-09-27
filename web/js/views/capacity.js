@@ -233,13 +233,15 @@ const CapacityView = (() => {
       defaultsNote() +
 
       /* First, above the fields: the IA doc's order, because it is the output
-         people come to this screen for. aria-live so a screen-reader user
-         hears the figure follow their typing, as a sighted user sees it. */
-      '<div class="proj-card goals-outcome cap-outcome" aria-live="polite" aria-atomic="true">' +
+         people come to this screen for. Not itself a live region — it
+         repaints per keystroke; #cap-annual-live speaks it once typing
+         pauses (LSCUtil.announce). */
+      '<div class="proj-card goals-outcome cap-outcome">' +
       '<div class="sum-label">Annual billable hours</div>' +
       '<div class="goals-outcome-value" id="cap-annual-value"></div>' +
       '<p class="goals-outcome-note" id="cap-annual-note"></p>' +
       '</div>' +
+      '<p class="sr-only" id="cap-annual-live" aria-live="polite"></p>' +
 
       '<div class="form-grid cap-grid">' +
       fieldMarkup(
@@ -404,6 +406,14 @@ const CapacityView = (() => {
       $(id).addEventListener('input', function () {
         form[FIELDS[id]] = this.value;
         refreshOutcome();
+        const c = capacityOf(form);
+        const annual = annualBillableHours(c);
+        LSCUtil.announce(
+          $('cap-annual-live'),
+          annual === null
+            ? 'Annual billable hours: not set. ' + missingReason(c)
+            : 'Annual billable hours: ' + hrs(annual) + '.'
+        );
       });
     });
     $('capacity-save').addEventListener('click', save);

@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-28 (Phase 6 — 21 of 23 build tasks done, then a design review)
+## State as of 2026-09-28 (Phase 6 — 22 of 23 build tasks done, then a design review)
 
 `/design-flow` sequence position:
 
@@ -84,18 +84,19 @@ service business that sells shoot days rather than units.
             2026-09-28, run 36354765653; the `server/src/calc.js` copy is unused by the server, so
             no NAS redeploy was needed).
       - [x] **Responsive pass** (frontend — Opus/high) — done 2026-09-28. See "What landed —
-            Responsive pass". **Committed, not pushed** (web only).
-      - [ ] ← **NEXT: Accessibility pass** (frontend — Opus/high). Then the decline curve chart;
-            the design review after those.
+            Responsive pass". **Live** (Pages, pushed 2026-09-28, run 36356171260; web only).
+      - [x] **Accessibility pass** (frontend — Opus/high) — done 2026-09-28. See "What landed —
+            Accessibility pass". **Committed, not pushed** (web only, no NAS redeploy needed).
+      - [ ] ← **NEXT: Decline curve chart** (frontend — Opus/high). The design review after it.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Twenty of the 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
+Twenty-two of the 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
 lock, disposal), the shared info control, the GST mirror, the post-ratio readout, the double-count
-hint, Profit Goals' read-only capacity, the estimate editor's day-unit wording and the responsive
-pass. (Earlier versions of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design
-review — the count was wrong, not the list.) **The responsive pass is committed but not pushed.**
-Profit Goals and the estimate editor went to Pages on 2026-09-28. Everything before them is live,
+hint, Profit Goals' read-only capacity, the estimate editor's day-unit wording, the responsive
+pass and the accessibility pass. (Earlier versions of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design
+review — the count was wrong, not the list.) **The accessibility pass is committed but not pushed.**
+The responsive pass, Profit Goals and the estimate editor went to Pages on 2026-09-28. Everything before them is live,
 NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
@@ -427,6 +428,94 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-28) — Accessibility pass
+
+`web/js/util.js`, `web/css/a11y.css`, and six views: `capacity.js`, `goals.js`,
+`finance-dashboard.js`, `pricing.js`, `overhead.js`, `depreciation.js`. No server change; suite
+188/188.
+
+**Method.** A scripted audit in the browser (run via `javascript_tool`, not committed) over all six
+screens, both info popovers open, and the Add/Edit asset, Dispose and Add/Edit expense modals:
+text contrast against the *composited* background (every ancestor's alpha and opacity), accessible
+names on every control, `aria-controls` / `-describedby` / `-labelledby` / `for` pointing at real
+ids, duplicate ids, `tabindex > 0`, heading order, and `$0.00` / `NaN` / `undefined` / `Infinity`
+in the rendered text — the last also with goals, overhead and assets emptied **in the local cache
+only** (`LSCData.set*`, then a reload; nothing written). Focus rings: one real Tab, then scripted
+`.focus()` on every control with a 230ms read — **246 controls, none without a ring**.
+
+### Already met — verified, not rebuilt
+
+Info controls (button, `aria-expanded`, Tab into the popover, Escape back to the trigger); the rail
+(`<nav>`, `aria-current="page"`, plain buttons, no roving tabindex; Overhead's inner tabs the same);
+`LSCModal`'s trap in all three dialogs, first field focused on open, focus back on the opener after
+Escape or Cancel; below-floor text on `--accent-text`; every rate and floor an em dash when it can't
+be computed. The three links that go raw `--accent` on hover/focus (`.dash-link`, `.goals-link`,
+`.pricing-rate-note-link`) are **Finance decision 73** — the user kept that idiom site-wide; the
+underline and the focus ring carry the state. Not changed.
+
+### What it found and what changed
+
+- **Derived figures now announce, once typing pauses.** `LSCUtil.announce(region, text)` writes to
+  a visually hidden `aria-live="polite"` region a second after the last call, and skips text that
+  hasn't changed. Each screen renders its own empty region with its markup (a region inserted
+  already holding text isn't reliably announced). Wired to: Capacity's annual billable hours,
+  Profit Goals' target annual revenue, the Dashboard's post-ratio sentence and ceiling, each Rate
+  Card row's floor line ("Video Capture — Full Day: below floor by $X."), the asset modal's
+  replacement-reserve line, and the disposal preview (only when the user's change — or the
+  lodged-years fetch — actually moved it, never on open). **This closes overhead-finance decision
+  74 for the Finance & Price screens.** That decision deferred announcements and named exactly
+  this debounced shape as the right one; this track's brief then required them. The estimate
+  editor's summary bar and Minimum Job Price are **still unannounced** — outside this track's
+  brief, and 74 stays open for them.
+- **`aria-live` removed from three visible figures that had it** — Capacity's outcome card
+  (`aria-atomic` too), `#dash-post-out` and `#dep-disp-preview`. Each repainted per keystroke, so
+  typing 1,776 read out 1, 17, 177, 1,776. The brief's "matching how Goals announces Target Annual
+  Revenue" was describing something Goals didn't do; it does now, through the same helper.
+- **Focus fell to `<body>` after four actions**: saving an *edited* asset, saving any expense, and
+  deleting either. `render()` replaced the button `closeModal()` had just focused (Overhead
+  re-renders its whole screen, "+ Add Expense" included). Now back onto that row's Edit, else the
+  screen's "+ Add" button — the rule `writeDisposal()` already followed. An asset *added* from the
+  page head keeps its focus; that button sits outside the depreciation view's root.
+- **The Rate Card's `<h1>` read "Pricing & Services"** under a rail item called Rate Card — the
+  rename the rail task left for the Rate Card task, which missed it. Now "Rate Card"; the sub-line
+  is unchanged. (The rail task's other two leftovers — Goals' title and the rate note's links — were
+  done by their tasks.)
+- **Dashboard copy slip**: with capacity unset, the post-ratio note read "are each your Capacity
+  day, your Capacity day." Now "are each one Capacity day"; set, it still reads "8 hrs, your
+  Capacity day".
+
+### Known and left
+
+- **The GST mirror's "Rate (%)" and "Prices include GST" measure 4.02:1** while unregistered — the
+  `set-row-off` 0.45 opacity Invoice Settings uses. Both controls are `disabled`; WCAG 1.4.3 exempts
+  inactive components.
+- **Empty-list totals read `$0.00`**: Overhead's Monthly/Annual Total, the Dashboard's Operating
+  costs / Replacement reserve / Annual business cost, Depreciation's reserve and tax-deduction
+  cards. That is **Finance decision 28** — a sum over nothing is computable and true; the em dash
+  is for figures that *can't* be computed, and every rate and floor downstream of those zeros
+  already shows one. The schedule's pool row showing `$0.00` in one column is a real figure.
+- **Decline-curve ramp, measured for the chart task**: `--oh-chart-accent` 4.70 / 3.55:1 on `--bg`
+  / `--surface`, the five ramp steps 6.23–10.14 / 4.71–7.66:1 — every step clears 3:1 (non-text)
+  on both. No change needed; the chart can use it as-is.
+- **Not tested with a real screen reader** (none available to the agent). The announcer was
+  verified by reading the regions' text before and after the debounce: empty mid-typing, one
+  sentence after the pause. Worth a VoiceOver pass in the design review, including whether the
+  announcer regions inside the `aria-modal` dialogs speak (they are placed inside the dialog for
+  exactly that reason).
+
+### Verified (local `api-scratch` + `web`, dispatched events)
+
+The audit above, clean apart from the items under "Known and left". Announcer: Capacity hours
+typed 7 → 7.5 read nothing at 200ms and "Annual billable hours: 1,665." after the pause; blank
+read the missing-field reason; Goals, post-ratio, a Rate Card floor ("below floor by $17.90" at a
+$1 mark-up, "floor $18.90" restored), the asset reserve line and the disposal preview likewise —
+every typed value restored and nothing saved. Focus after save/delete: edited asset → its Edit,
+edited expense → its Edit, deleted asset and deleted expense → the "+ Add" button (throwaway rows
+created through the API and deleted; none left). No page overflow at 375px on any screen. The two
+`LSCRows.sectionHasUnits is not a function` console errors seen during the session came from a
+stale mix of cached scripts (their line numbers match no current file); a cache-busting reload
+cleared them.
 
 ## What landed (2026-09-28) — Responsive pass
 
@@ -1243,7 +1332,8 @@ screen keeps its layout. It's a one-rule revert if the user prefers the literal 
 - **Label/title mismatches left for their owning tasks**: the Rate Card's page title still reads
   `Pricing & Services`, Goals' reads `Goals`, and the Rate Card's rate note says "update it on the
   Overhead / Goals tabs". Renaming them is `pricing.js` / `goals.js` work — the Rate Card task and
-  the Profit Goals task respectively.
+  the Profit Goals task respectively. **All three done** — the last, the Rate Card's `<h1>`, by the
+  Accessibility pass (2026-09-28).
 - **Responsive**: only the <768px fallback shipped (horizontal scrolling row, 44px targets, first
   label on the 16px gutter, scrollbar hidden, active item scrolled into view). The 1099–900 "rail
   narrows" band was built by the Responsive pass (2026-09-28) — 120px from 1099 down to 768.

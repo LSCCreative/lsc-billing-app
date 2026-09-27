@@ -884,7 +884,11 @@ const DepreciationView = (() => {
       await LSCApi.del('/api/depreciation-assets/' + encodeURIComponent(id));
       await refreshCache();
       Toast.ok('Asset deleted.');
-      if (onScreen()) render();
+      if (!onScreen()) return;
+      render();
+      // The row, and the × that was focused, are gone; see saveAsset().
+      const again = document.getElementById('oh-add');
+      if (again) again.focus();
     } catch (err) {
       Toast.hide();
       if (!(err instanceof LSCApi.ApiError)) throw err;
@@ -1001,11 +1005,19 @@ const DepreciationView = (() => {
     return lines.map((l) => '<p>' + l + '</p>').join('') + warn;
   }
 
-  function refreshDisposalPreview() {
+  /* `speak` for a change the user (or the lodged-years fetch) caused, not the
+     preview's first paint as the dialog opens — and only when the preview
+     actually moved, so the fetch landing with no lodged year says nothing. */
+  function refreshDisposalPreview(speak) {
     const box = $m('dep-disp-preview');
     if (!box) return;
+    const before = box.textContent; // text, not innerHTML: entities serialise differently
     const next = disposalPreviewMarkup();
     if (box.innerHTML !== next) box.innerHTML = next;
+    if (speak && box.textContent !== before) {
+      const text = Array.prototype.map.call(box.children, (p) => p.textContent).join(' ');
+      LSCUtil.announce($m('dep-disp-live'), text);
+    }
     /* A refusal from the last Save stops being true the moment the figures
        are usable; left up, it would contradict the preview right above it. */
     if (!disposalProblems().length) LSCUtil.clearFieldErrors($m('dep-modal-error'));
@@ -1041,7 +1053,10 @@ const DepreciationView = (() => {
           ? '<option selected>' + esc(dform.reason) + '</option>' : '') +
         '</select>', '', true) +
       '</div>' +
-      '<div class="dep-disp-preview" id="dep-disp-preview" aria-live="polite"></div>' +
+      /* Not a live region itself — it repaints per keystroke of the proceeds;
+         #dep-disp-live speaks it once typing pauses (LSCUtil.announce). */
+      '<div class="dep-disp-preview" id="dep-disp-preview"></div>' +
+      '<p class="sr-only" id="dep-disp-live" aria-live="polite"></p>' +
       '<div id="dep-modal-error" role="alert"></div>' +
       '<div class="modal-actions">' +
       (already
@@ -1160,7 +1175,7 @@ const DepreciationView = (() => {
     const on = (id, event, key) =>
       $m(id).addEventListener(event, function () {
         dform[key] = this.value;
-        refreshDisposalPreview();
+        refreshDisposalPreview(true);
       });
     on('dep-disp-date', 'input', 'date');
     on('dep-disp-date', 'change', 'date');
@@ -1185,7 +1200,7 @@ const DepreciationView = (() => {
       .then((reply) => {
         if (disposing !== target) return;
         lodgedFys = new Set((reply.locks || []).map((l) => l.fyLabel));
-        refreshDisposalPreview();
+        refreshDisposalPreview(true);
       })
       .catch(() => {});
 
@@ -1335,6 +1350,8 @@ const DepreciationView = (() => {
         'What the next one will cost, not what this one did.') +
       '<p class="oh-hint dep-reserve-line full" id="dep-reserve-line"></p>' +
       '</div>' +
+      // The reserve line, spoken once typing pauses — see LSCUtil.announce().
+      '<p class="sr-only" id="dep-reserve-live" aria-live="polite"></p>' +
 
       '<div class="form-grid">' +
       field('dep-notes', 'Notes', '<textarea id="dep-notes" data-key="notes" rows="2">' + esc(form.notes) + '</textarea>', '', true) +
@@ -1494,9 +1511,20 @@ const DepreciationView = (() => {
       await refreshCache();
       baseline = snapshot();
       Toast.ok(wasEditing ? 'Asset saved.' : 'Asset added.');
+      const savedId = wasEditing ? editing.id : null; // closeModal() clears `editing`
       saving = false;
       closeModal();
-      if (onScreen()) render();
+      if (!onScreen()) return;
+      render();
+      /* An Edit button that opened the dialog was inside what render() just
+         replaced, so closeModal() focused a detached node. Back onto that row's
+         Edit, else Overhead's "+ Add Asset" — never <body>. The same rule as
+         writeDisposal(). An Add opened from the page head keeps its focus:
+         that button sits outside this view's root. */
+      if (!root.contains(document.activeElement) && document.activeElement !== document.getElementById('oh-add')) {
+        const again = (savedId && root.querySelector('[data-dep-edit="' + savedId + '"]')) || document.getElementById('oh-add');
+        if (again) again.focus();
+      }
     } catch (err) {
       setSaving(false);
       Toast.hide();
@@ -1557,6 +1585,7 @@ const DepreciationView = (() => {
         }
         if (key === 'replacementCostEstimate' || key === 'replacementCycleYears' || key === 'businessUsePct') {
           refreshReserveLine();
+          LSCUtil.announce($m('dep-reserve-live'), $m('dep-reserve-line').textContent);
         }
       });
     });

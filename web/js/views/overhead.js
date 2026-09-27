@@ -302,6 +302,9 @@ const OverheadView = (() => {
       Toast.ok('Expense deleted.');
       if (!onScreen()) return;
       render();
+      // The row, and the × that was focused, are gone; see saveItem().
+      const again = $('oh-add');
+      if (again) again.focus();
     } catch (err) {
       Toast.hide();
       if (!(err instanceof LSCApi.ApiError)) throw err;
@@ -484,10 +487,17 @@ const OverheadView = (() => {
       // anyway; this keeps the two from disagreeing in between.
       baseline = snapshot();
       Toast.ok(editingId ? 'Expense saved.' : 'Expense added.');
+      const savedId = editingId; // closeModal() clears it
       saving = false;
       closeModal();
       if (!onScreen()) return;
       render();
+      /* render() replaced the button closeModal() just focused — the whole
+         screen, "+ Add Expense" included. Back onto that row's Edit, else the
+         Add button; never <body>, which drops a keyboard user at the top of
+         the page. The same rule as the Dispose dialog in depreciation.js. */
+      const again = (savedId && root.querySelector('[data-edit="' + savedId + '"]')) || $('oh-add');
+      if (again) again.focus();
     } catch (err) {
       setSaving(false);
       Toast.hide();

@@ -166,6 +166,23 @@ h1, h2, h3 {
   display: inline;
 }
 
+/* ── Screen-reader-only text ────────────────────────────────────────────────
+   Present in the accessibility tree, absent from the screen. Holds the live
+   regions LSCUtil.announce() writes to (util.js). clip-path rather than
+   display:none or visibility:hidden, both of which remove it from the tree
+   too and silence the region. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ── Reduced motion ─────────────────────────────────────────────────────────
    The app's only motion is short colour fades and the toast's slide; honour
    the OS setting for all of it in one place. The spinner is exempt: it is a
