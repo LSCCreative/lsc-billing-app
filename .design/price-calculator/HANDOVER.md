@@ -63,10 +63,16 @@ service business that sells shoot days rather than units.
 
 Eight tasks of 21 are built — the Foundation group, the rail and the Capacity screen. The Finance
 area lands on a Dashboard placeholder ("isn't built yet", with a button to the Rate Card).
-`server/src/defaults.js` is untouched. **Nothing is pushed or deployed** — the NAS needs the new
-server code first (see "What landed — the rail", deploy order). An agent attempt to redeploy over SSH
-on 2026-09-27 was blocked by the permission classifier as a production read, so **the user does the
-NAS redeploy**, or grants the agent that access explicitly.
+`server/src/defaults.js` is untouched.
+
+**Deployed 2026-09-27 (~17:25 AEST), with the user's explicit go-ahead.** NAS first: pre-migration
+backup `/volume4/lsc-billing/data/backups/pre-v6-20260927-1701.db`; `server/` copied with `tar`
+excluding `node_modules`, `data`, `.env`, `docker-compose.yml`; `docker compose up -d --build`
+(~20 min — the Chromium apt layer rebuilt from scratch; the old container served throughout). Boot
+log showed `migrated to v5` and `migrated to v6`; the live goals row kept its income and margin, all
+6 overhead items intact, `capacity_confirmed_at` NULL as intended; `/api/depreciation-assets` → 401
+locally and via `https://billing.lsccreative.studio`. Then `main` was pushed to deploy Pages. **The
+live Capacity screen shows the "confirm these are yours" note until the user saves it once.**
 
 **This task's deploy is the one that changes the live rate**, not the Capacity screen's. `GET
 /api/goals` now returns the four real capacity fields, already seeded 8/5/30/8 by migration v5 on
@@ -427,10 +433,11 @@ First run with no goals row (defaults shown + flagged, save doesn't confirm, fla
 margin stay **null**); before/after confirm text and figures; decline saves nothing; unsaved guard on
 leaving; Rate Card rate after save; zero hours, over-full leave+sick (both fields flagged, focus to the
 first), blank field; Goals → Capacity link; 1280 and 375px (no overflow; save button no longer wraps).
-Found in passing, not a code bug: the browser served a cached old `pricing.js` beside a new `calc.js`
-and Rate Card threw `annualBillableHoursFromGoals is not a function`. **GitHub Pages caches for ~10
-minutes and `index.html` has no cache-busting**, so the same mixed-version window can happen for a
-few minutes after the push — a hard refresh fixes it.
+Found in passing, not a code bug: the *local* `python -m http.server` preview served a cached old
+`pricing.js` beside a new `calc.js`, and Rate Card threw `annualBillableHoursFromGoals is not a
+function`. The deployed site is protected — the Pages workflow stamps every script/stylesheet URL
+with `?v=<commit>` (DEPLOYMENT.md §6) — but local previews are not: refetch with `cache:'reload'`
+before trusting a local check after editing a shared file.
 
 ## What landed (2026-09-27) — the rail, the router, the rename
 
