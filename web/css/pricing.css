@@ -95,3 +95,57 @@
 .pricing-rate-note-link:focus-visible {
   color: var(--accent);
 }
+
+/* ── Day rows and each row's floor (2026-09-27) ─────────────────────────────
+   Two second lines rather than two new columns: the service name is already
+   the column that gives way when the table is tight, and a Unit column plus a
+   Floor column would have cut most names to their first word. Under the name,
+   "per [unit]" and, for a day row, its billable hours; under the Mark-Up, the
+   row's floor. 10.5px muted, the rate card's own hint size, so the table still
+   reads as prices first. */
+.pricing-row-meta {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+/* The same chrome as the table's inputs (app.css), at the hint's size so the
+   control sits in the line rather than above it. */
+.pricing-unit-sel {
+  background: #1a1c20;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 10.5px;
+  padding: 2px 4px;
+  outline: none;
+  cursor: pointer;
+}
+.pricing-unit-sel:focus {
+  border-color: var(--accent);
+}
+.pricing-unit-sel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Beats app.css's `.pricing-table input[type=number]{width:72px}`: an hours
+   figure is two or three characters. */
+.pricing-table input.pricing-hpu-inp {
+  width: 46px;
+  padding: 2px 6px;
+  font-size: 10.5px;
+}
+.pricing-floor {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* --accent-text, never raw --accent, for text (a11y.css: 3.71:1 on this
+   background). The Dashboard's badge carries the same colour. */
+.pricing-below {
+  color: var(--accent-text);
+}

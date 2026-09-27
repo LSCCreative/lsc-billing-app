@@ -11,6 +11,24 @@
  * `rate` is the internal cost, `mu` is the marked-up rate the client is billed.
  * `directCost: true` means the row is billed straight through at cost, no
  * markup, and counts as a pass-through rather than revenue.
+*
+ * DAY ROWS (added 2026-09-27, .design/price-calculator/). A labour row may
+ * carry `hoursPerUnit` — how many billable hours one unit of it consumes
+ * (calc.js, hoursPerUnitOf; absent means 1) — and `dayUnit: 'full' | 'half'`,
+ * which is what marks it as a day row on the Rate Card rather than its name,
+ * because names are the user's to edit. Three seeded here:
+ *
+ *   - The half day carries ITS OWN `mu`, deliberately not half the full day's:
+ *     setup, travel and turnaround don't halve, so there is no 0.5 multiplier
+ *     anywhere. $640 against $1,120 is a starting point, not a formula.
+ *   - `hoursPerUnit` 8 and 4 match the Capacity screen's reference 8-hour day.
+ *     The Rate Card prefills a day row from the user's real Capacity figure
+ *     when they create one; defaults can't read it.
+ *   - There is no separate "Video Capture — Hourly" row, though the task list
+ *     named one: the existing "Video Capture" row IS the hourly rate, and
+ *     renaming it would orphan every saved estimate that references it by name
+ *     (computeTotals finds rows by name) on any database still on these
+ *     defaults.
  */
 const DEFAULT_PRICING = {
   labourSections: [
@@ -29,6 +47,9 @@ const DEFAULT_PRICING = {
         { name: 'Video Capture', rate: 100, mu: 140 },
         { name: 'Photo Capture', rate: 80, mu: 112 },
         { name: 'Drone Aerial Capture', rate: 60, mu: 84 },
+        { name: 'Video Capture — Full Day', rate: 800, mu: 1120, hoursPerUnit: 8, dayUnit: 'full' },
+        { name: 'Video Capture — Half Day', rate: 400, mu: 640, hoursPerUnit: 4, dayUnit: 'half' },
+        { name: 'Overtime — per hour', rate: 150, mu: 210 },
       ],
     },
     {

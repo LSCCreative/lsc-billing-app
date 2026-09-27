@@ -45,6 +45,32 @@
  * save of any unrelated edit — irreversible, invisible in the UI (which shows
  * the computed figure either way), and impossible in the empty state, where
  * there is no number to write at all. The stored value is simply inert.
+ *
+ * DAY ROWS AND hoursPerUnit (2026-09-27, .design/price-calculator/)
+ * Under each labour row's name: "per hour / half day / full day". A day row
+ * stores `dayUnit: 'full' | 'half'` — the marker, since names are the user's to
+ * change — and `hoursPerUnit`, the billable hours one unit consumes, which
+ * computeTotals multiplies quantity by for totalHours and so for the estimate
+ * editor's Minimum Job Price (calc.js, "Hours and quantity are not the same
+ * thing"). Choosing a day unit PREFILLS the hours from Capacity's billable
+ * hours per day (half that for a half day), and the hours stay editable: a
+ * shoot day genuinely runs longer than an average working day, and forcing
+ * them equal would distort one number to fix the other. A half day has its
+ * own Mark-Up like any row — there is no 0.5 multiplier anywhere.
+ *
+ * payload() USED TO DROP BOTH FIELDS. It rebuilt each row from name, rate, mu,
+ * customBill and unit only, so a day row would have silently become an hourly
+ * one on the next save of any unrelated edit — its hours falling out of every
+ * Minimum Job Price with no visible change on the card. Both are carried now,
+ * and a blank or out-of-range hours field blocks the save rather than being
+ * read as 1.
+ *
+ * EACH ROW'S FLOOR, UNDER ITS MARK-UP
+ * The least one unit of the row can sell for, or "below floor by $X". Computed
+ * by LSCCalc.labourFloorComparison — the exact function the Dashboard's
+ * comparison table uses — so the two screens cannot disagree about a row. It
+ * follows the working copy as you type (Mark-Up and hours), against an hourly
+ * floor read once at mount like the rate column above.
  */
 
 const PricingView = (() => {
@@ -111,6 +137,49 @@ const PricingView = (() => {
      through FinanceView. So it cannot go stale between two renders, and
      mount() is what the brief's "recomputed fresh on every page load" means. */
   let computedRate = null;
+
+  /* The hourly floor — overhead rate plus the target margin — that each row's
+     floor line multiplies by its hours. null when either is unset, which the
+     line shows as an em dash rather than a floor of $0. Read once per mount,
+     for the same reason computedRate is. */
+  let perHourFloor = null;
+
+  /* What a new day row's hours prefill from: Capacity's billable hours per day,
+     or the reference 8 when Capacity has no usable figure. Visible and editable
+     on the row either way, so the fallback is never silent. */
+  function dayHours(unit) {
+    const perDay = parseFloat(LSCData.goals().billableHoursPerDay);
+    const full = Number.isFinite(perDay) && perDay > 0 && perDay <= 24 ? perDay : 8;
+    return unit === 'half' ? full / 2 : full;
+  }
+
+  /* A row shows its hours field when it is a day row, or when it already
+     carries hours of its own (set some other way) — never hide a number that
+     changes the arithmetic. */
+  const showsHours = (row) =>
+    row.dayUnit === 'full' || row.dayUnit === 'half' ||
+    (row.hoursPerUnit !== undefined && row.hoursPerUnit !== 1);
+
+  /* The floor line under a row's Mark-Up. Through labourFloorComparison with a
+     one-row card, so the arithmetic — hoursPerUnitOf's fallback, GST taken out
+     of an inclusive price, exactly-at-floor not counting as below — is the
+     Dashboard's to the cent. */
+  function floorLineHtml(row) {
+    const [c] = LSCCalc.labourFloorComparison(
+      { labourSections: [{ id: '', label: '', rows: [row] }] },
+      LSCData.settings(),
+      perHourFloor
+    );
+    if (!c || c.floor === null) return 'floor —';
+    if (c.belowFloor) return '<span class="pricing-below">below floor by ' + LSCUtil.fmt(c.gap) + '</span>';
+    return 'floor ' + LSCUtil.fmt(c.floor);
+  }
+
+  function refreshFloorLine(si, ri) {
+    const el = root.querySelector('#pfl-' + si + '-' + ri);
+    const row = (card.labourSections[si] || { rows: [] }).rows[ri];
+    if (el && row) el.innerHTML = floorLineHtml(row);
+  }
 
   const rateDisplay = () => (computedRate === null ? '—' : computedRate.toFixed(2));
 
@@ -200,6 +269,24 @@ const PricingView = (() => {
       });
     });
 
+    /* Hours per unit: a day row needs a real figure. Blank would fall back to
+       1 inside calc.js, so a full day would carry one hour of overhead into
+       Minimum Job Price — the expensive direction, and invisible. 24 because a
+       unit of work can't consume more hours than a day has, and anything a
+       person types above it is a slip (a day rate typed into the hours box). */
+    card.labourSections.forEach((sec, si) => {
+      sec.rows.forEach((r, ri) => {
+        if (!showsHours(r)) return;
+        const h = parseFloat(r.hoursPerUnit);
+        if (!Number.isFinite(h) || h <= 0 || h > 24) {
+          add(
+            'Billable hours per unit must be more than 0 and no more than 24.',
+            q('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="hoursPerUnit"]')
+          );
+        }
+      });
+    });
+
     const seenTravel = {};
     card.travelRows.forEach((r, ri) => {
       const name = String(r.name || '').trim();
@@ -238,17 +325,33 @@ const PricingView = (() => {
       rows = '<tr><td colspan="5" class="pricing-empty-td">No services yet — add one below.</td></tr>';
     }
     sec.rows.forEach((row, ri) => {
+      const unit = row.dayUnit === 'full' || row.dayUnit === 'half' ? row.dayUnit : '';
+      const opt = (value, label) =>
+        '<option value="' + value + '"' + (unit === value ? ' selected' : '') + '>' + label + '</option>';
       rows +=
         '<tr><td data-label="Service"><input class="pricing-name-inp" type="text" value="' + esc(row.name) +
         '" placeholder="Service name" aria-label="Service name" data-si="' + si + '" data-ri="' + ri +
-        '" data-field="name" data-type="labour"></td>' +
+        '" data-field="name" data-type="labour">' +
+        /* The unit line. A select for the three units the business sells in,
+           and — for a day row — its billable hours, prefilled and editable. */
+        '<div class="pricing-row-meta">per <select class="pricing-unit-sel" data-si="' + si + '" data-ri="' + ri +
+        '" aria-label="Unit ' + esc(row.name) + ' is sold in">' +
+        opt('', 'hour') + opt('half', 'half day') + opt('full', 'full day') + '</select>' +
+        (showsHours(row)
+          ? ' <input type="number" class="pricing-hpu-inp" min="0.5" max="24" step="0.5" value="' +
+            esc(row.hoursPerUnit === undefined ? '' : String(row.hoursPerUnit)) +
+            '" aria-label="Billable hours in one unit of ' + esc(row.name) + '" data-si="' + si + '" data-ri="' + ri +
+            '" data-field="hoursPerUnit" data-type="labour"> billable hrs'
+          : '') +
+        '</div></td>' +
         '<td style="text-align:right" data-label="Rate ($/hr)"><input type="text" readonly' +
         ' aria-readonly="true" aria-describedby="pricing-rate-note" class="pricing-rate-ro' +
         (computedRate === null ? ' pricing-rate-none' : '') + '" value="' + rateDisplay() +
         '" aria-label="Internal rate for ' + esc(row.name) + ', calculated automatically"></td>' +
         '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01" value="' + num(row.mu) +
-        '" aria-label="Client rate for ' + esc(row.name) + '" data-si="' + si + '" data-ri="' + ri +
-        '" data-field="mu" data-type="labour"></td>' +
+        '" aria-label="Client rate for ' + esc(row.name) + '" aria-describedby="pfl-' + si + '-' + ri +
+        '" data-si="' + si + '" data-ri="' + ri + '" data-field="mu" data-type="labour">' +
+        '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + floorLineHtml(row) + '</div></td>' +
         '<td style="text-align:center" data-label="Custom"><input type="checkbox"' + (row.customBill ? ' checked' : '') +
         ' data-si="' + si + '" data-ri="' + ri + '" data-field="customBill" data-type="labour"' +
         ' aria-label="Allow a custom bill amount for ' + esc(row.name) + '"' +
@@ -426,11 +529,69 @@ const PricingView = (() => {
         if (!target) return;
 
         if (field === 'name') target.name = input.value;
-        else if (field === 'customBill' || field === 'directCost') {
+        else if (field === 'hoursPerUnit') {
+          /* Held as '' when blank, not num('') = 0: validation has to be able to
+             tell "no hours" from a number, and 0 would fall back to 1 silently. */
+          target.hoursPerUnit = input.value === '' ? '' : num(input.value);
+        } else if (field === 'customBill' || field === 'directCost') {
           // Absent rather than false, matching the shape defaults.js ships.
           if (input.checked) target[field] = true;
           else delete target[field];
         } else target[field] = num(input.value);
+
+        if (input.dataset.type === 'labour' && (field === 'mu' || field === 'hoursPerUnit')) {
+          refreshFloorLine(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10));
+        }
+      });
+    });
+
+    /* The unit select. Changing it is structural — the hours field appears or
+       goes — so it re-renders, and puts focus back on the select it came from.
+
+       Switching an existing row between hourly and day units changes what its
+       QUANTITY means on every estimate edited from then on (8 on an estimate
+       stops meaning eight hours and starts meaning eight days). The bill is
+       still qty × Mark-Up, so saved figures don't move, but the next edit of
+       such an estimate would read differently — so when saved estimates use
+       the row, it asks first. */
+    root.querySelectorAll('.pricing-unit-sel').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const si = parseInt(sel.dataset.si, 10);
+        const ri = parseInt(sel.dataset.ri, 10);
+        const sec = card.labourSections[si];
+        const row = sec && sec.rows[ri];
+        if (!row) return;
+        const next = sel.value;
+        const wasDay = row.dayUnit === 'full' || row.dayUnit === 'half';
+        const isDay = next === 'full' || next === 'half';
+
+        if (wasDay !== isDay) {
+          const count = countUsingRow(sec.id, row.name);
+          if (count) {
+            const ok = window.confirm(
+              (count === 1 ? '1 saved estimate uses' : count + ' saved estimates use') + ' “' + row.name + '”.\n\n' +
+                'If ' + (count === 1 ? 'it is' : 'they are') + ' edited after this, the quantity on ' +
+                (count === 1 ? 'it' : 'them') + ' will count as ' + (isDay ? 'days' : 'hours') + ', not ' +
+                (isDay ? 'hours' : 'days') + '. What ' + (count === 1 ? 'it was' : 'they were') +
+                ' quoted at doesn’t change.\n\nChange the unit?'
+            );
+            if (!ok) {
+              sel.value = row.dayUnit || '';
+              return;
+            }
+          }
+        }
+
+        if (isDay) {
+          row.dayUnit = next;
+          row.hoursPerUnit = dayHours(next);
+        } else {
+          delete row.dayUnit;
+          delete row.hoursPerUnit;
+        }
+        render();
+        const again = root.querySelector('.pricing-unit-sel[data-si="' + si + '"][data-ri="' + ri + '"]');
+        if (again) again.focus();
       });
     });
 
@@ -533,6 +694,12 @@ const PricingView = (() => {
           const out = { name: String(row.name).trim(), rate: num(row.rate), mu: num(row.mu) };
           if (row.customBill) out.customBill = true;
           if (row.unit) out.unit = row.unit;
+          // Carried through — see "payload() USED TO DROP BOTH FIELDS" above.
+          // An hours value of 1 is the default and is left off, like every
+          // hourly row already on the card.
+          if (row.dayUnit === 'full' || row.dayUnit === 'half') out.dayUnit = row.dayUnit;
+          const hours = parseFloat(row.hoursPerUnit);
+          if (Number.isFinite(hours) && hours > 0 && hours !== 1) out.hoursPerUnit = hours;
           return out;
         }),
       })),
@@ -668,6 +835,7 @@ const PricingView = (() => {
        this column, the estimate editor's floor, the Capacity confirm and the
        Dashboard all use one computation. See data.js. */
     computedRate = LSCData.overheadRate();
+    perHourFloor = LSCCalc.hourlyFloor(computedRate, LSCData.goals().targetProfitMarginPct);
     baseline = snapshot();
 
     render();

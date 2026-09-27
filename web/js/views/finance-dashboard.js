@@ -31,14 +31,14 @@
  *
  * THE HEADLINE DAY FLOORS USE CAPACITY'S FULL-DAY HOURS
  * The IA doc writes fullDayFloor = hourlyFloor × (Full Day row's hoursPerUnit).
- * No rate-card row is identifiable as "the Full Day row" yet — the Rate Card
- * task adds them, row names are user-editable, and matching on a name would
- * break on the first rename. So the headline half/full-day floors are
- * hourlyFloor × Capacity's billable hours per day (and half that) — the figure
- * the Rate Card's day rows are prefilled from — and each says "at N hrs". Every
- * actual row, day rows included once they exist, is still compared at its OWN
- * hoursPerUnit in section 2. If the Rate Card task gives day rows a stable
- * marker, read that row's hoursPerUnit here instead.
+ * Day rows are now marked (`dayUnit: 'full' | 'half'`, set by the Rate Card's
+ * unit select), but there is no single "Full Day row": a card can have a video
+ * full day and a photo full day at different lengths, and an old card has
+ * none. So the headline half/full-day floors stay hourlyFloor × Capacity's
+ * billable hours per day (and half that) — a standard day, the figure every
+ * new day row is prefilled from — and each tile says "at N hrs". Every actual
+ * row is compared at its OWN hoursPerUnit in section 2, so a day row the user
+ * lengthened to 10 hrs shows its own, higher floor there.
  *
  * NULL IS AN EM DASH AND A REASON, NEVER $0.00
  * No capacity, no cost or no margin makes the floors null. They render as an

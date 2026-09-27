@@ -554,6 +554,19 @@
     display: block;
     margin-bottom: 5px;
   }
+  /* The Mark-Up cell carries the row's floor line under its input. As a
+     space-between flex row that line would sit beside the input as a third
+     item; wrapped, it takes its own line, right-aligned under the price it
+     describes. */
+  .pricing-table td .pricing-floor {
+    flex-basis: 100%;
+    text-align: right;
+    margin-top: 0;
+  }
+  .pricing-table td:has(.pricing-floor) {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
   .pricing-table td.pricing-act {
     position: absolute;
     top: 4px;

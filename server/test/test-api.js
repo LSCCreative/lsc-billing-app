@@ -340,6 +340,35 @@ test('goals: a Capacity save onto a row that does not exist leaves income and ma
   assert.equal(put.goals.billableCapacityHrsPerWeek, 31.63);
 });
 
+test('pricing: a day row keeps hoursPerUnit and dayUnit through a save, and the server prices by them', async () => {
+  // Its own card rather than whatever an earlier test in this file left saved.
+  const card = await api('/api/pricing').then((r) => r.json());
+  const body = {
+    labourSections: [
+      { id: 'prod', label: 'Production', rows: [{ name: 'Test Day', rate: 0, mu: 900, hoursPerUnit: 9, dayUnit: 'full' }] },
+    ],
+    travelRows: [],
+    taxSetAsideRate: 0.35,
+  };
+  const saved = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) }).then((r) => r.json());
+  const row = saved.pricing.labourSections[0].rows.find((r) => r.name === 'Test Day');
+  assert.equal(row.hoursPerUnit, 9);
+  assert.equal(row.dayUnit, 'full');
+
+  // The stored estimate's totals are computed server-side from the saved card:
+  // 2 days is 18 hours for the overhead allocation, and 2 × $900 billed.
+  const sectionId = body.labourSections[0].id;
+  const est = await api('/api/estimates', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Day test', activeRows: { [sectionId]: [{ name: 'Test Day', qty: 2 }] } }),
+  }).then((r) => r.json());
+  assert.equal(est.estimate.totals.totalHours, 18);
+  assert.equal(est.estimate.totals.labourTotal, 1800);
+
+  await api('/api/estimates/' + est.estimate.id, { method: 'DELETE' });
+  await api('/api/pricing', { method: 'PUT', body: JSON.stringify(card.pricing) });
+});
+
 function depreciationAssetPayload(overrides = {}) {
   return {
     name: 'Camera Body',

@@ -280,7 +280,10 @@ const DAY_CARD = {
  * if adding the multiplier had moved anything — including the figures derived
  * from labour, which it must not touch at all — this fails.
  */
-test('a card with no hoursPerUnit anywhere totals exactly as it did before', () => {
+// Renamed when day rows joined the defaults: DEFAULT_PRICING now carries
+// hoursPerUnit on its Full Day / Half Day rows, but JOB uses none of them, so
+// this is still the proof that every pre-existing hourly row totals as before.
+test('existing hourly rows total exactly as they did before day rows existed', () => {
   const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE));
 
   assert.deepEqual(t, {
@@ -1058,4 +1061,45 @@ test('jobs needed per year rounds up — a target is reached in whole jobs', () 
   assert.equal(jobsNeededPerYear(null, 9000), null);
   assert.equal(jobsNeededPerYear(90000, null), null);
   assert.equal(jobsNeededPerYear(90000, 0), null);
+});
+
+/**
+ * THE SEEDED DAY ROWS (Rate Card task, 2026-09-27).
+ */
+test('the default card seeds a full day and an independently priced half day', () => {
+  const prod = DEFAULT_PRICING.labourSections.find((s) => s.id === 'prod');
+  const full = prod.rows.find((r) => r.dayUnit === 'full');
+  const half = prod.rows.find((r) => r.dayUnit === 'half');
+  assert.ok(full && half, 'both day rows exist and are marked by dayUnit, not by name');
+  assert.equal(full.hoursPerUnit, 8);
+  assert.equal(half.hoursPerUnit, 4);
+  // No 0.5 multiplier: a half day carries its own price.
+  assert.notEqual(half.mu, full.mu / 2);
+  assert.ok(prod.rows.some((r) => r.name === 'Overtime — per hour' && r.hoursPerUnit === undefined));
+});
+
+test('every row that was on the card before day rows is still hourly', () => {
+  // The hourly Video Capture row was deliberately not renamed to "— Hourly":
+  // saved estimates find rows by name.
+  const before = [
+    'Pre-Production Meeting with Client', 'Video Capture', 'Photo Capture', 'Drone Aerial Capture',
+    'Video Editor — Socials', 'Photo Editor',
+  ];
+  const rows = DEFAULT_PRICING.labourSections.flatMap((s) => s.rows);
+  for (const name of before) {
+    const row = rows.find((r) => r.name === name);
+    assert.ok(row, name + ' is still on the default card');
+    assert.equal(row.hoursPerUnit, undefined, name + ' gained hours per unit');
+    assert.equal(row.dayUnit, undefined);
+  }
+});
+
+test('two seeded full days carry sixteen hours into Minimum Job Price', () => {
+  const t = computeTotals(
+    { prod: [{ name: 'Video Capture — Full Day', qty: 2 }] },
+    DEFAULT_PRICING,
+    settingsWith({ registered: false }),
+  );
+  assert.equal(t.totalHours, 16);
+  assert.equal(t.labourTotal, 2240);
 });

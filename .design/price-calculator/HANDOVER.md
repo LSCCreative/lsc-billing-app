@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 9 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 10 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -56,18 +56,19 @@ service business that sells shoot days rather than units.
             **read its deploy-order warning before pushing anything.**
       - [x] **Capacity screen** (money math — Opus/high) — done 2026-09-27. Added **migration v6**,
             which the task didn't list — see "What landed — Capacity" below.
-      - [x] **Dashboard** (money math — Opus/high) — done 2026-09-27, items 1–5. See "What landed —
-            Dashboard" below. **Committed, not pushed.**
-      - [ ] ← **NEXT: Rate Card — day / half-day / overtime rows and the `hoursPerUnit` column**
-            (money math — Opus/high). Use `LSCCalc.labourFloorComparison` for its per-row floor and
-            badge (the Dashboard's `.dash-badge`) so the two screens cannot disagree, and **decide how
-            a day row is identified** — see the Dashboard section's first decision.
+      - [x] **Dashboard** (money math — Opus/high) — done 2026-09-27, items 1–5; **live** (pushed).
+      - [x] **Rate Card — day rows and `hoursPerUnit`** (money math — Opus/high) — done 2026-09-27.
+            See "What landed — Rate Card". **Committed, not pushed.**
+      - [ ] ← **NEXT: Overhead inner tabs + Depreciation asset register** (frontend — Opus/high).
+            `OverheadView.mount` must read `handlers.inner === 'depreciation'` — the Dashboard's
+            Replacement reserve link already sends it, and the router already forwards it.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Nine tasks of 21 are built — the Foundation group, the rail, Capacity and the Dashboard.
-`server/src/defaults.js` is untouched. **The Dashboard is committed locally but not pushed** — it
-needs no server change (the NAS already has every route it calls; the new calc functions are
-browser-side only), so pushing `main` is all it takes to ship it.
+Ten tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard and the Rate
+Card's day rows. **The Rate Card work is committed but not pushed.** Pushing `main` ships it; no NAS
+redeploy is needed for the screen. `server/src/defaults.js` did change (seeded day rows), which only
+matters to **Reset Defaults** and fresh databases — redeploy the NAS whenever convenient for Reset to
+include them.
 
 **Deployed 2026-09-27 (~17:25 AEST), with the user's explicit go-ahead.** NAS first: pre-migration
 backup `/volume4/lsc-billing/data/backups/pre-v6-20260927-1701.db`; `server/` copied with `tar`
@@ -383,6 +384,38 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Rate Card day rows
+
+`web/js/views/pricing.js`, `web/css/pricing.css` (+ one <768px rule in `responsive.css`),
+`server/src/defaults.js`.
+
+- **Second lines, not new columns.** Under each labour row's name: `per [hour ▾]`, and for a day row
+  `[8] billable hrs`. Under its Mark-Up: `floor $X` or `below floor by $X` (`--accent-text`). Two
+  extra columns would have cut most service names to a word; measured, truncation is unchanged
+  (3 names at 1280px, as before).
+- **`dayUnit: 'full' | 'half'` marks a day row**, never its name. Choosing a day unit prefills
+  `hoursPerUnit` from Capacity's billable hours per day (half for half day; 8/4 if Capacity has no
+  usable figure — visible and editable either way). Choosing "hour" removes both fields.
+- **Switching an existing row between hourly and day asks first when saved estimates use it**: the
+  quantity on those estimates would read as days (or hours) if edited later. Billed figures don't
+  move — price is still qty × Mark-Up.
+- **The live defect fixed:** `payload()` rebuilt rows from name/rate/mu/customBill/unit only, so
+  `hoursPerUnit` was dropped on every save — a day row would silently revert to hourly, taking its
+  hours out of every Minimum Job Price. Now carried, plus `dayUnit`; `hoursPerUnit` 1 is left off
+  like every hourly row. A blank or out-of-range (0 or > 24) hours field blocks the save.
+- **Floors via `labourFloorComparison` on a one-row card**, so each line is the Dashboard's figure to
+  the cent (verified all 19 rows). The hourly floor is read once at mount, like the rate column.
+- **Defaults:** Full Day $1,120 / 8 h, Half Day $640 / 4 h (own price — no 0.5 multiplier),
+  Overtime $210/h. Not seeded: "Video Capture — Hourly" (the task named it) — "Video Capture" is
+  already the hourly row and a rename would orphan saved estimates on default-card databases.
+- **Your live saved card won't gain these rows** (defaults only apply to Reset and fresh DBs). Add a
+  service and set its unit, or Reset (which replaces the whole card).
+- **Dashboard headline floors stay on Capacity hours** even now that day rows are marked: a card can
+  have several day rows at different lengths. Every row's own floor is in its table.
+- **For the Estimate-editor task:** the editor's and estimate detail's labour column header says
+  "Hours" — wrong for a day row's quantity. The client PDF lists labour by name only, so nothing
+  client-facing is mislabelled.
 
 ## What landed (2026-09-27) — Dashboard
 
