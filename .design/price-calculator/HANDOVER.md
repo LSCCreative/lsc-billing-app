@@ -97,7 +97,10 @@ service business that sells shoot days rather than units.
       Dashboard comparison table wraps through 1099–768 — hide Section, nowrap the numbers; (2)
       "Below by $X" is a `<span>` styled like a link — make it a button to the Rate Card row, per the
       IA's "Checking a day rate" flow; (3) 13px inputs zoom iOS Safari on focus — a **site-wide**
-      one-rule fix that needs the user's OK; (4) a real VoiceOver pass. Also still open:
+      one-rule fix that needs the user's OK; (4) a real VoiceOver pass; then (5)–(10), the review's
+      former could-improve items, moved up at the user's request 2026-09-28 — (8), aligning where
+      Capacity and Profit Goals put their derived figure, overturns an overhead-finance IA decision
+      and needs the user's call. Also still open:
       overhead-finance decision 74's estimate-editor half (no announcements there).
 
 All 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven

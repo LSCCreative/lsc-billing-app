@@ -73,6 +73,10 @@ being one.
 
 ## Should Fix
 
+Items 5–10 were filed as could-improve and moved here at the user's request, the same day —
+the whole list is now the fix backlog. Item 3 is site-wide and item 8 overturns an
+overhead-finance IA decision; both want the user's go-ahead before they're built.
+
 1. **The floor comparison table wraps across the whole tablet band.** At 1100px it fits on one line
    per row; at 1000px 13 of 21 rows run to two lines, at 900px 15, and at 768 the "Against floor"
    column splits "$37.10 / over" and Section hyphenates "Pre- / Production". A 21-row table becomes
@@ -102,31 +106,33 @@ being one.
    announcer regions inside the `aria-modal` asset and dispose dialogs speak in VoiceOver, and
    whether the one-second debounce feels right while typing. _Fix: ten minutes with VoiceOver on
    Capacity, the Rate Card and the asset dialog._
-
-## Could Improve
-
-1. **On a phone the floors push the comparison down ~700px.** Three full-width tiles at ~180px each
+5. **On a phone the floors push the comparison down ~700px.** Three full-width tiles at ~180px each
    stack before "Rate card against its floors", which is the answer the page is for. See
-   `screenshots/review-dashboard-below-floor-mobile-375.png`. _Suggestion: below 768, render the
-   floors as three label-left / figure-right rows in one block (Delight figures kept), about 190px
-   in total._
-2. **The comparison info popover opens over the floors it explains.** With less than ~340px below
+   `screenshots/review-dashboard-below-floor-mobile-375.png`. _Fix: below 768, render the floors
+   as three label-left / figure-right rows in one block (Delight figures kept), about 190px in
+   total._
+6. **The comparison info popover opens over the floors it explains.** With less than ~340px below
    the button it flips upward and covers the Half Day tile. See
-   `screenshots/review-dashboard-info-open-desktop-1280.png`. _Suggestion: prefer below and let the
-   page scroll, flipping only when the button is in the bottom third of the viewport._
-3. **Day rows mix units in one line.** On the Rate Card, `Video Capture — Full Day` shows a Rate of
+   `screenshots/review-dashboard-info-open-desktop-1280.png`. _Fix: prefer below and let the page
+   scroll, flipping only when the button is in the bottom third of the viewport (`info.js`, shared
+   by both info controls)._
+7. **Day rows mix units in one line.** On the Rate Card, `Video Capture — Full Day` shows a Rate of
    `15.12` (per hour, per the column head) beside a Mark-Up of `1120` (per full day); the floor line
    underneath is what reconciles them. See `screenshots/review-rate-card-desktop-1280.png`.
-   _Suggestion: render the read-only rate as `15.12/hr` on day-unit rows only._
-4. **Derived outputs sit in different places on the two sibling screens** — Capacity's annual hours
+   _Fix: render the read-only rate as `15.12/hr` on day-unit rows only._
+8. **Derived outputs sit in different places on the two sibling screens** — Capacity's annual hours
    above its fields, Profit Goals' target revenue below its save bar. Each follows its own IA
-   ordering, so this is a note rather than a defect; if one screen is ever reworked, align them.
-5. **Capacity's save-bar sentence strands "at." on its own line at 1280.** See
-   `screenshots/review-capacity-desktop-1280.png`. _Suggestion: `text-wrap: pretty` on
+   ordering (Goals' placement is the overhead-finance IA's "separated from everything editable").
+   _Fix: pick one placement for both. Recommended: move Target Annual Revenue above Goals' fields,
+   matching Capacity — the output is what people open the screen for, and the card's own border
+   still separates it from the inputs. This overturns an overhead-finance IA decision, so it is the
+   user's call._
+9. **Capacity's save-bar sentence strands "at." on its own line at 1280.** See
+   `screenshots/review-capacity-desktop-1280.png`. _Fix: `text-wrap: pretty` on
    `.pricing-save-bar p`, which every save bar shares._
-6. **The Overhead donut legend runs the full block width**, leaving the amount ~350px from its
-   category name at desktop. From `overhead-finance`, not this feature. See
-   `screenshots/review-overhead-desktop-1280.png`. _Suggestion: cap the legend at ~420px._
+10. **The Overhead donut legend runs the full block width**, leaving the amount ~350px from its
+    category name at desktop. From `overhead-finance`, not this feature. See
+    `screenshots/review-overhead-desktop-1280.png`. _Fix: cap the legend at ~420px._
 
 ## Checklist Notes
 
