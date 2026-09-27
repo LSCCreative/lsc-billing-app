@@ -31,9 +31,10 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    Finance area from (2) into a left-sidebar area with a read-only Dashboard showing the whole
    cost-to-rate chain (overhead incl. gear depreciation → real working-days capacity → profit goals →
    the hourly / half-day / full-day floors), plus an ATO depreciation register. Design complete
-   (brief, IA and tasks all written 2026-09-27). **Build in progress: 2 of 21 tasks done** — the
-   `hoursPerUnit` / `totalHours` defect fix and the capacity-model rewrite both landed 2026-09-27;
-   `calc.js` plus two call sites, nothing visible yet.
+   (brief, IA and tasks all written 2026-09-27). **Build in progress: 7 of 21 tasks done** — the
+   whole Foundation group (calc, migration v5, depreciation chain, routes) plus the sidebar rail.
+   **Not yet deployed, and the NAS must be redeployed before `main` is pushed** — its handover
+   says why.
    Read its `HANDOVER.md` first. Build bucket: Opus, effort high, and **more of it sits in the
    money-math bucket than is usual** — its `TASKS.md` tags every task, don't re-derive.
 

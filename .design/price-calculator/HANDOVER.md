@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 6 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 7 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -51,15 +51,19 @@ service business that sells shoot days rather than units.
       - [x] **Routes — capacity fields, assets, schedule, locks** (backend — Sonnet/high) — done
             2026-09-27. The whole Foundation group is now built. See "What landed" below for what
             shipped and — more importantly — the live-rate consequence of shipping it.
-      - [ ] ← **NEXT: Sidebar rail + router restructure + `Finance & Price` rename** (frontend —
-            Opus/high). First Core UI task. No backend dependency — buildable against stubbed
-            Dashboard/Capacity views, per its own task entry.
+      - [x] **Sidebar rail + router restructure + `Finance & Price` rename** (frontend —
+            Opus/high) — done 2026-09-27. The first visible change. See "What landed" below —
+            **read its deploy-order warning before pushing anything.**
+      - [ ] ← **NEXT: Capacity screen** (money math — Opus/high — it renders the divisor behind
+            every rate). New `web/js/views/capacity.js`, exported as **`CapacityView`** — the
+            router already resolves that exact name. Also deletes the `calc.js` legacy bridge
+            branch; see its task entry.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Six tasks of 21 are built — the entire Foundation group, including its routes. Still no new view:
-`server/src/defaults.js` is untouched, and there is still no UI for any of this. **The live site's
-UI still behaves exactly as it did** — no screen changed — but see the next paragraph before assuming
-nothing moved.
+Seven tasks of 21 are built — the entire Foundation group plus the rail. The Finance area now has
+its left rail and lands on a Dashboard placeholder; Dashboard and Capacity still show "isn't built
+yet" with a button to the Rate Card. `server/src/defaults.js` is untouched. **Nothing is pushed or
+deployed** — the rail commit needs the NAS redeployed first (see "What landed — the rail").
 
 **This task's deploy is the one that changes the live rate**, not the Capacity screen's. `GET
 /api/goals` now returns the four real capacity fields, already seeded 8/5/30/8 by migration v5 on
@@ -366,6 +370,74 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — the rail, the router, the rename
+
+`web/js/views/finance.js` rewritten around a `.finance-shell` grid: a `<nav class="finance-rail">`
+of five `.nav-link` buttons (Dashboard, Rate Card, Overhead, Capacity, Profit Goals) beside
+`#finance-sub`. Header item reads `Finance & Price`. Tests 160/160 (nothing under `server/` changed).
+
+### Deploy order — the NAS goes first, or the whole app stops loading
+
+`LSCData.load()` now also fetches `GET /api/depreciation-assets`, and `loaded()` requires it. That
+route exists only in commit `7fb3402`, which is **not on the NAS yet**. Pushing `main` deploys
+GitHub Pages automatically; if the frontend lands before the API, the preload 404s and **every
+screen** shows "Couldn't load your pricing and finance settings" — not just Finance. So:
+
+1. Redeploy `server/` to the NAS first, and read `nas-hosted-billing/DEPLOYMENT.md` §5.5 before
+   doing it — a hand-copy of `server/` caused an outage on 2026-09-22 by overwriting the NAS's
+   `docker-compose.yml` volume path. Confirm with `GET /api/depreciation-assets` → 200, not 404.
+2. Remember that same redeploy flips the live rate onto the capacity model (see "What landed —
+   routes" below). That's resolved decision 2, but it happens at step 1, not at push time.
+3. Only then push `main`.
+
+Also expect, once pushed: the header's Finance & Price item lands on the **Dashboard placeholder**
+until the Dashboard task ships. Its "Open Rate Card" button is the way through. If that's not
+acceptable on the live site for a while, hold the push until the Dashboard is built.
+
+### One layout decision made against the brief's wording
+
+The brief says "only the container narrows by the rail's width". Built that way first and measured
+at 1280px: the Rate Card lost 188px and truncated service-name inputs went from **3 to 18**
+("Video Editor — Proj…" for most of Post-Production). So **`#main`'s 1080px cap grows by the rail
+plus gap (to 1268px) inside Finance & Price only**, via `#main:has(> .finance-shell)` in
+`finance.css` — `app.css` stays frozen, and `:has()` stops matching the moment another view
+replaces the shell, so no class needs removing. Result: every child keeps its 1000px at ≥1268px
+viewports (truncation back to 3, identical to before), and other screens are untouched (verified
+`#main` returns to 1080 on Estimates). That better serves the brief's actual intent — each ported
+screen keeps its layout. It's a one-rule revert if the user prefers the literal reading.
+
+### Things the next tasks must match
+
+- **View names the router resolves**: `FinanceDashboardView` (in `finance-dashboard.js`) and
+  `CapacityView` (in `capacity.js`). Anything else and the router keeps showing the placeholder
+  with no error. Add each `<script>` before `views/finance.js` in `index.html` by convention.
+- **Tab ids didn't change**: `pricing` and `goals` stay the ids (existing `data-go-tab` links and
+  the first-run step use them); only the labels are `Rate Card` / `Profit Goals`.
+- **`selectTab(id, opts)`**: `opts` is shallow-merged into the child's `mount` handlers, with the
+  router's own `onAuthLost` / `onGoTab` assigned last so opts can't replace them. Only plain objects
+  are accepted — a click event handed in as `opts` is dropped (it has an own `isTrusted`, and would
+  otherwise leak into handlers). The IA doc's key is `inner`: `onGoTab('overhead', { inner:
+  'depreciation' })`. Re-selecting the current tab is still a no-op even with opts — switching a
+  screen's own inner tab is that screen's job, not the router's.
+- **Label/title mismatches left for their owning tasks**: the Rate Card's page title still reads
+  `Pricing & Services`, Goals' reads `Goals`, and the Rate Card's rate note says "update it on the
+  Overhead / Goals tabs". Renaming them is `pricing.js` / `goals.js` work — the Rate Card task and
+  the Profit Goals task respectively.
+- **Responsive**: only the <768px fallback shipped (horizontal scrolling row, 44px targets, first
+  label on the 16px gutter, scrollbar hidden, active item scrolled into view). The 1099–900 "rail
+  narrows" band is still the Responsive pass's job; at 900px today the child gets ~650px with no
+  overflow on Rate Card, Overhead or Goals.
+
+### Verification
+
+Local `api-scratch` + `web` previews, freshly seeded scratch DB (the old `/tmp` one was gone; seeded
+with the `dev` login named in `.claude/launch.json`). Driven with dispatched `.click()` per the memory
+note; a real Tab for the focus ring. Checked: landing tab, rail `aria-current`, unsaved guard
+(declined → stays, same-tab click doesn't ask, accepted → moves), Goals' in-screen link to Overhead,
+first-run setup step → Rate Card, preload request fired and `loaded()` true, `opts` forwarding with
+probe views injected for Dashboard/Capacity, focus ring on all five rail items, no page overflow at
+1280 / 900 / 375px.
 
 ## Resolved decisions (Lachlan, 2026-09-27 — do not re-litigate)
 

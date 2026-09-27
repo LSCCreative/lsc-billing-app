@@ -664,15 +664,56 @@
     margin-right: 0;
   }
 
-  /* The Finance sub-tabs are the one horizontal row of .nav-links left in this
-     band — the header's own collapse into the menu panel. The 44px touch
-     target above grows the button while the label stays centred in it, which
-     put the active tab's accent underline 16px under its label against 8px at
-     every wider width: loose enough to read as a rule under the row rather than
-     a mark on the tab. Seating the label at the bottom keeps the 44px target
-     and brings the gap back to what it is above 768px. */
-  .finance-tabs .nav-link {
+  /* The Finance & Price rail reverts to the horizontal row it replaced: a
+     152px column beside a 343px screen would leave the child ~150px, and a
+     rail-as-hamburger would hide the whole area's structure behind a tap (IA
+     doc, Navigation Model). Five items don't fit 343px, so the row scrolls
+     sideways, bled to the screen edges so an item cut off at the edge reads as
+     "more this way" rather than as a clipping bug. The vertical padding is room
+     for a11y.css's focus ring, which sits 3px outside the button and would
+     otherwise be clipped by overflow-x. finance.js scrolls the active item into
+     view on every switch.
+
+     It is the one horizontal row of .nav-links left in this band — the header's
+     own collapse into the menu panel. The 44px touch target above grows the
+     button while the label stays centred in it, which put the active item's
+     accent underline 16px under its label against 8px at every wider width:
+     loose enough to read as a rule under the row rather than a mark on the
+     item. Seating the label at the bottom keeps the 44px target and brings the
+     gap back to what it was above 768px. */
+  .finance-shell {
+    display: block;
+  }
+  .finance-rail {
+    position: static;
+    flex-direction: row;
+    gap: 8px;
+    margin: -5px -16px 17px;
+    padding: 5px 6px;
+    overflow-x: auto;
+    border-left: 0;
+    /* A visible scrollbar draws a grey bar under the row that reads as the
+       rule this area deliberately doesn't have (finance.css). The label cut
+       off at the right edge already says the row scrolls. */
+    scrollbar-width: none;
+  }
+  .finance-rail::-webkit-scrollbar {
+    display: none;
+  }
+  /* 10px, the old row's .nav-link padding: with the rail's 6px that puts the
+     first label on #main's 16px gutter, in line with the page title. */
+  .finance-rail .nav-link {
+    flex: 0 0 auto;
+    width: auto;
+    margin-left: 0;
+    padding: 6px 10px;
     align-items: flex-end;
+    white-space: nowrap;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .finance-rail .nav-link.active {
+    border-bottom-color: var(--accent);
   }
 
   /* ── The Invoice Settings modal ──────────────────────────────────────────

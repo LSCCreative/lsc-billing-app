@@ -1,6 +1,6 @@
 'use strict';
 
-/* The rate card, settings, overhead and goals, held in memory for the life of
+/* The rate card, settings, overhead, goals and depreciation assets, held in memory for the life of
  * the session.
  *
  * The editor needs the first two on every keystroke — computeTotals looks a
@@ -14,7 +14,12 @@
  * Minimum Job Price line. Fetching them later would mean both of those screens
  * painting an em dash first and a number a moment after, which reads as a bug
  * on a figure that is supposed to be authoritative. One preload gate for all
- * five, not a second Finance-shaped loading state.
+ * of them, not a second Finance-shaped loading state.
+ *
+ * Depreciation assets joined for the same reason: each non-disposed asset's
+ * replacement reserve is part of annualBusinessCost(), which is what the
+ * overhead rate is now divided out of. An asset list that arrived late would
+ * price the first estimate opened without its gear.
  *
  * They are cached rather than re-read because this is a single-user app: the
  * only thing that can change any of them is a screen in this same tab, which
@@ -27,6 +32,7 @@ const LSCData = (() => {
   let overheadItems = null;
   let overheadSnapshots = null;
   let goals = null;
+  let depreciationAssets = null;
 
   /* Whether each has ever been written, taken from the reply's updatedAt.
      Emptiness cannot answer this: GET /api/pricing falls back to a complete
@@ -38,15 +44,17 @@ const LSCData = (() => {
   let goalsSaved = false;
 
   async function load() {
-    // All five are needed before an estimate can be priced, and none depends on
+    // All six are needed before an estimate can be priced, and none depends on
     // another, so the round-trips overlap.
-    const [pricingReply, settingsReply, itemsReply, snapshotsReply, goalsReply] = await Promise.all([
-      LSCApi.get('/api/pricing'),
-      LSCApi.get('/api/settings'),
-      LSCApi.get('/api/overhead-items'),
-      LSCApi.get('/api/overhead-snapshots'),
-      LSCApi.get('/api/goals'),
-    ]);
+    const [pricingReply, settingsReply, itemsReply, snapshotsReply, goalsReply, assetsReply] =
+      await Promise.all([
+        LSCApi.get('/api/pricing'),
+        LSCApi.get('/api/settings'),
+        LSCApi.get('/api/overhead-items'),
+        LSCApi.get('/api/overhead-snapshots'),
+        LSCApi.get('/api/goals'),
+        LSCApi.get('/api/depreciation-assets'),
+      ]);
     pricing = pricingReply.pricing || {};
     settings = settingsReply.settings || {};
     /* [] rather than null on a missing key: an account with no expenses yet has
@@ -59,6 +67,10 @@ const LSCData = (() => {
        render empty fields and the calc functions return null rather than a
        figure nobody chose. Keep the reply's nulls; don't substitute zeros. */
     goals = goalsReply.goals || {};
+    /* Disposed assets included: the route returns the whole register, and the
+       calc functions are what exclude sold gear from the reserve — filtering
+       here would drop it from the disposal year's tax schedule too. */
+    depreciationAssets = assetsReply.assets || [];
     pricingSaved = Boolean(pricingReply.updatedAt);
     settingsSaved = Boolean(settingsReply.updatedAt);
     goalsSaved = Boolean(goalsReply.updatedAt);
@@ -71,12 +83,14 @@ const LSCData = (() => {
       settings !== null &&
       overheadItems !== null &&
       overheadSnapshots !== null &&
-      goals !== null,
+      goals !== null &&
+      depreciationAssets !== null,
     pricing: () => pricing || {},
     settings: () => settings || {},
     overheadItems: () => overheadItems || [],
     overheadSnapshots: () => overheadSnapshots || [],
     goals: () => goals || {},
+    depreciationAssets: () => depreciationAssets || [],
     /* For the first-run setup checklist on the estimates empty state. */
     pricingConfigured: () => pricingSaved,
     settingsConfigured: () => settingsSaved,
@@ -108,6 +122,12 @@ const LSCData = (() => {
       goals = next || {};
       goalsSaved = true;
     },
+    /* The asset register's writes. Every asset write also appends an overhead
+       snapshot server-side, so the register refreshes snapshots alongside this
+       exactly as the Overhead screen does for its items. */
+    setDepreciationAssets: (next) => {
+      depreciationAssets = next || [];
+    },
     // On sign-out, so the next sign-in reads the card fresh.
     clear: () => {
       pricing = null;
@@ -115,6 +135,7 @@ const LSCData = (() => {
       overheadItems = null;
       overheadSnapshots = null;
       goals = null;
+      depreciationAssets = null;
       pricingSaved = false;
       settingsSaved = false;
       goalsSaved = false;

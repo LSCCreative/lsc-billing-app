@@ -129,13 +129,14 @@
     }
 
     setNav('estimates');
-    /* onGoPricing keeps its name: the first-run setup step it serves still
-       means the rate card specifically, and Pricing is where toFinance() with
-       no argument lands. Wrapped rather than passed by reference so a caller
-       that ever hands it an event doesn't have that event read as initialTab. */
+    /* onGoPricing keeps its name: the first-run setup step it serves means the
+       rate card specifically, so it names 'pricing' — toFinance() with no
+       argument now lands on the Dashboard. Wrapped rather than passed by
+       reference so a caller that ever hands it an event doesn't have that
+       event read as initialTab. */
     EstimatesView.mount(main, {
       onAuthLost,
-      onGoPricing: () => toFinance(),
+      onGoPricing: () => toFinance('pricing'),
       onOpenSettings: openSettings,
     });
     appMounted = true;
@@ -151,12 +152,12 @@
      list's first-run setup steps open them too, so they sit here rather than
      inside bindNav's closure where only the header could reach them.
 
-     Finance replaced the old standalone Pricing item, so this is where
-     toPricing used to be — the rate card is now one sub-tab inside it, and
-     FinanceView decides which sub-tab to open. `initialTab` is passed straight
-     through: callers that mean Pricing (the header item, the first-run setup
-     step) pass nothing and get it, and the Pricing screen's own links out to
-     Overhead and Goals name their destination. */
+     Finance & Price replaced the old standalone Pricing item, so this is where
+     toPricing used to be — the rate card is now one rail item inside it, and
+     FinanceView decides which screen to open. `initialTab` is passed straight
+     through: the header item passes nothing and lands on the Dashboard, and
+     callers that mean a specific screen (the first-run setup step means the
+     rate card) name it. */
   function toFinance(initialTab) {
     if (appView.hidden) return;
     if (!LSCUnsaved.confirmLeave()) return;

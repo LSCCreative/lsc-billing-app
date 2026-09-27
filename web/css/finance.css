@@ -1,22 +1,90 @@
-/* The Finance area — see js/views/finance.js.
+/* The Finance & Price area — see js/views/finance.js.
  *
- * The sub-tab row is the header's own .nav-link, so everything that makes a nav
- * item look like one (uppercase 11px, the accent underline on .active, the
- * :focus-visible ring in a11y.css, the 44px touch target below 768px) arrives
- * with the class. All this file owns is the row those buttons sit in.
+ * The rail's items are the header's own .nav-link, so everything that makes a
+ * nav item look like one (uppercase 11px tracked, muted until hovered or
+ * active, the :focus-visible ring in a11y.css, the 44px touch target below
+ * 768px) arrives with the class. This file owns the column the rail sits in and
+ * turns .nav-link's one horizontal habit — the accent underline — sideways.
  *
- * No rule under the row on purpose: the child screen's own .page-head brings a
- * border-bottom 22px later, and two horizontal rules that close together turn
- * the top of the screen into a ladder. The accent underline under the active
- * tab is what marks it; the page title below says where you landed.
+ * THE MARKER IS A TRACK, NOT A DIVIDER
+ * The rail carries one 1px line down its left edge, and the active item's 2px
+ * accent sits on it — the vertical form of the header's underline, where the
+ * line is the list's own spine rather than a rule separating it from the
+ * screen. There is deliberately no rule on the rail's right: the child screen's
+ * .page-head already draws a border-bottom across the top of the content, and
+ * a vertical rule meeting it would box the screen in and turn the top of the
+ * area into a grid. The same reasoning the old tab row followed by having no
+ * rule under it. The 36px gap is what separates the two columns.
  *
- * The negative left margin pulls the first tab's own 10px of .nav-link padding
- * back out, so the row's text starts on #main's left edge in line with the page
- * title under it rather than indented a notch from it.
+ * RADII
+ * .nav-link's 4px radius only shows on its hover background; in a vertical
+ * list that rounded chip sits against a square accent bar and reads as a
+ * second visual idea. Square here, matching every border in the system.
+ *
+ * WIDTH
+ * 152px fits "PROFIT GOALS" at 11px / .1em tracking with the item padding and
+ * room to spare, and nothing longer is planned — five short labels is the IA
+ * doc's own ceiling. Narrower bands and the <768px horizontal row live in
+ * css/responsive.css, like every other breakpoint.
+ *
+ * #main GROWS BY THE RAIL, RATHER THAN THE SCREEN SHRINKING BY IT
+ * The brief allowed the child screens to narrow by the rail's width. Measured
+ * at 1280px, that cost the Rate Card 188px and took its truncated service
+ * names from 3 to 18 — "Video Editor — Project Setup" and most of Post-
+ * Production read as "Video Editor — Proj". So in this area only, #main's
+ * 1080px cap grows by exactly the rail plus its gap, and every child screen
+ * keeps the 1000px it had wherever the window has room for it (≥1268px). app.css
+ * is frozen, and #main is shared with every other screen, hence :has() rather
+ * than a class that app.js would have to remember to take off again: the rule
+ * stops matching the moment another view replaces the shell.
  */
-.finance-tabs {
+#main:has(> .finance-shell) {
+  max-width: 1268px;
+}
+
+.finance-shell {
+  display: grid;
+  grid-template-columns: 152px minmax(0, 1fr);
+  column-gap: 36px;
+  align-items: start;
+}
+
+/* Sticky so the rail stays in reach down a long rate card; 86px is the 52px
+   sticky header plus #main's 34px top padding, i.e. exactly where it rests
+   before any scroll, so it never jumps when sticking starts. */
+.finance-rail {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 22px -10px;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 86px;
+  border-left: 1px solid var(--border);
+}
+
+/* margin-left:-1px lays the 2px accent over the 1px track instead of beside
+   it. */
+.finance-rail .nav-link {
+  justify-content: flex-start;
+  width: 100%;
+  margin-left: -1px;
+  padding: 9px 14px;
+  text-align: left;
+  border-bottom: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+}
+.finance-rail .nav-link.active {
+  border-left-color: var(--accent);
+}
+
+/* The grid's minmax(0, …) lets the column shrink; this lets its content. Without
+   it a wide table in the child pushes the column past #main's edge. */
+#finance-sub {
+  min-width: 0;
+}
+
+/* The not-built-yet placeholder's way out: the empty state's copy sits
+   centred above it, so the button is centred with it rather than left-hung. */
+.finance-pending-go {
+  margin-top: 22px;
 }
