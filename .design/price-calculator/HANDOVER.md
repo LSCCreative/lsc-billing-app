@@ -68,18 +68,18 @@ service business that sells shoot days rather than units.
             landed — CSV export and lodgement lock". **Live — NAS and Pages both deployed
             2026-09-27 ~20:40 AEST.**
       - [x] **Info button + popover — shared component** (frontend — Opus/high) — done 2026-09-27.
-            See "What landed — Info control". **Committed, not pushed** (no server change).
+            See "What landed — Info control". **Live** (Pages, 2026-09-27; no server change).
       - [x] **GST mirror block** (money math — Opus/high) — done 2026-09-27. See "What landed — GST
-            mirror". **Committed, not pushed** (web only, no server change).
+            mirror". **Live** (Pages, pushed 2026-09-27 ~21:15 AEST; web only, no server change).
       - [ ] ← **NEXT: Post-ratio readout** (frontend — Opus/high). Dashboard section (6), slotting in
             between jobs needed (5) and the GST mirror (7). Display-local, saves nothing.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
 Fifteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
 Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement lock), the shared
-info control and the GST mirror. **The info control and the GST mirror are committed but not
-pushed** (web only — pushing `main` deploys Pages; no NAS step needed). Everything before them is
-live on both the NAS and Pages.
+info control and the GST mirror. **All of it is live** — the info control and the GST mirror went to
+Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
+web-only, so the NAS needed no redeploy.
 
 **Deployed 2026-09-27 (~20:40 AEST), with the user's explicit go-ahead** — the CSV/lock task's
 server change. Backup `/volume4/lsc-billing/data/backups/pre-lock-20260927-2039.db`; `Dockerfile`,

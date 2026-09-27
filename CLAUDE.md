@@ -36,8 +36,8 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    the Capacity screen, the Dashboard, the Rate Card's day rows, the whole Depreciation tab
    (register, schedule, CSV export, lodgement lock), the shared info control and the Dashboard's
    GST mirror.
-   Everything through the lodgement lock is live (NAS + Pages, 2026-09-27); check its handover for
-   what is committed but not yet pushed.
+   All fifteen are live (NAS + Pages, 2026-09-27); check its handover for anything committed since
+   but not yet pushed.
    Read its `HANDOVER.md` first. Build bucket: Opus, effort high, and **more of it sits in the
    money-math bucket than is usual** — its `TASKS.md` tags every task, don't re-derive.
 
