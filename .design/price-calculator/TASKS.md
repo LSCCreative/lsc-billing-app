@@ -437,7 +437,21 @@ change to it is two identical edits. A task that edits one and not the other is 
   decision 28), the decline ramp (every step ≥3.55:1 on both backgrounds, checked for the chart
   task). See HANDOVER.
 
-- [ ] **Decline curve chart** (frontend — Opus/high): Hand-rolled inline SVG on the Depreciation tab, one point per FY of an asset's adjustable value, no chart library — matching the app's zero-dependency pattern in `overhead-charts.js`. Applies the scoped palette exception already granted to the category donut, on the same terms: `--accent` marks the current FY, everything else uses the muted warm tonal ramp. Hover shows FY + value via `<title>`. Empty state: a plain message, not a broken axis. _New. Reuses: `overhead-charts.js`'s ramp and axis helpers. Depends on: the schedule._
+- [x] **Decline curve chart** (frontend — Opus/high): Hand-rolled inline SVG on the Depreciation tab, one point per FY of an asset's adjustable value, no chart library — matching the app's zero-dependency pattern in `overhead-charts.js`. Applies the scoped palette exception already granted to the category donut, on the same terms: `--accent` marks the current FY, everything else uses the muted warm tonal ramp. Hover shows FY + value via `<title>`. Empty state: a plain message, not a broken axis. _New. Reuses: `overhead-charts.js`'s ramp and axis helpers. Depends on: the schedule._
+
+  **Done 2026-09-28.** A "Decline in value" section between the register and the schedule, with an
+  **Asset** picker (the register's own list, honouring "Show disposed", narrowed to diminishing value
+  and prime cost — an instant write-off is one step to $0 and a pooled asset has no value of its own).
+  Points are `closingAdjustableValue` from `LSCDepreciation.assetScheduleRows()` — the schedule's own
+  walk — out to the end of the effective life (or this FY, if later), stopping at a disposal. **One
+  addition to the spec: a starting point** at the cost base (or entered opening value) on the day it
+  was first used, as a small muted ring labelled "Start" — without it the first FY's point already
+  has the biggest drop taken out, and a diminishing-value curve hid exactly the front-loading it is
+  there to show. Current FY = the one terracotta point (+ faint guide, FY label in the same colour);
+  the rest is one ramp step (`--oh-c3`), solid for reported years, **hollow on a dashed line for
+  projected ones**. `<title>` per point; `role="img"` summary; an `.sr-only` table of every point; the
+  picker announces the new summary. Ramp tokens hoisted in `overhead.css` so the donut and the curve
+  share one declaration; `bindResize` redraws it. See HANDOVER.
 
 ---
 

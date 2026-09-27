@@ -139,6 +139,8 @@ const DepreciationView = (() => {
   let schedLoadingFy = null;
   let schedSeq = 0; // a reply for an FY the user has since moved off is ignored
   let announcePending = false; // set by the FY <select>, spent by renderScheduleBody
+  // The decline curve's picker. null = the first chartable asset.
+  let chartAssetId = null;
   let pendingFocus = null; // an id to focus once the next reply renders
 
   const $ = (id) => root.querySelector('#' + id);
@@ -816,11 +818,70 @@ const DepreciationView = (() => {
     ensureSchedule();
   }
 
+  // ── The decline curve ─────────────────────────────────────────────────────
+
+  /* What the picker offers: the register's own list (so "Show disposed"
+     governs both), narrowed to what has a curve — see canChartDecline() in
+     overhead-charts.js for why instant write-offs and pools don't. */
+  function chartable() {
+    const list = showDisposed ? assets() : assets().filter((a) => !isDisposed(a));
+    return list.filter(OverheadCharts.canChartDecline);
+  }
+
+  function chartAsset() {
+    const list = chartable();
+    return list.find((a) => a.id === chartAssetId) || list[0] || null;
+  }
+
+  /* Why there's no curve, when there isn't one. Names the actual reason:
+     "nothing to chart" beside a register full of pooled gear would read as a
+     bug. */
+  function declineEmptyMessage() {
+    const all = assets();
+    if (!all.length) return 'Add an asset and its value for tax, year by year, is drawn here.';
+    const shown = showDisposed ? all : all.filter((a) => !isDisposed(a));
+    if (!shown.length) return 'Everything here has been disposed of. Tick “Show disposed” to chart it.';
+    return (
+      'Nothing here has a curve to draw. Only diminishing value and prime cost decline year by year — an instant ' +
+      'write-off is deducted in full in its first year, and a pooled asset declines as part of its pool (see Pools ' +
+      'in the schedule below).'
+    );
+  }
+
+  function declineMarkup() {
+    const list = chartable();
+    const current = chartAsset();
+    const picker = list.length
+      ? '<label class="dep-fy"><span class="sum-label">Asset</span>' +
+        '<select id="dep-decline-asset" class="doc-type-select">' +
+        list
+          .map((a) =>
+            '<option value="' + esc(a.id) + '"' + (current && a.id === current.id ? ' selected' : '') + '>' +
+            esc(a.name || 'Untitled') + (isDisposed(a) ? ' (disposed)' : '') + '</option>')
+          .join('') +
+        '</select></label>'
+      : '';
+    return (
+      '<section class="dep-decline" aria-labelledby="dep-decline-h"><div class="dep-sched-head">' +
+      '<h2 class="dep-sched-h" id="dep-decline-h">Decline in value</h2>' + picker + '</div>' +
+      '<div class="est-block oh-chart-block"><div class="oh-chart" id="dep-decline-canvas"></div></div>' +
+      // Spoken when the picker swaps the curve — the chart itself says nothing.
+      '<p class="sr-only" id="dep-decline-live" aria-live="polite"></p>' +
+      '</section>'
+    );
+  }
+
+  // After the markup is in the document: the curve is drawn at its measured width.
+  function drawDecline() {
+    OverheadCharts.drawDecline(chartAsset(), declineEmptyMessage());
+  }
+
   function markup() {
     return (
       summaryMarkup() +
       '<div id="dep-error" role="alert"></div>' +
       registerMarkup() +
+      declineMarkup() +
       scheduleMarkup() +
       thresholdMarkup()
     );
@@ -1673,6 +1734,14 @@ const DepreciationView = (() => {
         if (again) again.focus();
       });
     }
+    const pick = $('dep-decline-asset');
+    if (pick) {
+      pick.addEventListener('change', () => {
+        chartAssetId = pick.value;
+        drawDecline();
+        LSCUtil.announce($('dep-decline-live'), OverheadCharts.declineAnnouncement(chartAsset()));
+      });
+    }
     $('dep-iawo').addEventListener('input', function () {
       iawoRaw = this.value;
     });
@@ -1699,6 +1768,7 @@ const DepreciationView = (() => {
     root.innerHTML = markup();
     bind();
     bindScheduleBody();
+    drawDecline();
   }
 
   function mount(container, viewHandlers) {

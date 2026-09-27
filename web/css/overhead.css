@@ -301,13 +301,20 @@
 
    Adjacent slices are separated by a 2px --bg stroke, so no slice is ever
    judged against the colour beside it — each one is read against the page. */
-.oh-donut-wrap {
+/* The ramp is also the Depreciation tab's decline curve's (brief: the donut's
+   exception extends to it "on the same terms"), so it is declared for both
+   here, once — two copies of these hexes would be two chances to drift. The
+   curve uses --oh-c3 and the accent; depreciation.css says why. */
+.oh-donut-wrap,
+.dep-decline {
   --oh-c1: var(--oh-chart-accent);
   --oh-c2: #ce8a4f;
   --oh-c3: #a8a39b;
   --oh-c4: #dcbe8b;
   --oh-c5: #b0968a;
   --oh-c6: #c9c3b9;
+}
+.oh-donut-wrap {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;

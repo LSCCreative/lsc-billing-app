@@ -429,3 +429,77 @@
 #dep-actions-error.show {
   display: block;
 }
+
+/* ── The decline curve ──────────────────────────────────────────────────────
+   Between the register and the schedule: an asset's view, so it sits under
+   the list of assets, and the schedule → CSV → lock run stays unbroken at the
+   foot of the tab where the accountant's work ends. The head is the
+   schedule's own (.dep-sched-head / .dep-sched-h / .dep-fy), with an Asset
+   picker where the schedule has its FY picker. The drawing is overhead-charts.js's.
+
+   COLOUR: the brief's scoped exception, on the donut's terms — the current FY
+   is the one terracotta point (--oh-chart-accent, 4.70:1 on --bg), and the
+   rest of the curve is ONE ramp step, --oh-c3's warm grey (7.08:1), rather
+   than a different ramp colour per year. Years are a sequence, not categories;
+   six hues along one line would read as six series. Past and projected differ
+   by fill and dash, never by colour alone. */
+.dep-decline {
+  margin-top: 34px;
+}
+.dep-decline .doc-type-select {
+  max-width: 260px;
+}
+.dep-decline-line {
+  fill: none;
+  stroke: var(--oh-c3);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+/* Projected: what the chain gives if nothing changes. Dashed, so it reads as
+   a forecast even in greyscale or to someone who can't separate the tones. */
+.dep-decline-line.is-projected {
+  stroke-dasharray: 5 5;
+}
+.dep-decline-area {
+  fill: var(--oh-c3);
+  fill-opacity: 0.07;
+  stroke: none;
+}
+/* Solid for a reported year, ringed for a projected one — the trend chart's
+   ringed dot, in the curve's grey. */
+.dep-decline-dot {
+  fill: var(--oh-c3);
+}
+.dep-decline-dot.is-projected {
+  fill: var(--bg);
+  stroke: var(--oh-c3);
+  stroke-width: 2;
+}
+/* The start — cost base on the day it was first used. Smaller and ringed in
+   --muted rather than the curve's grey, so it reads as where the line comes
+   from, not as another year. */
+.dep-decline-dot.is-origin {
+  fill: var(--bg);
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+/* This financial year. A --bg ring separates it from the line running
+   through it, so the accent is read against the page, not against the grey. */
+.dep-decline-dot.is-now {
+  fill: var(--oh-chart-accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.dep-decline-guide {
+  stroke: var(--oh-chart-accent);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  shape-rendering: crispEdges;
+}
+/* The FY under the terracotta point names it in the same colour — 4.70:1,
+   over the 4.5:1 text bar, which --accent (3.71:1) is not. */
+.oh-chart-date.dep-decline-fy-now {
+  fill: var(--oh-chart-accent);
+}

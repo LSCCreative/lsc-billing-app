@@ -1,7 +1,9 @@
 'use strict';
 
-/* The charts on the Overhead screen. Hand-rolled inline SVG, no library —
- * this directory ships to GitHub Pages as-is and has no build step, so a chart
+/* The charts on the Overhead screen — the trend and the donut on Operating
+ * Costs, and the decline curve on its Depreciation tab, which shares their
+ * axis helpers and palette (see "The decline curve" below). Hand-rolled
+ * inline SVG, no library — this directory ships to GitHub Pages as-is and has no build step, so a chart
  * dependency would be the first one in the app.
  *
  * WHY THIS IS ITS OWN FILE
@@ -344,7 +346,9 @@ const OverheadCharts = (() => {
   /* One listener for the life of the page. It re-queries the container every
      time rather than closing over it, so it survives the wholesale re-render
      overhead.js does on every write, and does nothing at all when the Overhead
-     screen isn't the one on screen. */
+     screen isn't the one on screen. It redraws whichever measured chart is
+     showing: the trend on Operating Costs, the decline curve on Depreciation
+     (both inner tabs mount through OverheadView, which is what binds this). */
   let resizeBound = false;
   let resizeTimer = null;
   function bindResize(currentSnapshots) {
@@ -354,6 +358,9 @@ const OverheadCharts = (() => {
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => {
         if (document.getElementById('oh-trend-canvas')) drawTrend(currentSnapshots());
+        if (document.getElementById('dep-decline-canvas') && lastDecline) {
+          drawDecline(lastDecline.asset, lastDecline.emptyMessage);
+        }
       }, 150);
     });
   }
@@ -602,5 +609,306 @@ const OverheadCharts = (() => {
     return '<div class="est-block oh-chart-block" id="oh-donut-block">' + head + body + '</div>';
   }
 
-  return { trendMarkup, drawTrend, donutMarkup, bindResize };
+
+  // ── The decline curve (Overhead → Depreciation) ───────────────────────────
+
+  /* One asset's adjustable value at the end of each financial year — the
+     number the ATO's decline in value is taken from, drawn so "diminishing
+     value front-loads the deduction" (the tab's info popover) can be seen
+     rather than taken on trust.
+
+     THE SAME ARITHMETIC AS THE SCHEDULE, NOT A SECOND COPY OF IT
+     Every point is a closingAdjustableValue from LSCDepreciation's
+     assetScheduleRows() — the walk the schedule, the CSV and the lodgement
+     snapshots all use. Nothing here computes a decline; it only chooses how
+     far to walk and draws what comes back.
+
+     PAST, THIS YEAR, PROJECTED
+     Unlike the trend's event-ordered axis, this one IS time: one slot per
+     financial year, evenly spaced because financial years are. Years up to the
+     current one are what the schedule reports. Years after it are what the
+     chain gives if nothing changes — the asset kept, its business use as
+     entered — so they are drawn hollow on a dashed line and the caption says
+     "projected". The current FY is the one terracotta point (the brief's
+     scoped palette exception, on the donut's terms); everything else is the
+     ramp's warm grey. A disposed asset's line simply ends at its disposal
+     year, because the chain stops walking there.
+
+     WHICH ASSETS HAVE A CURVE
+     Diminishing value and prime cost, with an effective life and a start date.
+     An instant write-off is one step to $0 in its first year; a pooled asset
+     has no value of its own — its cost joins the pool's balance. Neither is a
+     curve, and drawing either would be an axis around nothing. The Depreciation
+     view lists only what canChartDecline() accepts, so the picker and the
+     chart can't disagree. */
+
+  const CURVE_METHODS = { diminishing_value: 1, prime_cost: 1 };
+
+  function canChartDecline(asset) {
+    if (!asset || !CURVE_METHODS[asset.method]) return false;
+    const life = LSCCalc.numOrNull(asset.effectiveLifeYears);
+    return life !== null && life > 0 && LSCCalc.fyLabel(asset.startDate) !== null;
+  }
+
+  const fyOfStartYear = (year) => 'FY' + year + '-' + String((year + 1) % 100).padStart(2, '0');
+  // "2025–26": the axis form. fyDisplay()'s "FY " prefix, five times along an
+  // axis whose every label is a financial year, is noise.
+  const fyShort = (label) => String(LSCCalc.fyDisplay(label) || '').replace(/^FY /, '');
+
+  /* The points to draw, or [] when there is no curve. Walks to the end of the
+     effective life (a prime-cost asset reaches $0 there; a diminishing-value
+     one is at roughly an eighth of its cost — it never reaches zero, so the
+     life is the natural place to stop), or to the current FY if the asset has
+     outlived it. Past the first $0, further $0 years say nothing and are
+     dropped — unless they are the current year or before it, which the
+     schedule would report. */
+  function declinePoints(asset, nowFy) {
+    if (!canChartDecline(asset)) return [];
+    const first = LSCCalc.fyBounds(LSCCalc.fyLabel(asset.startDate));
+    const now = LSCCalc.fyBounds(nowFy);
+    const life = LSCCalc.numOrNull(asset.effectiveLifeYears);
+    const lastYear = Math.max(first.startYear + Math.ceil(life), now.startYear);
+    const rows = LSCDepreciation.assetScheduleRows(asset, fyOfStartYear(lastYear));
+
+    const points = [];
+    for (const row of rows) {
+      const year = LSCCalc.fyBounds(row.fy).startYear;
+      const previous = points[points.length - 1];
+      if (previous && previous.value === 0 && year > now.startYear) break;
+      points.push({
+        fy: row.fy,
+        value: row.closingAdjustableValue,
+        opening: row.openingAdjustableValue,
+        when: year < now.startYear ? 'past' : year === now.startYear ? 'now' : 'projected',
+        disposed: row.disposed,
+      });
+    }
+    return points;
+  }
+
+  const pointNote = (point) =>
+    point.disposed ? ' — disposed' : point.when === 'now' ? ' — this year' : point.when === 'projected' ? ' — projected' : '';
+
+  /* THE STARTING POINT — the one point that isn't a financial year.
+     The first FY's own closing value already has that year's decline taken
+     out, and under diminishing value that is the biggest drop the asset will
+     ever have (a $8,800 camera on a 3-year life closes its first year near
+     $3,000). Starting the line at that closing value would hide exactly what
+     the tab's info popover says this method does. So the line starts at the
+     value the chain started from — the cost base, or the opening adjustable
+     value entered for gear that was already part-depreciated — on the day it
+     was first used, drawn as a smaller ring so it reads as an anchor rather
+     than as another year. */
+  function declineOrigin(asset, points) {
+    const entered = LSCCalc.numOrNull(asset.openingAdjustableValue) !== null;
+    return {
+      value: points[0].opening,
+      what: entered ? 'opening adjustable value' : 'cost base',
+      date: asset.startDate,
+    };
+  }
+
+  // "5 Jul 2026" — the trend chart's fullDate(), from a stored 'YYYY-MM-DD'.
+  // Split rather than new Date(string), which reads a bare date as UTC.
+  const dayDate = (ymd) => {
+    const [y, m, d] = String(ymd || '').split('-').map(Number);
+    return y && m && d ? fullDate(new Date(y, m - 1, d)) : 'its start date';
+  };
+  const originText = (origin) => 'First used ' + dayDate(origin.date) + ' — ' + fmt(origin.value) + ' ' + origin.what;
+
+  function declineSummary(name, origin, points) {
+    const last = points[points.length - 1];
+    const now = points.find((point) => point.when === 'now');
+    return (
+      name + ': ' + fmt(origin.value) + ' ' + origin.what + ' when first used on ' + dayDate(origin.date) +
+      (now && now !== last ? ', ' + fmt(now.value) + ' at the end of this financial year' : '') +
+      ', ' + fmt(last.value) + ' by the end of ' + LSCCalc.fyDisplay(last.fy) +
+      (last.disposed ? ', when it was disposed of' : last.when === 'projected' ? ', projected' : ' (this year)') + '.'
+    );
+  }
+
+  /* Which slots to label. Slot 0 is the start ("START"); slots 1… are FYs.
+     Every one when they fit (a 64px slot holds "2025–26"), otherwise an even
+     spread that always keeps the start, the last year and this year — the one
+     the terracotta point needs named. */
+  function slotLabelIndexes(slots, plotWidth, nowSlot) {
+    const last = slots - 1;
+    const step = plotWidth / last;
+    const fit = Math.max(2, Math.floor(plotWidth / 64) + 1);
+    if (slots <= fit) return Array.from({ length: slots }, (unused, index) => index);
+    const keep = new Set([0, last]);
+    for (let n = 1; n < fit - 1; n += 1) keep.add(Math.round((last * n) / (fit - 1)));
+    if (nowSlot >= 0) {
+      Array.from(keep).forEach((index) => {
+        if (index !== 0 && index !== last && Math.abs(index - nowSlot) * step < 64) keep.delete(index);
+      });
+      keep.add(nowSlot);
+    }
+    return Array.from(keep).sort((a, b) => a - b);
+  }
+
+  function declineSvg(name, origin, points, width) {
+    const height = width < 520 ? 200 : 240;
+    // Slot 0 is the origin, so every series index below is one ahead of `points`.
+    const series = [{ value: origin.value, when: 'origin' }].concat(points);
+    const axis = yAxis(Math.max(...series.map((point) => point.value)));
+    const labels = axis.ticks.map(axisMoney);
+    const padLeft = 20 + labels.reduce((max, label) => Math.max(max, label.length), 0) * 6.2;
+    // In from both edges by half an FY label, so the first and last centre on
+    // their points without running into the tick column or off the svg.
+    const plotLeft = padLeft + 26;
+    const plotRight = width - 30;
+    const plotTop = 18;
+    const plotBottom = height - 34;
+    const plotWidth = plotRight - plotLeft;
+    const plotHeight = plotBottom - plotTop;
+
+    const xAt = (index) => plotLeft + (plotWidth * index) / (series.length - 1);
+    const yAt = (value) => plotBottom - (plotHeight * value) / axis.top;
+    const xy = (index) => xAt(index).toFixed(1) + ',' + yAt(series[index].value).toFixed(1);
+
+    const gridlines = axis.ticks
+      .map((value) => {
+        const y = yAt(value).toFixed(1);
+        return (
+          '<line class="oh-chart-grid" x1="' + padLeft.toFixed(1) + '" y1="' + y + '" x2="' + plotRight.toFixed(1) +
+          '" y2="' + y + '"/>' +
+          '<text class="oh-chart-tick" x="' + (padLeft - 9).toFixed(1) + '" y="' + y +
+          '" text-anchor="end" dominant-baseline="middle">' + esc(axisMoney(value)) + '</text>'
+        );
+      })
+      .join('');
+
+    /* Solid from the start through the last reported year, dashed from there
+       on. They share that point, so the line is unbroken. When nothing is
+       reported yet (first used later this FY… or next), it is dashed from the
+       start. */
+    let lastReported = 0;
+    series.forEach((point, index) => {
+      if (point.when === 'past' || point.when === 'now') lastReported = index;
+    });
+    const indexes = series.map((point, index) => index);
+    const solid = indexes.slice(0, lastReported + 1);
+    const dashed = indexes.slice(lastReported);
+    const polyline = (run, extra) =>
+      run.length > 1 ? '<polyline class="dep-decline-line' + extra + '" points="' + run.map(xy).join(' ') + '"/>' : '';
+
+    const area =
+      'M' + xAt(0).toFixed(1) + ',' + plotBottom.toFixed(1) + 'L' + indexes.map(xy).join('L') +
+      'L' + xAt(series.length - 1).toFixed(1) + ',' + plotBottom.toFixed(1) + 'Z';
+
+    const nowSlot = series.findIndex((point) => point.when === 'now');
+    const guide = nowSlot >= 0
+      ? '<line class="dep-decline-guide" x1="' + xAt(nowSlot).toFixed(1) + '" y1="' + plotTop.toFixed(1) +
+        '" x2="' + xAt(nowSlot).toFixed(1) + '" y2="' + plotBottom.toFixed(1) + '"/>'
+      : '';
+
+    const dots = series
+      .map((point, index) => {
+        const kind = { origin: ' is-origin', now: ' is-now', projected: ' is-projected' }[point.when] || '';
+        const r = point.when === 'now' ? 5.5 : point.when === 'origin' ? 3 : 3.5;
+        return (
+          '<circle class="dep-decline-dot' + kind + '" cx="' + xAt(index).toFixed(1) + '" cy="' +
+          yAt(point.value).toFixed(1) + '" r="' + r + '"/>'
+        );
+      })
+      .join('');
+
+    // Same reasoning as the trend's hit targets: transparent, not "none", and
+    // no wider than half a slot so neighbours don't steal each other's hover.
+    const hitRadius = Math.max(6, Math.min(14, plotWidth / (series.length - 1) / 2));
+    const titleOf = (point) =>
+      point.when === 'origin' ? originText(origin) : LSCCalc.fyDisplay(point.fy) + ' — ' + fmt(point.value) + pointNote(point);
+    const hits = series
+      .map(
+        (point, index) =>
+          '<circle class="oh-chart-hit" cx="' + xAt(index).toFixed(1) + '" cy="' + yAt(point.value).toFixed(1) +
+          '" r="' + hitRadius.toFixed(1) + '" fill="transparent"><title>' + esc(titleOf(point)) + '</title></circle>'
+      )
+      .join('');
+
+    const slotLabels = slotLabelIndexes(series.length, plotWidth, nowSlot)
+      .map(
+        (index) =>
+          '<text class="oh-chart-date' + (index === nowSlot ? ' dep-decline-fy-now' : '') + '" x="' +
+          xAt(index).toFixed(1) + '" y="' + (plotBottom + 21).toFixed(1) + '" text-anchor="middle">' +
+          esc(index === 0 ? 'Start' : fyShort(series[index].fy)) + '</text>'
+      )
+      .join('');
+
+    return (
+      '<svg class="oh-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' +
+      height + '" role="img" aria-label="' + esc(declineSummary(name, origin, points)) + '">' +
+      gridlines + '<path class="dep-decline-area" d="' + area + '"/>' + guide +
+      polyline(solid, '') + polyline(dashed, ' is-projected') + dots + hits + slotLabels +
+      '</svg>'
+    );
+  }
+
+  /* Every point as a table, for a screen reader — the <title>s are hover-only,
+     and the svg's label only gives the start, this year and the last value. */
+  function declineTable(name, origin, points) {
+    const row = (head, value) => '<tr><th scope="row">' + esc(head) + '</th><td>' + esc(value) + '</td></tr>';
+    return (
+      '<table class="sr-only"><caption>' + esc(name) + ': adjustable value at the end of each financial year' +
+      '</caption><thead><tr><th scope="col">When</th><th scope="col">Adjustable value</th></tr></thead><tbody>' +
+      row('First used ' + dayDate(origin.date) + ' (' + origin.what + ')', fmt(origin.value)) +
+      points.map((point) => row(LSCCalc.fyDisplay(point.fy) + pointNote(point), fmt(point.value))).join('') +
+      '</tbody></table>'
+    );
+  }
+
+  function declineCaption(origin, points) {
+    const last = points[points.length - 1];
+    const hasNow = points.some((point) => point.when === 'now');
+    const hasProjected = points.some((point) => point.when === 'projected');
+    return (
+      '<p class="oh-chart-caption">What it’s worth for tax: its ' + origin.what + ' when first used, then one point ' +
+      'per financial year at 30 June. The drop to each point is that year’s decline in value; your deduction is ' +
+      'that drop at your business-use share. ' +
+      (hasNow ? 'The terracotta point is this financial year. ' : '') +
+      (hasProjected ? 'Hollow points are projected — they assume you keep it and nothing about it changes. ' : '') +
+      (last.disposed ? 'The line ends at ' + esc(LSCCalc.fyDisplay(last.fy)) + ', when it was disposed of. ' : '') +
+      'Hover a point for its exact value.</p>'
+    );
+  }
+
+  /* What the resize listener redraws. Data, not an element — see the header's
+     "nothing held": the container is still re-queried on every draw. */
+  let lastDecline = null;
+
+  /** Draws (or redraws) one asset's curve into #dep-decline-canvas, measured
+   *  like the trend. `asset` null means there is nothing to chart, and
+   *  `emptyMessage` — the view's, which knows why — is shown instead. */
+  function drawDecline(asset, emptyMessage) {
+    lastDecline = { asset, emptyMessage };
+    const canvas = document.getElementById('dep-decline-canvas');
+    if (!canvas) return;
+    const points = asset ? declinePoints(asset, LSCCalc.currentFinancialYear()) : [];
+    if (!points.length) {
+      canvas.innerHTML = '<p class="oh-chart-empty">' + esc(emptyMessage || 'Nothing to draw yet.') + '</p>';
+      return;
+    }
+    const name = asset.name || 'This asset';
+    const origin = declineOrigin(asset, points);
+    canvas.innerHTML =
+      declineSvg(name, origin, points, contentWidth(canvas)) + declineTable(name, origin, points) +
+      declineCaption(origin, points);
+  }
+
+  /* The sentence the view announces when the picker changes the chart. */
+  function declineAnnouncement(asset) {
+    const points = asset ? declinePoints(asset, LSCCalc.currentFinancialYear()) : [];
+    return points.length ? declineSummary(asset.name || 'This asset', declineOrigin(asset, points), points) : '';
+  }
+
+  return {
+    trendMarkup,
+    drawTrend,
+    donutMarkup,
+    bindResize,
+    canChartDecline,
+    drawDecline,
+    declineAnnouncement,
+  };
 })();

@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-28 (Phase 6 — 22 of 23 build tasks done, then a design review)
+## State as of 2026-09-28 (Phase 6 complete — all 23 build tasks done; the design review is next)
 
 `/design-flow` sequence position:
 
@@ -86,17 +86,22 @@ service business that sells shoot days rather than units.
       - [x] **Responsive pass** (frontend — Opus/high) — done 2026-09-28. See "What landed —
             Responsive pass". **Live** (Pages, pushed 2026-09-28, run 36356171260; web only).
       - [x] **Accessibility pass** (frontend — Opus/high) — done 2026-09-28. See "What landed —
-            Accessibility pass". **Committed, not pushed** (web only, no NAS redeploy needed).
-      - [ ] ← **NEXT: Decline curve chart** (frontend — Opus/high). The design review after it.
-- [ ] Phase 7 — Design Review. On request only, after there is something built.
+            Accessibility pass". **Live** (Pages, pushed 2026-09-28, run 36357488624; web only).
+      - [x] **Decline curve chart** (frontend — Opus/high) — done 2026-09-28. See "What landed —
+            Decline curve". **Committed, not pushed** (web only, no NAS redeploy needed).
+- [ ] ← **NEXT: Phase 7 — Design Review.** Run `/design-review` against `DESIGN_BRIEF.md` when the
+      user asks; screenshots to `.design/price-calculator/screenshots/`. Carry in the Accessibility
+      pass's "Known and left" (a real VoiceOver pass, especially the announcer regions inside the
+      `aria-modal` dialogs) and overhead-finance decision 74's still-open editor half.
 
-Twenty-two of the 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
+All 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
 lock, disposal), the shared info control, the GST mirror, the post-ratio readout, the double-count
 hint, Profit Goals' read-only capacity, the estimate editor's day-unit wording, the responsive
-pass and the accessibility pass. (Earlier versions of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design
-review — the count was wrong, not the list.) **The accessibility pass is committed but not pushed.**
-The responsive pass, Profit Goals and the estimate editor went to Pages on 2026-09-28. Everything before them is live,
+pass, the accessibility pass and the decline curve chart. (Earlier versions of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design
+review — the count was wrong, not the list.) **The decline curve is committed but not pushed.**
+The accessibility pass, the responsive pass, Profit Goals and the estimate editor went to Pages on
+2026-09-28. Everything before them is live,
 NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
@@ -429,6 +434,66 @@ can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longe
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
 
+## What landed (2026-09-28) — Decline curve
+
+`web/js/views/overhead-charts.js` (the chart), `web/js/views/depreciation.js` (the section and its
+picker), `web/css/depreciation.css`, `web/css/overhead.css` (ramp hoisted). No server change; suite
+188/188.
+
+**Where and what.** A "Decline in value" section between the register and the schedule — an
+asset's view, so it sits under the assets, and the schedule → CSV → lock run stays unbroken at the
+foot of the tab. Its head copies the schedule's (`.dep-sched-head`, `.dep-fy`), with an **Asset**
+picker where the schedule has its FY picker. Inside an `.est-block`, drawn at the container's
+measured width exactly like the trend chart.
+
+### Decisions made here — read before touching the chart
+
+- **One asset at a time, by picker — not the whole register on one chart.** The task says "an
+  asset's adjustable value"; a register total would blend methods and start years into a line that
+  means nothing on a return. Default is the first chartable asset in register order; the choice
+  survives re-renders (`chartAssetId`) and falls back to the first if that asset goes.
+- **Only diminishing value and prime cost are charted** (`OverheadCharts.canChartDecline`, which
+  the picker also uses, so the two can't disagree). An instant write-off is one step to $0; a pooled
+  asset's cost joins the pool's balance and has no value of its own. When nothing qualifies, the
+  section says which of those is the reason instead of drawing an axis.
+- **The picker follows "Show disposed"**, like the register. A disposed asset's line ends at its
+  disposal FY (the chain stops walking there) and the caption says so.
+- **A starting point the task didn't list.** Every FY point is a *closing* value, so the first one
+  already has that year's decline out of it — for diminishing value, the biggest drop the asset will
+  ever have ($8,800 → $2,998 for the scratch FX6). Without an anchor the chart hid the front-loading
+  the tab's own info popover describes. So slot 0 is the cost base (or the entered opening adjustable
+  value) on the day it was first used: a smaller ring in `--muted`, labelled "Start", titled
+  "First used 5 Jul 2026 — $8,800.00 cost base". Every other point is still one per FY.
+- **How far it walks**: to the end of the effective life (`firstFY + ceil(life)`) or this FY,
+  whichever is later — prime cost reaches $0 there; diminishing value never does and sits near an
+  eighth of cost, so the life is the natural stop. $0 years after the first $0 are dropped unless
+  they are this year or earlier (the schedule reports those).
+- **Past / this year / projected.** Up to this FY is what the schedule reports; after it is what the
+  chain gives if nothing changes, drawn **hollow on a dashed line** and captioned "projected".
+  Distinguished by fill and dash, never by colour alone.
+- **Colour, on the donut's terms**: the current FY is the one `--oh-chart-accent` point (4.70:1),
+  with a faint dashed guide and its FY label in the same colour; everything else is **one** ramp
+  step, `--oh-c3` (7.08:1), not a hue per year — years are a sequence, and six hues on one line read
+  as six series. The ramp declaration moved from `.oh-donut-wrap` to `.oh-donut-wrap, .dep-decline`
+  in `overhead.css` so there is still one copy of the hexes.
+- **Accessibility**: `role="img"` with a summary (start, this year, last); a `<title>` per point
+  for hover; an `.sr-only` `<table>` of every point for a screen reader (the titles are hover-only);
+  the picker announces the new summary through `LSCUtil.announce()`.
+- **Resize**: `OverheadCharts.bindResize` (bound by OverheadView, which mounts both inner tabs) now
+  also redraws `#dep-decline-canvas`, from the last asset drawn — data held, never an element.
+
+### Verified (local `api-scratch` + `web`, dispatched events)
+
+Real data (one DV asset, 3-year life): Start $8,800 → FY 2026–27 $2,997.63 (terracotta, matching
+the schedule's closing value) → three projected years to $110.41. Fixtures set **in the local cache
+only** (`LSCData.setDepreciationAssets`, then a reload — nothing written): prime cost from 2024
+reaching $0.00 this year, all solid; DV from 2021 with six reported years; an asset first used next
+FY (no terracotta point, all dashed); a disposed asset ending at its disposal FY, listed only with
+"Show disposed" and the picker falling back when it's hidden again; a pooled/write-off-only register
+and an empty one, each with its own sentence. 375px: svg 309px in a 309px box, FY labels thinned to
+Start / 2022–23 / 2024–25 / 2026–27 (this year always kept), select 44px, no page overflow. Resize
+900 → 1280 redrew at 659 → 963px. The donut still resolves `--oh-c2`/`--oh-c3` after the hoist.
+
 ## What landed (2026-09-28) — Accessibility pass
 
 `web/js/util.js`, `web/css/a11y.css`, and six views: `capacity.js`, `goals.js`,
@@ -497,7 +562,7 @@ underline and the focus ring carry the state. Not changed.
   already shows one. The schedule's pool row showing `$0.00` in one column is a real figure.
 - **Decline-curve ramp, measured for the chart task**: `--oh-chart-accent` 4.70 / 3.55:1 on `--bg`
   / `--surface`, the five ramp steps 6.23–10.14 / 4.71–7.66:1 — every step clears 3:1 (non-text)
-  on both. No change needed; the chart can use it as-is.
+  on both. The chart (built next, same day) uses the accent and `--oh-c3` only.
 - **Not tested with a real screen reader** (none available to the agent). The announcer was
   verified by reading the regions' text before and after the debounce: empty mid-typing, one
   sentence after the pause. Worth a VoiceOver pass in the design review, including whether the
