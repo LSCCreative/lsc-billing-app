@@ -70,7 +70,45 @@ change to it is two identical edits. A task that edits one and not the other is 
      only when the Capacity screen writes real fields. **The Capacity screen task must delete the
      legacy branch and `LEGACY_WEEKS_PER_YEAR`** — this is now noted on that task too.
 
-- [ ] **Migration — capacity columns, `depreciation_assets`, `depreciation_locks`** (backend — Sonnet/high): One new versioned migration in `server/src/db.js`, following the existing pattern exactly (never edit a shipped migration). Adds to `goals`: `billable_hours_per_day`, `working_days_per_week`, `leave_days_per_year`, `sick_days_per_year`, `iawo_threshold`. **Seeds them with the reference defaults (8 / 5 / 30 / 8) rather than deriving from `billable_capacity_hrs_per_week`** — leave and sick days cannot be inferred from a single weekly figure, and inventing them would be fabrication; the Capacity screen flags them as defaults to confirm. Leaves `billable_capacity_hrs_per_week` in place with a schema comment reading *legacy, display-only, recomputed on save as `annualBillableHours ÷ 52`, read by nothing, safe to drop in a later migration* — without that comment the next agent either deletes it mid-feature or starts computing from it. New `depreciation_assets` table per the IA doc's field list: identity (`name`, `category`, `serial_number`, `supplier`), acquisition (`purchase_date`, `start_date`, `cost_inc_gst`, `gst_amount`, `gst_credit_claimed`), ATO treatment (`method`, `effective_life_years`, `business_use_pct`, `opening_adjustable_value`), pricing (`replacement_cycle_years`, `replacement_cost_estimate`), disposal (`disposal_date`, `disposal_proceeds`, `disposal_reason`), plus `notes`, `created_at`, `updated_at`. `CHECK` constraints on `method` and `category`, matching how `overhead_items` constrains its own enums. New `depreciation_locks`: `id`, `fy_label`, `locked_at`, `figures_json` — **append-only, no update or delete route**, same discipline and same reasoning as `overhead_snapshots` (it's a log, not editable state). Verify against a fresh DB *and* against the real dev DB. _New. Depends on: nothing._
+- [x] **Migration — capacity columns, `depreciation_assets`, `depreciation_locks`** (backend — Sonnet/high): One new versioned migration in `server/src/db.js`, following the existing pattern exactly (never edit a shipped migration). Adds to `goals`: `billable_hours_per_day`, `working_days_per_week`, `leave_days_per_year`, `sick_days_per_year`, `iawo_threshold`. **Seeds them with the reference defaults (8 / 5 / 30 / 8) rather than deriving from `billable_capacity_hrs_per_week`** — leave and sick days cannot be inferred from a single weekly figure, and inventing them would be fabrication; the Capacity screen flags them as defaults to confirm. Leaves `billable_capacity_hrs_per_week` in place with a schema comment reading *legacy, display-only, recomputed on save as `annualBillableHours ÷ 52`, read by nothing, safe to drop in a later migration* — without that comment the next agent either deletes it mid-feature or starts computing from it. New `depreciation_assets` table per the IA doc's field list: identity (`name`, `category`, `serial_number`, `supplier`), acquisition (`purchase_date`, `start_date`, `cost_inc_gst`, `gst_amount`, `gst_credit_claimed`), ATO treatment (`method`, `effective_life_years`, `business_use_pct`, `opening_adjustable_value`), pricing (`replacement_cycle_years`, `replacement_cost_estimate`), disposal (`disposal_date`, `disposal_proceeds`, `disposal_reason`), plus `notes`, `created_at`, `updated_at`. `CHECK` constraints on `method` and `category`, matching how `overhead_items` constrains its own enums. New `depreciation_locks`: `id`, `fy_label`, `locked_at`, `figures_json` — **append-only, no update or delete route**, same discipline and same reasoning as `overhead_snapshots` (it's a log, not editable state). Verify against a fresh DB *and* against the real dev DB. _New. Depends on: nothing._
+
+  **Done 2026-09-27** as migration **v5**. Verified on a fresh DB, on a copy of the dev DB (which is
+  at v1, so that exercised the whole 1→5 chain), and — the case that actually matters — on a v4
+  database built from `git HEAD`'s `db.js` with a real goals row, which kept every value and gained
+  the 8/5/30/8 seeds with `iawo_threshold` NULL. `migrate()` is idempotent on re-run. 111 tests pass.
+  The dev DB on disk was not touched.
+
+  **Four decisions this migration had to make on its own**, all recorded in its SQL comments because
+  no design doc specifies them:
+
+  1. **`business_use_pct` stores a PERCENT (0–100), not a fraction.** The IA doc writes
+     `decline × business_use_pct`, which reads like a fraction, but `goals.target_profit_margin_pct`
+     already sets the convention that a `_pct` column holds 0–100 and `calc.js` divides. **The
+     depreciation chain must divide by 100** — a fraction/percent mix-up here is a silent 100× error
+     on every deduction, which is precisely the units trap `calc.js`'s header warns about. A `CHECK
+     (0..100)` now exists so a `0.6` meant as 60% is rejected rather than quietly deducted.
+  2. **The `category` enum is this migration's own choice** — none is specified anywhere. Chose
+     `camera / lens / lighting / audio / computer / drone / vehicle / other`, following v4's precedent
+     for `frequency` (documented as this migration's choice, changed by a new migration if a view
+     lands elsewhere). **`vehicle` is not optional**: step 2 of the chain caps cars at the car limit
+     and nothing else can identify which assets those are.
+  3. **`car_limit` was added even though this task's field list omits it.** Step 2 of the IA doc's
+     chain requires a user-entered limit, and it is per-asset rather than global because the limit
+     that applies is the one in force for the FY the car was first used. A nullable column now is
+     cheaper than a second migration during the depreciation task.
+  4. **`depreciation_locks` has no UNIQUE on `fy_label`** — a re-lodgement is an amendment and an
+     append-only log should keep both. **Readers must take the latest row per FY**
+     (`ORDER BY locked_at DESC LIMIT 1`), which the CSV/lock task needs to honour.
+
+  Also: `iawo_threshold` is **nullable with no default**, not `NOT NULL DEFAULT 20000`. The design
+  says ATO thresholds stay user-entered with the current figure as a *placeholder*; a schema default
+  would be exactly the hardcode it refuses. A `0` default would be worse — every one-off expense
+  exceeds 0, so the double-count hint would fire on all of them and be trained away.
+
+  **One finding for the Capacity screen task:** the seeds are 1,776 annual hours, while a legacy row
+  saying 20 hrs/week annualises to 960. Accepting the seeds unexamined would nearly *halve* that
+  user's overhead rate. The before/after on that screen's save confirm is a real guard, not a nicety
+  — a test pins the gap.
 
 - [ ] **Cost of the business — `annualBusinessCost()` and the replacement reserve** (money math — Opus/high): Add `replacementReserveTotal(assets)` = Σ over **non-disposed** assets of `(replacement_cost_estimate ÷ replacement_cycle_years) × business_use_pct`, and `annualBusinessCost(items, assets)` = `annualOverheadTotal(items) + replacementReserveTotal(assets)`. Three decisions to record in the docblock, all from the IA doc: `replacement_cost_estimate` not historical cost (pricing must recover what the *next* body costs); straight-line over the user's own cycle not the ATO effective life (diminishing value would swing the day rate 30–40% for gear still in daily use); apportioned by `business_use_pct` (only the business share of a part-personal laptop is a business cost). **Leave `annualOverheadTotal()`'s name and behaviour untouched** so existing tests keep passing; screens move to `annualBusinessCost`. Also add the shared **Australian FY helper** here — `currentFinancialYear()`, `fyBounds(label)`, `fyLabel(date)` for the 1 July – 30 June year, formatted `FY 2025–26`. Nothing anywhere computes a year inline: `new Date().getFullYear()` is wrong for half the year. Tests: a disposed asset contributes nothing; a 50%-business asset contributes half; the FY helper across the 30 June / 1 July boundary in both directions. _Modifies: `server/src/calc.js` + `web/js/calc.js`. Depends on: the migration (for the asset shape)._
 

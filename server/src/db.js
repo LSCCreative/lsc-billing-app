@@ -207,6 +207,191 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 5,
+    name: 'capacity fields, depreciation assets and lodgement locks',
+    up(db) {
+      // Foundation for Finance & Price (.design/price-calculator/): real
+      // working-days capacity in place of an assumed 48-week year, and a
+      // capital-asset register that feeds both the accountant's depreciation
+      // schedule and the gear replacement reserve inside the overhead rate.
+      // Schema only — nothing here changes what an existing estimate bills.
+      //
+      // FOUR DECISIONS THIS MIGRATION MAKES ON ITS OWN, because no design doc
+      // specifies them. Each follows v4's precedent for `frequency`: the choice
+      // is made here, recorded here, and changed by a NEW migration if a route
+      // or view later lands somewhere else.
+      //
+      //   1. `business_use_pct` STORES A PERCENT (100 means 100%), not a
+      //      fraction. The IA doc writes the arithmetic as
+      //      `decline × business_use_pct`, which reads like a fraction, but
+      //      `goals.target_profit_margin_pct` already establishes the
+      //      convention that a _pct column holds 0–100 and calc.js divides. A
+      //      fraction here would be the only _pct column in the schema that
+      //      isn't. THE DEPRECIATION CHAIN MUST DIVIDE BY 100 — getting this
+      //      wrong is a silent 100× error on every deduction, which is exactly
+      //      the units trap calc.js's header warns about.
+      //   2. `category` needs an enum and none is specified. The list below is
+      //      this migration's own, chosen for a videography business.
+      //      `vehicle` is not optional: step 2 of the depreciation chain caps
+      //      cars at the car limit, and without the category nothing can tell
+      //      which assets that applies to.
+      //   3. `car_limit` is a column even though the task's field list omits
+      //      it. Step 2 of the chain needs a user-entered limit, and it is
+      //      per-asset rather than global because the limit that applies is the
+      //      one in force for the FY the car was first used — a 2019 car and a
+      //      2026 car are capped differently and always will be. A nullable
+      //      column now is cheaper than a second migration during the
+      //      depreciation task.
+      //   4. `depreciation_locks` has NO unique constraint on `fy_label`. A
+      //      re-lodgement is an amendment, and amendments are exactly what an
+      //      append-only log should keep. READERS MUST TAKE THE MOST RECENT ROW
+      //      PER FY (`ORDER BY locked_at DESC LIMIT 1`), not assume one.
+      db.exec(`
+        -- ── Capacity ────────────────────────────────────────────────────────
+        -- The four fields that replaced the assumed 48-week year. Annual
+        -- billable hours are DERIVED from these by calc.js's
+        -- annualBillableHours(), never stored: a stored copy would be a second
+        -- truth to keep in sync.
+        --
+        -- SEEDED WITH THE REFERENCE DEFAULTS (8 / 5 / 30 / 8), not derived from
+        -- billable_capacity_hrs_per_week. Leave and sick days cannot be
+        -- recovered from a single weekly figure, and splitting one into the
+        -- other two would be inventing the user's leave. The Capacity screen
+        -- flags these as defaults to confirm, which is the honest version of
+        -- not knowing.
+        --
+        -- LEAVE AND SICK DAYS ARE WORKING DAYS, NOT CALENDAR DAYS. Four weeks
+        -- off is 20, not 28. The entry labels carry that burden; nothing here
+        -- can tell the difference.
+        ALTER TABLE goals ADD COLUMN billable_hours_per_day  REAL NOT NULL DEFAULT 8;
+        ALTER TABLE goals ADD COLUMN working_days_per_week   REAL NOT NULL DEFAULT 5;
+        ALTER TABLE goals ADD COLUMN leave_days_per_year     REAL NOT NULL DEFAULT 30;
+        ALTER TABLE goals ADD COLUMN sick_days_per_year      REAL NOT NULL DEFAULT 8;
+
+        -- The instant-asset-write-off threshold, used only to decide when the
+        -- Overhead form should ask "is this actually a capital asset?".
+        --
+        -- NULLABLE ON PURPOSE, AND NOT DEFAULTED. This figure moves with the
+        -- federal budget, so a schema default would be the hardcoded ATO
+        -- threshold the design explicitly refuses — the screen shows the
+        -- current figure as a placeholder with a confirm-with-your-accountant
+        -- note, and NULL means the user has not confirmed one. A default of 0
+        -- would be worse than NULL: every one-off expense exceeds 0, so the
+        -- double-count hint would fire on all of them and be trained away.
+        ALTER TABLE goals ADD COLUMN iawo_threshold REAL;
+
+        -- billable_capacity_hrs_per_week (added in v4) IS DELIBERATELY KEPT.
+        -- LEGACY, DISPLAY-ONLY: recomputed on save as annualBillableHours ÷ 52,
+        -- read by nothing, safe to drop in a later migration. Dropping it here
+        -- would mean a table rebuild and a migration that cannot infer the
+        -- leave and sick values it would have to replace it with. It is NOT an
+        -- input to any rate any more — do not start computing from it, and do
+        -- not delete it mid-feature. calc.js's annualBillableHoursFromGoals()
+        -- reads it only through a transitional branch that the Capacity screen
+        -- task removes.
+
+        -- ── Capital assets ──────────────────────────────────────────────────
+        -- One row per item of gear. Depreciation schedules are COMPUTED ON READ
+        -- from these rows and never stored, so they cannot drift from the
+        -- assets they describe; the only stored figures are the lodgement
+        -- snapshots below.
+        CREATE TABLE depreciation_assets (
+          id                        TEXT PRIMARY KEY,
+
+          -- Identity
+          name                      TEXT NOT NULL,
+          category                  TEXT NOT NULL
+                                      CHECK (category IN
+                                        ('camera', 'lens', 'lighting', 'audio',
+                                         'computer', 'drone', 'vehicle', 'other')),
+          serial_number             TEXT NOT NULL DEFAULT '',
+          supplier                  TEXT NOT NULL DEFAULT '',
+
+          -- Acquisition. TWO DATES, BOTH REQUIRED, AND THEY ARE NOT THE SAME:
+          -- purchase_date is when it was bought; start_date is the ATO "start
+          -- time", when it was first used or installed ready for use, and it is
+          -- the one daysHeld runs from. A camera bought in June and first used
+          -- in July belongs to the next financial year.
+          purchase_date             TEXT NOT NULL,
+          start_date                TEXT NOT NULL,
+
+          -- cost_inc_gst is what was paid. The cost base subtracts gst_amount
+          -- only when the credit was actually claimed, which is why the flag is
+          -- per asset rather than read from settings.gst: registration status
+          -- changes over time and an asset's cost base is fixed at acquisition.
+          cost_inc_gst              REAL NOT NULL,
+          gst_amount                REAL NOT NULL DEFAULT 0,
+          gst_credit_claimed        INTEGER NOT NULL DEFAULT 0
+                                      CHECK (gst_credit_claimed IN (0, 1)),
+
+          -- ATO treatment. The two pool methods are POOL-LEVEL: such a row
+          -- contributes its cost base to a pool balance rather than having a
+          -- decline of its own, and the schedule renders pool rows separately.
+          method                    TEXT NOT NULL
+                                      CHECK (method IN
+                                        ('diminishing_value', 'prime_cost', 'instant_writeoff',
+                                         'small_business_pool', 'low_value_pool')),
+          effective_life_years      REAL,
+          -- 0–100, A PERCENT — see decision 1 in the comment above. Divide by
+          -- 100 before multiplying anything by it.
+          business_use_pct          REAL NOT NULL DEFAULT 100
+                                      CHECK (business_use_pct >= 0 AND business_use_pct <= 100),
+          -- NULL means "this asset starts at its cost base". A value is for
+          -- gear that was already part-depreciated when it was entered, so the
+          -- schedule does not restart a three-year-old camera at full value.
+          opening_adjustable_value  REAL,
+          -- Vehicles only; NULL for everything else. See decision 3.
+          car_limit                 REAL,
+
+          -- Pricing. These drive the replacement reserve inside the overhead
+          -- rate and have nothing to do with tax. replacement_cost_estimate is
+          -- deliberately NOT historical cost: pricing has to recover what the
+          -- NEXT body costs.
+          replacement_cycle_years   REAL,
+          replacement_cost_estimate REAL,
+
+          -- Disposal. NULL disposal_date is the "still held" signal, and it is
+          -- what replacementReserveTotal() filters on — sold gear must stop
+          -- inflating overhead immediately, while staying on its disposal FY's
+          -- schedule for the balancing adjustment.
+          disposal_date             TEXT,
+          disposal_proceeds         REAL,
+          disposal_reason           TEXT NOT NULL DEFAULT '',
+
+          notes                     TEXT NOT NULL DEFAULT '',
+          created_at                TEXT NOT NULL,
+          updated_at                TEXT NOT NULL
+        );
+        -- The register sorts by category then start date, and the schedule
+        -- filters by held-in-FY, which is start_date plus disposal_date.
+        CREATE INDEX idx_depreciation_assets_category ON depreciation_assets (category, start_date);
+        CREATE INDEX idx_depreciation_assets_start ON depreciation_assets (start_date);
+        CREATE INDEX idx_depreciation_assets_disposal ON depreciation_assets (disposal_date);
+
+        -- ── Lodgement locks ─────────────────────────────────────────────────
+        -- Append-only, one row per "Mark FY as lodged". Same discipline and the
+        -- same reasoning as overhead_snapshots: it is a log, not editable
+        -- state, so there is no update route and no delete route.
+        --
+        -- Why it exists at all: schedules are recomputed from the assets on
+        -- every read, so editing an asset's effective life in 2027 would
+        -- silently rewrite what was filed in 2026. figures_json is that year's
+        -- computed figures frozen at lodgement; the schedule shows them with a
+        -- badge and FLAGS DIVERGENCE if live recomputation now disagrees,
+        -- rather than quietly adopting the new numbers.
+        --
+        -- No UNIQUE on fy_label — see decision 4. Take the latest row per FY.
+        CREATE TABLE depreciation_locks (
+          id           TEXT PRIMARY KEY,
+          fy_label     TEXT NOT NULL,
+          locked_at    TEXT NOT NULL,
+          figures_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_depreciation_locks_fy ON depreciation_locks (fy_label, locked_at);
+      `);
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

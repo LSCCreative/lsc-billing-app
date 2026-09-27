@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 2 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 3 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -38,17 +38,20 @@ service business that sells shoot days rather than units.
       - [x] **Capacity math — `annualBillableHours()`, and `overheadRatePerHour()` changes meaning**
             (money math — Opus/high) — done 2026-09-27, see "What landed" below. The 48-week year is
             retired.
-      - [ ] ← **NEXT: Migration — capacity columns, `depreciation_assets`, `depreciation_locks`**
-            (backend — Sonnet/high). **Pause and switch the session to Sonnet/high before starting** —
-            this is the first task in the feature that is not Opus/high. Depends on nothing; it is
-            what unblocks the routes task and, with it, the Capacity screen.
+      - [x] **Migration — capacity columns, `depreciation_assets`, `depreciation_locks`**
+            (backend — Sonnet/high; built on Opus at the user's direction 2026-09-27) — landed as
+            **schema v5**. See "What landed" below; four decisions were made inside it that the
+            depreciation and routes tasks depend on.
+      - [ ] ← **NEXT: Cost of the business — `annualBusinessCost()` and the replacement reserve**
+            (money math — Opus/high). Also carries the shared **Australian FY helper**, which the
+            whole depreciation chain then builds on.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Two tasks of 21 are built. Both are pure money-model work: no migration written, no route added, no
-new view, `server/src/defaults.js` untouched, and the only edits outside `calc.js` are the two call
-sites in `views/pricing.js` and `views/estimate-editor.js`. **The live site still behaves exactly as
-it did** — verified, not assumed (see "Rates have not moved yet" below). Nothing visible changes until
-the Capacity screen ships.
+Three tasks of 21 are built: the money-model rewrite and the schema behind it. No route added, no new
+view, `server/src/defaults.js` untouched, and the only edits outside `calc.js` / `db.js` are the two
+call sites in `views/pricing.js` and `views/estimate-editor.js`. **The live site still behaves exactly
+as it did** — verified, not assumed (see "Rates have not moved yet" below). Nothing visible changes
+until the Capacity screen ships.
 
 ## What landed (2026-09-27) — the `hoursPerUnit` fix
 
@@ -134,6 +137,53 @@ the `goals.js:286` capacity hint text ("annualised over 48 weeks") in the same c
 2. The build-order gap above was not anticipated by the task either. Expect the same for
    `annualBusinessCost` — the Dashboard and Pricing screens will want it before the migration that
    defines the asset shape has run.
+
+## What landed (2026-09-27) — schema v5
+
+`server/src/db.js` migration v5, `capacity fields, depreciation assets and lodgement locks`. Verified
+on a fresh DB, on a copy of the dev DB (at v1, so the whole 1→5 chain ran), and on a v4 database built
+from `git HEAD`'s `db.js` carrying a real goals row — which kept every value and gained the seeds.
+`migrate()` is idempotent. The dev DB on disk was not touched.
+
+`goals` gains `billable_hours_per_day` / `working_days_per_week` / `leave_days_per_year` /
+`sick_days_per_year`, **seeded 8 / 5 / 30 / 8** by `DEFAULT`, plus a nullable `iawo_threshold`.
+`billable_capacity_hrs_per_week` is kept and marked legacy in v5's comments (it could not be commented
+in place — v4 has shipped and is never edited).
+
+New `depreciation_assets` (23 columns) and `depreciation_locks`.
+
+### Four decisions made inside the migration — the next tasks depend on these
+
+1. **`business_use_pct` IS A PERCENT, 0–100 — not a fraction.** The IA doc writes
+   `decline × business_use_pct`, which reads like a fraction, but `target_profit_margin_pct` already
+   established that a `_pct` column holds 0–100 and `calc.js` divides. **The depreciation chain must
+   divide by 100.** This is the single most likely silent error in the rest of the feature: a
+   fraction/percent mix-up is a 100× wrong deduction that still looks like a number. A
+   `CHECK (0..100)` rejects a `0.6` meant as 60%.
+2. **The `category` enum was chosen here**, because nothing specifies one:
+   `camera / lens / lighting / audio / computer / drone / vehicle / other`. Follows v4's `frequency`
+   precedent — documented as this migration's own choice, changed by a *new* migration if a view
+   disagrees. **`vehicle` is load-bearing**: step 2 of the chain caps cars at the car limit and
+   nothing else identifies them.
+3. **`car_limit` exists**, though the task's field list omitted it. Step 2 needs it. It is per-asset,
+   not global, because the applicable limit is the one in force for the FY the car was first used — a
+   2019 car and a 2026 car are capped differently forever.
+4. **`depreciation_locks` has NO UNIQUE on `fy_label`.** A re-lodgement is an amendment and the log
+   should keep it. **Every reader must take the latest row per FY** (`ORDER BY locked_at DESC
+   LIMIT 1`) rather than assuming one exists.
+
+`iawo_threshold` is **nullable with no default** on purpose: the design refuses to hardcode an ATO
+figure that moves with the budget, so NULL means "not confirmed" and the screen shows the current
+figure as a placeholder. A `0` default would be worse than NULL — every one-off expense exceeds 0, so
+the double-count hint would fire on all of them and get trained away.
+
+### A finding the Capacity screen must respect
+
+The seeds give **1,776** annual hours. A legacy row saying 20 hrs/week annualises to **960**. So
+accepting the seeded defaults unexamined could nearly *halve* that user's overhead rate — or raise it
+sharply, depending on what their legacy figure was. The before/after annual-hours confirm that
+`TASKS.md` already asks for on that screen's save is a genuine guard, and a test in `test-db.js`
+pins the gap so nobody drops it as cosmetic.
 
 ## Resolved decisions (Lachlan, 2026-09-27 — do not re-litigate)
 

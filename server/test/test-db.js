@@ -22,8 +22,9 @@ test('creates a fresh database with every table the app needs', () => {
   ).all().map((r) => r.name);
 
   for (const expected of
-    ['account', 'clients', 'estimates', 'goals', 'overhead_items', 'overhead_snapshots',
-      'pricing', 'schema_version', 'sessions', 'settings']) {
+    ['account', 'clients', 'depreciation_assets', 'depreciation_locks', 'estimates', 'goals',
+      'overhead_items', 'overhead_snapshots', 'pricing', 'schema_version', 'sessions',
+      'settings']) {
     assert.ok(tables.includes(expected), `missing table: ${expected}`);
   }
 
@@ -223,4 +224,179 @@ test('a fresh database has no goals row until the app writes one', () => {
   assert.equal(row, undefined, 'goals must start empty, like pricing/settings, not pre-seeded');
 
   db.close();
+});
+
+/**
+ * MIGRATION v5 — capacity fields, depreciation assets and lodgement locks.
+ *
+ * The upgrade test is the one that matters. A goals row saved under v4 has no
+ * capacity fields, and what it gets on upgrade is a decision the migration
+ * makes on the user's behalf: the reference defaults, because leave and sick
+ * days cannot be inferred from the single weekly figure that existed before.
+ * Inventing a split would be fabrication dressed as a migration.
+ */
+function insertV4Goals(db, capacityHrsPerWeek = 20) {
+  db.prepare(`
+    INSERT INTO goals
+      (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+       created_at, updated_at)
+    VALUES (1, 80000, 25, ?, ?, ?)
+  `).run(capacityHrsPerWeek, nowIso(), nowIso());
+}
+
+test('a goals row keeps its data and gains the seeded capacity defaults', () => {
+  const file = tempDbPath('v5-goals');
+  const db = openDatabase(file);
+  insertV4Goals(db, 20);
+
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+
+  // Seeded, not derived from billable_capacity_hrs_per_week.
+  assert.equal(g.billable_hours_per_day, 8);
+  assert.equal(g.working_days_per_week, 5);
+  assert.equal(g.leave_days_per_year, 30);
+  assert.equal(g.sick_days_per_year, 8);
+
+  // Nothing that was already there moved.
+  assert.equal(g.desired_net_income, 80000);
+  assert.equal(g.target_profit_margin_pct, 25);
+  assert.equal(g.billable_capacity_hrs_per_week, 20);
+
+  db.close();
+});
+
+test('the seeded capacity defaults are NOT derived from the legacy weekly figure', () => {
+  // Two databases whose legacy capacity differs wildly still seed identically.
+  // This is the point: the seeds are a starting guess the Capacity screen asks
+  // the user to confirm, not a conversion of what they had.
+  //
+  // It also pins the size of what confirming costs. 8 × 5 with 30 + 8 days off
+  // is 1,776 annual hours; a legacy 20 hrs/week annualised at the retired 48 is
+  // 960. Accepting the seeds unexamined would nearly halve the overhead rate for
+  // that user, which is why the screen must show before/after and not just save.
+  for (const legacy of [10, 20, 37.5]) {
+    const db = openDatabase(tempDbPath(`v5-seed-${legacy}`));
+    insertV4Goals(db, legacy);
+    const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+    assert.equal(g.billable_hours_per_day, 8, `legacy ${legacy} must not change the seed`);
+    assert.equal(g.leave_days_per_year, 30);
+    assert.equal(g.billable_capacity_hrs_per_week, legacy, 'the legacy column is kept as-is');
+    db.close();
+  }
+});
+
+test('iawo_threshold starts NULL — an ATO figure is never hardcoded as a default', () => {
+  const file = tempDbPath('v5-iawo');
+  const db = openDatabase(file);
+  insertV4Goals(db);
+
+  // NULL, not 0. The threshold moves with the federal budget, so the screen
+  // offers the current figure as a placeholder to confirm. A 0 would make every
+  // one-off expense exceed the threshold and the double-count hint would fire
+  // on all of them until the user learned to ignore it.
+  assert.equal(db.prepare('SELECT iawo_threshold FROM goals WHERE id = 1').get().iawo_threshold, null);
+
+  db.close();
+});
+
+test('depreciation_assets constrains method and category, like overhead_items does', () => {
+  const file = tempDbPath('v5-assets');
+  const db = openDatabase(file);
+
+  const insert = (over) => {
+    const a = {
+      id: newId('asset'), name: 'Camera', category: 'camera',
+      purchase_date: '2025-08-01', start_date: '2025-08-15',
+      cost_inc_gst: 6600, gst_amount: 600, gst_credit_claimed: 1,
+      method: 'diminishing_value', effective_life_years: 6, business_use_pct: 100,
+      created_at: nowIso(), updated_at: nowIso(), ...over,
+    };
+    db.prepare(`
+      INSERT INTO depreciation_assets
+        (id, name, category, purchase_date, start_date, cost_inc_gst, gst_amount,
+         gst_credit_claimed, method, effective_life_years, business_use_pct, created_at, updated_at)
+      VALUES (@id, @name, @category, @purchase_date, @start_date, @cost_inc_gst, @gst_amount,
+              @gst_credit_claimed, @method, @effective_life_years, @business_use_pct,
+              @created_at, @updated_at)
+    `).run(a);
+    return a;
+  };
+
+  insert({});
+  for (const method of
+    ['prime_cost', 'instant_writeoff', 'small_business_pool', 'low_value_pool']) {
+    insert({ method });
+  }
+  for (const category of
+    ['lens', 'lighting', 'audio', 'computer', 'drone', 'vehicle', 'other']) {
+    insert({ category });
+  }
+
+  assert.throws(() => insert({ method: 'straight_line' }), /CHECK constraint failed/);
+  assert.throws(() => insert({ category: 'tripod' }), /CHECK constraint failed/);
+
+  // business_use_pct is a PERCENT, 0–100 — not a 0–1 fraction. The CHECK is the
+  // only thing standing between a 0.6 typed as "60% of business use" and a
+  // deduction 100× too small, so it is pinned here.
+  insert({ business_use_pct: 0 });
+  insert({ business_use_pct: 60 });
+  insert({ business_use_pct: 100 });
+  assert.throws(() => insert({ business_use_pct: 101 }), /CHECK constraint failed/);
+  assert.throws(() => insert({ business_use_pct: -1 }), /CHECK constraint failed/);
+
+  assert.throws(() => insert({ gst_credit_claimed: 2 }), /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('an asset defaults to held, fully business-use, and no GST credit claimed', () => {
+  const file = tempDbPath('v5-asset-defaults');
+  const db = openDatabase(file);
+
+  db.prepare(`
+    INSERT INTO depreciation_assets
+      (id, name, category, purchase_date, start_date, cost_inc_gst, method, created_at, updated_at)
+    VALUES (?, 'Mic', 'audio', '2025-07-01', '2025-07-01', 300, 'prime_cost', ?, ?)
+  `).run(newId('asset'), nowIso(), nowIso());
+
+  const a = db.prepare('SELECT * FROM depreciation_assets').get();
+
+  // A NULL disposal_date is the "still held" signal replacementReserveTotal()
+  // filters on, so it must not default to anything else.
+  assert.equal(a.disposal_date, null);
+  assert.equal(a.disposal_proceeds, null);
+  assert.equal(a.business_use_pct, 100);
+  assert.equal(a.gst_credit_claimed, 0);
+  assert.equal(a.gst_amount, 0);
+  // NULL means "starts at its cost base" rather than mid-life.
+  assert.equal(a.opening_adjustable_value, null);
+  // Vehicles only.
+  assert.equal(a.car_limit, null);
+
+  db.close();
+});
+
+test('depreciation_locks is an append-only log that keeps amendments', () => {
+  const file = tempDbPath('v5-locks');
+  const db = openDatabase(file);
+
+  const insert = db.prepare(`
+    INSERT INTO depreciation_locks (id, fy_label, locked_at, figures_json) VALUES (?, ?, ?, ?)
+  `);
+  insert.run(newId('lock'), 'FY 2025-26', '2026-07-10T00:00:00.000Z', JSON.stringify({ total: 4200 }));
+  insert.run(newId('lock'), 'FY 2025-26', '2026-09-02T00:00:00.000Z', JSON.stringify({ total: 4350 }));
+
+  // Deliberately NO unique constraint on fy_label: a re-lodgement is an
+  // amendment, and an append-only log should keep both. Readers take the latest.
+  const rows = db.prepare(
+    'SELECT figures_json FROM depreciation_locks WHERE fy_label = ? ORDER BY locked_at DESC'
+  ).all('FY 2025-26');
+  assert.equal(rows.length, 2);
+  assert.equal(JSON.parse(rows[0].figures_json).total, 4350);
+
+  db.close();
+});
+
+test('the schema knows it is at v5', () => {
+  assert.equal(LATEST_VERSION, 5);
 });
