@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-28 (Phase 6 — 20 of 23 build tasks done, then a design review)
+## State as of 2026-09-28 (Phase 6 — 21 of 23 build tasks done, then a design review)
 
 `/design-flow` sequence position:
 
@@ -80,19 +80,23 @@ service business that sells shoot days rather than units.
       - [x] **Profit Goals — capacity becomes a derived read-only figure** (frontend — Opus/high) —
             done 2026-09-27. See "What landed — Profit Goals". **Live** (Pages, pushed 2026-09-28).
       - [x] **Estimate editor — day-unit-aware floor copy** (money math — Opus/high) — done
-            2026-09-28. See "What landed — Estimate editor day-unit wording". **Committed, not
-            pushed** (web plus an identical `server/src/calc.js` copy; no NAS redeploy needed).
-      - [ ] ← **NEXT: Responsive pass** (frontend — Opus/high). Then the accessibility pass and the
-            decline curve chart; the design review after those.
+            2026-09-28. See "What landed — Estimate editor day-unit wording". **Live** (Pages,
+            2026-09-28, run 36354765653; the `server/src/calc.js` copy is unused by the server, so
+            no NAS redeploy was needed).
+      - [x] **Responsive pass** (frontend — Opus/high) — done 2026-09-28. See "What landed —
+            Responsive pass". **Committed, not pushed** (web only).
+      - [ ] ← **NEXT: Accessibility pass** (frontend — Opus/high). Then the decline curve chart;
+            the design review after those.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
 Twenty of the 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
 lock, disposal), the shared info control, the GST mirror, the post-ratio readout, the double-count
-hint, Profit Goals' read-only capacity and the estimate editor's day-unit wording. (Earlier versions
-of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design review — the count was
-wrong, not the list.) **The estimate editor task is committed but not pushed.** Profit Goals went to
-Pages on 2026-09-28. Everything before it is live, NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
+hint, Profit Goals' read-only capacity, the estimate editor's day-unit wording and the responsive
+pass. (Earlier versions of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design
+review — the count was wrong, not the list.) **The responsive pass is committed but not pushed.**
+Profit Goals and the estimate editor went to Pages on 2026-09-28. Everything before them is live,
+NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
 
@@ -423,6 +427,75 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-28) — Responsive pass
+
+`web/css/responsive.css`, `web/css/finance.css`, `web/css/info.css`,
+`web/js/views/finance-dashboard.js`. No server change.
+
+**Method.** A scripted audit in the browser (run by hand via `javascript_tool`, not committed) visited all
+six screens — Dashboard, Rate Card, Overhead, Overhead → Depreciation, Capacity, Profit Goals — at
+1280 / 1240 / 1100 / 1099 / 1000 / 901 / 900 / 800 / 768 / 767 / 375 / 320, and reported page-level
+horizontal overflow, content clipped by an `overflow:hidden` box, content spilling out of
+`#finance-sub`, buttons whose label wraps, and (<768) targets under 44px counting a `::after` hit
+area. Every fix below was a finding; after them, every width reports nothing but the register's
+intended scroller and three exempt inline links.
+
+### What it found and what changed
+
+- **1099–768: the rail narrows** — 152 → 120px, gap 36 → 24, item padding 14 → 10px (the widest
+  label, PROFIT GOALS, is 88px of text). That 44px was the difference at 768px between the
+  Dashboard's Full day floor figure being **clipped 8px** by its tile and fitting, and Overhead's
+  **Edit / × being clipped 3px** by `#oh-table-block`. Labels stay, per the brief.
+- **"+ Add Expense" / "+ Add Asset" / "+ Add Category" wrapped** inside their buttons at 768–800px
+  (noted by the register task). Held on one line; the prose beside them wraps instead.
+- **Depreciation tables in the tablet band:** cell padding 14 → 10px, so both schedules fit at 768
+  (they scrolled 3–47px). The register still needs ~760px and scrolls (138px at 768, 106 at 800, 0 at
+  1000+), so **its actions column is `position: sticky; right: 0`** — Edit / Dispose / × stay on
+  screen while the figures slide under them, with a faint shadow. **Stacking the register in this
+  band was considered and rejected**: eleven assets as nine-line cards at 560px, for a table that
+  fits 140px wider. Revisit only if the user dislikes the scroller.
+- **1100–1267px (desktop band): save-bar buttons wrapped** — "Save Goals" from 1240px down, "Save
+  Services" / "Reset Defaults" at 1100. The rail's shell narrows the child below its 1000px there
+  (817px at 1100), and responsive.css's no-wrap fix only started at 1099. Fixed in **`finance.css`**,
+  scoped to `.finance-shell`, at every width — inert where nothing wraps. Not a breakpoint rule, so
+  not in responsive.css; ported screens outside Finance & Price are untouched.
+- **<768: the Dashboard comparison collapses.** 21 stacked cards were 3,527px between the floors and
+  the panels (page 6,421px at 375). It now opens on the **below-floor rows only**, with a "Show all
+  N services" toggle (`aria-expanded`, `aria-controls`, toggled in place so focus stays on it;
+  "Show only the N below floor" / "Hide the services that clear their floor" when open). Page now
+  3,021px. State survives a GST redraw, resets on mount. Rows carry `dash-below` / `dash-clear`;
+  the button row is hidden ≥768 (the `min-width: 768px` block, like `#nav-menu-btn`), so the
+  desktop table is unchanged. The comparison's head also stacks on phones: title + info on one line,
+  count beneath, left-aligned (the title is a `<button>`, so its wrapped text had centred).
+- **<768: 44px targets.** Dashboard lines that carry a link grow to 46px (padding 7 → 14px) with the
+  link's hit area filling 45px of it — linked lines were 32px apart, so plain 44px areas would have
+  overlapped. Heading links (`.dash-panel-h`, the comparison title) get an invisible centred 44px
+  `::after`. The Rate Card's unit select was 22px → 44px. **Inline links in prose are deliberately
+  left** (GST note's "depreciation register", the Rate Card rate note's Overhead / Capacity, Profit
+  Goals' "Capacity screen"): WCAG 2.5.8's inline exception, and a 44px area there would cover the
+  prose lines around them. The accessibility pass may want to revisit that call.
+- **Info button hit area was 42px, not 44** — `inset: -13px` on an absolute `::after` is measured
+  from inside the 1px border, so 16 + 26. Now `-14px` in `info.css` (a base rule; invisible change).
+
+### Known and left
+
+- **At the 1100 → 1099 boundary the child gets wider** (817 → 860px) as the rail narrows. The brief
+  fixes the rail at ≥1100, so this is the cost of following it; it reads as a reflow, not a break.
+- **The Dashboard panels stack at ≤900px, not ≤899** as the brief words it — the Dashboard task put
+  the rule in responsive.css's existing `max-width: 900px` band, which the whole file uses. 1px;
+  left alone.
+- The Invoice Settings dialog was found open mid-session (not opened by any script); it was
+  cancelled without saving.
+
+### Verified (local `api-scratch` + `web`, dispatched events)
+
+The audit sweep above, with nothing left but the register scroller and the exempt inline links.
+Screenshots checked at 768 (pinned actions column while scrolled), 1000 (column invisible when the
+table fits), 375 (collapsed comparison with two rows forced below floor in the **local cache only**
+— restored afterwards, server rate card untouched at $1,120; Rate Card unit select 44px beside the
+hours field; CSV button 44px and on screen). 1280 identical to before (rail 152, child 997/1000px,
+toggle hidden, all 21 rows shown). No new console errors.
 
 ## What landed (2026-09-28) — Estimate editor day-unit wording
 
@@ -1173,8 +1246,7 @@ screen keeps its layout. It's a one-rule revert if the user prefers the literal 
   the Profit Goals task respectively.
 - **Responsive**: only the <768px fallback shipped (horizontal scrolling row, 44px targets, first
   label on the 16px gutter, scrollbar hidden, active item scrolled into view). The 1099–900 "rail
-  narrows" band is still the Responsive pass's job; at 900px today the child gets ~650px with no
-  overflow on Rate Card, Overhead or Goals.
+  narrows" band was built by the Responsive pass (2026-09-28) — 120px from 1099 down to 768.
 
 ### Verification
 

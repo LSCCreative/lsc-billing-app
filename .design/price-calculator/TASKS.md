@@ -402,7 +402,21 @@ change to it is two identical edits. A task that edits one and not the other is 
 
 ## Responsive & Polish
 
-- [ ] **Responsive pass** (frontend — Opus/high): Breakpoints `1099px`, `900px`, `767px`, all in `web/css/responsive.css` — **`app.css` is never edited for responsive work**, per its own header. ≥1100px: rail as a fixed-width left column, child view in the remainder; every ported screen must still look as it did, with only the container narrowed by the rail's width. 1099–900px: rail narrows, labels stay, Dashboard panels stay side by side. 899–768px: Dashboard panels stack, rail stays. <768px: rail reverts to the horizontal `.finance-tabs` row it replaced, horizontally scrollable, 44px touch targets, with the Overhead inner tabs as a second row below it; every table stacks via `data-label`; the schedule's widest columns collapse into the stacked card layout and the CSV button stays reachable without horizontal scrolling. Check the register and schedule at 375px specifically — they are the widest tables in the app. _Modifies: `web/css/responsive.css`. Depends on: all Core UI._
+- [x] **Responsive pass** (frontend — Opus/high): Breakpoints `1099px`, `900px`, `767px`, all in `web/css/responsive.css` — **`app.css` is never edited for responsive work**, per its own header. ≥1100px: rail as a fixed-width left column, child view in the remainder; every ported screen must still look as it did, with only the container narrowed by the rail's width. 1099–900px: rail narrows, labels stay, Dashboard panels stay side by side. 899–768px: Dashboard panels stack, rail stays. <768px: rail reverts to the horizontal `.finance-tabs` row it replaced, horizontally scrollable, 44px touch targets, with the Overhead inner tabs as a second row below it; every table stacks via `data-label`; the schedule's widest columns collapse into the stacked card layout and the CSV button stays reachable without horizontal scrolling. Check the register and schedule at 375px specifically — they are the widest tables in the app. _Modifies: `web/css/responsive.css`. Depends on: all Core UI._
+
+  **Done 2026-09-28.** Measured every Finance & Price screen (Dashboard, Rate Card, Overhead,
+  Depreciation, Capacity, Profit Goals) at 1280 / 1240 / 1100 / 1099 / 1000 / 901 / 900 / 800 /
+  768 / 767 / 375 / 320 with a scripted audit (page overflow, clipped content, content spilling its
+  column, wrapped buttons, <44px targets below 768). **Tablet band:** rail 152 → 120px, gap 36 → 24
+  (fixed a Dashboard floor figure clipped 8px and Overhead's Edit/× clipped 3px at 768); head
+  buttons held on one line; depreciation cells 14 → 10px padding (schedules now fit at 768); the
+  register still scrolls (138px at 768) but its **actions column is pinned** to the scroller's right
+  edge. **1100–1267px:** save-bar buttons were wrapping inside the rail's shell (Goals from 1240
+  down) — fixed in `finance.css`, shell-scoped. **Phone:** the Dashboard comparison opens on the
+  below-floor rows with a "Show all N services" toggle (page 6,421 → 3,021px at 375); 44px targets
+  for the Dashboard's heading and line links and the Rate Card's unit select; the info button's hit
+  area was 42px, not 44 — fixed in `info.css`. Also touched `finance-dashboard.js` (the toggle) and
+  `finance-dashboard`-scoped rules. No server change. See HANDOVER.
 
 - [ ] **Accessibility pass** (frontend — Opus/high): Every info control is a button with `aria-expanded`, Tab-reachable popover, Escape to close, focus returned to the trigger — no hover-only path anywhere. Rail is `<nav>` + `aria-current="page"`, real buttons in the tab order, no roving tabindex (these are not ARIA tabs). `:focus-visible` rings from `a11y.css` on every new interactive element including rail items and info buttons. Derived figures that change while typing — annual billable hours, the floors — sit in `aria-live="polite"` regions, matching how Goals announces Target Annual Revenue. Contrast: body text ≥4.5:1 on both `--bg` and `--surface`; `--muted` is the `0.6` from `a11y.css`, not `app.css`'s `0.42`; below-floor badges use `--accent-text`, never raw `--accent` (3.71:1 — fills and rings only). Verify every step of the decline-curve ramp, not just the accent. The asset modal uses the existing trap from `settings.js` with the focusable set recomputed each Tab. Empty and unset states render an em dash plus an explanation, never `$0.00`. _Depends on: all Core UI and Interactions._
 

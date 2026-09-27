@@ -48,11 +48,13 @@
   transition: color 0.15s, border-color 0.15s;
 }
 /* 44px to a thumb without making the mark itself bigger: an invisible hit
-   area centred on the circle. */
+   area centred on the circle. -14px, not -13: an absolute child's inset is
+   measured from inside the 1px border, so the box it grows from is 16px, not
+   18 — -13 made it 42px (caught by the responsive pass, 2026-09-28). */
 .info-btn::after {
   content: '';
   position: absolute;
-  inset: -13px;
+  inset: -14px;
 }
 .info-btn:hover,
 .info-btn:focus-visible,

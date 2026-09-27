@@ -112,6 +112,14 @@ const FinanceDashboardView = (() => {
   const POST_DEFAULTS = { shoot: '4', ratio: '1' };
   let post = null;
 
+  /* Whether the comparison shows every row on a phone. Below 768px the table
+     stacks into one card per service — 21 cards and ~3,500px on the default
+     card, between the floors and every panel under them — so it opens showing
+     only the rows below their floor, the ones that need doing something about,
+     with a button for the rest. Above 768px the button is hidden and every row
+     always shows (responsive.css). Kept across a GST redraw; reset on mount. */
+  let showAllRows = false;
+
   /* FRACTION -> PERCENT for the rate field, verbatim from settings.js
      (including the snap that keeps 0.07 from rendering as 7.000000000000001). */
   const toPercent = (rate) => String(Math.round(num(rate) * 1e8) / 1e6);
@@ -266,10 +274,11 @@ const FinanceDashboardView = (() => {
           ? below + ' of ' + rows.length + ' below floor'
           : 'All ' + rows.length + ' clear their floor';
 
+    const clear = rows.length - below;
     const body = rows
       .map(
         (r) =>
-          '<tr' + (r.belowFloor ? ' class="dash-below"' : '') + '>' +
+          '<tr class="' + (r.belowFloor ? 'dash-below' : 'dash-clear') + '">' +
           '<td data-label="Service">' + esc(r.name || 'Untitled') + '</td>' +
           '<td class="muted-td" data-label="Section">' + esc(r.sectionLabel || '') + '</td>' +
           '<td class="right muted-td" data-label="Hours per unit">' + hrs(r.hoursPerUnit) + '</td>' +
@@ -290,15 +299,37 @@ const FinanceDashboardView = (() => {
       link('pricing', 'Rate card against its floors') + '</h2>' + compareInfo() + '</div>' +
       '<span class="est-block-sum' + (below ? ' dash-sum-below' : '') + '">' + summary + '</span></div>' +
       (rows.length
-        ? '<table class="est-table dash-table"><thead><tr><th>Service</th><th>Section</th>' +
+        ? '<table class="est-table dash-table' + (showAllRows ? ' dash-table-all' : '') +
+          '" id="dash-compare-table"><thead><tr><th>Service</th><th>Section</th>' +
           '<th class="right">Hrs / unit</th><th class="right">You charge (ex-GST)</th>' +
           '<th class="right">Floor</th><th class="right">Against floor</th></tr></thead><tbody>' +
-          body + '</tbody></table>'
+          body + '</tbody></table>' +
+          (clear
+            ? '<div class="dash-show-all-row"><button type="button" class="btn btn-ghost btn-sm dash-show-all" ' +
+              'aria-controls="dash-compare-table" aria-expanded="' + showAllRows + '" ' +
+              'data-rows="' + rows.length + '" data-below="' + below + '">' +
+              showAllLabel(rows.length, below) + '</button></div>'
+            : '')
         : '<p class="dash-empty">No labour services on the rate card yet. Add them on the ' +
           link('pricing', 'Rate Card') + '.</p>') +
       '</div>' +
       '</section>'
     );
+  }
+
+  function showAllLabel(total, below) {
+    if (!showAllRows) return 'Show all ' + total + ' services';
+    return below ? 'Show only the ' + below + ' below floor' : 'Hide the services that clear their floor';
+  }
+
+  /* In place rather than through redrawComparison(): re-rendering would drop
+     focus off the button the reader just pressed. */
+  function toggleAllRows(btn) {
+    showAllRows = !showAllRows;
+    const table = root.querySelector('#dash-compare-table');
+    if (table) table.classList.toggle('dash-table-all', showAllRows);
+    btn.setAttribute('aria-expanded', String(showAllRows));
+    btn.textContent = showAllLabel(Number(btn.dataset.rows), Number(btn.dataset.below));
   }
 
   // ── 3. The chain ──────────────────────────────────────────────────────────
@@ -768,6 +799,7 @@ const FinanceDashboardView = (() => {
     mountId += 1;
     gstSaving = false;
     post = Object.assign({}, POST_DEFAULTS);
+    showAllRows = false;
     gstSaved = gstFields(LSCData.settings());
     gstForm = Object.assign({}, gstSaved);
 
@@ -777,6 +809,8 @@ const FinanceDashboardView = (() => {
     /* Delegated: the jobs panel is rewritten when the estimates arrive, and a
        listener on each button would be lost with it. */
     root.addEventListener('click', (event) => {
+      const more = event.target.closest('.dash-show-all');
+      if (more) return toggleAllRows(more);
       const btn = event.target.closest('[data-go-tab]');
       if (!btn || !handlers.onGoTab) return;
       const inner = btn.getAttribute('data-inner');

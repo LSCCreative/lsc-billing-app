@@ -88,3 +88,21 @@
 .finance-pending-go {
   margin-top: 22px;
 }
+
+/* THE ONE THING THE RAIL STILL COSTS BETWEEN 1100 AND 1267px
+   #main grows by the rail only as far as the window allows, so from 1267px
+   down to the 1100px desktop floor the child screen is narrower than the
+   1000px it was designed at (817px at 1100). Measured in the responsive pass
+   (2026-09-28): the save bar under the Rate Card and Profit Goals — a long
+   sentence beside its buttons — squeezed the buttons until "Save Goals",
+   "Save Services" and "Reset Defaults" broke onto two lines, from 1240px down
+   for Goals. responsive.css already had this fix for the 768–1099 band; this
+   applies it inside the Finance shell at every width, where it is inert
+   wherever nothing wraps (≥1268px included). Scoped to the shell, so no screen
+   outside Finance & Price changes. */
+.finance-shell .pricing-save-bar > :last-child {
+  flex-shrink: 0;
+}
+.finance-shell .pricing-save-bar .btn {
+  white-space: nowrap;
+}

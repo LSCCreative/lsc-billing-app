@@ -91,6 +91,60 @@
   .est-header .btn {
     white-space: nowrap;
   }
+
+  /* ── Finance & Price (responsive pass, 2026-09-28) ───────────────────────
+     The rail narrows, per the brief's 1099–900 band, and stays narrow down to
+     768 (the 899–768 band keeps it). 120px holds the longest label — "PROFIT
+     GOALS", 88px of text — with 10px either side; the gap drops from 36 to 24.
+     That hands the child screen 44px back, which was the difference at 768px
+     between the Dashboard's Full day floor figure being cut 8px short (its
+     tile is overflow:hidden) and fitting, and likewise Overhead's Edit / ×
+     clipped 3px by #oh-table-block. Measured, not guessed: see HANDOVER. */
+  .finance-shell {
+    grid-template-columns: 120px minmax(0, 1fr);
+    column-gap: 24px;
+  }
+  .finance-rail .nav-link {
+    padding: 9px 10px;
+  }
+
+  /* The head-row actions — "+ Add Expense" / "+ Add Asset" beside Overhead's
+     title, "+ Add Category" in the Rate Card's catalogue bar — broke onto two
+     lines inside their buttons at 768–800px. Same failure and same fix as the
+     save bar above: the control keeps its width and the prose beside it
+     wraps. */
+  #oh-add,
+  #js-add-cat {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* The depreciation register is the one table in the area that doesn't fit
+     this band (it needs ~760px; the column is 560–830px), so it scrolls inside
+     .dep-scroll — the register task's fix for its Edit / × being clipped out
+     of reach. Scrolling alone still left them off-screen until the reader
+     scrolled to the far end, so the actions column is pinned to the right edge
+     of the scroller and the figures slide under it. Stacking the register
+     instead was measured and rejected: at 560px, eleven assets become eleven
+     nine-line cards for a table that fits once the window is ~140px wider.
+     The shadow is the only cue that something is under the column; it is
+     faint enough to read as nothing when the table happens to fit. */
+  /* And 4px off each side of every cell in the depreciation tables: across
+     eight and nine columns that is ~70px, which took the schedule from
+     scrolling by 3px at 768 to fitting, and the register from 194px of scroll
+     to 138 (three assets, scratch data). */
+  .dep-scroll .est-table th,
+  .dep-scroll .est-table td {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .dep-scroll .dep-table th:last-child,
+  .dep-scroll .dep-table td.oh-act {
+    position: sticky;
+    right: 0;
+    background: var(--bg);
+    box-shadow: -10px 0 10px -10px rgba(0, 0, 0, 0.7);
+  }
 }
 
 /* ── below ~900px ─────────────────────────────────────────────────────────── */
@@ -197,6 +251,12 @@
    across two files would hide half of it from whoever reads this one. */
 @media (min-width: 768px) {
   #nav-menu-btn {
+    display: none;
+  }
+  /* The Dashboard comparison's "Show all N services" toggle, the same kind of
+     rule: phone-only markup (finance-dashboard.js, showAllRows). Above this
+     band every row always shows, so the button has nothing to do. */
+  .dash-show-all-row {
     display: none;
   }
 }
@@ -777,6 +837,81 @@
      on the item rather than a rule under the row. */
   .oh-inner-tabs .nav-link {
     align-items: flex-end;
+  }
+
+  /* ── Finance & Price: the phone pass (responsive pass, 2026-09-28) ─────── */
+
+  /* The Dashboard comparison opens on the rows below their floor; the rest
+     wait behind "Show all N services" (finance-dashboard.js explains why).
+     (0,3,1) so it beats the stacking rule's `.est-table tr` display. */
+  .dash-table:not(.dash-table-all) tr.dash-clear {
+    display: none;
+  }
+  .dash-show-all-row {
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .dash-show-all-row .btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+  /* The comparison's head: at 343px the linked title wraps to two lines, and
+     as a <button> its text centred itself, with the "2 of 21 below floor"
+     count squeezed into a third column beside the info button. Title and info
+     button on one line, the count under them, all left-aligned. */
+  .dash-section .est-block-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .est-block-label > .dash-link {
+    text-align: left;
+  }
+
+  /* 44px touch targets for the Dashboard's links that stand on their own.
+     A line that carries a link grows to 46px (7px padding → 14px around 17px
+     of text, plus its 1px rule) and the link's hit area is 45px of it — so two
+     linked lines in a row, 32px apart before this, can't overlap each other's
+     targets. The
+     headings keep their size and get an invisible 44px area centred on them,
+     the info button's technique (info.css) — including "capacity" at the end
+     of "Shooting and post against capacity", which is a heading's link, not a
+     sentence's. Links mid-sentence (the GST note's "depreciation register",
+     the Rate Card's rate note, Profit Goals' "Capacity screen") are left as
+     they are, like every inline text link in the app: WCAG 2.5.8 exempts them,
+     and a 44px area there would cover the lines of prose above and below. */
+  .dash-line:has(.dash-link) {
+    padding: 14px 0;
+  }
+  .dash-line-label .dash-link,
+  .dash-panel-h > .dash-link:only-child,
+  .est-block-label > .dash-link {
+    position: relative;
+  }
+  .dash-line-label .dash-link::after {
+    content: '';
+    position: absolute;
+    inset: -14px 0;
+  }
+  .dash-panel-h > .dash-link:only-child::after,
+  .est-block-label > .dash-link::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+
+  /* The Rate Card's unit select ("per [hour ▾]") was built at the hint's size,
+     22px tall — the one control in its stacked card under 44px; the hours
+     field beside it already gets 44px from the rule above. */
+  .pricing-unit-sel {
+    min-height: 44px;
+    padding: 2px 8px;
+    font-size: 12px;
   }
 
   /* ── The Invoice Settings modal ──────────────────────────────────────────
