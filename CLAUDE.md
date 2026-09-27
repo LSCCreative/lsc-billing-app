@@ -6,7 +6,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
 ## Start here
 
 `.design/` holds one self-contained folder per feature track — each has its own `DESIGN_BRIEF.md`,
-`TASKS.md`, and (once any work has happened on it) `HANDOVER.md`. Two tracks exist right now:
+`TASKS.md`, and (once any work has happened on it) `HANDOVER.md`. Four tracks exist right now:
 
 1. [`.design/nas-hosted-billing/`](.design/nas-hosted-billing/) — the base website rewrite
    (Electron → GitHub Pages + NAS-hosted API/SQLite). Largely complete and **live** (Cloudflare
@@ -19,7 +19,29 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    site from (1). **Every task in its `TASKS.md` is done as of 2026-09-18**, including the design
    review ([`DESIGN_REVIEW.md`](.design/overhead-finance/DESIGN_REVIEW.md)) and, as of 2026-09-21,
    all five of its should-fix items; only four optional could-improve items remain. Read its
-   `HANDOVER.md` first.
+   `HANDOVER.md` first. **Being restructured by (4)** — it stays the authority for every Finance
+   decision (4) does not explicitly overturn, but the nav, the capacity model and the landing tab
+   are (4)'s now. Don't build new Finance work from this folder alone.
+3. [`.design/hubspot-crm-sync/`](.design/hubspot-crm-sync/) — replaces the hand-built CRM with a
+   **two-way sync against HubSpot Companies + Contacts** (decided 2026-09-22), keeping a full local
+   copy. ABN stays local-only. **Design complete (Grill Me done 2026-09-22, every open question
+   resolved in its brief); no code yet and no HubSpot credential created.** Read its `HANDOVER.md`
+   first. Build bucket: Opus, effort high.
+4. [`.design/price-calculator/`](.design/price-calculator/) — **Finance & Price**: restructures the
+   Finance area from (2) into a left-sidebar area with a read-only Dashboard showing the whole
+   cost-to-rate chain (overhead incl. gear depreciation → real working-days capacity → profit goals →
+   the hourly / half-day / full-day floors), plus an ATO depreciation register. Design complete
+   (brief, IA and tasks all written 2026-09-27). **Build in progress: 2 of 21 tasks done** — the
+   `hoursPerUnit` / `totalHours` defect fix and the capacity-model rewrite both landed 2026-09-27;
+   `calc.js` plus two call sites, nothing visible yet.
+   Read its `HANDOVER.md` first. Build bucket: Opus, effort high, and **more of it sits in the
+   money-math bucket than is usual** — its `TASKS.md` tags every task, don't re-derive.
+
+   Two things in here a fresh agent will want to argue with, both settled: **the 48-week year is
+   retired** (capacity becomes four real fields, which raises every overhead-derived rate ~8%
+   knowingly), and **Finance is renamed `Finance & Price` and restructured, not supplemented** — a
+   second area writing the same singleton `goals` row would break "one number, one truth". The full
+   list of eleven resolved decisions is in its `HANDOVER.md`.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes
 what's being built (the old `localStorage`/Electron-targeted overhead brief, the old
@@ -68,9 +90,9 @@ was a conscious call — don't re-raise it as a concern unprompted.
 
 This is a multi-session build spanning backend API work, a full UI port, and infra/deploy work —
 not a quick task, on either track. Set expectations per the *kind* of work in front of you, not
-for the whole project at once. `.design/overhead-finance/TASKS.md` already tags each of its own
-tasks with the bucket it falls into (per this same list) — check there first before re-deriving it
-for a task on that track.
+for the whole project at once. `.design/overhead-finance/TASKS.md` and
+`.design/price-calculator/TASKS.md` already tag each of their own tasks with the bucket it falls into
+(per this same list) — check there first before re-deriving it for a task on either track.
 
 - **Backend API routes, tests, config/infra changes (current phase: PDF export, backups)** —
   `Sonnet, effort: high`. Pattern-matches the existing `server/src/routes/*.js` files closely;
@@ -86,3 +108,9 @@ for a task on that track.
   bug is expensive (wrong invoice, or a security hole) rather than just annoying.
 
 If unsure which bucket a task falls into, ask rather than defaulting to the cheapest option.
+
+## Credentials for agents
+
+NAS and billing-app logins live in `.credentials.local.md` at the repo root (gitignored — this repo
+is public, so passwords must never go in tracked files). Read it when you need to sign in to the
+NAS or the live app.

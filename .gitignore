@@ -23,3 +23,6 @@ web/js/config.js
 /package.json
 /package-lock.json
 /BILLING.csv
+
+# Local agent credentials — repo is public, never commit
+.credentials.local.md
