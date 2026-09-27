@@ -110,7 +110,42 @@ change to it is two identical edits. A task that edits one and not the other is 
   user's overhead rate. The before/after on that screen's save confirm is a real guard, not a nicety
   — a test pins the gap.
 
-- [ ] **Cost of the business — `annualBusinessCost()` and the replacement reserve** (money math — Opus/high): Add `replacementReserveTotal(assets)` = Σ over **non-disposed** assets of `(replacement_cost_estimate ÷ replacement_cycle_years) × business_use_pct`, and `annualBusinessCost(items, assets)` = `annualOverheadTotal(items) + replacementReserveTotal(assets)`. Three decisions to record in the docblock, all from the IA doc: `replacement_cost_estimate` not historical cost (pricing must recover what the *next* body costs); straight-line over the user's own cycle not the ATO effective life (diminishing value would swing the day rate 30–40% for gear still in daily use); apportioned by `business_use_pct` (only the business share of a part-personal laptop is a business cost). **Leave `annualOverheadTotal()`'s name and behaviour untouched** so existing tests keep passing; screens move to `annualBusinessCost`. Also add the shared **Australian FY helper** here — `currentFinancialYear()`, `fyBounds(label)`, `fyLabel(date)` for the 1 July – 30 June year, formatted `FY 2025–26`. Nothing anywhere computes a year inline: `new Date().getFullYear()` is wrong for half the year. Tests: a disposed asset contributes nothing; a 50%-business asset contributes half; the FY helper across the 30 June / 1 July boundary in both directions. _Modifies: `server/src/calc.js` + `web/js/calc.js`. Depends on: the migration (for the asset shape)._
+- [x] **Cost of the business — `annualBusinessCost()` and the replacement reserve** (money math — Opus/high): Add `replacementReserveTotal(assets)` = Σ over **non-disposed** assets of `(replacement_cost_estimate ÷ replacement_cycle_years) × business_use_pct`, and `annualBusinessCost(items, assets)` = `annualOverheadTotal(items) + replacementReserveTotal(assets)`. Three decisions to record in the docblock, all from the IA doc: `replacement_cost_estimate` not historical cost (pricing must recover what the *next* body costs); straight-line over the user's own cycle not the ATO effective life (diminishing value would swing the day rate 30–40% for gear still in daily use); apportioned by `business_use_pct` (only the business share of a part-personal laptop is a business cost). **Leave `annualOverheadTotal()`'s name and behaviour untouched** so existing tests keep passing; screens move to `annualBusinessCost`. Also add the shared **Australian FY helper** here — `currentFinancialYear()`, `fyBounds(label)`, `fyLabel(date)` for the 1 July – 30 June year, formatted `FY 2025–26`. Nothing anywhere computes a year inline: `new Date().getFullYear()` is wrong for half the year. Tests: a disposed asset contributes nothing; a 50%-business asset contributes half; the FY helper across the 30 June / 1 July boundary in both directions. _Modifies: `server/src/calc.js` + `web/js/calc.js`. Depends on: the migration (for the asset shape)._
+
+  **Done 2026-09-27.** `replacementReserveTotal()`, `annualBusinessCost()`, and the FY helper —
+  `currentFinancialYear()`, `fyLabel()`, `fyBounds()` plus a fourth, `fyDisplay()`.
+  `annualOverheadTotal()` untouched. 125 tests pass; six mutations checked to fail.
+
+  **Three things this task needed that the spec did not cover:**
+
+  1. **Field-name casing is a live trap, now handled.** Routes map rows to camelCase for the browser,
+     but server-side callers pass **raw snake_case rows** into `calc.js` — `writeSnapshot()` in
+     `routes/overhead.js` already does. Every earlier function survived that because `cost` and
+     `frequency` are one word; `replacement_cost_estimate` is not. A raw row read camelCase-only
+     returns **0**, silently removing the reserve from the overhead rate and under-pricing every job.
+     `field(obj, camel, snake)` reads either shape, and a test pins that both agree. **The routes and
+     depreciation tasks can pass either shape** — do not add a mapping step on the assumption one is
+     required.
+  2. **`fyDisplay()` is a fourth FY function, because the label has two forms.** The IA doc specifies
+     `FY 2025–26` (en dash) for display, while the routes task uses `?fy=FY2025-26` in a URL. Those
+     are different strings and an equality check between them fails. Canonical is **`FY2025-26`** —
+     no space, plain hyphen — and that is what gets stored in `depreciation_locks.fy_label`, queried,
+     compared and put in the CSV filename. `fyDisplay()` renders the en-dash form; `fyBounds()`
+     parses either, plus `FY2025-2026` and a bare `2025-26`. A bare `2025` is **rejected**, not
+     guessed — it cannot say which FY it means. So is `FY2025-27`, which is a typo rather than a range.
+  3. **`fyLabel()` parses date-only strings textually, never through `Date`.** `new Date('2026-07-01')`
+     is UTC midnight; read back with local getters west of Greenwich that is 30 June — the **previous
+     financial year** — so an asset first used on the first day of the year files its whole decline
+     twelve months early. 30 June cannot expose this (shifted back it is still June), so the test pins
+     **1 July** across five timezones in a child process, because `Date`'s zone is fixed at startup and
+     this host is UTC+10. **The defect is invisible on the dev machine and on the NAS if its container
+     is UTC** — that test is the only thing standing between the code and a wrong tax return.
+
+  Also settled: a **disposed asset leaves the reserve immediately** but stays on its disposal FY's tax
+  schedule — the two chains are meant to disagree about a sold camera. A missing `business_use_pct`
+  reads as **100%**, matching the column DEFAULT and erring towards keeping a cost in.
+  `replacementReserveTotal` returns **0, not null**, for no assets, so it is safe to add to
+  `annualOverheadTotal` without null-checking every term.
 
 - [ ] **The ATO depreciation chain** (money math — Opus/high): Add `declineInValue(asset, fyLabel)` and `assetSchedule(asset, fyLabel)` implementing the IA doc's five-step order exactly: (1) `costBase = cost_inc_gst − (gst_credit_claimed ? gst_amount : 0)`; (2) cap at the user-entered car limit for vehicles; (3) method-specific decline, pro-rata `daysHeld ÷ 365` — `diminishing_value: base × (daysHeld ÷ 365) × (200% ÷ life)`, `prime_cost: costBase × (daysHeld ÷ 365) × (100% ÷ life)`, `instant_writeoff: costBase` in the first FY only; (4) `deductible = decline × business_use_pct`; (5) `adjustableValue −= decline` — **the full decline, not the apportioned one.** Step 4 vs 5 is the one to get right: apportioning both is the common error and it overstates the closing value of every part-personal asset for the rest of its life. Add a test that fails if someone "simplifies" them into one. `daysHeld` runs from **`start_date`**, not `purchase_date`, and ends at FY end or `disposal_date`. `÷ 365` even in a leap year, and `200%` is a named constant carrying the "assets held from 10 May 2006" date in its comment so nobody corrects it to 150%. Also `balancingAdjustment(asset)` = `(disposal_proceeds − adjustableValue) × business_use_pct`, belonging to the disposal FY. Pools are **pool-level**: `poolSchedule(assets, fyLabel)` for `small_business_pool` (15% first FY, 30% after) and `low_value_pool` (18.75%, then 37.5%) — a pooled asset contributes its cost base to a balance rather than pretending to have its own decline. Cents throughout via `round2`; no pre-rounding to whole dollars. Tests: a worked example per method with a mid-year `start_date`; a 60%-business asset checking steps 4 and 5 diverge correctly; a disposal mid-FY; a pool with two assets added in different years. _Modifies: `server/src/calc.js` + `web/js/calc.js` — or a sibling `depreciation.js` if `calc.js` is getting crowded, matching whichever keeps the decision-docblock convention intact. **The largest and second-riskiest task.** Depends on: `annualBusinessCost` (for the FY helper)._
 

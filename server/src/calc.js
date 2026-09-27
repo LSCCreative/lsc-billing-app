@@ -540,6 +540,252 @@ function minimumJobPrice(directJobCosts, estimatedHours, overheadRate, profitMar
   return round2(cost * (1 + margin / 100));
 }
 
+/* ── The cost of the business, and the financial year ────────────────────────
+   Added 2026-09-27 for .design/price-calculator/. Two things live here: the
+   gear replacement reserve that joins operating costs to form the real annual
+   cost of the business, and the Australian financial year helper everything
+   dated depends on. */
+
+/**
+ * Reads a field that may arrive in either of two shapes.
+ *
+ * THE TRAP THIS EXISTS FOR. Routes map database rows to camelCase for the
+ * browser (`created_at` → `createdAt`, see routes/overhead.js's loadItem), but
+ * server-side callers hand raw snake_case rows straight to this file —
+ * writeSnapshot() already does exactly that with annualisedCost(). Every
+ * function above got away with it because `cost`, `frequency` and `qty` are one
+ * word in both shapes. `replacement_cost_estimate` is not.
+ *
+ * Without this, a raw row passed to replacementReserveTotal() would read every
+ * field as undefined and return 0 — the replacement reserve would silently
+ * vanish out of the overhead rate and every job would be under-priced, with no
+ * error and no zero on screen to notice. Accepting both shapes is the cheap
+ * fix; requiring callers to remember which one is the footgun.
+ */
+function field(obj, camel, snake) {
+  if (!obj) return undefined;
+  return obj[camel] !== undefined ? obj[camel] : obj[snake];
+}
+
+/** True when an asset has been sold or written off, in either field shape. */
+function isDisposed(asset) {
+  const date = field(asset, 'disposalDate', 'disposal_date');
+  return date !== null && date !== undefined && date !== '';
+}
+
+/**
+ * The business-use share of an asset, as a multiplier.
+ *
+ * business_use_pct IS STORED AS A PERCENT, 0–100 — see migration v5's comments,
+ * which chose that to match goals.target_profit_margin_pct rather than inventing
+ * a fraction column. So this divides by 100, and nothing else in the depreciation
+ * work should divide again. A fraction/percent mix-up here is a silent 100×
+ * error, which is the units trap this file's header opens with.
+ *
+ * A missing value reads as 100% — matching the column's own DEFAULT, and erring
+ * the way the rest of this file errs: towards keeping a cost in, never towards
+ * silently dropping one.
+ */
+function businessUseShare(asset) {
+  const pct = numOrNull(field(asset, 'businessUsePct', 'business_use_pct'));
+  if (pct === null || pct < 0) return 1;
+  return Math.min(pct, 100) / 100;
+}
+
+/**
+ * What the business should be setting aside each year to replace its gear.
+ *
+ *   Σ over assets still held: (replacementCostEstimate ÷ replacementCycleYears)
+ *                             × businessUseShare
+ *
+ * Three decisions, none of them derivable from the arithmetic, all from the IA
+ * doc:
+ *
+ *   1. REPLACEMENT COST, NOT HISTORICAL COST. Pricing has to recover what the
+ *      NEXT body costs, not what the last one did. This is the single reason
+ *      this function is not just the depreciation figure reused.
+ *
+ *   2. STRAIGHT-LINE OVER THE USER'S OWN CYCLE, NOT THE ATO EFFECTIVE LIFE.
+ *      Diminishing value would swing the day rate 30–40% year to year for gear
+ *      still in daily use, which is useless for setting a price. The ATO
+ *      calculation still exists — it is the separate chain feeding the
+ *      accountant's schedule — and the two numbers are meant to differ. That
+ *      difference is what the Depreciation tab's info button explains.
+ *
+ *   3. APPORTIONED BY BUSINESS USE. Only the business share of a part-personal
+ *      laptop is a business cost to recover.
+ *
+ * A DISPOSED ASSET CONTRIBUTES NOTHING, from the moment it is marked disposed.
+ * Sold gear must stop inflating overhead immediately. It stays on its disposal
+ * year's tax schedule for the balancing adjustment — that is the other chain,
+ * and the two deliberately disagree about a sold camera.
+ *
+ * @param {Array<object>} assets — depreciation_assets rows, either field shape.
+ * @returns {number} the annual reserve at cent precision; 0 for no assets. Zero
+ *   rather than null: unlike a missing overhead rate, "no gear recorded" is a
+ *   complete answer that adds nothing to the annual cost, and it must be safe to
+ *   add to annualOverheadTotal without null-checking every term.
+ */
+function replacementReserveTotal(assets) {
+  if (!Array.isArray(assets)) return 0;
+
+  let total = 0;
+  for (const asset of assets) {
+    if (isDisposed(asset)) continue;
+
+    const cost = numOrNull(field(asset, 'replacementCostEstimate', 'replacement_cost_estimate'));
+    const years = numOrNull(field(asset, 'replacementCycleYears', 'replacement_cycle_years'));
+
+    /* Both are nullable columns: an asset can be entered for tax purposes
+       without a replacement plan. Such a row contributes nothing rather than
+       being guessed at, and a cycle of zero is treated the same way instead of
+       dividing into infinity. */
+    if (cost === null || cost <= 0) continue;
+    if (years === null || years <= 0) continue;
+
+    total += (cost / years) * businessUseShare(asset);
+  }
+
+  return round2(total);
+}
+
+/**
+ * The real annual cost of running the business: what it pays out, plus what it
+ * should be putting aside to replace the gear it earns with.
+ *
+ * This is what the overhead rate should be divided from, and it replaces
+ * annualOverheadTotal() at every screen. annualOverheadTotal KEEPS ITS NAME AND
+ * BEHAVIOUR — it is still the operating-costs-only figure, it still has its own
+ * tests, and the Dashboard needs it separately anyway.
+ *
+ * THE DASHBOARD MUST ALWAYS SHOW THE TWO TERMS SPLIT, never this total alone.
+ * A camera entered as a one-off operating expense *and* as an asset is counted
+ * twice here, inflating every rate, and nothing structural prevents it. The
+ * visible Operating / Replacement-reserve split is half the mitigation (the
+ * other half is the soft prompt on large one-off expenses). Collapsing it into
+ * one figure removes the only way a doubled camera is noticeable.
+ */
+function annualBusinessCost(items, assets) {
+  return round2(annualOverheadTotal(items) + replacementReserveTotal(assets));
+}
+
+/* ── The Australian financial year ───────────────────────────────────────────
+   1 July – 30 June. Every dated figure in the depreciation work is bucketed by
+   it, so it is one helper and nothing computes a year inline: reaching for
+   new Date().getFullYear() is wrong for half the year, by up to twelve months.
+
+   TWO STRING FORMS, ON PURPOSE. The canonical form is `FY2025-26` — no space,
+   plain hyphen — and that is what is stored in depreciation_locks.fy_label,
+   passed as the ?fy= query parameter and put in the CSV filename, because it is
+   URL-safe and compares as a plain string. `FY 2025–26`, with the en dash the
+   IA doc specifies, is for DISPLAY ONLY, via fyDisplay(). Keeping one canonical
+   token and rendering the other is what stops an en dash from a copied label
+   failing an equality check against a stored one. fyBounds() parses either,
+   being the boundary where untrusted input arrives. */
+
+/** Australian FY starts 1 July. Month index 6 = July. */
+const FY_START_MONTH_INDEX = 6;
+
+/**
+ * The calendar year an FY starts in, for a date.
+ *
+ * TIMEZONES ARE THE TRAP HERE, NOT THE ARITHMETIC. A 'YYYY-MM-DD' column value
+ * is parsed TEXTUALLY, never through Date: `new Date('2026-06-30')` is UTC
+ * midnight, and read back with local getters west of Greenwich that is 29 June —
+ * which lands the asset in the wrong financial year and moves a deduction
+ * between tax returns. A real Date is read with its LOCAL fields, because a
+ * Date means "now" and the user's today is their local calendar day.
+ */
+function fyStartYear(date) {
+  if (typeof date === 'string') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date.trim());
+    if (!m) return null;
+    const year = Number(m[1]);
+    const monthIndex = Number(m[2]) - 1;
+    if (monthIndex < 0 || monthIndex > 11) return null;
+    return monthIndex >= FY_START_MONTH_INDEX ? year : year - 1;
+  }
+
+  const d = date instanceof Date ? date : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return d.getMonth() >= FY_START_MONTH_INDEX ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+/** `FY2025-26` from the calendar year the FY starts in. */
+function fyTokenFor(startYear) {
+  const endShort = String((startYear + 1) % 100).padStart(2, '0');
+  return `FY${startYear}-${endShort}`;
+}
+
+/**
+ * The canonical FY token for a date: a 'YYYY-MM-DD' string or a Date.
+ * @returns {string|null} e.g. 'FY2025-26', or null for an unparseable date.
+ */
+function fyLabel(date) {
+  const startYear = fyStartYear(date);
+  return startYear === null ? null : fyTokenFor(startYear);
+}
+
+/**
+ * The FY containing a moment — today, unless one is passed.
+ * @param {Date|string} [now] — injectable so tests can pin the boundary rather
+ *   than being unrunnable in June.
+ */
+function currentFinancialYear(now) {
+  return fyLabel(now === undefined ? new Date() : now);
+}
+
+/**
+ * The inclusive date range of an FY, as 'YYYY-MM-DD' strings.
+ *
+ * Strings rather than Dates so callers compare against date columns directly —
+ * 'YYYY-MM-DD' sorts and compares correctly as text, which sidesteps the
+ * timezone question entirely.
+ *
+ * Tolerant of every form the label appears in, because this is where a query
+ * parameter or a stored value arrives: 'FY2025-26', 'FY 2025–26' (en dash),
+ * 'FY2025-2026' and a bare '2025-26' all resolve. A four-digit year on its own
+ * is rejected — '2025' cannot say whether it means FY2024-25 or FY2025-26, and
+ * guessing would put a deduction in the wrong return.
+ *
+ * @returns {{start:string, end:string, startYear:number, label:string}|null}
+ */
+function fyBounds(label) {
+  if (typeof label !== 'string') return null;
+
+  const m = /^\s*(?:FY)?\s*(\d{4})\s*[-–—]\s*(\d{2}|\d{4})\s*$/i.exec(label);
+  if (!m) return null;
+
+  const startYear = Number(m[1]);
+  const endGiven = m[2];
+  const expectedEnd = startYear + 1;
+
+  /* The second half must actually be the following year. A label saying
+     'FY2025-27' is a typo, not a two-year financial year, and silently trusting
+     the first half would file against a year the user did not name. */
+  const endYear = endGiven.length === 4
+    ? Number(endGiven)
+    : Math.floor(expectedEnd / 100) * 100 + Number(endGiven);
+  if (endYear !== expectedEnd) return null;
+
+  return {
+    start: `${startYear}-07-01`,
+    end: `${expectedEnd}-06-30`,
+    startYear,
+    label: fyTokenFor(startYear),
+  };
+}
+
+/**
+ * The display form: `FY 2025–26`, with the en dash the IA doc specifies.
+ * Rendering only — never stored, never compared, never put in a URL.
+ */
+function fyDisplay(label) {
+  const bounds = fyBounds(label);
+  if (!bounds) return null;
+  return `FY ${bounds.startYear}–${String((bounds.startYear + 1) % 100).padStart(2, '0')}`;
+}
+
 /**
  * The annual planning figure: the revenue needed to cover overhead and still
  * leave the desired net income after tax.
@@ -584,11 +830,17 @@ if (typeof module === 'object' && module.exports) {
     hoursPerUnitOf,
     annualisedCost,
     annualOverheadTotal,
+    replacementReserveTotal,
+    annualBusinessCost,
     annualBillableHours,
     annualBillableHoursFromGoals,
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,
+    currentFinancialYear,
+    fyLabel,
+    fyBounds,
+    fyDisplay,
     FREQUENCY_MULTIPLIERS,
   };
 } else {
@@ -599,11 +851,17 @@ if (typeof module === 'object' && module.exports) {
     hoursPerUnitOf,
     annualisedCost,
     annualOverheadTotal,
+    replacementReserveTotal,
+    annualBusinessCost,
     annualBillableHours,
     annualBillableHoursFromGoals,
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,
+    currentFinancialYear,
+    fyLabel,
+    fyBounds,
+    fyDisplay,
     FREQUENCY_MULTIPLIERS,
   };
 }

@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 3 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 4 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -42,12 +42,17 @@ service business that sells shoot days rather than units.
             (backend — Sonnet/high; built on Opus at the user's direction 2026-09-27) — landed as
             **schema v5**. See "What landed" below; four decisions were made inside it that the
             depreciation and routes tasks depend on.
-      - [ ] ← **NEXT: Cost of the business — `annualBusinessCost()` and the replacement reserve**
-            (money math — Opus/high). Also carries the shared **Australian FY helper**, which the
-            whole depreciation chain then builds on.
+      - [x] **Cost of the business — `annualBusinessCost()` and the replacement reserve** (money
+            math — Opus/high) — done 2026-09-27, including the shared Australian FY helper. See
+            "What landed" below; two conventions were set here that the rest of the feature depends on.
+      - [ ] ← **NEXT: The ATO depreciation chain** (money math — Opus/high). The largest and
+            second-riskiest task in the feature. The FY helper it depends on now exists. Read
+            "Accounting rules a fresh agent will get wrong" above before starting, and note
+            `business_use_pct` is a PERCENT — divide by 100, or use `businessUseShare()`, which
+            already does.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Three tasks of 21 are built: the money-model rewrite and the schema behind it. No route added, no new
+Four tasks of 21 are built: the money-model rewrite and the schema behind it. No route added, no new
 view, `server/src/defaults.js` untouched, and the only edits outside `calc.js` / `db.js` are the two
 call sites in `views/pricing.js` and `views/estimate-editor.js`. **The live site still behaves exactly
 as it did** — verified, not assumed (see "Rates have not moved yet" below). Nothing visible changes
@@ -184,6 +189,57 @@ accepting the seeded defaults unexamined could nearly *halve* that user's overhe
 sharply, depending on what their legacy figure was. The before/after annual-hours confirm that
 `TASKS.md` already asks for on that screen's save is a genuine guard, and a test in `test-db.js`
 pins the gap so nobody drops it as cosmetic.
+
+## What landed (2026-09-27) — annual business cost and the financial year
+
+`replacementReserveTotal(assets)`, `annualBusinessCost(items, assets)`, and the FY helper.
+`annualOverheadTotal()` keeps its name and behaviour; screens move to `annualBusinessCost`.
+
+### Two conventions set here that the rest of the feature must follow
+
+1. **`calc.js` accepts BOTH field shapes — `field(obj, camel, snake)`.** Routes map rows to camelCase
+   for the browser, but server-side callers hand raw snake_case rows straight in; `writeSnapshot()`
+   in `routes/overhead.js` already does exactly that. Earlier functions got away with it because
+   `cost` and `frequency` are one word in both shapes. `replacement_cost_estimate` is not, and a raw
+   row read camelCase-only returns **0** — the reserve silently vanishes from the overhead rate and
+   every job is under-priced, with nothing on screen to notice. **Pass either shape; don't add a
+   mapping step believing one is required.** Use `businessUseShare(asset)` rather than reading
+   `business_use_pct` yourself — it already divides by 100.
+2. **The FY label has a canonical form and a display form, and they are different strings.**
+   Canonical is **`FY2025-26`** (no space, plain hyphen): stored in `depreciation_locks.fy_label`,
+   passed as `?fy=`, compared, and used in the CSV filename. `fyDisplay()` renders the IA doc's
+   `FY 2025–26` with the en dash — **display only, never stored or compared**, because an en dash
+   from a copied label fails an equality check against a stored token. `fyBounds()` parses either,
+   plus `FY2025-2026` and a bare `2025-26`; it **rejects** a bare `2025` (cannot say which FY) and
+   `FY2025-27` (a typo, not a range). `fyBounds()` returns `{start, end, startYear, label}` as
+   `'YYYY-MM-DD'` strings, which compare correctly as text against the date columns.
+
+### The timezone bug this avoided, and why the test looks odd
+
+`fyLabel()` parses a date-only string **textually**. `new Date('2026-07-01')` is UTC midnight; read
+back with local getters west of Greenwich that is 30 June — the **previous financial year** — so an
+asset first used on 1 July would file its entire decline twelve months early.
+
+**30 June cannot expose this** (shifted back a day it is still June), so the guard pins **1 July**
+across five timezones, in a **child process**, because `Date`'s zone is fixed at process start and
+this host is UTC+10. Confirmed by mutation: a `Date` + local-getters implementation passes every other
+test and fails only that one. Don't delete it as over-engineering — it is the only thing in the suite
+that would catch a wrong tax return, and the defect is invisible on the dev machine and on the NAS if
+its container runs UTC.
+
+### Smaller decisions worth not re-deriving
+
+- A **disposed asset leaves the reserve immediately** (sold gear must stop inflating overhead) but
+  stays on its disposal FY's tax schedule for the balancing adjustment. The two chains disagree about
+  a sold camera on purpose.
+- A missing `business_use_pct` reads as **100%** — matching the column DEFAULT, and erring towards
+  keeping a cost in rather than silently dropping one, the same direction `hoursPerUnitOf` errs.
+- An asset with no `replacement_cost_estimate` or a zero/absent cycle **contributes nothing** rather
+  than being guessed at or dividing into infinity. Gear can legitimately be entered for tax only.
+- `replacementReserveTotal` returns **0, not null**, for no assets: unlike a missing overhead rate,
+  "no gear recorded" is a complete answer, and it must be safe to add without null-checking each term.
+- The reserve **raises** the rate, which is the point: $24k operating + a $6k body on a 3-year cycle
+  takes 13.51 → 14.64/hr at 1,776 hours.
 
 ## Resolved decisions (Lachlan, 2026-09-27 — do not re-litigate)
 

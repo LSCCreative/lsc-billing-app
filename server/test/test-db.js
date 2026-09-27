@@ -383,14 +383,16 @@ test('depreciation_locks is an append-only log that keeps amendments', () => {
   const insert = db.prepare(`
     INSERT INTO depreciation_locks (id, fy_label, locked_at, figures_json) VALUES (?, ?, ?, ?)
   `);
-  insert.run(newId('lock'), 'FY 2025-26', '2026-07-10T00:00:00.000Z', JSON.stringify({ total: 4200 }));
-  insert.run(newId('lock'), 'FY 2025-26', '2026-09-02T00:00:00.000Z', JSON.stringify({ total: 4350 }));
+  // The canonical FY token from calc.js's fyLabel() — no space, plain hyphen.
+  // The en-dash form is display only and must never reach a stored value.
+  insert.run(newId('lock'), 'FY2025-26', '2026-07-10T00:00:00.000Z', JSON.stringify({ total: 4200 }));
+  insert.run(newId('lock'), 'FY2025-26', '2026-09-02T00:00:00.000Z', JSON.stringify({ total: 4350 }));
 
   // Deliberately NO unique constraint on fy_label: a re-lodgement is an
   // amendment, and an append-only log should keep both. Readers take the latest.
   const rows = db.prepare(
     'SELECT figures_json FROM depreciation_locks WHERE fy_label = ? ORDER BY locked_at DESC'
-  ).all('FY 2025-26');
+  ).all('FY2025-26');
   assert.equal(rows.length, 2);
   assert.equal(JSON.parse(rows[0].figures_json).total, 4350);
 

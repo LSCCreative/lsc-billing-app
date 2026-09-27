@@ -17,6 +17,12 @@ const {
   hoursPerUnitOf,
   annualBillableHours,
   annualBillableHoursFromGoals,
+  replacementReserveTotal,
+  annualBusinessCost,
+  currentFinancialYear,
+  fyLabel,
+  fyBounds,
+  fyDisplay,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
 
@@ -710,4 +716,223 @@ test('web/js/calc.js is a byte-identical copy of the server money model', () => 
     'server/src/calc.js and web/js/calc.js have drifted. Re-copy the server ' +
       'file over the web one: cp server/src/calc.js web/js/calc.js'
   );
+});
+
+/**
+ * THE COST OF THE BUSINESS
+ *
+ * annualBusinessCost = operating costs + the gear replacement reserve. The
+ * reserve is straight-line over the user's OWN replacement cycle against the
+ * REPLACEMENT cost, apportioned by business use — deliberately not the ATO
+ * depreciation figure, which exists separately for the accountant and is meant
+ * to disagree.
+ */
+const CAMERA = {
+  name: 'A7S III',
+  replacement_cost_estimate: 6000,
+  replacement_cycle_years: 3,
+  business_use_pct: 100,
+};
+
+test('the replacement reserve is replacement cost over the user’s own cycle', () => {
+  // $6,000 body replaced every 3 years = $2,000 a year to put aside.
+  assert.equal(replacementReserveTotal([CAMERA]), 2000);
+});
+
+test('a part-business asset contributes only its business share', () => {
+  // business_use_pct is a PERCENT (50 means 50%), matching migration v5 and
+  // goals.target_profit_margin_pct. A 0.5 here would mean half of one percent.
+  assert.equal(replacementReserveTotal([{ ...CAMERA, business_use_pct: 50 }]), 1000);
+  assert.equal(replacementReserveTotal([{ ...CAMERA, business_use_pct: 0.5 }]), 10);
+  assert.equal(replacementReserveTotal([{ ...CAMERA, business_use_pct: 0 }]), 0);
+
+  // Missing reads as 100%, matching the column DEFAULT and erring towards
+  // keeping a cost in rather than silently dropping one.
+  const { business_use_pct, ...noPct } = CAMERA;
+  assert.equal(replacementReserveTotal([noPct]), 2000);
+});
+
+test('a disposed asset stops inflating overhead immediately', () => {
+  // Sold gear leaves the reserve the moment it is marked disposed. It stays on
+  // its disposal year's TAX schedule for the balancing adjustment — a different
+  // chain, and the two are meant to disagree about a sold camera.
+  assert.equal(replacementReserveTotal([{ ...CAMERA, disposal_date: '2026-03-01' }]), 0);
+  assert.equal(replacementReserveTotal([{ ...CAMERA, disposalDate: '2026-03-01' }]), 0);
+
+  // Still held: every "no disposal" shape the row can arrive in.
+  for (const held of [null, undefined, '']) {
+    assert.equal(replacementReserveTotal([{ ...CAMERA, disposal_date: held }]), 2000);
+  }
+});
+
+test('an asset with no replacement plan contributes nothing, and never Infinity', () => {
+  // Both columns are nullable: gear can be entered for tax purposes only.
+  assert.equal(replacementReserveTotal([{ ...CAMERA, replacement_cost_estimate: null }]), 0);
+  assert.equal(replacementReserveTotal([{ ...CAMERA, replacement_cycle_years: null }]), 0);
+  // A zero cycle must not divide into infinity.
+  assert.equal(replacementReserveTotal([{ ...CAMERA, replacement_cycle_years: 0 }]), 0);
+  assert.equal(replacementReserveTotal([{ ...CAMERA, replacement_cycle_years: -2 }]), 0);
+  assert.equal(replacementReserveTotal([]), 0);
+  assert.equal(replacementReserveTotal(undefined), 0);
+});
+
+/**
+ * The shape trap. Routes map rows to camelCase for the browser, but server-side
+ * callers pass raw snake_case rows straight in — writeSnapshot() already does.
+ * A raw row read as camelCase-only would return 0, silently removing the reserve
+ * from the overhead rate and under-pricing every job.
+ */
+test('reserve reads snake_case rows and camelCase payloads identically', () => {
+  const snake = { replacement_cost_estimate: 9000, replacement_cycle_years: 3, business_use_pct: 60 };
+  const camel = { replacementCostEstimate: 9000, replacementCycleYears: 3, businessUsePct: 60 };
+
+  assert.equal(replacementReserveTotal([snake]), 1800);
+  assert.equal(replacementReserveTotal([camel]), 1800);
+  assert.equal(replacementReserveTotal([snake]), replacementReserveTotal([camel]));
+});
+
+test('annual business cost is operating costs plus the reserve, and stays splittable', () => {
+  assert.equal(annualOverheadTotal(OVERHEAD), 24000);
+  assert.equal(replacementReserveTotal([CAMERA]), 2000);
+  assert.equal(annualBusinessCost(OVERHEAD, [CAMERA]), 26000);
+
+  // annualOverheadTotal keeps its name and behaviour — the Dashboard needs both
+  // terms separately, because the visible Operating / Replacement split is the
+  // only way a double-counted camera is noticeable.
+  assert.equal(annualBusinessCost(OVERHEAD, []), annualOverheadTotal(OVERHEAD));
+  assert.equal(annualBusinessCost([], [CAMERA]), 2000);
+  assert.equal(annualBusinessCost([], []), 0);
+  assert.equal(annualBusinessCost(undefined, undefined), 0);
+});
+
+test('the reserve raises the overhead rate, which is the point of it', () => {
+  const hours = annualBillableHours(REFERENCE_CAPACITY); // 1,776
+  const without = overheadRatePerHour(annualBusinessCost(OVERHEAD, []), hours);
+  const with_ = overheadRatePerHour(annualBusinessCost(OVERHEAD, [CAMERA]), hours);
+
+  assert.equal(without, 13.51);
+  assert.equal(with_, 14.64);
+  assert.ok(with_ > without, 'gear the business has to replace must raise the floor');
+});
+
+/**
+ * THE AUSTRALIAN FINANCIAL YEAR — 1 July to 30 June.
+ *
+ * Two string forms on purpose: `FY2025-26` is canonical and is what gets stored,
+ * queried and compared; `FY 2025–26` with an en dash is display only. The tests
+ * below pin the boundary in both directions, and pin that a date-only column
+ * value is parsed textually rather than through Date — `new Date('2026-06-30')`
+ * is UTC midnight, which west of Greenwich reads back as 29 June and would file
+ * a deduction in the wrong year.
+ */
+test('the financial year turns over on 1 July, in both directions', () => {
+  assert.equal(fyLabel('2025-07-01'), 'FY2025-26'); // first day
+  assert.equal(fyLabel('2026-06-30'), 'FY2025-26'); // last day
+  assert.equal(fyLabel('2026-07-01'), 'FY2026-27'); // first day of the next
+  assert.equal(fyLabel('2026-06-29'), 'FY2025-26');
+
+  // January is in the FY that started the previous July — the case
+  // new Date().getFullYear() gets wrong for six months of every year.
+  assert.equal(fyLabel('2026-01-15'), 'FY2025-26');
+  assert.equal(fyLabel('2025-12-31'), 'FY2025-26');
+});
+
+test('a date-only string is read textually, not through a Date', () => {
+  assert.equal(fyLabel('2026-06-30'), 'FY2025-26');
+  assert.equal(fyLabel('2026-07-01'), 'FY2026-27');
+  // A full timestamp is accepted too; only the date part is read.
+  assert.equal(fyLabel('2026-07-01T00:00:00.000Z'), 'FY2026-27');
+
+  assert.equal(fyLabel('not a date'), null);
+  assert.equal(fyLabel(''), null);
+  assert.equal(fyLabel(undefined), null);
+  assert.equal(fyLabel(new Date('nonsense')), null);
+});
+
+test('currentFinancialYear takes an injectable now, so the boundary is testable', () => {
+  assert.equal(currentFinancialYear('2026-06-30'), 'FY2025-26');
+  assert.equal(currentFinancialYear('2026-07-01'), 'FY2026-27');
+
+  // The real call still works and agrees with fyLabel for the same moment.
+  const now = new Date();
+  assert.equal(currentFinancialYear(), fyLabel(now));
+  assert.match(currentFinancialYear(), /^FY\d{4}-\d{2}$/);
+});
+
+test('fyBounds gives an inclusive 1 July – 30 June range as comparable strings', () => {
+  assert.deepEqual(fyBounds('FY2025-26'), {
+    start: '2025-07-01', end: '2026-06-30', startYear: 2025, label: 'FY2025-26',
+  });
+
+  // The boundary dates belong to the year the bounds describe.
+  assert.equal(fyLabel(fyBounds('FY2025-26').start), 'FY2025-26');
+  assert.equal(fyLabel(fyBounds('FY2025-26').end), 'FY2025-26');
+});
+
+test('fyBounds parses every form the label arrives in, and rejects the ambiguous ones', () => {
+  const expected = fyBounds('FY2025-26');
+  for (const form of ['FY2025-26', 'FY 2025-26', 'FY 2025–26', 'FY2025–26', 'FY2025-2026', '2025-26', 'fy2025-26']) {
+    assert.deepEqual(fyBounds(form), expected, `should parse: ${form}`);
+  }
+
+  // A bare year cannot say which FY it means, so it is refused rather than
+  // guessed — a guess here files a deduction against a year nobody named.
+  assert.equal(fyBounds('2025'), null);
+  assert.equal(fyBounds('FY2025'), null);
+  // A second half that is not the following year is a typo, not a range.
+  assert.equal(fyBounds('FY2025-27'), null);
+  assert.equal(fyBounds('FY2025-2027'), null);
+  assert.equal(fyBounds(''), null);
+  assert.equal(fyBounds(undefined), null);
+
+  // The century rolls over correctly rather than producing FY2099-100.
+  assert.equal(fyBounds('FY2099-00').end, '2100-06-30');
+  assert.equal(fyLabel('2099-08-01'), 'FY2099-00');
+});
+
+test('the en dash is display only and never the stored form', () => {
+  assert.equal(fyDisplay('FY2025-26'), 'FY 2025–26');
+  // Round-trips: a displayed label still parses back to the canonical token.
+  assert.equal(fyBounds(fyDisplay('FY2025-26')).label, 'FY2025-26');
+  // The canonical token itself carries no en dash and no space, so it is safe in
+  // a URL, a filename and a string equality check.
+  assert.ok(!currentFinancialYear().includes('–'));
+  assert.ok(!currentFinancialYear().includes(' '));
+  assert.equal(fyDisplay('garbage'), null);
+});
+
+/**
+ * The timezone guard, run in a child process because Date's zone is fixed at
+ * startup and this host is UTC+10.
+ *
+ * '2026-07-01' is the case that actually breaks. `new Date('2026-07-01')` is UTC
+ * midnight; read back with local getters anywhere west of Greenwich that is
+ * 30 June, which is the PREVIOUS financial year — so an asset first used on the
+ * first day of the year would have its whole decline filed twelve months early.
+ * 30 June cannot show the bug (shifted back it is still June), which is why this
+ * pins 1 July specifically.
+ *
+ * Verified failing: with local getters this returns FY2025-26 under
+ * America/Los_Angeles and Pacific/Midway, and the correct FY2026-27 under
+ * Australia/Sydney and UTC — i.e. the defect is invisible on the machine this
+ * was written on and on the NAS if its container happens to be UTC.
+ */
+test('the FY boundary does not move with the host timezone', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    const c = require(${JSON.stringify(join(__dirname, '..', 'src', 'calc.js'))});
+    process.stdout.write([
+      c.fyLabel('2026-07-01'),
+      c.fyLabel('2026-06-30'),
+      c.currentFinancialYear('2026-07-01'),
+    ].join(','));
+  `;
+
+  for (const tz of ['UTC', 'Australia/Sydney', 'America/Los_Angeles', 'Pacific/Midway', 'Pacific/Kiritimati']) {
+    const out = execFileSync(process.execPath, ['-e', script], {
+      env: { ...process.env, TZ: tz },
+      encoding: 'utf8',
+    });
+    assert.equal(out, 'FY2026-27,FY2025-26,FY2026-27', `FY boundary moved under TZ=${tz}`);
+  }
 });
