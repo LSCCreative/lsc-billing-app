@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 16 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 17 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -72,16 +72,18 @@ service business that sells shoot days rather than units.
       - [x] **GST mirror block** (money math — Opus/high) — done 2026-09-27. See "What landed — GST
             mirror". **Live** (Pages, pushed 2026-09-27 ~21:15 AEST; web only, no server change).
       - [x] **Post-ratio readout** (frontend — Opus/high) — done 2026-09-27. See "What landed —
-            Post-ratio readout". **Committed, not pushed** (Pages only — see its deploy note).
-      - [ ] ← **NEXT: Double-count guard on large one-off expenses** (frontend — Opus/high). The
-            non-blocking "this looks like a capital asset" hint in the Operating Costs add form,
-            keyed on `goals.iawoThreshold` (owned by the Depreciation tab's threshold control).
+            Post-ratio readout". **Live** (Pages, 2026-09-27, run 36315790751).
+      - [x] **Double-count guard on large one-off expenses** (frontend — Opus/high) — done
+            2026-09-27. See "What landed — Double-count hint". **Committed, not pushed** (web only).
+      - [ ] ← **NEXT: Disposal flow** (money math — Opus/high). A `Dispose` action per register row;
+            the asset leaves the replacement reserve at once but stays on the disposal FY's schedule
+            with its balancing adjustment.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Sixteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
+Seventeen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
-lock), the shared info control, the GST mirror and the post-ratio readout. **The post-ratio readout
-is committed but not pushed.** Everything before it is live — the info control and the GST mirror went to
+lock), the shared info control, the GST mirror, the post-ratio readout and the double-count hint.
+**The double-count hint is committed but not pushed** (web only). Everything before it is live — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
 
@@ -412,6 +414,46 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Double-count hint
+
+In the **Add Expense** modal (`web/js/views/overhead.js`): when Frequency is **One-off** and Cost is
+**above** `goals.iawoThreshold`, a hint appears under the cost field — *"This looks like a capital
+asset — track it in Depreciation instead?"* — saying why (counted once there as a replacement
+reserve; entered here too, it's counted twice and every rate rises) and that it's only a hint. Two
+buttons: **Track it in Depreciation** and **Dismiss**. Styled as a hint (1px border, 2px accent rule
+on the left, `--muted` text), in an `aria-live="polite"` box that is always in the DOM and only
+rewritten when its content changes, so it's announced once, not per digit. `overhead.css` gained the
+styles; `depreciation.js`'s `openAdd(openedBy, prefill)` gained the optional prefill.
+
+### Decisions made here
+
+1. **Never blocks.** `problems()` doesn't know the hint exists; Save works with it showing.
+2. **No threshold, no hint.** With `iawoThreshold` null there is nothing to compare against, and the
+   threshold is deliberately never hard-coded (open seam: "ATO thresholds stay user-entered"). The
+   Depreciation tab's threshold copy already says it's used for this flag.
+3. **Strictly above** the threshold (`cost > threshold`), per the IA doc's "above". The cost is the
+   expense's GST-exclusive figure compared as entered.
+4. **Add only, not Edit.** It was offered when the expense was added; "track it in Depreciation" from
+   an edit would leave the saved expense behind — the two-records problem itself.
+5. **"Track it in Depreciation" skips the discard confirm** (choosing to move it answers that
+   question), switches Overhead to its Depreciation tab and opens **Add Asset with only the name**
+   carried over. Not the cost: the expense is GST-exclusive and the asset's cost is GST-inclusive, so
+   carrying the number would plant it on the wrong basis. The name is applied *after* the asset
+   form's unsaved baseline, so closing Add Asset without saving still asks before discarding it.
+6. **Dismiss** hides it for the rest of that modal (resets on the next open) and puts focus on Cost,
+   since the button that had focus has just gone.
+
+### Verified (local `api-scratch`, threshold $20,000, dispatched events)
+
+Monthly $25,000 → no hint; one-off $25,000 → hint; one-off exactly $20,000 → none; $20,000.01 → hint;
+Dismiss → gone, stays gone while typing, focus on Cost. Saved a one-off $25,000 with the hint showing
+→ saved (non-blocking); its Edit modal showed no hint; then deleted it (the scratch DB gained two
+overhead snapshots from that save/delete — harmless). Track it in Depreciation → no confirm, expense
+modal closed, Depreciation tab active, Add Asset open with "Sony FX6 body", cost empty, focus on
+name; Escape asked "unsaved changes to this new asset"; no asset created. Threshold nulled in the
+local cache only → no hint on a $99,999 one-off; restored → hint. 1280px and 375px (buttons 44px, no
+horizontal scroll). No console errors. No server change; the suite was not re-run for it.
 
 ## What landed (2026-09-27) — Post-ratio readout
 

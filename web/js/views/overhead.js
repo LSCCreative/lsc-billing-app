@@ -48,6 +48,28 @@
  * `handlers.inner` picks the tab on mount: 'depreciation' lands on it — the
  * Dashboard's Replacement reserve link sends exactly that through FinanceView's
  * selectTab(id, opts) — and anything else lands on Operating Costs.
+ *
+ * THE DOUBLE-COUNT HINT (2026-09-27)
+ * A camera entered here as a one-off expense AND on the Depreciation register
+ * is counted twice in annualBusinessCost(), inflating every rate, and nothing
+ * structural prevents it (IA doc §6). So the Add Expense form says so, softly:
+ * a one-off costing more than the user's instant asset write-off threshold
+ * (goals.iawoThreshold, owned by the Depreciation tab) shows "this looks like a
+ * capital asset", with a way across to Depreciation and a Dismiss.
+ *   - A HINT, NOT A RULE. Save is never blocked and problems() doesn't know it
+ *     exists — a large one-off that isn't gear (a legal bill, a rebrand) is
+ *     real, and the user is the judge.
+ *   - NO THRESHOLD, NO HINT. The threshold moves with the federal budget and is
+ *     deliberately never built in, so with none saved there is nothing to
+ *     compare against; the Depreciation tab's threshold copy says that's what
+ *     it's used for.
+ *   - ADD ONLY. Editing an existing expense doesn't show it: it was offered when
+ *     the expense was added, and "track it in Depreciation" from an edit would
+ *     leave the saved expense behind — two records, the exact problem.
+ *   - "Track it in Depreciation" discards this unsaved expense without the
+ *     usual confirm (choosing to move it IS the answer to that question),
+ *     switches to the Depreciation tab and opens Add Asset with the name carried
+ *     over — only the name, see DepreciationView.openAdd.
  */
 
 const OverheadView = (() => {
@@ -97,6 +119,7 @@ const OverheadView = (() => {
   let saving = false;
   let baseline = '';
   let opener = null; // the control that opened it, to hand focus back to
+  let hintDismissed = false; // the double-count hint, for this modal only
 
   const $ = (id) => root.querySelector('#' + id);
   const $m = (id) => overlay.querySelector('#' + id);
@@ -287,6 +310,59 @@ const OverheadView = (() => {
     }
   }
 
+  // ── The double-count hint ─────────────────────────────────────────────────
+
+  /* The saved threshold, or null when there isn't one (see the header). */
+  function writeOffThreshold() {
+    const t = LSCCalc.numOrNull(LSCData.goals().iawoThreshold);
+    return t === null || t < 0 ? null : t;
+  }
+
+  function assetHintApplies() {
+    if (!form || editingId || hintDismissed || form.frequency !== 'one_off') return false;
+    const threshold = writeOffThreshold();
+    const cost = parseFloat(form.cost);
+    return threshold !== null && Number.isFinite(cost) && cost > threshold;
+  }
+
+  function assetHintMarkup() {
+    if (!assetHintApplies()) return '';
+    return (
+      '<div class="oh-asset-hint">' +
+      '<p><strong>This looks like a capital asset — track it in Depreciation instead?</strong> It’s a one-off ' +
+      'over your ' + fmt(writeOffThreshold()) + ' write-off threshold. Gear bought outright belongs on the ' +
+      'Depreciation register, where it’s counted once, as a replacement reserve. Entered here as well, it’s ' +
+      'counted twice and every rate on your card goes up. If it isn’t gear, carry on — this is only a hint.</p>' +
+      '<div class="oh-asset-hint-actions">' +
+      '<button type="button" class="btn btn-ghost btn-xs" id="oh-to-asset">Track it in Depreciation</button>' +
+      '<button type="button" class="btn btn-ghost btn-xs" id="oh-hint-dismiss">Dismiss</button>' +
+      '</div></div>'
+    );
+  }
+
+  /* Rewritten on each cost keystroke and frequency change. Only this box: the
+     fields keep their focus and caret. */
+  function refreshAssetHint() {
+    const box = $m('oh-asset-hint');
+    if (!box) return;
+    const next = assetHintMarkup();
+    // Unchanged markup is left alone, so the live region doesn't re-announce
+    // the same hint on every digit typed.
+    if (box.innerHTML !== next) box.innerHTML = next;
+  }
+
+  /* The hint's way across. No confirmLeave: choosing to move this expense to
+     the register is the answer to "discard it?". The name goes with it. */
+  function trackAsAsset() {
+    if (saving) return; // closeModal() won't close under an in-flight save
+    const name = String(form.name || '').trim();
+    closeModal();
+    if (!onScreen()) return;
+    innerTab = 'depreciation';
+    render();
+    DepreciationView.openAdd($('oh-add'), name ? { name } : undefined);
+  }
+
   // ── The Add / Edit modal ──────────────────────────────────────────────────
 
   const snapshot = () => JSON.stringify(form);
@@ -329,6 +405,10 @@ const OverheadView = (() => {
         '<p class="oh-hint" id="oh-cost-hint">Enter the GST-exclusive amount — the app assumes you ' +
         'claim GST back on business expenses.</p></div>' +
       '</div>' +
+      /* Always in the DOM, empty until it applies, so the live region exists
+         before its first announcement — a region inserted with its text
+         already in it is often not read out. */
+      '<div id="oh-asset-hint" aria-live="polite">' + assetHintMarkup() + '</div>' +
       '<div id="oh-modal-error" role="alert"></div>' +
       '<div class="modal-actions">' +
         '<button type="button" class="btn btn-ghost btn-sm" id="oh-cancel">Cancel</button>' +
@@ -459,6 +539,7 @@ const OverheadView = (() => {
     editingId = item ? item.id : null;
     opener = openedBy || null;
     saving = false;
+    hintDismissed = false;
     form = {
       name: item ? item.name || '' : '',
       category: item ? item.category || '' : '',
@@ -480,12 +561,24 @@ const OverheadView = (() => {
     });
     $m('oh-cost').addEventListener('input', function () {
       form.cost = this.value;
+      refreshAssetHint();
     });
     $m('oh-category').addEventListener('change', function () {
       form.category = this.value;
     });
     $m('oh-frequency').addEventListener('change', function () {
       form.frequency = this.value;
+      refreshAssetHint();
+    });
+    // Delegated: the hint's buttons come and go with refreshAssetHint().
+    $m('oh-asset-hint').addEventListener('click', (event) => {
+      if (event.target.closest('#oh-to-asset')) return trackAsAsset();
+      if (event.target.closest('#oh-hint-dismiss')) {
+        hintDismissed = true;
+        refreshAssetHint();
+        // The button that had focus has just gone; the field the hint was about is next.
+        $m('oh-cost').focus();
+      }
     });
     $m('oh-cancel').addEventListener('click', dismissModal);
     $m('oh-save').addEventListener('click', saveItem);

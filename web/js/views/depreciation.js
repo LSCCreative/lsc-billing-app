@@ -1239,7 +1239,7 @@ const DepreciationView = (() => {
     refreshReserveLine();
   }
 
-  function openModal(asset, openedBy) {
+  function openModal(asset, openedBy, prefill) {
     editing = asset || null;
     opener = openedBy || null;
     saving = false;
@@ -1266,6 +1266,11 @@ const DepreciationView = (() => {
       notes: toField(a.notes),
     };
     baseline = snapshot();
+    /* A name carried over from the Operating Costs double-count hint (see
+       openAdd). Applied AFTER the baseline on purpose: it is something the
+       user typed, on the other form, so closing this one without saving must
+       still ask before throwing it away. */
+    if (!asset && prefill && prefill.name) form.name = String(prefill.name);
 
     renderModal();
     overlay.classList.add('open');
@@ -1349,9 +1354,13 @@ const DepreciationView = (() => {
     });
   }
 
-  /* Overhead's page-head "+ Add Asset" button. */
-  function openAdd(openedBy) {
-    openModal(null, openedBy);
+  /* Overhead's page-head "+ Add Asset" button — and the Operating Costs
+     double-count hint's "Track it in Depreciation", which passes the expense's
+     name as `prefill.name`. Only the name: the expense's cost was entered
+     GST-exclusive, and this form's cost is GST-inclusive, so carrying the
+     number across would plant a figure on the wrong basis. */
+  function openAdd(openedBy, prefill) {
+    openModal(null, openedBy, prefill);
   }
 
   return { mount, openAdd };

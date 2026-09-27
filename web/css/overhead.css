@@ -102,6 +102,36 @@
   color: var(--muted);
 }
 
+/* ── The double-count hint (Add Expense) ────────────────────────────────────
+   A hint, not an error: not the red error box, and not role="alert". Marked
+   the way the Dashboard marks a below-floor row — a 1px accent rule, text in
+   --text/--muted — so it reads as "look at this" rather than "this is wrong". */
+.oh-asset-hint {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+}
+.oh-asset-hint p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.oh-asset-hint strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+.oh-asset-hint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 /* ── Errors ─────────────────────────────────────────────────────────────────
    Same treatment as #pricing-error and #settings-error: inline, next to the
    work it is refusing, rather than an alert() covering the fields it names.
