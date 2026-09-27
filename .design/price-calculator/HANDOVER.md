@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 5 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 6 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -48,18 +48,27 @@ service business that sells shoot days rather than units.
       - [x] **The ATO depreciation chain** (money math — Opus/high) — done 2026-09-27 in a sibling
             `depreciation.js`. See "What landed" below; it found a live-site bug that no unit test
             could catch.
-      - [ ] ← **NEXT: Routes — capacity fields, assets, schedule, locks** (backend — Sonnet/high).
-            The last Foundation task; every function it needs now exists. **Bucket is Sonnet/high**
-            — the previous three were built on Opus at the user's direction, but this one is genuinely
-            pattern-matching `server/src/routes/*.js`.
+      - [x] **Routes — capacity fields, assets, schedule, locks** (backend — Sonnet/high) — done
+            2026-09-27. The whole Foundation group is now built. See "What landed" below for what
+            shipped and — more importantly — the live-rate consequence of shipping it.
+      - [ ] ← **NEXT: Sidebar rail + router restructure + `Finance & Price` rename** (frontend —
+            Opus/high). First Core UI task. No backend dependency — buildable against stubbed
+            Dashboard/Capacity views, per its own task entry.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Five tasks of 21 are built — the whole Foundation group except its routes. Still no route and no
-new view. No route added, no new
-view, `server/src/defaults.js` untouched, and the only edits outside `calc.js` / `db.js` are the two
-call sites in `views/pricing.js` and `views/estimate-editor.js`. **The live site still behaves exactly
-as it did** — verified, not assumed (see "Rates have not moved yet" below). Nothing visible changes
-until the Capacity screen ships.
+Six tasks of 21 are built — the entire Foundation group, including its routes. Still no new view:
+`server/src/defaults.js` is untouched, and there is still no UI for any of this. **The live site's
+UI still behaves exactly as it did** — no screen changed — but see the next paragraph before assuming
+nothing moved.
+
+**This task's deploy is the one that changes the live rate**, not the Capacity screen's. `GET
+/api/goals` now returns the four real capacity fields, already seeded 8/5/30/8 by migration v5 on
+every existing row, and the two live callers of `LSCCalc.annualBillableHoursFromGoals` —
+`views/pricing.js:665` and `views/estimate-editor.js:1100` — pick the new fields over the legacy
+bridge the moment they're present. That is resolved decision 2 ("every overhead-derived rate rises
+~8%, knowingly"), landing now rather than at Capacity-screen save time. See "What landed" below and
+the Routes task's own entry in `TASKS.md` for the full reasoning — this is not something the next
+session should try to "fix" by hiding the fields again.
 
 ## What landed (2026-09-27) — the `hoursPerUnit` fix
 
@@ -294,6 +303,69 @@ collide. **Adding a third sibling? Wrap it, and extend that test** — the unit 
 (13), divisor 366 (15), pools double-apportioned (5), pool additions at the ongoing rate (13), GST
 always subtracted (3), car limit on every category (1). Every per-method figure was hand-checked
 against the formula before the tests were written.
+
+## What landed (2026-09-27) — routes: capacity fields, assets, schedule, locks
+
+`PUT /api/goals` validates and stores the five new fields; `GET /api/goals` now returns them. New
+`server/src/routes/depreciation.js`, registered in `app.js`: full CRUD on `/api/depreciation-assets`,
+`GET /api/depreciation-schedule[.csv]?fy=FY2025-26`, and `GET/POST /api/depreciation-locks`
+(post-only, no update or delete route — a re-lodgement is a new lock row, per migration v5's decision
+4). 160 tests pass (was 156). One mutation checked to fail: dropping `writeSnapshot()` from the asset
+POST handler breaks the appended-snapshot count assertion.
+
+### The live-rate consequence — read this before touching `views/goals.js` or the Capacity screen
+
+**This route's deploy, not the Capacity screen's, is what flips the live rate to the new capacity
+model.** Before this task, `GET /api/goals` didn't expose `billableHoursPerDay` /
+`workingDaysPerWeek` / `leaveDaysPerYear` / `sickDaysPerYear`, so `LSCCalc.annualBillableHoursFromGoals`
+— called live today by `views/pricing.js:665` and `views/estimate-editor.js:1100` — always fell
+through to the legacy weekly-figure branch. Now that GET returns those four fields (seeded 8/5/30/8
+by migration v5 on every pre-existing row), `annualBillableHours()` succeeds and the bridge takes the
+NEW branch immediately, for every existing goals row, the moment this route is deployed — with no UI
+yet to show anyone the seeded defaults or let them confirm/adjust first.
+
+This is **resolved decision 2** ("the 48-week year is retired... every overhead-derived rate rises
+~8%, knowingly") taking effect now rather than at Capacity-screen save time, and it is exactly what
+the capacity-math task's bridge function was built to permit — see that task's note "after every
+goals row has the four fields", reached independently from the calc.js side. **Do not build a
+gate to delay this** (e.g. hiding the fields from GET until the Capacity screen ships) — that was
+considered and rejected: the whole point of the bridge was to let this transition happen safely
+without one, and delaying it further just moves the same one-time jump to a different commit. The
+Capacity screen task's job regarding this is what it already says: delete the transitional branch and
+`LEGACY_WEEKS_PER_YEAR`, and let the user edit away from the seeded defaults if 8/5/30/8 isn't them.
+
+### Two decisions this task made that weren't in its spec
+
+1. **`routes/overhead.js`'s `writeSnapshot()` now reads `depreciation_assets` too**, and stores
+   `annualBusinessCost(items, assets)` as `total_annual` instead of `annualOverheadTotal(items)`
+   alone. Without this, an asset-only edit (no overhead item touched) would move the true annual cost
+   — assets now contribute the replacement reserve to it — without ever moving the trend chart, since
+   only overhead-item writes used to call this function. **Exported** so
+   `routes/depreciation.js` calls the identical function rather than a second copy that could drift.
+   `by_category_json` is unchanged for existing categories and gains one more bucket,
+   `depreciation_reserve` (omitted entirely when there's no reserve, the same way an overhead category
+   with nothing in it is simply absent) — so the donut still reconciles against the new total without
+   mixing the asset category vocabulary (camera/lens/…) into the overhead one (software/other/…).
+2. **The CSV export includes pool rows, not just individual assets**, though the IA doc's "one row
+   per asset" wording only names the common case. Omitting pools would silently drop every
+   small-business-pool or low-value-pool deduction from the accountant's file. **A locked FY's CSV and
+   its JSON schedule both read the FROZEN `figures_json` from the lock**, not a live recompute —
+   matching "editing effective life in 2027 must not rewrite what was filed in 2026" — while
+   `category`/`method` columns are still read live from `depreciation_assets`, since those are
+   descriptive fields, not frozen figures, and an asset's category doesn't change retroactively.
+
+### resolveCapacityField — why PUT /api/goals doesn't just overwrite with 0
+
+`views/goals.js` is still live and still only sends `desiredNetIncome` / `targetProfitMarginPct` /
+`billableCapacityHrsPerWeek` — it has no idea the five new fields exist yet. The route's upsert writes
+every column on every save (same shape as before), so a field the caller didn't send needs a fallback
+that isn't 0: `resolveCapacityField(body, existing, ...)` uses the caller's value when sent, otherwise
+whatever is already on the row, and only falls back to the reference defaults (8/5/30/8) for a
+first-ever INSERT with no row to fall back to. Validation runs on the RESOLVED values, not just on
+whatever the caller sent, so a bad value already sitting on a row from some earlier, looser write
+can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
+all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
+sending it now does nothing; the Profit Goals task will make that explicit on screen.
 
 ## Resolved decisions (Lachlan, 2026-09-27 — do not re-litigate)
 

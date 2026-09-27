@@ -1,7 +1,7 @@
 'use strict';
 
 const { newId, nowIso } = require('../db');
-const { annualOverheadTotal, annualisedCost } = require('../calc');
+const { annualBusinessCost, annualisedCost, replacementReserveTotal } = require('../calc');
 
 function loadItem(row) {
   return {
@@ -25,22 +25,41 @@ function loadSnapshot(row) {
 }
 
 /**
- * Appends one overhead_snapshots row from the *current* overhead_items table —
- * called at the end of every CRUD write in this file (never its own route),
- * matching the brief's "no separate recalculate step". by_category_json holds
- * the same annualised figures total_annual is the sum of, so the donut chart's
- * segments add back up to the headline number.
+ * Appends one overhead_snapshots row from the *current* overhead_items and
+ * depreciation_assets tables — called at the end of every CRUD write on
+ * either (never its own route), matching the brief's "no separate recalculate
+ * step". Exported so routes/depreciation.js can call the same function rather
+ * than reimplementing it: two definitions of "the annual total" drifting apart
+ * is exactly the bug this guards against.
+ *
+ * total_annual is annualBusinessCost — operating costs plus the gear
+ * replacement reserve — not annualOverheadTotal alone, because
+ * .design/price-calculator/ moved every screen to annualBusinessCost and an
+ * asset-only edit (no overhead_items touched) must still move the trend line.
+ * A change that only bumped total_annual on overhead-item writes would leave
+ * the chart lying the moment someone edits gear instead.
+ *
+ * by_category_json keeps its old per-overhead-category totals so it still adds
+ * up to annualOverheadTotal, plus one more bucket — `depreciation_reserve` —
+ * so the whole thing still reconciles against the new total_annual. Left out
+ * entirely when there's no reserve, the same way an overhead category with no
+ * items in it is simply absent rather than present at zero.
  */
 function writeSnapshot(db) {
   const items = db.prepare('SELECT * FROM overhead_items').all();
+  const assets = db.prepare('SELECT * FROM depreciation_assets').all();
+
   const byCategory = {};
   for (const item of items) {
     byCategory[item.category] = (byCategory[item.category] || 0) + annualisedCost(item);
   }
+  const reserve = replacementReserveTotal(assets);
+  if (reserve > 0) byCategory.depreciation_reserve = reserve;
+
   db.prepare(`
     INSERT INTO overhead_snapshots (id, ts, total_annual, by_category_json)
     VALUES (?, ?, ?, ?)
-  `).run(newId('ohs'), nowIso(), annualOverheadTotal(items), JSON.stringify(byCategory));
+  `).run(newId('ohs'), nowIso(), annualBusinessCost(items, assets), JSON.stringify(byCategory));
 }
 
 function registerOverheadRoutes(app, db) {
@@ -94,4 +113,4 @@ function registerOverheadRoutes(app, db) {
   });
 }
 
-module.exports = { registerOverheadRoutes };
+module.exports = { registerOverheadRoutes, writeSnapshot };

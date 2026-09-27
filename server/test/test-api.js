@@ -177,26 +177,262 @@ test('goals: unsaved singleton reads as nulls, then round-trips after PUT', asyn
   assert.equal(empty.goals.desiredNetIncome, null);
   assert.equal(empty.goals.targetProfitMarginPct, null);
   assert.equal(empty.goals.billableCapacityHrsPerWeek, null);
+  assert.equal(empty.goals.billableHoursPerDay, null);
+  assert.equal(empty.goals.workingDaysPerWeek, null);
+  assert.equal(empty.goals.leaveDaysPerYear, null);
+  assert.equal(empty.goals.sickDaysPerYear, null);
+  assert.equal(empty.goals.iawoThreshold, null);
 
+  // This PUT does not send the five capacity fields — the shape
+  // views/goals.js still sends today, ahead of the Capacity screen. The
+  // first-ever row falls back to the reference defaults (8/5/30/8), and
+  // billableCapacityHrsPerWeek is now SERVER-COMPUTED from them
+  // (1,776 annual hours ÷ 52 = 34.15), not the 20 this request sends —
+  // it is legacy, display-only and no longer a write target. See
+  // resolveCapacityField's docstring in routes/goals.js.
   const put = await api('/api/goals', {
     method: 'PUT',
     body: JSON.stringify({ desiredNetIncome: 80000, targetProfitMarginPct: 25, billableCapacityHrsPerWeek: 20 }),
   }).then((r) => r.json());
   assert.equal(put.goals.desiredNetIncome, 80000);
   assert.equal(put.goals.targetProfitMarginPct, 25);
-  assert.equal(put.goals.billableCapacityHrsPerWeek, 20);
+  assert.equal(put.goals.billableCapacityHrsPerWeek, 34.15);
+  assert.equal(put.goals.billableHoursPerDay, 8);
+  assert.equal(put.goals.workingDaysPerWeek, 5);
+  assert.equal(put.goals.leaveDaysPerYear, 30);
+  assert.equal(put.goals.sickDaysPerYear, 8);
+  assert.equal(put.goals.iawoThreshold, null);
   assert.ok(put.updatedAt);
 
   const get = await api('/api/goals').then((r) => r.json());
   assert.equal(get.goals.desiredNetIncome, 80000);
   assert.equal(get.updatedAt, put.updatedAt);
 
-  // A second PUT updates in place — still the same singleton row.
+  // A second PUT in the same old shape updates in place — still the same
+  // singleton row — and must NOT reset the capacity fields to 0: they fall
+  // back to what is already stored, not to the reference defaults again.
   const put2 = await api('/api/goals', {
     method: 'PUT',
     body: JSON.stringify({ desiredNetIncome: 90000, targetProfitMarginPct: 25, billableCapacityHrsPerWeek: 20 }),
   }).then((r) => r.json());
   assert.equal(put2.goals.desiredNetIncome, 90000);
+  assert.equal(put2.goals.billableHoursPerDay, 8);
+  assert.equal(put2.goals.workingDaysPerWeek, 5);
+  assert.equal(put2.goals.billableCapacityHrsPerWeek, 34.15);
+});
+
+test('goals: the five capacity fields are settable, validated, and recompute the legacy figure', async () => {
+  const put = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({
+      desiredNetIncome: 80000,
+      targetProfitMarginPct: 25,
+      billableHoursPerDay: 6,
+      workingDaysPerWeek: 4,
+      leaveDaysPerYear: 20,
+      sickDaysPerYear: 5,
+      iawoThreshold: 20000,
+    }),
+  }).then((r) => r.json());
+  assert.equal(put.goals.billableHoursPerDay, 6);
+  assert.equal(put.goals.workingDaysPerWeek, 4);
+  assert.equal(put.goals.leaveDaysPerYear, 20);
+  assert.equal(put.goals.sickDaysPerYear, 5);
+  assert.equal(put.goals.iawoThreshold, 20000);
+  // (4 × 52 − 20 − 5) × 6 = 1,098 annual hours ÷ 52 = 21.12
+  assert.equal(put.goals.billableCapacityHrsPerWeek, 21.12);
+
+  // A later PUT that omits iawoThreshold keeps it, but explicit null clears it.
+  const kept = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ workingDaysPerWeek: 4, leaveDaysPerYear: 20, sickDaysPerYear: 5 }),
+  }).then((r) => r.json());
+  assert.equal(kept.goals.iawoThreshold, 20000);
+  const cleared = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ iawoThreshold: null }),
+  }).then((r) => r.json());
+  assert.equal(cleared.goals.iawoThreshold, null);
+
+  const outOfRangeDays = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ workingDaysPerWeek: 8 }),
+  });
+  assert.equal(outOfRangeDays.status, 400);
+
+  const outOfRangeHours = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ billableHoursPerDay: 25 }),
+  });
+  assert.equal(outOfRangeHours.status, 400);
+
+  const negativeLeave = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ leaveDaysPerYear: -1 }),
+  });
+  assert.equal(negativeLeave.status, 400);
+
+  // Same '>=' guard as annualBillableHours: leave + sick consuming the whole
+  // working year is rejected, not silently stored as a zero-hour capacity.
+  const noCapacityLeft = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ workingDaysPerWeek: 4, leaveDaysPerYear: 104, sickDaysPerYear: 104 }),
+  });
+  assert.equal(noCapacityLeft.status, 400);
+  assert.equal((await noCapacityLeft.json()).error, 'leave_and_sick_exceed_working_year');
+});
+
+function depreciationAssetPayload(overrides = {}) {
+  return {
+    name: 'Camera Body',
+    category: 'camera',
+    serialNumber: 'SN1',
+    supplier: 'Acme',
+    purchaseDate: '2024-07-01',
+    startDate: '2024-07-01',
+    costIncGst: 1100,
+    gstAmount: 100,
+    gstCreditClaimed: true,
+    method: 'prime_cost',
+    effectiveLifeYears: 5,
+    businessUsePct: 100,
+    replacementCycleYears: 3,
+    replacementCostEstimate: 3000,
+    ...overrides,
+  };
+}
+
+test('depreciation assets: create, list, update, delete — each write appends an overhead snapshot', async () => {
+  const before = await api('/api/overhead-snapshots').then((r) => r.json());
+  const snapshotsBefore = before.snapshots.length;
+
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload()),
+  }).then((r) => r.json());
+  assert.equal(created.asset.name, 'Camera Body');
+  assert.equal(created.asset.costIncGst, 1100);
+  assert.equal(created.asset.gstCreditClaimed, true);
+
+  const list = await api('/api/depreciation-assets').then((r) => r.json());
+  assert.ok(list.assets.some((a) => a.id === created.asset.id));
+
+  const updated = await api(`/api/depreciation-assets/${created.asset.id}`, {
+    method: 'PUT',
+    body: JSON.stringify(depreciationAssetPayload({ name: 'Camera Body Mk2' })),
+  }).then((r) => r.json());
+  assert.equal(updated.asset.name, 'Camera Body Mk2');
+
+  // Every write above (1 create + 1 update) must have appended a snapshot,
+  // exactly like the overhead-items CRUD above — see writeSnapshot's docblock
+  // in routes/overhead.js.
+  const afterWrites = await api('/api/overhead-snapshots').then((r) => r.json());
+  assert.equal(afterWrites.snapshots.length, snapshotsBefore + 2);
+  // Straight-line reserve: (3000 ÷ 3) × 100% = 1000/yr, apportioned into the
+  // depreciation_reserve bucket so the donut still reconciles against total.
+  const latest = afterWrites.snapshots[afterWrites.snapshots.length - 1];
+  assert.equal(latest.byCategory.depreciation_reserve, 1000);
+
+  const del = await api(`/api/depreciation-assets/${created.asset.id}`, { method: 'DELETE' });
+  assert.equal(del.status, 200);
+  const afterDelete = await api('/api/overhead-snapshots').then((r) => r.json());
+  assert.equal(afterDelete.snapshots.length, snapshotsBefore + 3);
+  assert.equal(
+    afterDelete.snapshots[afterDelete.snapshots.length - 1].byCategory.depreciation_reserve,
+    undefined
+  );
+
+  const missing = await api(`/api/depreciation-assets/${created.asset.id}`, {
+    method: 'PUT',
+    body: JSON.stringify(depreciationAssetPayload()),
+  });
+  assert.equal(missing.status, 404);
+});
+
+test('depreciation assets: an out-of-enum category or method is rejected, not silently stored', async () => {
+  const badCategory = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ category: 'not_a_category' })),
+  });
+  assert.equal(badCategory.status, 500);
+
+  const badMethod = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ method: 'not_a_method' })),
+  });
+  assert.equal(badMethod.status, 500);
+});
+
+test('depreciation schedule, CSV and lodgement lock', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ name: 'Schedule Camera' })),
+  }).then((r) => r.json());
+  const assetId = created.asset.id;
+
+  // costBase = 1100 − 100 (GST credit claimed) = 1000. prime_cost declines
+  // the FIXED COST BASE, not the opening value, so it does NOT compound:
+  // every full year is 1000 × (1/5) = 200. FY2024-25: decline 200, closing
+  // 800. FY2025-26: decline 200 again, closing 600. One asset, no pools, so
+  // the FY total is just that asset's deductible.
+  const schedule = await api('/api/depreciation-schedule?fy=FY2025-26').then((r) => r.json());
+  assert.equal(schedule.schedule.fy, 'FY2025-26');
+  assert.equal(schedule.schedule.totalDeductible, 200);
+  assert.equal(schedule.locked, false);
+  assert.equal(schedule.diverges, null);
+  const row = schedule.schedule.assets.find((r2) => r2.assetId === assetId);
+  assert.equal(row.openingAdjustableValue, 800);
+  assert.equal(row.decline, 200);
+  assert.equal(row.closingAdjustableValue, 600);
+
+  const badFy = await api('/api/depreciation-schedule?fy=2025');
+  assert.equal(badFy.status, 400);
+
+  const csvRes = await api('/api/depreciation-schedule.csv?fy=FY2025-26');
+  assert.equal(csvRes.status, 200);
+  assert.match(csvRes.headers.get('content-disposition') || '', /depreciation-schedule-FY2025-26\.csv/);
+  const csvText = await csvRes.text();
+  assert.match(csvText, /^Name,Category,Method,Days Held/);
+  assert.match(csvText, /Schedule Camera,camera,prime_cost,365,800,200,200,600/);
+
+  // Lock the FY, then change the asset in a way that moves the same FY's
+  // recompute — a schedule is computed from the asset's CURRENT definition,
+  // so effective life is retroactive across every year, not just future ones.
+  const lock = await api('/api/depreciation-locks', {
+    method: 'POST',
+    body: JSON.stringify({ fy: 'FY2025-26' }),
+  }).then((r) => r.json());
+  assert.equal(lock.lock.fyLabel, 'FY2025-26');
+  assert.equal(lock.lock.figures.totalDeductible, 200);
+
+  const badLockFy = await api('/api/depreciation-locks', {
+    method: 'POST',
+    body: JSON.stringify({ fy: 'not-a-fy' }),
+  });
+  assert.equal(badLockFy.status, 400);
+
+  await api(`/api/depreciation-assets/${assetId}`, {
+    method: 'PUT',
+    body: JSON.stringify(depreciationAssetPayload({ name: 'Schedule Camera', effectiveLifeYears: 10 })),
+  });
+
+  // Life 10 makes the fixed straight-line decline 1000 × (1/10) = 100, the
+  // same every year — diverges from the locked 200.
+  const afterEdit = await api('/api/depreciation-schedule?fy=FY2025-26').then((r) => r.json());
+  assert.equal(afterEdit.schedule.totalDeductible, 100);
+  assert.equal(afterEdit.locked, true);
+  assert.equal(afterEdit.lockedFigures.totalDeductible, 200);
+  assert.equal(afterEdit.diverges, true);
+
+  // The CSV for a locked FY must still read the FROZEN figures — editing
+  // effective life in a later session cannot rewrite what was already filed.
+  const lockedCsv = await api('/api/depreciation-schedule.csv?fy=FY2025-26').then((r) => r.text());
+  assert.match(lockedCsv, /Schedule Camera,camera,prime_cost,365,800,200,200,600/);
+
+  const locks = await api('/api/depreciation-locks').then((r) => r.json());
+  assert.ok(locks.locks.some((l) => l.id === lock.lock.id));
+
+  await api(`/api/depreciation-assets/${assetId}`, { method: 'DELETE' });
 });
 
 test('estimates: create, list, get, update, duplicate, delete — with computed totals', async () => {

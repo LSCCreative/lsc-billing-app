@@ -191,7 +191,75 @@ change to it is two identical edits. A task that edits one and not the other is 
   - An asset with **no effective life declines nothing** rather than having a life guessed for it, and
     nothing ever declines below zero.
 
-- [ ] **Routes — capacity fields, assets, schedule, locks** (backend — Sonnet/high): Extend `PUT /api/goals` to accept and validate the five new columns (`working_days_per_week` 1–7, `billable_hours_per_day` 0–24, leave and sick ≥ 0 with `leave + sick < workingDaysPerYear` rejected, `iawo_threshold` ≥ 0), and recompute `billable_capacity_hrs_per_week` as `annualBillableHours ÷ 52` on every save. New `server/src/routes/depreciation.js`: `GET/POST/PUT/DELETE /api/depreciation-assets`; `GET /api/depreciation-schedule?fy=FY2025-26` returning the computed schedule (**computed on read — never stored**, so it cannot drift from the assets); `GET /api/depreciation-schedule.csv?fy=…` for the export; `GET/POST /api/depreciation-locks` (post only, no update or delete). **Every asset write appends an `overhead_snapshots` row in the same handler**, exactly as the overhead CRUD handlers already do — assets now move the annual total, so a change that skipped the snapshot would leave the trend chart lying. Tests in `test-api.js` following the existing pattern, including the `leave + sick` rejection and a locked-FY read. _New: `server/src/routes/depreciation.js`. Modifies: `server/src/routes/goals.js`. Depends on: the migration, the depreciation chain, capacity math._
+- [x] **Routes — capacity fields, assets, schedule, locks** (backend — Sonnet/high): Extend `PUT /api/goals` to accept and validate the five new columns (`working_days_per_week` 1–7, `billable_hours_per_day` 0–24, leave and sick ≥ 0 with `leave + sick < workingDaysPerYear` rejected, `iawo_threshold` ≥ 0), and recompute `billable_capacity_hrs_per_week` as `annualBillableHours ÷ 52` on every save. New `server/src/routes/depreciation.js`: `GET/POST/PUT/DELETE /api/depreciation-assets`; `GET /api/depreciation-schedule?fy=FY2025-26` returning the computed schedule (**computed on read — never stored**, so it cannot drift from the assets); `GET /api/depreciation-schedule.csv?fy=…` for the export; `GET/POST /api/depreciation-locks` (post only, no update or delete). **Every asset write appends an `overhead_snapshots` row in the same handler**, exactly as the overhead CRUD handlers already do — assets now move the annual total, so a change that skipped the snapshot would leave the trend chart lying. Tests in `test-api.js` following the existing pattern, including the `leave + sick` rejection and a locked-FY read. _New: `server/src/routes/depreciation.js`. Modifies: `server/src/routes/goals.js`. Depends on: the migration, the depreciation chain, capacity math._
+
+  **Done 2026-09-27.** `GET/PUT /api/goals` now round-trips all five capacity
+  fields plus `iawoThreshold`, validated on the RESOLVED values (body, or
+  fallback), not just on whatever the caller happened to send. New
+  `server/src/routes/depreciation.js` registered in `app.js`: full asset CRUD,
+  `GET /api/depreciation-schedule[.csv]?fy=`, `GET/POST /api/depreciation-locks`.
+  160 tests pass (was 156); one mutation checked to fail (dropping
+  `writeSnapshot()` from the asset POST handler breaks the snapshot-count
+  assertion).
+
+  **One thing this task had to decide that the spec didn't cover, with a real
+  live-rate consequence:** `PUT /api/goals` now writes every column on every
+  save (matching the existing upsert shape), but the *current, still-live*
+  `views/goals.js` only ever sends `desiredNetIncome` / `targetProfitMarginPct`
+  / `billableCapacityHrsPerWeek` — it doesn't know the five new fields exist.
+  Naively writing `Number(body.x) || 0` for them, as the three old fields do,
+  would zero out a user's confirmed capacity the next time they change their
+  income target, and would insert zeros instead of the reference defaults on a
+  brand first-ever save. **`resolveCapacityField(body, existing, ...)` fixes
+  this**: a field the caller sent is validated and stored; a field the caller
+  omitted falls back to what's already on the row, or to the reference
+  defaults (8/5/30/8) only when there is no row yet. See its docstring in
+  `routes/goals.js`.
+
+  **The corollary, and it's deliberate, not a bug to "fix" later:** once this
+  route ships, `GET /api/goals` exposes the four real capacity fields for the
+  first time, already seeded 8/5/30/8 on every pre-existing row by migration
+  v5. The two *already-live* callers of `LSCCalc.annualBillableHoursFromGoals`
+  — `views/pricing.js:665` and `views/estimate-editor.js:1100` — will
+  therefore stop taking the bridge's legacy branch and start pricing off the
+  real capacity model **immediately upon deploying this route, before the
+  Capacity screen exists to let anyone confirm the seeded defaults.** This is
+  exactly resolved decision 2 ("every overhead-derived rate rises ~8%,
+  knowingly") and exactly what the bridge function in the capacity-math task
+  was built to allow — see that task's note "after every goals row has the
+  four fields" for the same conclusion reached from the calc.js side. Flagging
+  it here again because it is this task's deploy, specifically, that trips it.
+
+  **Two more decisions, smaller but worth not re-deriving:**
+
+  1. **`routes/overhead.js`'s `writeSnapshot()` was widened**, though this
+     task's file list didn't mention `overhead.js`. It now reads
+     `depreciation_assets` too and stores `annualBusinessCost(items, assets)`
+     as `total_annual` (was `annualOverheadTotal(items)` alone) — otherwise an
+     asset-only edit would move the true annual cost without ever moving the
+     trend chart, since only overhead-item writes used to snapshot. Exported
+     so `routes/depreciation.js` calls the exact same function rather than a
+     second copy that could drift. `by_category_json` keeps every existing
+     overhead category untouched and gains one more bucket,
+     `depreciation_reserve`, left out entirely when there's no reserve — so
+     the donut still reconciles against the new total without mixing the
+     asset category vocabulary (camera/lens/…) into the overhead one
+     (software/other/…).
+  2. **The CSV includes pool rows, not just individual assets**, though the IA
+     doc's wording ("one row per asset") only describes the common case.
+     Leaving pools out would silently drop every small-business-pool or
+     low-value-pool deduction from the accountant's export. **A locked FY's
+     CSV and JSON schedule both read the FROZEN `figures_json`**, not a fresh
+     recompute — matching "editing effective life in 2027 must not rewrite
+     what was filed in 2026" — while `category`/`method` columns still come
+     from the live `depreciation_assets` table, since those are descriptive
+     fields, not frozen figures.
+
+  **Not done, and intentionally out of this task's scope:** no route-level
+  enum/range validation on asset fields (category, method, business_use_pct)
+  beyond what the table's own `CHECK` constraints already enforce — same
+  convention as `overhead_items`, confirmed by a test that a bad category or
+  method 500s rather than being silently stored.
 
 ---
 
