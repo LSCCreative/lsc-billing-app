@@ -188,3 +188,10 @@
   letter-spacing: 0.02em;
   margin-bottom: 8px;
 }
+
+/* A block heading with its info control beside it (js/info.js), kept on one
+   baseline in the .est-block-head flex row. */
+.dash-block-title {
+  display: flex;
+  align-items: center;
+}

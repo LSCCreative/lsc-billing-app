@@ -1,0 +1,145 @@
+/* The info control — see js/info.js for the behaviour contract.
+ *
+ * THE BUTTON is the one round thing in a square-edged system, deliberately: a
+ * hairline circle holding an italic Delight "i" reads as a glyph, not as one
+ * more box competing with the .est-block and .dep-tag borders around it. At
+ * rest it is --muted (a secondary mark beside a heading, not a call to
+ * action); hover, focus and open bring it to --text with an accent ring, the
+ * same rest/active pair the rail and .dash-link use.
+ *
+ * THE POPOVER is a flat panel on --surface with the app's 1px border and, on
+ * top, the 2px accent rule the divergence block and the rail's active item
+ * already use to mean "read this". No radius, a deep soft shadow because it
+ * floats over tables, and a notch under the button so it's clear which "i"
+ * it belongs to. Caption at the .sum-label scale, body at 12px/1.65 in --text
+ * — this is prose people act on, so it isn't dimmed.
+ */
+
+.info {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 0;
+  /* Headings and captions around it are uppercase and tracked; none of that
+     should reach the popover's sentences. */
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+.info-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  padding: 0;
+  border: 1px solid var(--muted2);
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-family: 'Delight', 'Georgia', serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+/* 44px to a thumb without making the mark itself bigger: an invisible hit
+   area centred on the circle. */
+.info-btn::after {
+  content: '';
+  position: absolute;
+  inset: -13px;
+}
+.info-btn:hover,
+.info-btn:focus-visible,
+.info-btn[aria-expanded='true'] {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.info-pop {
+  position: fixed;
+  z-index: 60;
+  display: block;
+  box-sizing: border-box;
+  padding: 14px 16px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  line-height: 1.65;
+  text-align: left;
+  white-space: normal;
+  animation: info-in 0.12s ease-out;
+}
+.info-pop[hidden] {
+  display: none;
+}
+.info-pop:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The notch: a square turned 45°, carrying the panel's own border on the two
+   sides that face the button. Above the panel it sits in the accent rule;
+   when the panel is flipped above the button it moves to the bottom edge. */
+.info-pop::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: calc(var(--info-nub-x, 20px) - 5px);
+  width: 8px;
+  height: 8px;
+  background: var(--surface);
+  border-left: 2px solid var(--accent);
+  border-top: 2px solid var(--accent);
+  transform: rotate(45deg);
+}
+.info-pop.info-pop-above::before {
+  top: auto;
+  bottom: -5px;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.info-pop-t {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.info-pop-p {
+  display: block;
+  font-family: 'Funnel Sans', 'FunnelSans', sans-serif;
+  font-size: 12px;
+  color: var(--text);
+}
+.info-pop-p + .info-pop-p {
+  margin-top: 8px;
+}
+.info-pop-p strong {
+  font-weight: 600;
+}
+
+@keyframes info-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .info-pop {
+    animation: none;
+  }
+  .info-btn {
+    transition: none;
+  }
+}

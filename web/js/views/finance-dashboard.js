@@ -27,7 +27,8 @@
  *   4. target annual revenue, with per-month and per-week averages;
  *   5. jobs needed per year, beside the average job it was divided by.
  * Still to come, each its own task: the post-ratio readout (6) and the GST
- * mirror (7) go below these, and the info button beside the comparison.
+ * mirror (7) go below these. The comparison's explanation lives in its info
+ * control (js/info.js), beside the section heading, not in a note under it.
  *
  * THE HEADLINE DAY FLOORS USE CAPACITY'S FULL-DAY HOURS
  * The IA doc writes fullDayFloor = hourlyFloor × (Full Day row's hoursPerUnit).
@@ -180,6 +181,28 @@ const FinanceDashboardView = (() => {
     );
   }
 
+  /* Brief decision 7 and the "rate falls below its floor" state: the floor is
+     measured against the marked-up price because that is what recovers
+     overhead, pass-throughs are excluded, and a below-floor row is a warning
+     the user acts on at the Rate Card — this explains, it doesn't fix. */
+  function compareInfo() {
+    return LSCInfo.markup({
+      id: 'dash-compare',
+      label: 'How the floor comparison works',
+      title: 'The floor comparison',
+      paragraphs: [
+        'Each service’s floor is your hourly floor — overhead per billable hour, plus your margin — times the ' +
+          'hours one unit of it takes.',
+        'It’s measured against <strong>what the client is charged</strong>: the Mark-Up price, ex-GST. Not your ' +
+          'internal rate — the marked-up price is what actually recovers overhead.',
+        'Crew, hire, travel, flights and accommodation aren’t compared. They’re passed through at cost on top of ' +
+          'the labour, so they recover no overhead either way.',
+        'Below floor means that price doesn’t cover the business’s costs and your margin at your current capacity. ' +
+          'It’s a warning, not a rule — change it on the Rate Card if you agree.',
+      ],
+    });
+  }
+
   function comparisonMarkup(f) {
     const rows = f.rows;
     const below = rows.filter((r) => r.belowFloor).length;
@@ -209,8 +232,11 @@ const FinanceDashboardView = (() => {
     return (
       '<section class="dash-section" aria-labelledby="dash-compare-h">' +
       '<div class="est-block">' +
-      '<div class="est-block-head"><h2 class="est-block-label" id="dash-compare-h">' +
-      link('pricing', 'Rate card against its floors') + '</h2>' +
+      /* The info control sits BESIDE the <h2>, not in it: inside, its name
+         would be read as part of the heading ("Rate card against its floors
+         How the floor comparison works"). */
+      '<div class="est-block-head"><div class="dash-block-title"><h2 class="est-block-label" id="dash-compare-h">' +
+      link('pricing', 'Rate card against its floors') + '</h2>' + compareInfo() + '</div>' +
       '<span class="est-block-sum' + (below ? ' dash-sum-below' : '') + '">' + summary + '</span></div>' +
       (rows.length
         ? '<table class="est-table dash-table"><thead><tr><th>Service</th><th>Section</th>' +
@@ -220,9 +246,6 @@ const FinanceDashboardView = (() => {
         : '<p class="dash-empty">No labour services on the rate card yet. Add them on the ' +
           link('pricing', 'Rate Card') + '.</p>') +
       '</div>' +
-      '<p class="dash-note">Each service’s floor is the hourly floor times the hours one unit of it takes. ' +
-      'Compared against what the client is charged (Mark-Up), not the internal rate. ' +
-      'Travel rows aren’t listed — they’re added at cost on top of the labour.</p>' +
       '</section>'
     );
   }

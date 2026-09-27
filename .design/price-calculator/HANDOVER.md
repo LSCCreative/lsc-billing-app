@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 13 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 14 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -65,19 +65,30 @@ service business that sells shoot days rather than units.
             "What landed — Depreciation schedule". **Live** (pushed). Also fixed a live defect from
             the register task (Edit/delete clipped at 768–1099px).
       - [x] **CSV export + lodgement lock** (money math — Opus/high) — done 2026-09-27. See "What
-            landed — CSV export and lodgement lock". **Committed, not pushed — and it changes
-            `server/`, so the NAS needs a redeploy** (read that section's deploy note first).
-      - [ ] ← **NEXT: Info button + popover — shared component** (frontend — Opus/high). First of
-            the Interactions & States group. Its two instances: the Dashboard's floor comparison,
-            and the depreciation split on the Depreciation tab (the paragraph under the summary
-            card in `DepreciationView.summaryMarkup()` is the placeholder it replaces).
+            landed — CSV export and lodgement lock". **Live — NAS and Pages both deployed
+            2026-09-27 ~20:40 AEST.**
+      - [x] **Info button + popover — shared component** (frontend — Opus/high) — done 2026-09-27.
+            See "What landed — Info control". **Committed, not pushed** (no server change).
+      - [ ] ← **NEXT: GST mirror block** (money math — Opus/high). The `.tax-setting` block on the
+            Dashboard writing `settings.gst` through `/api/settings`; verify the round trip with
+            Invoice Settings both ways.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Thirteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
-Card's day rows, and the whole Depreciation tab (register, schedule, CSV, lodgement lock). **The
-CSV/lock task is committed but not pushed, and it is the first since the Capacity deploy to change
-`server/`** — pushing `main` ships the screen; the NAS needs its own redeploy for the lock to be
-offered (the screen degrades safely until then — see that section). Everything before it is live. `server/src/defaults.js` did change (seeded day rows), which only
+Fourteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
+Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement lock) and the shared
+info control. **The info control is committed but not pushed** (web only). Everything before it is
+live on both the NAS and Pages.
+
+**Deployed 2026-09-27 (~20:40 AEST), with the user's explicit go-ahead** — the CSV/lock task's
+server change. Backup `/volume4/lsc-billing/data/backups/pre-lock-20260927-2039.db`; `Dockerfile`,
+`package*.json` and `.dockerignore` diffed identical first, so the rebuild used cached layers (~1 min,
+not the 20 of the v6 deploy); `server/` copied with `COPYFILE_DISABLE=1 tar … --exclude
+node_modules --exclude ./data --exclude .env --exclude docker-compose.yml` (the NAS's tar prints
+harmless "unknown extended header keyword LIBARCHIVE.xattr…" warnings for macOS/Drive metadata);
+`docker compose up -d --build`; container `healthy`, `fy_not_ended` present in the running code,
+public `/api/depreciation-schedule` → 401. No migration. The live DB had **0 assets and 0 locks**
+at deploy time. Then `main` pushed. This deploy also put `defaults.js`' day rows live for Reset
+Defaults. Everything before it is live. `server/src/defaults.js` did change (seeded day rows), which only
 matters to **Reset Defaults** and fresh databases — redeploy the NAS whenever convenient for Reset to
 include them.
 
@@ -395,6 +406,50 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Info control
+
+A shared component: `web/js/info.js` (`LSCInfo.markup({ id, label, title, paragraphs })`) and
+`web/css/info.css`, loaded after `typeahead.js` / after `finance-dashboard.css`. Two instances:
+
+- **Dashboard → "Rate card against its floors"** — `compareInfo()` in `finance-dashboard.js`, named
+  "How the floor comparison works". It **replaces the `.dash-note` that sat under the table**; the
+  popover says the same things in full (floor = hourly floor × hours per unit; measured against the
+  Mark-Up price ex-GST, not the internal rate; crew/hire/travel/flights/accommodation excluded as
+  pass-throughs; below floor is a warning, change it on the Rate Card).
+- **Overhead → Depreciation, under the two-number card** — `splitInfo()` in `depreciation.js`, named
+  "Why the replacement reserve and the tax deduction differ". It **replaces the paragraph** that
+  explained the split; the line now reads "Two numbers from the same gear, on purpose. (i)".
+
+### The contract, and how it's met — don't regress these
+
+- **A `<button>`** with an accessible name saying what it explains, `aria-expanded` +
+  `aria-controls`. A disclosure, not a dialog: no focus trap, no backdrop.
+- **Tab-reachable:** the popover follows the button in the DOM with `tabindex="0"` (a `hidden`
+  element isn't focusable), `role="region"` labelled by its caption. Tab from the button lands in it;
+  Tab out closes it (`focusin` elsewhere).
+- **Escape** closes and returns focus to the trigger — a capture-phase listener that only stops the
+  event when a popover was open, so a modal behind it keeps its own Escape.
+- **Hover is a convenience:** real mouse only (`pointerType === 'mouse'`), 150ms in / 250ms out so
+  the pointer can cross the gap; clicking a hover-opened popover pins it; outside click closes.
+- **All spans.** The markup is phrasing content throughout so it can sit inside a heading or a
+  sentence without invalid HTML — but on the Dashboard it is placed **beside** the `<h2>`
+  (`.dash-block-title`), not in it, so the heading's accessible name stays "Rate card against its
+  floors".
+- **`position: fixed`**, placed from the button's rect on open and on every scroll/resize — because
+  `.est-block` is `overflow: hidden` and an absolute popover would be clipped. Clamped 16px inside the
+  viewport, flips above the button when there's no room below; a notch follows the button
+  (`--info-nub-x`). **A transformed ancestor would break this** — none exists in `#main`.
+- 44px hit area on an 18px mark via an inset `::after`. `z-index: 60` — above page content and the
+  typeahead (50), below the header (100) and modals.
+
+### Verified (local, 2026-09-27)
+
+Real key presses and real mouse: Tab from the button into the popover, Tab out closed it; Escape
+closed it with focus back on the trigger; hover opened it and leaving closed it; hover then click
+pinned it open past leaving; an outside click closed it. At 375px the Depreciation popover sat
+16–19px inside both edges, below its button, and kept an 8px gap while the page scrolled. No console
+errors. The Accessibility pass should re-check both instances with a screen reader.
 
 ## What landed (2026-09-27) — CSV export and lodgement lock
 

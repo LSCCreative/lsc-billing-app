@@ -14,8 +14,8 @@
  *     for the accountant. It is in no rate: diminishing value would swing the
  *     day rate 30–40% a year for gear still in daily use.
  * The two sit side by side at the top of the tab so the difference is the first
- * thing read, not a surprise found later. (The explanatory info button between
- * them is its own task.)
+ * thing read, not a surprise found later, and the info control under them
+ * (js/info.js) says why in full.
  *
  * MOUNTED BY OverheadView, NOT THE ROUTER
  * Overhead owns the page head and the inner-tab row; this module renders the
@@ -154,11 +154,29 @@ const DepreciationView = (() => {
       '<div class="oh-stat-value">' + (deduction === null ? '—' : fmt(deduction)) + '</div>' +
       '<div class="dep-stat-sub">For your accountant — in no rate</div></div>' +
       '</div>' +
-      '<p class="oh-note">Two numbers from the same gear, on purpose. The replacement reserve spreads the cost ' +
-      'of your <em>next</em> camera evenly over how long you keep one, so your rates stay steady. The tax ' +
-      'deduction is the ATO’s decline in value for this financial year, which can front-load heavily — useful ' +
-      'at tax time, wrong for pricing.</p>'
+      '<p class="oh-note dep-split-note">Two numbers from the same gear, on purpose.' + splitInfo() + '</p>'
     );
+  }
+
+  /* Brief decision 8, in full: the split is the whole concept of this tab, so
+     the long form is one tap away rather than a paragraph everyone scrolls
+     past on every visit. */
+  function splitInfo() {
+    return LSCInfo.markup({
+      id: 'dep-split',
+      label: 'Why the replacement reserve and the tax deduction differ',
+      title: 'Why two numbers',
+      paragraphs: [
+        '<strong>Replacement reserve</strong> — what your <em>next</em> one will cost, spread evenly over how long ' +
+          'you actually keep one, at your business-use share. It’s part of the annual business cost, so it’s in ' +
+          'every rate on your card.',
+        '<strong>Tax deduction</strong> — the ATO’s decline in value for this financial year, by the method you ' +
+          'chose for each asset. It’s for your return and your accountant, and it’s in no rate.',
+        'They differ on purpose. Diminishing value front-loads the deduction — large in year one, small by year ' +
+          'four — which would swing your day rate 30–40% for gear still in daily use. Pricing wants the steady ' +
+          'number; tax wants the ATO’s.',
+      ],
+    });
   }
 
   // ── The register ──────────────────────────────────────────────────────────
