@@ -207,6 +207,11 @@
   .dash-floors {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* The Dashboard's post-ratio inputs: two 190px fields don't fit side by side
+     in a phone-width panel, so each takes the row rather than wrapping ragged. */
+  .dash-post-inputs .field {
+    width: 100%;
+  }
   /* The Dashboard's GST mirror: .tax-setting already stacks (below), so the
      rate field widens with it; each checkbox label becomes the 44px target,
      since the checkbox itself is held at its own size (finance-dashboard.css). */

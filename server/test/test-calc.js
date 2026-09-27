@@ -27,6 +27,7 @@ const {
   labourFloorComparison,
   averageJobValue,
   jobsNeededPerYear,
+  postRatioReadout,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
 
@@ -1061,6 +1062,57 @@ test('jobs needed per year rounds up — a target is reached in whole jobs', () 
   assert.equal(jobsNeededPerYear(null, 9000), null);
   assert.equal(jobsNeededPerYear(90000, null), null);
   assert.equal(jobsNeededPerYear(90000, 0), null);
+});
+
+/**
+ * THE POST-RATIO READOUT (Dashboard section 6, 2026-09-27).
+ *
+ * The reference capacity: 5 days × 52 = 260, less 30 leave and 8 sick = 222
+ * days × 8 hrs = 1,776 hrs a year = 148 a month. Every figure below is
+ * worked from that by hand.
+ */
+const CAPACITY = { billableHoursPerDay: 8, workingDaysPerWeek: 5, leaveDaysPerYear: 30, sickDaysPerYear: 8 };
+
+test('post ratio: 6 shoot days at 1.5 edit days each leaves 28 of 148 hrs', () => {
+  assert.deepEqual(postRatioReadout(CAPACITY, 6, 1.5), {
+    monthlyHours: 148,
+    dayHours: 8,
+    shootHours: 48, // 6 × 8
+    postHours: 72, // 6 × 1.5 × 8 — edit days are Capacity's day, like shoot days
+    unsoldHours: 28, // 148 − 48 − 72
+    maxShootDays: 7.4, // 148 ÷ (2.5 × 8)
+  });
+});
+
+test('post ratio: a ratio of zero means no post, not no answer', () => {
+  const r = postRatioReadout(CAPACITY, 4, 0);
+  assert.equal(r.postHours, 0);
+  assert.equal(r.unsoldHours, 116); // 148 − 32
+  assert.equal(r.maxShootDays, 18.5); // 148 ÷ 8
+});
+
+test('post ratio: over-subscribing the month is a negative answer, not null', () => {
+  // A wedding month: 10 shoot days at 3 edit days each is 320 hrs of 148.
+  const r = postRatioReadout(CAPACITY, 10, 3);
+  assert.equal(r.shootHours + r.postHours, 320);
+  assert.equal(r.unsoldHours, -172);
+  assert.equal(r.maxShootDays, 4.6); // 148 ÷ 32 = 4.625, floored — never rounded up to 4.7
+});
+
+test('post ratio: the ceiling floors to a tenth instead of promising a day that does not fit', () => {
+  // 148 ÷ (1.7 × 8) = 10.88… → 10.8, where rounding would say 10.9.
+  assert.equal(postRatioReadout(CAPACITY, 1, 0.7).maxShootDays, 10.8);
+});
+
+test('post ratio: no capacity, or a missing or negative input, is null', () => {
+  assert.equal(postRatioReadout({}, 6, 1.5), null);
+  assert.equal(postRatioReadout(Object.assign({}, CAPACITY, { billableHoursPerDay: 0 }), 6, 1.5), null);
+  assert.equal(postRatioReadout(CAPACITY, '', 1.5), null);
+  assert.equal(postRatioReadout(CAPACITY, 6, null), null);
+  assert.equal(postRatioReadout(CAPACITY, -1, 1.5), null);
+  assert.equal(postRatioReadout(CAPACITY, 6, -0.5), null);
+  // Zero shoot days is a real what-if: the whole month is unsold.
+  assert.equal(postRatioReadout(CAPACITY, 0, 1.5).unsoldHours, 148);
 });
 
 /**

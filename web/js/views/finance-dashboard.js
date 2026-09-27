@@ -27,10 +27,19 @@
  *      entered both as an expense and as an asset becomes visible;
  *   4. target annual revenue, with per-month and per-week averages;
  *   5. jobs needed per year, beside the average job it was divided by;
+ *   6. the post-ratio readout — a what-if, below the fold;
  *   7. the GST mirror — last, because it changes rarely and is currently off.
- * Still to come, its own task: the post-ratio readout (6), between 5 and 7.
  * The comparison's explanation lives in its info control (js/info.js), beside
  * the section heading, not in a note under it.
+ *
+ * THE POST-RATIO READOUT SAVES NOTHING
+ * Section 6 has two inputs — shoot days a month, edit days per shoot day —
+ * and a sentence saying how much of a month's capacity they use
+ * (postRatioReadout in calc.js does the arithmetic). Both are what-ifs held in
+ * this module and reset to the defaults on every mount: no route, no
+ * LSCUnsaved watcher (there is nothing to lose), and nothing prices against
+ * them. It is deliberately not a cap — brief decision 9 — so an over-full
+ * month reads as a warning in the sentence, never as a validation error.
  *
  * THE GST MIRROR IS AN EDITABLE MIRROR, NOT A COPY
  * Section 7 edits settings.gst — the same stored object the Invoice Settings
@@ -52,7 +61,7 @@
  *     someone's change. SettingsView calls refreshGst() after its own save so
  *     the ordinary same-tab case just updates in place.
  * The block has its own Save and its own LSCUnsaved watcher; nothing else on
- * the page is editable. It changes no figure in sections 1–5 while the card is
+ * the page is saved. It changes no figure in sections 1–5 while the card is
  * GST-exclusive: the comparison is the only GST-aware part (priceExGst backs
  * GST out of a GST-inclusive card), so that section alone is redrawn on save.
  *
@@ -84,6 +93,7 @@ const FinanceDashboardView = (() => {
     targetAnnualRevenue,
     averageJobValue,
     jobsNeededPerYear,
+    postRatioReadout,
     round2,
   } = LSCCalc;
 
@@ -96,6 +106,11 @@ const FinanceDashboardView = (() => {
   let gstForm = null;
   let gstSaved = null;
   let gstSaving = false;
+
+  /* The post-ratio what-ifs (section 6), as typed. Module state only, reset on
+     mount: a typical corporate month to start from — the user moves them. */
+  const POST_DEFAULTS = { shoot: '4', ratio: '1' };
+  let post = null;
 
   /* FRACTION -> PERCENT for the rate field, verbatim from settings.js
      (including the snap that keeps 0.07 from rendering as 7.000000000000001). */
@@ -402,6 +417,90 @@ const FinanceDashboardView = (() => {
     box.innerHTML = jobsMarkup(f, avg);
   }
 
+  // ── 6. Post against capacity ──────────────────────────────────────────────
+
+  const b = (text) => '<strong>' + text + '</strong>';
+  const hrsOf = (n) => hrs(Math.abs(n)) + ' hr' + (Math.abs(n) === 1 ? '' : 's');
+
+  /* The sentence for the current inputs. Rewritten on every keystroke inside
+     an aria-live region, so it is announced as it changes — the same way
+     Profit Goals announces its target revenue. */
+  function postOutcome() {
+    const goals = LSCData.goals();
+    if (annualBillableHours(goals) === null) {
+      return (
+        '<p class="dash-post-sentence is-empty">—</p>' +
+        '<p class="dash-panel-note">Set your ' + link('capacity', 'capacity') +
+        ' to see how shooting and post fit into a month.</p>'
+      );
+    }
+    const r = postRatioReadout(goals, post.shoot, post.ratio);
+    if (r === null) {
+      return (
+        '<p class="dash-post-sentence is-empty">—</p>' +
+        '<p class="dash-panel-note">Enter shoot days and edit days — each 0 or more.</p>'
+      );
+    }
+
+    const days = parseFloat(post.shoot);
+    const lead = 'At ' + b(hrs(days)) + ' shoot day' + (days === 1 ? '' : 's') + ' a month, ';
+    const postPart = r.postHours === 0
+      ? 'with no post, shooting takes ' + b(hrsOf(r.shootHours)) + ' — '
+      : 'post takes ' + b(hrsOf(r.postHours)) + ' — ';
+    let tail;
+    let over = false;
+    if (r.unsoldHours > 0) {
+      tail = 'leaving ' + b(hrsOf(r.unsoldHours)) + ' of billable time unsold.';
+    } else if (r.unsoldHours === 0) {
+      tail = 'which fills the month exactly.';
+    } else {
+      over = true;
+      // The excess is shooting AND post, so the sentence says "with shooting".
+      tail = (r.postHours === 0 ? '' : 'with shooting, that’s ') + b(hrsOf(r.unsoldHours) + ' more than the month has') + '.';
+    }
+    const ceiling = parseFloat(post.ratio) === 0
+      ? 'With no post, your capacity fits at most ' + b(hrs(r.maxShootDays)) + ' shoot days a month.'
+      : 'At this ratio your capacity fits at most ' + b(hrs(r.maxShootDays)) + ' shoot days a month.';
+
+    return (
+      '<p class="dash-post-sentence' + (over ? ' is-over' : '') + '">' + lead + postPart + tail + '</p>' +
+      '<p class="dash-post-detail">Shooting ' + hrs(r.shootHours) + ' + post ' + hrs(r.postHours) + ' of ' +
+      hrs(r.monthlyHours) + ' billable hrs a month, on average.</p>' +
+      '<p class="dash-post-detail">' + ceiling + '</p>'
+    );
+  }
+
+  function postMarkup() {
+    const dayHours = parseFloat(LSCData.goals().billableHoursPerDay);
+    const dayText = Number.isFinite(dayHours) && dayHours > 0 ? hrs(dayHours) + ' hrs' : 'your Capacity day';
+    return (
+      '<section class="dash-section" aria-labelledby="dash-post-h">' +
+      '<div class="dash-panel dash-post">' +
+      '<h2 class="dash-panel-h" id="dash-post-h">Shooting and post against ' + link('capacity', 'capacity') + '</h2>' +
+      '<div class="dash-post-inputs">' +
+      '<div class="field"><label for="dash-post-shoot">Shoot days / month</label>' +
+      '<input type="number" id="dash-post-shoot" min="0" step="1" inputmode="decimal" value="' + esc(post.shoot) + '"></div>' +
+      '<div class="field"><label for="dash-post-ratio">Edit days per shoot day</label>' +
+      '<input type="number" id="dash-post-ratio" min="0" step="0.5" inputmode="decimal" value="' + esc(post.ratio) + '"></div>' +
+      '</div>' +
+      '<div id="dash-post-out" aria-live="polite">' + postOutcome() + '</div>' +
+      '<p class="dash-panel-note">A what-if — nothing here is saved, and it resets when you leave. A shoot day and ' +
+      'an edit day are each ' + dayText + ', your Capacity day. Post can run from about one edit day per shoot ' +
+      'day (a corporate interview) to three (a wedding), so nothing here caps how many shoot days you sell.</p>' +
+      '</div></section>'
+    );
+  }
+
+  function bindPost() {
+    root.addEventListener('input', (event) => {
+      const id = event.target.id;
+      if (id !== 'dash-post-shoot' && id !== 'dash-post-ratio') return;
+      post[id === 'dash-post-shoot' ? 'shoot' : 'ratio'] = event.target.value;
+      const out = document.getElementById('dash-post-out');
+      if (out) out.innerHTML = postOutcome();
+    });
+  }
+
   // ── 7. The GST mirror ─────────────────────────────────────────────────────
 
   /* The three GST fields as the settings object stores them, read the way
@@ -658,6 +757,7 @@ const FinanceDashboardView = (() => {
       comparisonMarkup(f) +
       chainMarkup(f) +
       targetsMarkup(f) +
+      postMarkup() +
       gstMarkup()
     );
   }
@@ -667,6 +767,7 @@ const FinanceDashboardView = (() => {
     handlers = viewHandlers || {};
     mountId += 1;
     gstSaving = false;
+    post = Object.assign({}, POST_DEFAULTS);
     gstSaved = gstFields(LSCData.settings());
     gstForm = Object.assign({}, gstSaved);
 
@@ -682,6 +783,7 @@ const FinanceDashboardView = (() => {
       handlers.onGoTab(btn.getAttribute('data-go-tab'), inner ? { inner } : undefined);
     });
 
+    bindPost();
     bindGst();
     LSCUnsaved.watch('dashboard-gst', {
       label: 'the GST settings',

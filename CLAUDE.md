@@ -31,13 +31,13 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    Finance area from (2) into a left-sidebar area with a read-only Dashboard showing the whole
    cost-to-rate chain (overhead incl. gear depreciation → real working-days capacity → profit goals →
    the hourly / half-day / full-day floors), plus an ATO depreciation register. Design complete
-   (brief, IA and tasks all written 2026-09-27). **Build in progress: 15 of 21 tasks done** — the
+   (brief, IA and tasks all written 2026-09-27). **Build in progress: 16 of 21 tasks done** — the
    whole Foundation group (calc, migrations v5–v6, depreciation chain, routes), the sidebar rail,
    the Capacity screen, the Dashboard, the Rate Card's day rows, the whole Depreciation tab
    (register, schedule, CSV export, lodgement lock), the shared info control and the Dashboard's
-   GST mirror.
-   All fifteen are live (NAS + Pages, 2026-09-27); check its handover for anything committed since
-   but not yet pushed.
+   GST mirror and post-ratio readout.
+   The first fifteen are live (NAS + Pages, 2026-09-27); check its handover for anything committed
+   since but not yet pushed.
    Read its `HANDOVER.md` first. Build bucket: Opus, effort high, and **more of it sits in the
    money-math bucket than is usual** — its `TASKS.md` tags every task, don't re-derive.
 

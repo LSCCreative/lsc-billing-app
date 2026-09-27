@@ -946,6 +946,61 @@ function jobsNeededPerYear(annualRevenueTarget, averageJob) {
   return Math.ceil(round2(target / avg));
 }
 
+/**
+ * The Dashboard's post-ratio readout: at N shoot days a month, with R edit
+ * days of post behind each, how much of a month's billable capacity is used,
+ * and how much is left to sell.
+ *
+ * A REALITY CHECK, NOT A CAP (brief decision 9). Hours are one pool — post
+ * hours are billable hours — and the post-to-shoot ratio is the most variable
+ * number in the business (≈1 edit day for a corporate interview, ≈3 for a
+ * wedding). So both inputs are what-ifs the user types on the Dashboard; they
+ * are never stored and nothing prices against them. Over-subscription is an
+ * answer (negative unsoldHours), not an error: it's the thing the readout
+ * exists to show.
+ *
+ * A DAY IS CAPACITY'S DAY. Shoot days and edit days are each
+ * billableHoursPerDay long — the same standard day the Dashboard's headline
+ * floors use — not a Full Day row's hoursPerUnit: a card can have several day
+ * rows at different lengths, and an edit day has no row at all. A month is
+ * annual billable hours ÷ 12, an average, as the targets panel labels it.
+ *
+ * @param {object} capacity — the goals payload (the four Capacity fields).
+ * @param {number} shootDaysPerMonth — 0 or more.
+ * @param {number} editDaysPerShootDay — 0 or more; 0 means no post.
+ * @returns {{monthlyHours:number, dayHours:number, shootHours:number,
+ *   postHours:number, unsoldHours:number, maxShootDays:number}|null}
+ *   null when capacity can't be computed or either input is missing or
+ *   negative. unsoldHours is negative when the month is over-subscribed.
+ *   maxShootDays — how many shoot days a month fit at this ratio — is floored
+ *   to one decimal, so the ceiling never promises a fraction of a day that
+ *   doesn't fit.
+ */
+function postRatioReadout(capacity, shootDaysPerMonth, editDaysPerShootDay) {
+  const annual = annualBillableHours(capacity);
+  if (annual === null) return null;
+  // annualBillableHours() has already range-checked this field.
+  const dayHours = numOrNull((capacity || {}).billableHoursPerDay);
+
+  const shootDays = numOrNull(shootDaysPerMonth);
+  const ratio = numOrNull(editDaysPerShootDay);
+  if (shootDays === null || shootDays < 0 || ratio === null || ratio < 0) return null;
+
+  const monthlyHours = annual / 12;
+  const shootHours = shootDays * dayHours;
+  const postHours = shootDays * ratio * dayHours;
+  return {
+    monthlyHours: round2(monthlyHours),
+    dayHours,
+    shootHours: round2(shootHours),
+    postHours: round2(postHours),
+    unsoldHours: round2(monthlyHours - shootHours - postHours),
+    /* Snapped at the ×10 scale before flooring, so float error can't turn an
+       exact 6.8 into 67.999… tenths and report 6.7. */
+    maxShootDays: Math.floor(round2((monthlyHours / ((1 + ratio) * dayHours)) * 10)) / 10,
+  };
+}
+
 /* This file is the single source of the money model. The server requires it,
  * and web/js/calc.js is a byte-identical copy the browser loads as a plain
  * script, so the editor's live totals cannot disagree with what the server
@@ -984,6 +1039,7 @@ if (typeof module === 'object' && module.exports) {
     labourFloorComparison,
     averageJobValue,
     jobsNeededPerYear,
+    postRatioReadout,
     currentFinancialYear,
     fyLabel,
     fyBounds,
@@ -1012,6 +1068,7 @@ if (typeof module === 'object' && module.exports) {
     labourFloorComparison,
     averageJobValue,
     jobsNeededPerYear,
+    postRatioReadout,
     currentFinancialYear,
     fyLabel,
     fyBounds,

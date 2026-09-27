@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 15 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 16 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -71,13 +71,17 @@ service business that sells shoot days rather than units.
             See "What landed — Info control". **Live** (Pages, 2026-09-27; no server change).
       - [x] **GST mirror block** (money math — Opus/high) — done 2026-09-27. See "What landed — GST
             mirror". **Live** (Pages, pushed 2026-09-27 ~21:15 AEST; web only, no server change).
-      - [ ] ← **NEXT: Post-ratio readout** (frontend — Opus/high). Dashboard section (6), slotting in
-            between jobs needed (5) and the GST mirror (7). Display-local, saves nothing.
+      - [x] **Post-ratio readout** (frontend — Opus/high) — done 2026-09-27. See "What landed —
+            Post-ratio readout". **Committed, not pushed** (Pages only — see its deploy note).
+      - [ ] ← **NEXT: Double-count guard on large one-off expenses** (frontend — Opus/high). The
+            non-blocking "this looks like a capital asset" hint in the Operating Costs add form,
+            keyed on `goals.iawoThreshold` (owned by the Depreciation tab's threshold control).
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Fifteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
-Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement lock), the shared
-info control and the GST mirror. **All of it is live** — the info control and the GST mirror went to
+Sixteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
+sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
+lock), the shared info control, the GST mirror and the post-ratio readout. **The post-ratio readout
+is committed but not pushed.** Everything before it is live — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
 
@@ -408,6 +412,50 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Post-ratio readout
+
+Dashboard section (6), between jobs needed (5) and the GST mirror (7): **Shooting and post against
+capacity**. Two display-local inputs — shoot days / month (default 4) and edit days per shoot day
+(default 1) — and a sentence in an `aria-live="polite"` region: *"At 6 shoot days a month, post takes
+72 hrs — leaving 28 hrs of billable time unsold"*, then the shooting + post of monthly hours, then the
+ceiling: *"At this ratio your capacity fits at most 7.4 shoot days a month."* Nothing saved, no
+route, no `LSCUnsaved` watcher; defaults return on every mount.
+
+### Decisions made here
+
+1. **Two inputs, not one — the user's call (2026-09-27).** The task named one editable ratio, but
+   the brief's sentence needs an N. Asked; the user chose shoot days/month as a second input over
+   deriving N from jobs-needed ÷ 12 (a job isn't one shoot day) or dropping N for a ceiling-only
+   sentence. The ceiling line is kept as well.
+2. **The arithmetic is `postRatioReadout(capacity, shootDays, ratio)` in `calc.js`** (both copies),
+   not inline in the view, so it is unit-tested like `jobsNeededPerYear`. A shoot day and an edit day
+   are each **Capacity's `billableHoursPerDay`** — the same standard day as the headline floors — and a
+   month is annual billable hours ÷ 12. Over-subscription returns a **negative `unsoldHours`**, not
+   null. `maxShootDays` is **floored** to a tenth (snapped at ×10 first so float error can't turn 6.8
+   into 6.7) — never rounded up into a day that doesn't fit.
+3. **Over-full reads as a warning, not an error**: "with shooting, that's 172 hrs more than the
+   month has" in `--accent-text` with the badge's 1px accent rule — not the red error box, not
+   `role="alert"`. "With shooting" because the excess is shoot + post, not post alone.
+4. Ratio 0 reads "with no post, shooting takes X hrs"; blank or negative input → em dash + "Enter
+   shoot days and edit days — each 0 or more"; no capacity → em dash + a link to Capacity.
+
+### Deploy note
+
+`server/src/calc.js` changed (the two copies must stay identical), but no route calls the new
+function, so **the NAS does not need a redeploy** — pushing `main` (Pages) is the whole deploy. The
+NAS catches up on its next redeploy for any other reason.
+
+### Verified
+
+183 tests pass (5 new). Two mutations checked to fail: dropping the ratio from `postHours` (3 tests)
+and `Math.round` for the ceiling's floor (1). In the browser (local `api-scratch`, 8/5/30/8 capacity
+= 148 hrs/month, dispatched input events): defaults 4 × 1 → 32 + 32, 84 unsold, ceiling 9.2; 6 × 1.5
+→ 48 + 72, 28 unsold, 7.4; ratio 0 → "with no post", 100 unsold, 18.5; 10 × 3 → 172 over, warning
+class, 4.6; blank and negative → the prompt; leave and return → back to 4 / 1, and no unsaved prompt;
+capacity nulled in the local cache only → em dash + Capacity link, then restored. Section order is
+1–7. 1280px and 375px (inputs full-width and 44px tall on the phone, no horizontal scroll). No
+console errors.
 
 ## What landed (2026-09-27) — GST mirror
 

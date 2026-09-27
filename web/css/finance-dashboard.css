@@ -269,3 +269,48 @@
 #dash-gst-error.show {
   display: block;
 }
+
+/* ── 6. Post against capacity ──────────────────────────────────────────────
+   The one editable-but-unsaved thing on the page: two .field inputs side by
+   side at a fixed width (app.css stretches .field inputs to 100%), then the
+   sentence at chain-line size with its figures in --text. An over-full month
+   is a warning, not an error: --accent-text with the same 1px accent rule as
+   the below-floor badge, never the red error box. */
+.dash-post-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  margin-bottom: 16px;
+}
+.dash-post-inputs .field {
+  width: 190px;
+}
+.dash-post-sentence {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dash-post-sentence strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dash-post-sentence.is-empty {
+  font-size: 26px;
+  line-height: 1.2;
+}
+.dash-post-sentence.is-over strong:last-child {
+  color: var(--accent-text);
+  border-bottom: 1px solid var(--accent);
+}
+.dash-post-detail {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dash-post-detail strong {
+  color: var(--text);
+  font-weight: 600;
+}
