@@ -91,6 +91,23 @@ const LSCData = (() => {
     overheadSnapshots: () => overheadSnapshots || [],
     goals: () => goals || {},
     depreciationAssets: () => depreciationAssets || [],
+    /* DERIVED, NOT CACHED — the one place any screen asks what the business
+       costs a year and what an hour of it costs. The Rate Card's rate column,
+       the estimate editor's Minimum Job Price, the Capacity save confirm and
+       the Dashboard all read these, so they cannot disagree about a number the
+       user can see on two screens at once. Computed on every call from the
+       cache above, so a save that refreshes the cache moves them immediately.
+
+       Business cost, not operating cost: annualBusinessCost() adds the gear
+       replacement reserve to the overhead items (calc.js explains why that is
+       the right divisor). The Overhead screen's own "Annual Total" stays
+       operating-only, because that screen is the operating-costs register. */
+    businessCost: () => LSCCalc.annualBusinessCost(overheadItems || [], depreciationAssets || []),
+    overheadRate: () =>
+      LSCCalc.overheadRatePerHour(
+        LSCCalc.annualBusinessCost(overheadItems || [], depreciationAssets || []),
+        LSCCalc.annualBillableHours(goals || {})
+      ),
     /* For the first-run setup checklist on the estimates empty state. */
     pricingConfigured: () => pricingSaved,
     settingsConfigured: () => settingsSaved,

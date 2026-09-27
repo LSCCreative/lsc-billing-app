@@ -25,7 +25,8 @@
  *
  * THE COMPUTED RATE COLUMN
  * Every labour row's Rate ($/hr) is now the one Overhead Rate/hr — Annual
- * Overhead Total / Annual Billable Hours — read from Overhead and Goals, shown
+ * Business Cost / Annual Billable Hours — read from Overhead and Capacity via
+ * LSCData.overheadRate(), shown
  * read-only, and identical down the whole card. Travel rows are untouched and
  * still manually priced. This collapses the card's old $30-$110 per-row cost
  * differentiation on purpose: it is a standard flat overhead-absorption rate
@@ -662,15 +663,11 @@ const PricingView = (() => {
     /* Deliberately outside the working copy and outside snapshot(): this is
        derived, read-only and unsaveable, so it must not make the card look
        dirty or be shipped by payload(). */
-    /* Second argument is ANNUAL billable hours as of 2026-09-27, not the weekly
-       figure it used to be — overheadRatePerHour no longer multiplies by an
-       assumed 48-week year. Passing goals.billableCapacityHrsPerWeek straight in
-       would read as 20 annual hours and put $1,200/hr on the card, silently, so
-       it is derived from the four capacity fields the goals payload carries. */
-    computedRate = LSCCalc.overheadRatePerHour(
-      LSCCalc.annualOverheadTotal(LSCData.overheadItems()),
-      LSCCalc.annualBillableHours(LSCData.goals())
-    );
+    /* Annual business cost (operating costs + gear replacement reserve) ÷
+       annual billable hours from Capacity — through LSCData.overheadRate() so
+       this column, the estimate editor's floor, the Capacity confirm and the
+       Dashboard all use one computation. See data.js. */
+    computedRate = LSCData.overheadRate();
     baseline = snapshot();
 
     render();

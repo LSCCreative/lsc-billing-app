@@ -1,0 +1,190 @@
+/* Finance & Price Dashboard — see js/views/finance-dashboard.js.
+ *
+ * Additive, like every screen file. Reused as they are: .proj-card (the floor
+ * tiles, with the hover affordances taken back off exactly as .goals-outcome
+ * and .oh-summary do — nothing happens when you click a tile), .est-block /
+ * .est-table (the comparison, which inherits the <768px stacked-card layout
+ * from responsive.css through data-label), .sum-label and .muted-td.
+ *
+ * TYPE: the three floors are the largest type on the page (40px Delight 700,
+ * above the 30px page title), because they are the answer the screen exists to
+ * give. Everything else steps down: 26px for the two panel headline figures,
+ * 13px for chain lines.
+ *
+ * COLOUR: one accent. The below-floor badge reads in --accent-text (a11y.css —
+ * raw --accent is 3.71:1 on this background, fills and rings only), marked by a
+ * 1px accent rule rather than a filled chip, so the row stays legible as text.
+ */
+
+.dash-section {
+  margin-bottom: 30px;
+}
+
+/* A section heading at .sum-label scale but in --text: these name the page's
+   parts, and the muted 9px label is reserved for figure captions. */
+.dash-h {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+
+/* ── 1. Floors ─────────────────────────────────────────────────────────── */
+.dash-floors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.dash-floor {
+  cursor: default;
+}
+.dash-floor:hover {
+  border-color: var(--border);
+}
+.dash-floor:hover::after {
+  transform: scaleX(0);
+}
+.dash-floor-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 40px;
+  line-height: 1.1;
+  color: var(--text);
+  letter-spacing: 0.01em;
+  margin: 4px 0 6px;
+}
+.dash-floor-value.is-empty,
+.dash-big.is-empty,
+.dash-line-value.is-empty {
+  color: var(--muted);
+}
+.dash-floor-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dash-note {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 78ch;
+}
+
+/* ── Links to owner screens ───────────────────────────────────────────────
+   The same rest/hover pair as .goals-link and .pricing-rate-note-link: --text
+   and underlined at rest (the accent is under 4.5:1 for text), accent on hover
+   and focus. Inherits size and case from wherever it sits, so a panel heading
+   stays a heading and a chain label stays a label. */
+.dash-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--muted2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.dash-link:hover,
+.dash-link:focus-visible {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+/* ── 2. Comparison ─────────────────────────────────────────────────────── */
+.dash-sum-below {
+  color: var(--accent-text);
+}
+.dash-badge {
+  color: var(--accent-text);
+  border-bottom: 1px solid var(--accent);
+  padding-bottom: 1px;
+  white-space: nowrap;
+}
+.dash-table td:first-child {
+  color: var(--text);
+}
+.dash-empty {
+  margin: 0;
+  padding: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dash-section .est-block {
+  margin-bottom: 0;
+}
+
+/* ── 3–5. Panels ───────────────────────────────────────────────────────────
+   Costs left, capacity right, like the reference spreadsheet; the targets row
+   below uses the same two columns so the page keeps one grid. Flat 1px boxes
+   on --surface, no radius, matching .proj-card without being a tile. */
+.dash-panels,
+.dash-targets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.dash-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 20px 22px;
+}
+.dash-panel-h {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  margin: 0 0 14px;
+}
+.dash-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  font-size: 13px;
+}
+.dash-line-label {
+  color: var(--muted);
+}
+.dash-line-label .dash-link {
+  color: var(--text);
+}
+.dash-line-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The result line of each panel: the number the lines above add up to. */
+.dash-line-total {
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+.dash-line-total .dash-line-label,
+.dash-line-total .dash-line-value {
+  color: var(--text);
+  font-weight: 600;
+}
+.dash-panel-note {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dash-big {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 26px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}

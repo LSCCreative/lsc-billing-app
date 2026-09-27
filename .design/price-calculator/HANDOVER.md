@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 8 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 9 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -56,14 +56,18 @@ service business that sells shoot days rather than units.
             **read its deploy-order warning before pushing anything.**
       - [x] **Capacity screen** (money math — Opus/high) — done 2026-09-27. Added **migration v6**,
             which the task didn't list — see "What landed — Capacity" below.
-      - [ ] ← **NEXT: Dashboard** (money math — Opus/high). New `web/js/views/finance-dashboard.js`,
-            exported as **`FinanceDashboardView`** — the router already resolves that exact name.
-            Read-only, no `LSCUnsaved` watcher.
+      - [x] **Dashboard** (money math — Opus/high) — done 2026-09-27, items 1–5. See "What landed —
+            Dashboard" below. **Committed, not pushed.**
+      - [ ] ← **NEXT: Rate Card — day / half-day / overtime rows and the `hoursPerUnit` column**
+            (money math — Opus/high). Use `LSCCalc.labourFloorComparison` for its per-row floor and
+            badge (the Dashboard's `.dash-badge`) so the two screens cannot disagree, and **decide how
+            a day row is identified** — see the Dashboard section's first decision.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Eight tasks of 21 are built — the Foundation group, the rail and the Capacity screen. The Finance
-area lands on a Dashboard placeholder ("isn't built yet", with a button to the Rate Card).
-`server/src/defaults.js` is untouched.
+Nine tasks of 21 are built — the Foundation group, the rail, Capacity and the Dashboard.
+`server/src/defaults.js` is untouched. **The Dashboard is committed locally but not pushed** — it
+needs no server change (the NAS already has every route it calls; the new calc functions are
+browser-side only), so pushing `main` is all it takes to ship it.
 
 **Deployed 2026-09-27 (~17:25 AEST), with the user's explicit go-ahead.** NAS first: pre-migration
 backup `/volume4/lsc-billing/data/backups/pre-v6-20260927-1701.db`; `server/` copied with `tar`
@@ -379,6 +383,65 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Dashboard
+
+`web/js/views/finance-dashboard.js` (`FinanceDashboardView`) + `web/css/finance-dashboard.css`.
+Sections 1–5 of the IA hierarchy: floors (40px Delight, largest type on the page) → rate card
+against its floors (`.est-table`, badge "Below by $X" in `--accent-text` on a 1px accent rule) →
+cost panel (Operating / Replacement reserve / Annual business cost — always split) beside capacity
+panel (hours / overhead per hour / margin / hourly floor) → target annual revenue with month and week
+averages beside jobs needed per year. Post-ratio (6), GST mirror (7) and the info button are their
+own tasks; slot them in under (5).
+
+### Decisions made here — read before the Rate Card task
+
+1. **Headline half/full-day floors use Capacity's billable hours per day**, not "the Full Day row's
+   hoursPerUnit" as the IA doc writes it. No row is identifiable as the Full Day row: the Rate Card
+   task hasn't seeded them, names are user-editable, and name-matching breaks on the first rename.
+   Each tile says "at N hrs" so the basis is visible, and **every actual row — day rows included —
+   is still compared at its own hoursPerUnit** in the table. If the Rate Card task gives day rows a
+   stable marker (e.g. a `dayUnit: 'full' | 'half'` key), switch `figures()` to read that row's
+   hoursPerUnit; the header comment in `finance-dashboard.js` says the same.
+2. **Every screen now divides annual BUSINESS cost**, via new `LSCData.businessCost()` and
+   `LSCData.overheadRate()` in `data.js` — Rate Card column, estimate editor floor, Capacity confirm,
+   Goals' target revenue and the Dashboard. Before this, the IA doc's "every screen moves to
+   annualBusinessCost" hadn't happened anywhere, so the Dashboard would have disagreed with the Rate
+   Card the moment an asset existed. No live number moves today (no assets exist yet). The Overhead
+   screen's own "Annual Total" stays operating-only — it's the operating-costs register.
+3. **Comparison math lives in calc.js** (`labourFloorComparison`), so the Rate Card task reuses it
+   rather than re-deriving "is this row below floor". It takes GST out of `mu` when the card is kept
+   GST-inclusive (`priceExGst`) — irrelevant while unregistered, silently flattering every row by 10%
+   the day registration is ticked if it weren't there. Exactly-at-floor is not below. Travel rows are
+   excluded entirely.
+4. **`hourlyFloor(rate, margin)` is pinned equal to `minimumJobPrice`'s per-hour arithmetic** by a
+   test, so the Dashboard and the estimate editor can't disagree about what an hour is worth.
+5. **Average job value** = mean `totals.clientPriceExGst` (as stored at save, not re-priced) of
+   estimates with status approved / invoiced / paid, dated after the same date last year (textual,
+   29 Feb → 28 Feb; future-dated bookings count), price > 0. Drafts and sent quotes are not jobs.
+   **Jobs needed rounds up.** Fetched from `/api/estimates` on mount; the panel says "Working out…"
+   until it lands, and names why it's an em dash if nothing qualifies.
+
+### Router fix found on the way (finance.js)
+
+Goals (and now the Dashboard) bind delegated click listeners on the container they're handed.
+FinanceView reused one `#finance-sub` across visits and `innerHTML` doesn't remove listeners, so they
+piled up — and after a Goals visit, a Dashboard link was handled by Goals' stale listener first,
+which navigated **without opts** and dropped the Overhead → Depreciation deep link. `mountChild()`
+now swaps in a fresh `#finance-sub` node each time. Verified: after visiting Goals, the Replacement
+reserve link mounts Overhead once, with `inner: 'depreciation'`.
+
+### Verified (local scratch DB)
+
+Empty states (no margin → floors em dash + "Set up a target profit margin", target → "Set a desired
+net income", jobs → "No approved, invoiced or paid jobs…"). With $24,000 overhead, 1,776 hrs, 25%
+margin, 35% tax, $80k net, a $100 8-hr test row and three estimates (approved $1,400, paid $2,800,
+draft excluded): floors $16.89 / $67.56 / $135.12, "1 of 19 below floor — Below by $35.12", target
+$160,000.00 (Goals shows the same), 77 jobs at a $2,100 average; Rate Card rate 13.51 = Dashboard
+overhead/hr. Deep links: reserve → Overhead with `inner`, hours → Capacity, table heading → Rate Card.
+No console errors. 1280px and 375px, no overflow. **For the Responsive pass:** on a phone the
+comparison is 19 six-line stacked cards before the panels — consider collapsing to below-floor rows
+first on mobile.
 
 ## What landed (2026-09-27) — Capacity
 

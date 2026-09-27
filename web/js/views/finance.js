@@ -133,6 +133,18 @@ const FinanceView = (() => {
      read a key simply ignores it. The router's own keys are assigned last so
      that nothing in opts can replace onAuthLost or onGoTab. */
   function mountChild(opts) {
+    /* A fresh #finance-sub for every screen. Children bind delegated click
+       listeners on the container they are handed (goals.js does, and so does
+       the Dashboard), and innerHTML replaces a container's content, not its
+       listeners — so they piled up across visits, and a stale Goals listener
+       would handle a later Dashboard link first, navigating without its opts
+       and dropping the Overhead → Depreciation deep link. Replacing the node
+       drops every old listener at once. Nothing holds the old node: each view
+       is handed the new one, and every onScreen() sentinel asks the document. */
+    const fresh = sub.cloneNode(false);
+    sub.replaceWith(fresh);
+    sub = fresh;
+
     const View = resolveView(activeTab);
     if (!View) {
       mountPending();

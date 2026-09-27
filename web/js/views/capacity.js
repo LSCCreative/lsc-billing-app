@@ -45,7 +45,7 @@
 
 const CapacityView = (() => {
   const { esc, fmt } = LSCUtil;
-  const { annualBillableHours, annualOverheadTotal, overheadRatePerHour } = LSCCalc;
+  const { annualBillableHours, overheadRatePerHour } = LSCCalc;
 
   /* What a goals row that has never been written shows. The same four figures
      migration v5 seeded and routes/goals.js falls back to — so a first-ever
@@ -109,11 +109,10 @@ const CapacityView = (() => {
     };
   }
 
-  /* The overhead cost per hour a given number of annual hours produces —
-     computed the way pricing.js computes the rate column, so the confirm quotes
-     the figure the Rate Card will actually show. When that screen moves to
-     annualBusinessCost() (the Dashboard / Rate Card tasks), this moves with it. */
-  const rateFor = (hours) => overheadRatePerHour(annualOverheadTotal(LSCData.overheadItems()), hours);
+  /* The overhead cost per hour a given number of annual hours produces — the
+     same business cost LSCData.overheadRate() divides, over the hours being
+     asked about, so the confirm quotes the figure the Rate Card will show. */
+  const rateFor = (hours) => overheadRatePerHour(LSCData.businessCost(), hours);
 
   // ── Validation ────────────────────────────────────────────────────────────
 

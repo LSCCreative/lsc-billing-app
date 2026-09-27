@@ -96,6 +96,15 @@
 /* ── below ~900px ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
+  /* The Finance & Price Dashboard's cost / capacity panels and its targets row
+     stack here, per the brief's 899–768 band: beside the rail, two columns
+     leave each panel ~230px, and a label like "Overhead cost per hour" then
+     wraps against its figure. The floors stay three across until <768px. */
+  .dash-panels,
+  .dash-targets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   /* 40px of gutter is generous on a 1080px column and expensive on a 768px
      one. Held at 40px down to 900px on purpose: dropping it higher up the band
      would make the content column grow as the window shrinks, which reads as a
@@ -193,6 +202,12 @@
 }
 
 @media (max-width: 767px) {
+  /* The Dashboard's three floors stack: at 343px, three 40px money figures
+     side by side would be ~100px each and "$135.12" doesn't fit. */
+  .dash-floors {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   /* ── Gutters ─────────────────────────────────────────────────────────────
      24px of the tablet band becomes 16px, which is 16px more content on a
      375px screen. #connection-banner matches, as it does above. */

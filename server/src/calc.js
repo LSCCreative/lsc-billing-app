@@ -785,6 +785,167 @@ function targetAnnualRevenue(annualTotal, desiredNetIncome, taxRate) {
   return round2((total + net) / (1 - rate));
 }
 
+/* ── Floors, and the rate card measured against them ──────────────────────────
+   Added 2026-09-27 for the Finance & Price Dashboard. The Rate Card will show
+   the same per-row comparison, so it lives here rather than in either screen:
+   two screens computing "is this row below its floor?" separately is how they
+   come to disagree about a row. */
+
+/**
+ * The least an hour of work can be sold for: its share of the business's
+ * running cost, plus the target margin.
+ *
+ *   overheadRatePerHour × (1 + profitMarginPct ÷ 100)
+ *
+ * Deliberately the same arithmetic minimumJobPrice() applies to a job's hours
+ * — minimumJobPrice(0, h, rate, margin) is exactly h × this — so the Dashboard's
+ * floors and the estimate editor's Minimum Job Price cannot disagree about what
+ * an hour is worth. A test pins that equivalence.
+ *
+ * @param {number} overheadRate — from overheadRatePerHour().
+ * @param {number} profitMarginPct — a PERCENT (25 is 25%). See UNITS above.
+ * @returns {number|null} null when there is no overhead rate, or no margin set.
+ *   A 0% margin is a real answer (break even) and passes through; a missing one
+ *   does not, because a floor that silently left the margin out would read as
+ *   the real minimum.
+ */
+function hourlyFloor(overheadRate, profitMarginPct) {
+  const rate = numOrNull(overheadRate);
+  if (rate === null || rate <= 0) return null;
+  const margin = numOrNull(profitMarginPct);
+  if (margin === null || margin < 0) return null;
+  return round2(rate * (1 + margin / 100));
+}
+
+/**
+ * A rate-card price with any GST taken out.
+ *
+ * Floors are GST-exclusive — GST collected belongs to the ATO, not the
+ * business — but a rate card kept GST-inclusive (settings.gst.pricesIncludeGst
+ * while registered) stores `mu` with GST inside it. Comparing that raw against
+ * a floor would flatter every row by the GST rate. Same rule computeTotals
+ * applies to `billed`, applied to one price.
+ */
+function priceExGst(price, settings) {
+  const gstCfg = (settings && settings.gst) || {};
+  const p = num(price);
+  if (gstCfg.registered === true && gstCfg.pricesIncludeGst === true) {
+    return round2(p / (1 + num(gstCfg.rate)));
+  }
+  return round2(p);
+}
+
+/**
+ * Every labour row on the rate card beside the floor for one unit of it.
+ *
+ * A row's floor is hourlyFloor × hoursPerUnitOf(row): an hourly row's floor is
+ * the hourly floor, a day row's is that many hours of it. Compared against the
+ * row's `mu` — what the client is charged — with GST taken out, never against
+ * `rate`, which feeds no billing arithmetic anywhere (see computeTotals).
+ *
+ * LABOUR ROWS ONLY. Travel rows are excluded entirely, marked-up or not: crew,
+ * hire, travel, flights and accommodation are added to a job at cost on top of
+ * the labour, and are not what carries the overhead. That is the brief's
+ * decision 6, and the Dashboard copy says so.
+ *
+ * @returns {Array<object>} one entry per labour row, in rate-card order:
+ *   { sectionId, sectionLabel, name, mu, muExGst, hoursPerUnit, floor, gap,
+ *     belowFloor }. When there is no hourly floor, floor/gap/belowFloor are
+ *   null — "can't tell yet", which is not the same as "fine".
+ */
+function labourFloorComparison(pricing, settings, floorPerHour) {
+  const perHour = numOrNull(floorPerHour);
+  const sections = (pricing && pricing.labourSections) || [];
+  const out = [];
+
+  for (const section of sections) {
+    for (const def of section.rows || []) {
+      const hoursPerUnit = hoursPerUnitOf(def);
+      const muExGst = priceExGst(def.mu, settings);
+      const floor = perHour === null || perHour <= 0 ? null : round2(perHour * hoursPerUnit);
+      /* Compared in cents after rounding both, so a row priced exactly at its
+         floor is not badged by float noise. */
+      const belowFloor = floor === null ? null : muExGst < floor;
+      out.push({
+        sectionId: section.id,
+        sectionLabel: section.label,
+        name: def.name,
+        mu: num(def.mu),
+        muExGst,
+        hoursPerUnit,
+        floor,
+        gap: belowFloor ? round2(floor - muExGst) : belowFloor === null ? null : 0,
+        belowFloor,
+      });
+    }
+  }
+  return out;
+}
+
+/** Statuses that mean the work was won. Draft and sent are still quotes. */
+const WON_STATUSES = ['approved', 'invoiced', 'paid'];
+
+/**
+ * The same calendar date one year earlier, as 'YYYY-MM-DD', computed as text.
+ * Not through Date — fyStartYear() above explains why a date-only string must
+ * never be read back with local getters. 29 February steps back to the 28th.
+ */
+function oneYearBefore(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return null;
+  const year = Number(m[1]) - 1;
+  const day = m[2] === '02' && m[3] === '29' ? '28' : m[3];
+  return String(year) + '-' + m[2] + '-' + day;
+}
+
+/**
+ * The average value of a job actually won in the last twelve months — the
+ * divisor for "jobs needed per year".
+ *
+ * Counts an estimate when its status is approved, invoiced or paid (a draft or
+ * a sent quote is not a job), its date falls after the same date a year ago
+ * (future-dated bookings count: they are won work), and its ex-GST client price
+ * is above zero. The price is `totals.clientPriceExGst` as stored at save time —
+ * what the job was actually quoted at, not a re-pricing against today's card.
+ *
+ * @param {Array<object>} estimates — the /api/estimates payload.
+ * @param {string} today — 'YYYY-MM-DD', the local date (LSCUtil.today()).
+ * @returns {{average:number, count:number}|null} null when no job qualifies:
+ *   dividing a revenue target by no history is not a number of jobs.
+ */
+function averageJobValue(estimates, today) {
+  const cutoff = oneYearBefore(today);
+  if (cutoff === null || !Array.isArray(estimates)) return null;
+
+  let total = 0;
+  let count = 0;
+  for (const e of estimates) {
+    if (!e || WON_STATUSES.indexOf(e.status) === -1) continue;
+    const date = String(e.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date <= cutoff) continue;
+    const price = numOrNull(e.totals && e.totals.clientPriceExGst);
+    if (price === null || price <= 0) continue;
+    total += price;
+    count += 1;
+  }
+  if (!count) return null;
+  return { average: round2(total / count), count };
+}
+
+/**
+ * How many jobs of the recent average size it takes to reach the revenue
+ * target. Rounded UP: 11.2 jobs is twelve jobs, and rounding down would report
+ * a target reached one job early.
+ *
+ * @returns {number|null} null when either input is missing or not positive.
+ */
+function jobsNeededPerYear(annualRevenueTarget, averageJob) {
+  const target = numOrNull(annualRevenueTarget);
+  const avg = numOrNull(averageJob);
+  if (target === null || target <= 0 || avg === null || avg <= 0) return null;
+  return Math.ceil(round2(target / avg));
+}
+
 /* This file is the single source of the money model. The server requires it,
  * and web/js/calc.js is a byte-identical copy the browser loads as a plain
  * script, so the editor's live totals cannot disagree with what the server
@@ -818,6 +979,11 @@ if (typeof module === 'object' && module.exports) {
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,
+    hourlyFloor,
+    priceExGst,
+    labourFloorComparison,
+    averageJobValue,
+    jobsNeededPerYear,
     currentFinancialYear,
     fyLabel,
     fyBounds,
@@ -841,6 +1007,11 @@ if (typeof module === 'object' && module.exports) {
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,
+    hourlyFloor,
+    priceExGst,
+    labourFloorComparison,
+    averageJobValue,
+    jobsNeededPerYear,
     currentFinancialYear,
     fyLabel,
     fyBounds,

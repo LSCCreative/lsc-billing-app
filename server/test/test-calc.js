@@ -22,6 +22,11 @@ const {
   fyLabel,
   fyBounds,
   fyDisplay,
+  hourlyFloor,
+  priceExGst,
+  labourFloorComparison,
+  averageJobValue,
+  jobsNeededPerYear,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
 
@@ -922,4 +927,135 @@ test('the FY boundary does not move with the host timezone', () => {
     });
     assert.equal(out, 'FY2026-27,FY2025-26,FY2026-27', `FY boundary moved under TZ=${tz}`);
   }
+});
+
+/**
+ * FLOORS AND THE RATE-CARD COMPARISON — the Dashboard's arithmetic.
+ *
+ * $25/hr of overhead at a 25% margin is a $31.25 hourly floor throughout.
+ */
+test('the hourly floor is the overhead rate plus the margin, as a percent', () => {
+  assert.equal(hourlyFloor(25, 25), 31.25);
+  // 0% is break-even, a real answer; a missing margin or rate is not.
+  assert.equal(hourlyFloor(25, 0), 25);
+  assert.equal(hourlyFloor(25, null), null);
+  assert.equal(hourlyFloor(25, undefined), null);
+  assert.equal(hourlyFloor(null, 25), null);
+  assert.equal(hourlyFloor(0, 25), null);
+  // A margin of 0.25 is a quarter of one percent, not a quarter.
+  assert.equal(hourlyFloor(25, 0.25), 25.06);
+});
+
+test('the hourly floor and Minimum Job Price agree about what an hour is worth', () => {
+  // Ten hours with no direct costs: the editor's floor must be exactly ten of
+  // the Dashboard's hourly floors, or the two screens tell different stories.
+  assert.equal(minimumJobPrice(0, 10, 25, 25), round2(10 * hourlyFloor(25, 25)));
+  assert.equal(minimumJobPrice(0, 7.5, 13.51, 30), round2(7.5 * 13.51 * 1.3));
+});
+
+test('a GST-inclusive rate card is compared ex-GST', () => {
+  const unregistered = { gst: { registered: false, rate: 0.1, pricesIncludeGst: true } };
+  const exclusive = { gst: { registered: true, rate: 0.1, pricesIncludeGst: false } };
+  const inclusive = { gst: { registered: true, rate: 0.1, pricesIncludeGst: true } };
+  assert.equal(priceExGst(110, unregistered), 110);
+  assert.equal(priceExGst(110, exclusive), 110);
+  assert.equal(priceExGst(110, inclusive), 100);
+});
+
+const FLOOR_CARD = {
+  labourSections: [
+    {
+      id: 'prod',
+      label: 'Production',
+      rows: [
+        { name: 'Hourly', rate: 1, mu: 40 },
+        { name: 'At the floor', rate: 1, mu: 31.25 },
+        { name: 'Full day', rate: 1, mu: 280, hoursPerUnit: 8 },
+        { name: 'Cheap day', rate: 999, mu: 200, hoursPerUnit: 8 },
+      ],
+    },
+  ],
+  travelRows: [{ name: 'Transport & Logistics Hrs', rate: 25, mu: 1 }],
+  taxSetAsideRate: 0.35,
+};
+const NO_GST = { gst: { registered: false } };
+
+test('each labour row is compared at its own hours per unit, against mu', () => {
+  const rows = labourFloorComparison(FLOOR_CARD, NO_GST, 31.25);
+  const by = Object.fromEntries(rows.map((r) => [r.name, r]));
+
+  assert.equal(by['Hourly'].floor, 31.25);
+  assert.equal(by['Hourly'].belowFloor, false);
+  assert.equal(by['Hourly'].gap, 0);
+
+  // Exactly at the floor is not below it.
+  assert.equal(by['At the floor'].belowFloor, false);
+
+  // A day row's floor is eight hours of floor.
+  assert.equal(by['Full day'].floor, 250);
+  assert.equal(by['Full day'].belowFloor, false);
+  assert.equal(by['Cheap day'].belowFloor, true);
+  assert.equal(by['Cheap day'].gap, 50);
+  // `rate` plays no part: Cheap day's internal rate of 999 doesn't rescue it.
+
+  // Labour rows only — the $1 travel row would be badged if it were included.
+  assert.equal(rows.length, 4);
+  assert.ok(!rows.some((r) => r.name === 'Transport & Logistics Hrs'));
+  assert.equal(by['Hourly'].sectionLabel, 'Production');
+});
+
+test('a GST-inclusive price is below its floor when its ex-GST share is', () => {
+  const card = { labourSections: [{ id: 'x', label: 'X', rows: [{ name: 'Row', mu: 33 }] }] };
+  const inclusive = { gst: { registered: true, rate: 0.1, pricesIncludeGst: true } };
+  // $33 inc GST is $30 ex — under a $31.25 floor by $1.25. Read raw it would pass.
+  const [row] = labourFloorComparison(card, inclusive, 31.25);
+  assert.equal(row.muExGst, 30);
+  assert.equal(row.belowFloor, true);
+  assert.equal(row.gap, 1.25);
+  assert.equal(labourFloorComparison(card, NO_GST, 31.25)[0].belowFloor, false);
+});
+
+test('with no floor to compare against, a row is "can\'t tell", not "fine"', () => {
+  const rows = labourFloorComparison(FLOOR_CARD, NO_GST, null);
+  assert.equal(rows.length, 4);
+  for (const r of rows) {
+    assert.equal(r.floor, null);
+    assert.equal(r.belowFloor, null);
+    assert.equal(r.gap, null);
+  }
+});
+
+test('average job value counts won work from the last twelve months only', () => {
+  const job = (status, date, price) => ({ status, date, totals: { clientPriceExGst: price } });
+  const avg = averageJobValue(
+    [
+      job('approved', '2026-01-10', 1000),
+      job('paid', '2025-09-28', 3000), // one day inside the window
+      job('invoiced', '2025-09-27', 9999), // exactly a year ago: outside
+      job('draft', '2026-09-01', 5000), // a quote, not a job
+      job('sent', '2026-09-01', 5000),
+      job('approved', '2026-12-01', 2000), // booked ahead: won work, counts
+      job('approved', '2026-05-01', 0), // nothing to average
+      job('approved', '', 4000), // undated
+    ],
+    '2026-09-27',
+  );
+  assert.deepEqual(avg, { average: 2000, count: 3 });
+
+  assert.equal(averageJobValue([], '2026-09-27'), null);
+  assert.equal(averageJobValue([job('draft', '2026-09-01', 5000)], '2026-09-27'), null);
+});
+
+test('the twelve-month window steps back from 29 February to the 28th', () => {
+  const job = (date) => ({ status: 'paid', date, totals: { clientPriceExGst: 100 } });
+  assert.equal(averageJobValue([job('2027-02-28')], '2028-02-29'), null);
+  assert.deepEqual(averageJobValue([job('2027-03-01')], '2028-02-29'), { average: 100, count: 1 });
+});
+
+test('jobs needed per year rounds up — a target is reached in whole jobs', () => {
+  assert.equal(jobsNeededPerYear(100000, 9000), 12); // 11.1 → 12
+  assert.equal(jobsNeededPerYear(90000, 9000), 10);
+  assert.equal(jobsNeededPerYear(null, 9000), null);
+  assert.equal(jobsNeededPerYear(90000, null), null);
+  assert.equal(jobsNeededPerYear(90000, 0), null);
 });

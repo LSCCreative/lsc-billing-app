@@ -66,7 +66,7 @@
 
 const GoalsView = (() => {
   const { esc, fmt, num } = LSCUtil;
-  const { annualOverheadTotal, targetAnnualRevenue } = LSCCalc;
+  const { targetAnnualRevenue } = LSCCalc;
 
   let root = null;
   let handlers = null;
@@ -187,8 +187,10 @@ const GoalsView = (() => {
      set", so an empty field and a half-typed one both fall out as null rather
      than as a zero that would make the arithmetic look answerable. */
   function computeTarget() {
+    /* Business cost (operating + gear replacement reserve), the same figure
+       the Dashboard's target annual revenue uses — see LSCData.businessCost(). */
     return targetAnnualRevenue(
-      annualOverheadTotal(LSCData.overheadItems()),
+      LSCData.businessCost(),
       form.net,
       // PERCENT -> FRACTION, the write half of the tax conversion.
       parseFloat(form.tax) / 100
@@ -200,7 +202,7 @@ const GoalsView = (() => {
      rather than the first thing this function happens to test. An em dash with
      no explanation is indistinguishable from a bug. */
   function missingReason() {
-    const annual = annualOverheadTotal(LSCData.overheadItems());
+    const annual = LSCData.businessCost();
     if (!(annual > 0)) {
       return (
         'Add what the business costs to run on the ' +
@@ -225,8 +227,8 @@ const GoalsView = (() => {
   function outcomeNote(value) {
     if (value === null) return missingReason();
     return (
-      'Your overhead of ' + fmt(annualOverheadTotal(LSCData.overheadItems())) +
-      ' a year plus the income you want, grossed up so the tax reserve comes out of it. ' +
+      'What the business costs to run, ' + fmt(LSCData.businessCost()) +
+      ' a year, plus the income you want, grossed up so the tax reserve comes out of it. ' +
       'This is what the business needs to invoice in a year — not what any one job should cost.'
     );
   }
