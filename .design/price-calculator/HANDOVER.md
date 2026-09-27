@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 11 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 12 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -60,15 +60,19 @@ service business that sells shoot days rather than units.
       - [x] **Rate Card — day rows and `hoursPerUnit`** (money math — Opus/high) — done 2026-09-27;
             **live** (pushed).
       - [x] **Overhead inner tabs + Depreciation asset register** (frontend — Opus/high) — done
-            2026-09-27. See "What landed — Depreciation register". **Committed, not pushed.**
-      - [ ] ← **NEXT: Depreciation schedule + FY selector** (money math — Opus/high). Renders below
-            the register in `DepreciationView.markup()`; `GET /api/depreciation-schedule?fy=` already
-            exists and returns the frozen lock figures for a locked FY.
+            2026-09-27. See "What landed — Depreciation register". **Live** (pushed).
+      - [x] **Depreciation schedule + FY selector** (money math — Opus/high) — done 2026-09-27. See
+            "What landed — Depreciation schedule". **Committed, not pushed.** Also fixes a live
+            defect from the register task (Edit/delete clipped at 768–1099px).
+      - [ ] ← **NEXT: CSV export + lodgement lock** (money math — Opus/high). Both routes exist and
+            are tested; this is the UI at the foot of the schedule. **Read "Seams the lock task
+            inherits" below first** — the schedule currently renders `reply.schedule` (live) even
+            for a locked FY, deliberately.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Eleven tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
-Card's day rows and the Depreciation register. **The register is committed but not pushed**; pushing
-`main` ships it (no server change). Everything before it is live. `server/src/defaults.js` did change (seeded day rows), which only
+Twelve tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
+Card's day rows, the Depreciation register and its schedule. **The schedule is committed but not
+pushed**; pushing `main` ships it (no server change). Everything before it is live. `server/src/defaults.js` did change (seeded day rows), which only
 matters to **Reset Defaults** and fresh databases — redeploy the NAS whenever convenient for Reset to
 include them.
 
@@ -386,6 +390,90 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Depreciation schedule
+
+Below the register on Overhead → Depreciation, in `web/js/views/depreciation.js` (`scheduleMarkup`,
+`scheduleBodyMarkup`, `ensureSchedule`) and `web/css/depreciation.css`. No server change.
+
+- **FY selector** — a `<select class="doc-type-select">` labelled `FY 2025–26` (via `fyDisplay`),
+  the current FY marked "(this year)" and selected on every mount (`currentFinancialYear()`, never
+  `getFullYear()`). Options run newest-first from the earliest start date to the latest of this FY,
+  any start date and any disposal date — a year with nothing held stays in the list and shows the
+  empty state, because a gap is a fact, not a hole. If a delete or re-date removes the selected year
+  from the range, `render()` falls back to the current FY.
+- **Fetched, not computed locally.** `GET /api/depreciation-schedule?fy=` per selected year, one
+  reply cached (`sched`), dropped by `refreshCache()` → `dropSchedule()` on every asset write (which
+  also bumps `schedSeq`, so a reply computed before the write is ignored). Ticking "Show disposed"
+  doesn't refetch. Why the route and not `LSCDepreciation` in the browser: the route is where a locked
+  year's frozen figures and `diverges` come from — a local recompute would have to be torn out by the
+  next task. (The summary card's one headline figure still computes locally; that's fine.)
+- **Three blocks, not one table:** Individual assets (days held, opening adjustable value, decline
+  in value, business use, deductible, closing adjustable value, plus a totals row when >1 asset);
+  Pools (opening pool balance, additions at business share, decline in value — deductible in full,
+  disposal proceeds, closing pool balance, and "Added this year: …" naming the gear, which the pool
+  row itself doesn't carry); Disposals, only when something was disposed of that year (date and
+  proceeds read from the asset, adjustable value at disposal, business use, signed balancing
+  adjustment with "assessable" / "deduction" in words). Above them, two totals: deductible decline in
+  value, and balancing adjustments — **kept separate, never summed**; they are different lines on the
+  return.
+- **Vocabulary** is the IA glossary's throughout: decline in value, adjustable value, disposal. Not
+  "depreciation" (except the section title, which names the screen), "book value" or "sale".
+- **Totals are a `<tbody>` row, not `<tfoot>`** — responsive.css has no stacked-card rule for a
+  footer group. Its spacer cells are `.dep-blank`, hidden below 768px.
+- **`signedFmt`** — `LSCUtil.fmt(-5)` prints `$-5.00`; balancing adjustments get a real minus sign.
+- **Screen reader:** a visually hidden `aria-live="polite"` line (`.dep-live` — the app has no shared
+  sr-only class) announces "FY 2025–26: $1,287.75 deductible across 2 lines." only after the user
+  changes the year, never on first load; the tables themselves are not live. Only the body under the
+  select re-renders, so focus stays on the select.
+- **Empty states:** no assets at all (no selector — there's nothing to select); nothing held in the
+  selected FY; a failed fetch shows the error with **Try again**; auth loss goes through
+  `onAuthLost({ keepScreen: true })`.
+
+### A live defect found and fixed on the way (from the register task)
+
+Between **768px and 1099px** the rail leaves `#finance-sub` ~550px, and `.est-block` has
+`overflow: hidden` — the register (needs ~760px) was clipping its **Edit and delete buttons out of
+reach** on the live site. Every depreciation table now sits in `.dep-scroll` (`overflow-x: auto`,
+tinted scrollbar); read-only schedule tables' scrollers take `tabindex="0"` + `role="region"` + a
+name so a keyboard can scroll them. At ≥1100px nothing scrolls (checked: 0px overflow on all four).
+The Dashboard, Rate Card and Operating Costs tables were measured at 800px and fit — this was only the
+depreciation tables. The **Responsive pass** should still decide whether this band wants the tables
+stacked instead; the scroller is the minimum that makes the buttons reachable. Also noticed at 800px,
+not fixed: Overhead's "+ Add Asset" / "+ Add Expense" head button wraps to two lines.
+
+### Seams the lock task inherits
+
+- The reply already carries `locked`, `lockedAt`, `lockedFigures`, `diverges`. **The schedule
+  renders `reply.schedule` (the live recompute) even when `locked` is true** — showing frozen figures,
+  the badge and the divergence flag is the lock task's job, and doing half of it here would have shown
+  lodged figures with no badge saying so. When the lock task lands, render `lockedFigures` when
+  `locked`, badge it, and flag `diverges`.
+- The CSV button and "Mark FY as lodged" go at the foot of `scheduleBodyMarkup()`, after the three
+  blocks and before the `.dep-sched-foot` note (IA: "at the foot of the schedule where an
+  accountant's workflow ends").
+- Disposal date / proceeds in the Disposals block are read from the **current** asset
+  (`LSCData.depreciationAssets()`), not the schedule reply. For a locked year the lock task should
+  decide whether those stay live (descriptive, like the CSV's category/method) or come from the
+  snapshot — the snapshot doesn't carry them today.
+
+### Verified (local scratch DB, 2026-09-27)
+
+Added a prime-cost drone ($3,300, not GST-claimed, 3-year life, started 1 Sep 2024, disposed 31 Mar
+2026 for $1,000) beside the existing FX6 and pooled MacBook, and checked every figure by hand:
+
+- **FY 2024–25:** 303 days × $1,100/yr ÷ 365 = **$913.15**, closing **$2,386.85**.
+- **FY 2025–26:** 274 days → **$825.75**, closing **$1,561.10**; balancing (1,000 − 1,561.10) × 100%
+  = **−$561.10 deduction**; pool additions $4,400 × 70% = **$3,080** × 15% = **$462.00**, closing
+  **$2,618.00**; total deductible **$1,287.75**.
+- **FY 2026–27:** FX6 361 days → decline **$5,802.37**, deductible **$4,641.90** (80%), closing
+  **$2,997.63** (not apportioned); pool $2,618 × 30% = **$785.40**; total **$5,427.30** — equal to
+  the summary card's local figure.
+- Gap year (an instant-write-off tripod in FY 2022–23 made FY 2023–24 empty): empty state reads
+  right; the tripod's zero-proceeds disposal nets to **$0.00**; deleting it while FY 2022–23 was
+  selected fell back to FY 2026–27 and refetched. No-assets state: message, no selector.
+- 1280px, 800px and 375px: no page-level horizontal scroll; the stacked cards at 375px carry every
+  label; the select is 44px tall on mobile. No console errors. `npm test` 176 pass.
 
 ## What landed (2026-09-27) — Depreciation register
 

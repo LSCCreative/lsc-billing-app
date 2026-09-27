@@ -208,6 +208,20 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* The depreciation schedule: its two totals stack like the floors, and the
+     total row's spacer cells — there only to line sums up under their columns
+     — have no label and nothing to say once the columns become card rows. */
+  .dep-sched-totals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dep-sched-table td.dep-blank {
+    display: none;
+  }
+  .dep-fy {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   /* ── Gutters ─────────────────────────────────────────────────────────────
      24px of the tablet band becomes 16px, which is 16px more content on a
      375px screen. #connection-banner matches, as it does above. */

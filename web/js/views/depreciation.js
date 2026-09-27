@@ -35,11 +35,26 @@
  * Effective lives and the write-off threshold move with the federal budget, so
  * neither is hardcoded (brief decision; HANDOVER "Open seams"). Placeholders
  * show a typical figure and every one says to confirm with the accountant.
+ *
+ * THE SCHEDULE IS THE SERVER'S ANSWER, NOT A LOCAL ONE
+ * The summary card above computes this year's deduction in the browser from
+ * the same LSCDepreciation the server runs, which is fine for one headline
+ * figure. The schedule is fetched from GET /api/depreciation-schedule instead,
+ * because that route is where a lodged year's frozen figures and the
+ * "diverges" flag come from (the lodgement lock is the next task) — rendering a
+ * local recompute here would have to be torn out the moment a year is locked.
+ * One reply is cached per selected FY and dropped on every asset write, so
+ * ticking "Show disposed" doesn't refetch but adding an asset does.
+ *
+ * ATO VOCABULARY IN EVERY COLUMN
+ * "Decline in value", "adjustable value", "disposal" — the IA doc's glossary.
+ * Not "depreciation", "book value" or "sale": this table sits one scroll below
+ * the replacement reserve, and the words are what keep the two numbers apart.
  */
 
 const DepreciationView = (() => {
   const { esc, fmt, num } = LSCUtil;
-  const { replacementReserveTotal, currentFinancialYear, fyDisplay } = LSCCalc;
+  const { replacementReserveTotal, currentFinancialYear, fyDisplay, fyLabel, fyBounds } = LSCCalc;
 
   /* value: the spelling migration v5's CHECK accepts. label: what a person
      reads. Kept apart for the reason overhead.js gives for its own lists. */
@@ -89,6 +104,14 @@ const DepreciationView = (() => {
   let iawoRaw = '';
   let iawoSaved = '';
   let iawoSaving = false;
+
+  // The schedule: which FY is selected, and the server's reply for it.
+  let selectedFy = null;
+  let sched = null; // { fy, reply } — dropped by refreshCache() on any asset write
+  let schedError = null;
+  let schedLoadingFy = null;
+  let schedSeq = 0; // a reply for an FY the user has since moved off is ignored
+  let announcePending = false; // set by the FY <select>, spent by renderScheduleBody
 
   const $ = (id) => root.querySelector('#' + id);
   const $m = (id) => overlay.querySelector('#' + id);
@@ -192,10 +215,10 @@ const DepreciationView = (() => {
     return (
       filter +
       '<div class="est-block" id="dep-register">' + head +
-      '<table class="est-table oh-table dep-table"><thead><tr><th>Asset</th><th>Category</th>' +
+      '<div class="dep-scroll"><table class="est-table oh-table dep-table"><thead><tr><th>Asset</th><th>Category</th>' +
       '<th>Start date</th><th class="right">Cost (inc GST)</th><th>Method</th>' +
       '<th class="right">Business use</th><th class="right">Replacement reserve / yr</th><th></th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>'
     );
   }
 
@@ -216,11 +239,311 @@ const DepreciationView = (() => {
     );
   }
 
+  // ── The schedule ──────────────────────────────────────────────────────────
+
+  const startYearOf = (label) => fyBounds(label).startYear;
+
+  /* Every FY an asset touched, newest first: from the earliest start date to
+     the latest of this FY, any start date, any disposal date. Always includes
+     the current FY, so the default is always an option. A year inside the
+     range with nothing held renders the empty state rather than being skipped
+     — a gap is a fact about the business, not a hole in the list. */
+  function fyOptions() {
+    const current = startYearOf(currentFinancialYear());
+    let lo = current;
+    let hi = current;
+    assets().forEach((a) => {
+      [a.startDate, a.disposalDate].forEach((d) => {
+        const label = d ? fyLabel(d) : null;
+        if (!label) return;
+        lo = Math.min(lo, startYearOf(label));
+        hi = Math.max(hi, startYearOf(label));
+      });
+    });
+    const out = [];
+    for (let y = hi; y >= lo; y -= 1) out.push(fyLabel(y + '-07-01'));
+    return out;
+  }
+
+  /* fmt() prints a negative as "$-5.00". A balancing adjustment is signed on
+     purpose — positive is assessable income, negative a deduction — so it gets
+     a real minus sign and, where it's read, the word as well. */
+  const signedFmt = (n) => (n < 0 ? '−' + fmt(-n) : fmt(n));
+
+  function balancingText(amount) {
+    if (amount === null || amount === undefined) return '—';
+    if (amount === 0) return fmt(0);
+    /* One wrapping span: below 768px a stacked .est-table cell is a flex row
+       (label, value), and a bare amount beside its tag would be three items. */
+    return (
+      '<span>' + signedFmt(amount) + ' <span class="dep-bal-kind">' +
+      (amount > 0 ? 'assessable' : 'deduction') + '</span></span>'
+    );
+  }
+
+  /* The rail leaves #finance-sub about 550px between 768px and 1099px, and
+     these are the widest tables in the app (the register needs ~760px), so
+     .est-block's overflow:hidden was clipping the register's Edit and delete
+     buttons out of reach. Each table scrolls inside its block instead, with the
+     block head left still. A read-only table has nothing else to focus, so its
+     scroller takes a tab stop and a name — otherwise a keyboard can't scroll it. */
+  const scrollOpen = (label) =>
+    '<div class="dep-scroll" tabindex="0" role="region" aria-label="' + esc(label) + ' schedule">';
+
+  const POOL_LABEL = { small_business_pool: 'Small business pool', low_value_pool: 'Low-value pool' };
+
+  function assetRowsMarkup(rows, byId) {
+    let decline = 0;
+    let deductible = 0;
+    const body = rows
+      .map((r) => {
+        decline += r.decline;
+        deductible += r.deductible;
+        const asset = byId.get(r.assetId);
+        const use = asset ? num(asset.businessUsePct) + '%' : '—';
+        return (
+          '<tr>' +
+          '<td data-label="Asset">' + esc(r.name || 'Untitled') +
+          (r.disposed ? ' <span class="dep-tag">Disposed</span>' : '') + '</td>' +
+          '<td class="right muted-td" data-label="Days held">' + esc(String(r.daysHeld)) + '</td>' +
+          '<td class="right" data-label="Opening adjustable value">' + fmt(r.openingAdjustableValue) + '</td>' +
+          '<td class="right" data-label="Decline in value">' + fmt(r.decline) + '</td>' +
+          '<td class="right muted-td" data-label="Business use">' + esc(use) + '</td>' +
+          '<td class="right dep-strong" data-label="Deductible">' + fmt(r.deductible) + '</td>' +
+          '<td class="right" data-label="Closing adjustable value">' + fmt(r.closingAdjustableValue) + '</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+    /* A body row, not <tfoot>: responsive.css stacks .est-table's rows below
+       768px and has no rule for a footer group, so a <tfoot> would fall out of
+       the card layout. round2 on the sums because each row is already rounded
+       to cents and adding floats can still land on …0.0000001. */
+    const total =
+      '<tr class="dep-total-row">' +
+      '<td data-label="">Individual assets</td><td class="dep-blank"></td><td class="dep-blank"></td>' +
+      '<td class="right" data-label="Decline in value">' + fmt(LSCCalc.round2(decline)) + '</td>' +
+      '<td class="dep-blank"></td>' +
+      '<td class="right" data-label="Deductible">' + fmt(LSCCalc.round2(deductible)) + '</td>' +
+      '<td class="dep-blank"></td></tr>';
+    return (
+      '<div class="est-block"><div class="est-block-head"><h3 class="est-block-label">Individual assets</h3>' +
+      '<span class="est-block-sum" style="color:var(--muted)">' + rows.length + '</span></div>' +
+      scrollOpen('Individual assets') + '<table class="est-table dep-sched-table"><thead><tr><th>Asset</th><th class="right">Days held</th>' +
+      '<th class="right">Opening adjustable value</th><th class="right">Decline in value</th>' +
+      '<th class="right">Business use</th><th class="right">Deductible</th>' +
+      '<th class="right">Closing adjustable value</th></tr></thead><tbody>' + body + (rows.length > 1 ? total : '') +
+      '</tbody></table></div></div>'
+    );
+  }
+
+  /* Pools are pool-level, not asset-level (IA doc, arithmetic step 6): a pooled
+     asset has no decline figure of its own, so pretending otherwise per row
+     would be a number the ATO never computes. What IS useful beside the pool
+     balance is which gear went into it this year — the additions figure is
+     otherwise a sum nobody can reconcile. */
+  function poolRowsMarkup(rows, fy) {
+    const body = rows
+      .map((r) => {
+        const added = assets()
+          .filter((a) => a.method === r.pool && a.startDate && fyLabel(a.startDate) === fy)
+          .map((a) => esc(a.name || 'Untitled'));
+        return (
+          '<tr>' +
+          '<td data-label="Pool">' + esc(POOL_LABEL[r.pool] || r.pool) +
+          (added.length ? '<div class="dep-pool-added">Added this year: ' + added.join(', ') + '</div>' : '') + '</td>' +
+          '<td class="right" data-label="Opening pool balance">' + fmt(r.openingBalance) + '</td>' +
+          '<td class="right" data-label="Additions (business share)">' + fmt(r.additions) + '</td>' +
+          '<td class="right dep-strong" data-label="Decline in value (deductible)">' + fmt(r.decline) + '</td>' +
+          '<td class="right" data-label="Disposal proceeds">' + (r.disposalProceeds ? fmt(r.disposalProceeds) : '—') + '</td>' +
+          '<td class="right" data-label="Closing pool balance">' + fmt(r.closingBalance) + '</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+    return (
+      '<div class="est-block"><div class="est-block-head"><h3 class="est-block-label">Pools</h3>' +
+      '<span class="est-block-sum" style="color:var(--muted)">' + rows.length + '</span></div>' +
+      scrollOpen('Pools') + '<table class="est-table dep-sched-table"><thead><tr><th>Pool</th><th class="right">Opening pool balance</th>' +
+      '<th class="right">Additions (business share)</th><th class="right">Decline in value (deductible)</th>' +
+      '<th class="right">Disposal proceeds</th><th class="right">Closing pool balance</th></tr></thead><tbody>' +
+      body + '</tbody></table></div>' +
+      '<p class="dep-sched-note">A pool’s whole decline in value is deductible: business use was applied when each ' +
+      'asset was added, so it isn’t applied again. Gear disposed of from a pool comes off the balance and has no ' +
+      'balancing adjustment of its own.</p></div>'
+    );
+  }
+
+  /* Balancing adjustments for assets disposed of in this FY. Their own block,
+     not a column on the asset table: most years it would be a column of dashes,
+     and it is a different line on the return from the decline in value. The
+     date and proceeds come from the asset itself — the schedule row carries the
+     adjustment, not its inputs, and an accountant checks the inputs. */
+  function disposalRowsMarkup(rows, byId) {
+    const body = rows
+      .map((r) => {
+        const asset = byId.get(r.assetId) || {};
+        const proceeds = asset.disposalProceeds;
+        return (
+          '<tr>' +
+          '<td data-label="Asset">' + esc(r.name || 'Untitled') + '</td>' +
+          '<td class="muted-td" data-label="Disposal date">' + esc(asset.disposalDate || '—') + '</td>' +
+          '<td class="right" data-label="Disposal proceeds">' +
+          (proceeds === null || proceeds === undefined ? fmt(0) : fmt(proceeds)) + '</td>' +
+          '<td class="right" data-label="Adjustable value at disposal">' + fmt(r.closingAdjustableValue) + '</td>' +
+          '<td class="right muted-td" data-label="Business use">' +
+          (asset.businessUsePct === undefined ? '—' : esc(num(asset.businessUsePct) + '%')) + '</td>' +
+          '<td class="right dep-strong" data-label="Balancing adjustment">' + balancingText(r.balancingAdjustment) + '</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+    return (
+      '<div class="est-block"><div class="est-block-head"><h3 class="est-block-label">Disposals</h3>' +
+      '<span class="est-block-sum" style="color:var(--muted)">' + rows.length + '</span></div>' +
+      scrollOpen('Disposals') + '<table class="est-table dep-sched-table"><thead><tr><th>Asset</th><th>Disposal date</th>' +
+      '<th class="right">Disposal proceeds</th><th class="right">Adjustable value at disposal</th>' +
+      '<th class="right">Business use</th><th class="right">Balancing adjustment</th></tr></thead><tbody>' +
+      body + '</tbody></table></div>' +
+      '<p class="dep-sched-note">(Proceeds − adjustable value) × business use. Positive is assessable income; ' +
+      'negative is a further deduction. It belongs to the year of disposal.</p></div>'
+    );
+  }
+
+  function scheduleBodyMarkup() {
+    const fy = selectedFy;
+    const shown = esc(fyDisplay(fy));
+    if (schedError) {
+      return (
+        '<div class="dep-sched-state" role="alert"><p>' + esc(schedError) + '</p>' +
+        '<button type="button" class="btn btn-ghost btn-sm" id="dep-sched-retry">Try again</button></div>'
+      );
+    }
+    if (!sched || sched.fy !== fy) {
+      return '<p class="dep-sched-state" aria-busy="true">Working out ' + shown + '…</p>';
+    }
+
+    /* The live recompute, even for a lodged year — on purpose, until the
+       lodgement-lock task renders reply.lockedFigures with its badge and the
+       `diverges` flag. Showing frozen figures without the badge that says so
+       would be worse than showing live ones. */
+    const schedule = sched.reply.schedule;
+    const assetRows = schedule.assets || [];
+    const poolRows = schedule.pools || [];
+    if (!assetRows.length && !poolRows.length) {
+      return (
+        '<p class="dep-sched-state">Nothing was held in ' + shown + ', so there’s no decline in value to claim ' +
+        'for it. An asset joins the schedule from the financial year of its start date and leaves after the year ' +
+        'it’s disposed of.</p>'
+      );
+    }
+
+    const byId = new Map(assets().map((a) => [a.id, a]));
+    const disposed = assetRows.filter((r) => r.disposed);
+    const bal = schedule.totalBalancingAdjustment;
+
+    return (
+      '<div class="dep-sched-totals">' +
+      '<div class="dep-sched-total"><div class="sum-label">Deductible decline in value</div>' +
+      '<div class="dep-sched-figure">' + fmt(schedule.totalDeductible) + '</div>' +
+      '<div class="dep-stat-sub">Individual assets and pools, ' + shown + '</div></div>' +
+      '<div class="dep-sched-total"><div class="sum-label">Balancing adjustments</div>' +
+      (disposed.length
+        ? '<div class="dep-sched-figure">' + signedFmt(bal) + '</div>' +
+          '<div class="dep-stat-sub">' + (bal > 0 ? 'Net assessable income' : bal < 0 ? 'Net further deduction' : 'Nets to nil') +
+          ' — a separate line from the decline</div>'
+        : '<div class="dep-sched-figure is-empty">—</div><div class="dep-stat-sub">Nothing disposed of this year</div>') +
+      '</div></div>' +
+      (assetRows.length ? assetRowsMarkup(assetRows, byId) : '') +
+      (poolRows.length ? poolRowsMarkup(poolRows, fy) : '') +
+      (disposed.length ? disposalRowsMarkup(disposed, byId) : '') +
+      '<p class="dep-sched-note dep-sched-foot">Adjustable value falls by the whole decline in value; only the ' +
+      'business-use share of it is deductible. Days are counted from each asset’s start date and divided by 365, ' +
+      'leap year or not — the ATO’s formula. Figures are to the cent; round on the return, not before.</p>'
+    );
+  }
+
+  function scheduleMarkup() {
+    if (!assets().length) {
+      return (
+        '<section class="dep-sched" aria-labelledby="dep-sched-h"><div class="dep-sched-head">' +
+        '<h2 class="dep-sched-h" id="dep-sched-h">Depreciation schedule</h2></div>' +
+        '<p class="dep-sched-state">No assets yet, so there’s no schedule. Once you add one, its decline in value ' +
+        'for each financial year appears here, ready for your accountant.</p></section>'
+      );
+    }
+    const options = fyOptions()
+      .map((label) =>
+        '<option value="' + esc(label) + '"' + (label === selectedFy ? ' selected' : '') + '>' +
+        esc(fyDisplay(label)) + (label === currentFinancialYear() ? ' (this year)' : '') + '</option>')
+      .join('');
+    return (
+      '<section class="dep-sched" aria-labelledby="dep-sched-h"><div class="dep-sched-head">' +
+      '<h2 class="dep-sched-h" id="dep-sched-h">Depreciation schedule</h2>' +
+      '<label class="dep-fy"><span class="sum-label">Financial year</span>' +
+      '<select id="dep-fy" class="doc-type-select">' + options + '</select></label></div>' +
+      '<p class="dep-live" id="dep-sched-status" aria-live="polite"></p>' +
+      '<div id="dep-sched-body">' + scheduleBodyMarkup() + '</div></section>'
+    );
+  }
+
+  /* Fetch the selected FY unless its reply is cached, already on its way, or
+     the last attempt failed (the Try again button clears that). */
+  async function ensureSchedule() {
+    if (!assets().length || schedError) return;
+    if ((sched && sched.fy === selectedFy) || schedLoadingFy === selectedFy) return;
+    const fy = selectedFy;
+    const seq = ++schedSeq;
+    schedLoadingFy = fy;
+    try {
+      const reply = await LSCApi.get('/api/depreciation-schedule?fy=' + encodeURIComponent(fy));
+      if (seq !== schedSeq) return;
+      sched = { fy, reply };
+    } catch (err) {
+      if (seq !== schedSeq) return;
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      schedError = failureText(err, 'load the ' + fyDisplay(fy) + ' schedule');
+    } finally {
+      if (seq === schedSeq) schedLoadingFy = null;
+    }
+    renderScheduleBody();
+  }
+
+  /* Only the body under the selector, so changing the year keeps focus on the
+     <select> the user is operating. When the user changed the year, say what
+     arrived, once, in the visually hidden live region — the tables themselves
+     aren't live, or a screen reader would read every cell on each change, and
+     nothing is announced on first load, which nobody asked for. */
+  function renderScheduleBody() {
+    const el = document.getElementById('dep-sched-body');
+    if (!el || !root.contains(el)) return;
+    el.innerHTML = scheduleBodyMarkup();
+    const retry = $('dep-sched-retry');
+    if (retry) {
+      retry.addEventListener('click', () => {
+        schedError = null;
+        renderScheduleBody();
+      });
+    }
+    const status = $('dep-sched-status');
+    if (announcePending && status && sched && sched.fy === selectedFy) {
+      announcePending = false;
+      const s = sched.reply.schedule;
+      const count = (s.assets || []).length + (s.pools || []).length;
+      status.textContent =
+        fyDisplay(selectedFy) + ': ' +
+        (count ? fmt(s.totalDeductible) + ' deductible across ' + count + (count === 1 ? ' line.' : ' lines.') : 'nothing held.');
+    }
+    ensureSchedule();
+  }
+
   function markup() {
     return (
       summaryMarkup() +
       '<div id="dep-error" role="alert"></div>' +
       registerMarkup() +
+      scheduleMarkup() +
       thresholdMarkup()
     );
   }
@@ -248,6 +571,16 @@ const DepreciationView = (() => {
     ]);
     LSCData.setDepreciationAssets(assetsReply.assets || []);
     LSCData.setOverheadSnapshots(snapshotsReply.snapshots || []);
+    dropSchedule();
+  }
+
+  /* Any asset write can change any year's figures, so the cached reply goes,
+     and so does a request still in flight — it was computed before the write. */
+  function dropSchedule() {
+    sched = null;
+    schedError = null;
+    schedLoadingFy = null;
+    schedSeq += 1;
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
@@ -717,11 +1050,28 @@ const DepreciationView = (() => {
       iawoRaw = this.value;
     });
     $('dep-iawo-save').addEventListener('click', saveThreshold);
+    const fySelect = $('dep-fy');
+    if (fySelect) {
+      fySelect.addEventListener('change', () => {
+        selectedFy = fySelect.value;
+        schedError = null;
+        announcePending = true;
+        renderScheduleBody();
+      });
+    }
   }
 
   function render() {
+    /* Deleting or re-dating the only asset in a year can take that year out
+       of the list; fall back to the current FY rather than leave the <select>
+       showing an option that no longer exists. */
+    if (!fyOptions().includes(selectedFy)) {
+      selectedFy = currentFinancialYear();
+      schedError = null;
+    }
     root.innerHTML = markup();
     bind();
+    ensureSchedule();
   }
 
   function mount(container, viewHandlers) {
@@ -730,6 +1080,10 @@ const DepreciationView = (() => {
     overlay = document.getElementById('modal-depreciation-asset');
     iawoSaved = toField(LSCData.goals().iawoThreshold);
     iawoRaw = iawoSaved;
+    /* Every visit opens on the current Australian FY (the shared helper, never
+       getFullYear()) and asks the server afresh. */
+    selectedFy = currentFinancialYear();
+    dropSchedule();
     render();
 
     LSCUnsaved.watch('depreciation-threshold', {
