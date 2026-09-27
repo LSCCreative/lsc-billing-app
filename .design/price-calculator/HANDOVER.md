@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 18 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 19 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -76,17 +76,18 @@ service business that sells shoot days rather than units.
       - [x] **Double-count guard on large one-off expenses** (frontend — Opus/high) — done
             2026-09-27. See "What landed — Double-count hint". **Live** (Pages, run 36316035048).
       - [x] **Disposal flow** (money math — Opus/high) — done 2026-09-27. See "What landed —
-            Disposal flow". **Committed, not pushed, NAS not redeployed** — it has a server change.
-      - [ ] ← **NEXT: Profit Goals — capacity becomes a derived read-only figure** (frontend —
-            Opus/high). `goals.js`' Billable Capacity input becomes a read-only annual-hours figure
-            linking to Capacity, and its stale 48-week hint goes.
+            Disposal flow". **Live** — NAS redeployed and Pages pushed 2026-09-27 ~21:47 AEST.
+      - [x] **Profit Goals — capacity becomes a derived read-only figure** (frontend — Opus/high) —
+            done 2026-09-27. See "What landed — Profit Goals". **Committed, not pushed** (web only).
+      - [ ] ← **NEXT: Estimate editor — day-unit-aware floor copy** (money math — Opus/high). The
+            Minimum Job Price note and the "Hours" column header must read right for day rows.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Eighteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
+Nineteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
-lock, disposal), the shared info control, the GST mirror, the post-ratio readout and the double-count
-hint. **The disposal flow is committed but not pushed, and its server change is not on the NAS** —
-see its deploy note. Everything before it is live — the info control and the GST mirror went to
+lock, disposal), the shared info control, the GST mirror, the post-ratio readout, the double-count
+hint and Profit Goals' read-only capacity. **Profit Goals is committed but not pushed** (web only).
+Everything before it is live, NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
 
@@ -418,6 +419,37 @@ can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longe
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
 
+## What landed (2026-09-27) — Profit Goals
+
+`web/js/views/goals.js`: the **Billable Capacity (hrs / week)** input is gone. In its place, in the
+same third column, a read-only **Annual billable hours** figure (`1,776 hrs`) with Capacity's own
+working under it — `CapacityView.derivation()`, now exported from `capacity.js` so the two screens
+can't explain the number differently — and a link to the Capacity screen; em dash plus a set-up link
+when capacity can't be computed. The page title is now **Profit Goals** (was "Goals"; the rail
+already said Profit Goals) with a new sub-line, and the save bar no longer claims saving "changes every
+labour rate" — margin moves the floors and the minimum job price, not the overhead rate.
+`goals.css` gained the figure's styles.
+
+### Decisions made here
+
+1. **A figure, not a disabled input.** A greyed box reads "you can't edit this right now"; the truth
+   is "this is edited somewhere else", which the hint and link say.
+2. **The save no longer sends `billableCapacityHrsPerWeek`.** The route already recomputes that
+   legacy column from the four capacity fields on every write, so nothing changes server-side and no
+   deploy is needed there. The form is now three fields (net, margin, tax); the capacity validation
+   and its 168-hour rule went with the input, and the "every field is required" comment was rewritten
+   around the margin's `|| 0` trap, which is the one still true.
+
+### Verified (local `api-scratch`, dispatched events)
+
+Three columns at 1280px (net, margin, hours) with the working sentence; no `#goals-capacity` in the
+DOM. A margin save (25 → 30 → 25) changed **only** `targetProfitMarginPct` on the stored row — the four
+capacity fields, `capacityConfirmedAt`, `iawoThreshold` and the legacy weekly column untouched — and
+the unsaved guard saw the edit and cleared after save. The hint's link lands on Capacity with the rail
+following. Capacity nulled in the local cache only → "—" and "Not set up yet…" with the link;
+restored → 1,776 hrs. 375px: single column, no horizontal scroll. No console errors. No server change;
+suite not re-run for it.
+
 ## What landed (2026-09-27) — Disposal flow
 
 **Register** (`web/js/views/depreciation.js`): each held asset gets a **Dispose** button; a disposed
@@ -456,6 +488,21 @@ dialog styles.
    swapped in — PUT writes every column, so anything not carried would be blanked.
 8. Focus after save returns to the row's button (or the "Show disposed" filter when the row is now
    hidden), never `<body>`. A stale refusal clears as soon as the figures become valid.
+
+### Deployed 2026-09-27 (~21:47 AEST), with the user's go-ahead
+
+`main` pushed (Pages run 36316682462, success), then the NAS: SSH via the `lsc-nas` host alias (key
+auth, no password). `Dockerfile`, `package*.json` and `.dockerignore` diffed identical to the NAS
+copies. Backup with `sqlite3 billing.db ".backup …"` (online-safe, unlike `cp` beside a WAL) to
+`/volume4/lsc-billing/data/backups/pre-disposal-20260927-2144.db`, `PRAGMA integrity_check` ok
+(schema v6, 0 assets, 0 locks). `server/` copied with `COPYFILE_DISABLE=1 tar -czf - --exclude
+node_modules --exclude ./data --exclude .env --exclude docker-compose.yml . | ssh lsc-nas 'tar -xzf -
+-C /volume4/lsc-billing/app'`; `docker-compose.yml` and `.env` md5 identical before and after, volume
+still `/volume4/lsc-billing/data:/data`. `docker compose up -d --build` used cached layers; container
+recreated, `healthy`, 0 restarts, `disposal_before_start` present in the running code. Public
+`/health` 200, `/api/depreciation-assets` GET and POST signed out → 401; live DB still v6 with its 6
+overhead items. (Note: `/volume4/lsc-billing/app/data/` is a stray root-owned folder left from the
+2026-09-22 incident — not the real data, harmless, excluded by the copy.)
 
 ### Deploy note — this one has a server change
 

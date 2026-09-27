@@ -429,5 +429,8 @@ const CapacityView = (() => {
     });
   }
 
-  return { mount };
+  /* derivation() is exported for Profit Goals, which shows the same annual
+     figure read-only with the same working under it — one sentence, so the
+     two screens can't explain the number differently. */
+  return { mount, derivation };
 })();

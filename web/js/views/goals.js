@@ -1,15 +1,25 @@
 'use strict';
 
-/* The Goals screen — what the business needs to earn, and the hours it has to
- * earn it in.
+/* The Profit Goals screen — what the business needs to earn, and what is meant
+ * to be left over.
  *
  * WHY THIS SCREEN EXISTS
- * The Overhead screen answers "what does the year cost." This one answers the
- * two questions that turn that into a rate: how many hours are actually
- * billable in a week, and how much is meant to be left over. Billable Capacity
- * is the divisor in overheadRatePerHour(), so every labour rate on the Pricing
- * card moves the moment it is saved here; Target Profit Margin is the margin
- * minimumJobPrice() adds; Desired Net Income is a planning figure only.
+ * The Overhead screen answers "what does the year cost." This one answers "how
+ * much is meant to be left over": Target Profit Margin is the margin
+ * minimumJobPrice() and every floor on the Dashboard and Rate Card add, and
+ * Desired Net Income is a planning figure only.
+ *
+ * CAPACITY IS SHOWN HERE, NOT SET HERE (2026-09-27)
+ * This screen used to own "Billable Capacity (hrs / week)", annualised over an
+ * assumed 48 weeks. Both are gone: capacity is four real fields on the
+ * Capacity screen, and annual billable hours are derived from them — one
+ * writer per number (IA doc read/write map). What remains here is the annual
+ * figure, read-only, with Capacity's own working under it
+ * (CapacityView.derivation) and a link to change it there. It is not an input,
+ * disabled or otherwise: a greyed-out box reads as "you can't edit this right
+ * now", when the truth is "this is edited somewhere else". The save no longer
+ * sends the weekly figure; the route recomputes that legacy column from the
+ * four fields on every write regardless.
  *
  * DESIRED NET INCOME IS A PLANNING FIGURE, NOT A FLOOR
  * It feeds Target Annual Revenue below and nothing else. Nothing in this
@@ -66,13 +76,15 @@
 
 const GoalsView = (() => {
   const { esc, fmt, num } = LSCUtil;
-  const { targetAnnualRevenue } = LSCCalc;
+  const { targetAnnualRevenue, annualBillableHours } = LSCCalc;
+
+  const hrs = (n) => Number(n).toLocaleString('en-AU', { maximumFractionDigits: 2 });
 
   let root = null;
   let handlers = null;
   let saving = false;
-  let form = null; // the four fields exactly as typed
-  let saved = null; // the same four, as the server last confirmed them
+  let form = null; // the three fields exactly as typed
+  let saved = null; // the same three, as the server last confirmed them
 
   const $ = (id) => root.querySelector('#' + id);
 
@@ -114,7 +126,6 @@ const GoalsView = (() => {
       net: toField(goals.desiredNetIncome),
       // PERCENT in, percent out — target_profit_margin_pct is stored as one.
       margin: toField(goals.targetProfitMarginPct),
-      capacity: toField(goals.billableCapacityHrsPerWeek),
       // The one field on this screen that is converted: stored as a fraction.
       tax: toPercent(LSCData.pricing().taxSetAsideRate),
     };
@@ -122,13 +133,10 @@ const GoalsView = (() => {
 
   // ── Validation ────────────────────────────────────────────────────────────
 
-  /* Every field is required. A goals row is not usefully half-filled: the
-     route coerces a blank with `Number(x) || 0`, so saving an empty Billable
-     Capacity would store a 0, and overheadRatePerHour() returns null on a zero
-     divisor — which means every labour rate on the Pricing card would go back
-     to an em dash under a note telling you to come here and set it, having
-     just come here and set it. Blocking the save is the honest version of
-     that. */
+  /* Every field is required. A value that IS sent is coerced with
+     `Number(x) || 0` by the route, so an empty margin would store a 0% margin —
+     which minimumJobPrice() treats as break-even and renders as a real floor,
+     not as "not set". Blocking the save is the honest version of that. */
   function problems() {
     const found = [];
 
@@ -147,19 +155,6 @@ const GoalsView = (() => {
       found.push({
         msg: 'Target Profit Margin must be a number, 0 or more — it’s a percent, so 25 means 25%.',
         field: $('goals-margin'),
-      });
-    }
-
-    /* Upper bound of 168 because these are hours inside one week and there are
-       168 of them. It is not pedantry: a year's worth of hours typed into a
-       weekly field (960, say) is an easy slip that divides the annual overhead
-       by fifty times too many hours, quietly under-recovering it on every job
-       from then on, with nothing on any screen looking wrong. */
-    const capacity = parseFloat(form.capacity);
-    if (!Number.isFinite(capacity) || capacity <= 0 || capacity > 168) {
-      found.push({
-        msg: 'Billable Capacity is hours in one week: more than 0, and no more than 168.',
-        field: $('goals-capacity'),
       });
     }
 
@@ -258,12 +253,39 @@ const GoalsView = (() => {
     );
   }
 
+  /* Annual billable hours, read-only — see "CAPACITY IS SHOWN HERE" above. */
+  function hoursMarkup() {
+    const goals = LSCData.goals();
+    const hours = annualBillableHours(goals);
+    const link = '<button type="button" class="goals-link" data-go-tab="capacity">Capacity screen</button>';
+    const working =
+      hours === null
+        ? null
+        : CapacityView.derivation({
+            billableHoursPerDay: Number(goals.billableHoursPerDay),
+            workingDaysPerWeek: Number(goals.workingDaysPerWeek),
+            leaveDaysPerYear: Number(goals.leaveDaysPerYear),
+            sickDaysPerYear: Number(goals.sickDaysPerYear),
+          });
+    return (
+      '<div class="field goals-derived">' +
+      '<span class="goals-derived-label">Annual billable hours</span>' +
+      '<div class="goals-derived-value' + (hours === null ? ' is-empty' : '') + '">' +
+      (hours === null ? '—' : hrs(hours) + ' hrs') + '</div>' +
+      '<p class="goals-hint">' +
+      (hours === null
+        ? 'Not set up yet — set your working days, leave and hours on the ' + link + '.'
+        : esc(working) + ' Set on the ' + link + ' — change it there.') +
+      '</p></div>'
+    );
+  }
+
   function markup() {
     const value = computeTarget();
 
     return (
-      '<div class="page-head"><div><h1 class="page-title">Goals</h1>' +
-      '<div class="page-sub">What the business needs to earn, and the hours you have to earn it in</div>' +
+      '<div class="page-head"><div><h1 class="page-title">Profit Goals</h1>' +
+      '<div class="page-sub">What the business needs to earn, and what’s left over once it’s paid for</div>' +
       '</div></div>' +
 
       '<div class="form-grid goals-grid">' +
@@ -281,20 +303,7 @@ const GoalsView = (() => {
         'Added on top of cost when a job’s minimum price is worked out. A percent: enter 25 for 25%, not 0.25.',
         'min="0" step="1"'
       ) +
-      fieldMarkup(
-        'goals-capacity',
-        'Billable Capacity (hrs / week)',
-        form.capacity,
-        /* Replaced with the Capacity screen: "annualised over 48 weeks" stopped
-           being true when calc.js's legacy branch was deleted. This field is
-           now display-only (the route recomputes it from Capacity's four
-           fields and ignores what is sent); the Profit Goals task turns it into
-           a read-only figure. Until then the hint says so plainly. */
-        'Worked out from the ' +
-          '<button type="button" class="goals-link" data-go-tab="capacity">Capacity screen</button>' +
-          ' — annual billable hours ÷ 52. Change it there; a number typed here isn’t saved.',
-        'min="0" max="168" step="0.5"'
-      ) +
+      hoursMarkup() +
       '</div>' +
 
       /* .tax-setting verbatim, the same component the Pricing screen uses for
@@ -313,7 +322,7 @@ const GoalsView = (() => {
       '<div id="goals-error" role="alert"></div>' +
 
       '<div class="pricing-save-bar" id="goals-save-bar">' +
-      '<p>Saving changes every labour rate on your card from here on. Estimates already saved keep the figures they were quoted at.</p>' +
+      '<p>Saving moves the floors on your Dashboard and Rate Card, and every new estimate’s minimum job price. Estimates already saved keep the figures they were quoted at.</p>' +
       '<div style="display:flex;align-items:center;gap:12px">' +
       '<span class="saved-msg" id="goals-saved-msg">✓ Goals saved</span>' +
       '<button type="button" class="btn btn-accent" id="goals-save" data-write>' +
@@ -372,7 +381,7 @@ const GoalsView = (() => {
      structural, and not re-rendering leaves focus on the Save button the user
      just pressed instead of dropping it to <body>. */
   function syncFields() {
-    const map = { 'goals-net': 'net', 'goals-margin': 'margin', 'goals-capacity': 'capacity', 'goals-tax-inp': 'tax' };
+    const map = { 'goals-net': 'net', 'goals-margin': 'margin', 'goals-tax-inp': 'tax' };
     Object.keys(map).forEach((id) => {
       const input = $(id);
       if (input && input.value !== form[map[id]]) input.value = form[map[id]];
@@ -404,7 +413,8 @@ const GoalsView = (() => {
         // PERCENT on the wire — target_profit_margin_pct stores a percent.
         // Do not divide this by 100.
         targetProfitMarginPct: parseFloat(form.margin),
-        billableCapacityHrsPerWeek: parseFloat(form.capacity),
+        // Not billableCapacityHrsPerWeek: Capacity owns hours now, and the
+        // route recomputes that legacy column itself on every save.
       });
       /* Before anything else can read it: the Pricing tab one click away
          computes its whole rate column from this cache at mount, so a cache
@@ -412,7 +422,6 @@ const GoalsView = (() => {
       LSCData.setGoals(reply.goals);
       saved.net = toField(reply.goals.desiredNetIncome);
       saved.margin = toField(reply.goals.targetProfitMarginPct);
-      saved.capacity = toField(reply.goals.billableCapacityHrsPerWeek);
     } catch (err) {
       setSaving(false);
       Toast.hide();
@@ -472,7 +481,6 @@ const GoalsView = (() => {
     const fields = {
       'goals-net': 'net',
       'goals-margin': 'margin',
-      'goals-capacity': 'capacity',
       'goals-tax-inp': 'tax',
     };
     Object.keys(fields).forEach((id) => {

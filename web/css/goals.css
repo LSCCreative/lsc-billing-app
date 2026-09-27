@@ -26,6 +26,29 @@
   color: var(--muted);
 }
 
+/* ── Annual billable hours (read-only) ───────────────────────────────────────
+   Sits in the third column where the old weekly-capacity input was, so the
+   row keeps its shape — but it is a figure, not a box. The label copies
+   `.field label` (app.css) so the three captions line up; the value has no
+   border or background at all, because an input-shaped outline would promise
+   an edit this screen doesn't own (the hint links to where it's changed). */
+.goals-derived-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.goals-derived-value {
+  padding: 8px 0 2px;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.goals-derived-value.is-empty {
+  color: var(--muted);
+}
+
 /* ── Target Annual Revenue ──────────────────────────────────────────────────
    A .proj-card with its navigation affordances taken back off — no accent
    border on hover, no underline sweeping in — because nothing happens when you
