@@ -1097,9 +1097,12 @@ const EstimateEditor = (() => {
     /* Resolved once, before the first recalc(). Both stay null when Finance has
        not been set up, and minimumJobPrice() turns either null into a null
        floor, which paintMinimum() renders as the set-up prompt. */
+    /* Annual billable hours, not weekly — see the note at the same call in
+       pricing.js. Both screens go through annualBillableHoursFromGoals so the
+       floor here and the rate there cannot disagree. */
     overheadRate = LSCCalc.overheadRatePerHour(
       LSCCalc.annualOverheadTotal(LSCData.overheadItems()),
-      LSCData.goals().billableCapacityHrsPerWeek
+      LSCCalc.annualBillableHoursFromGoals(LSCData.goals())
     );
     profitMarginPct = LSCData.goals().targetProfitMarginPct;
     const activeRows = (estimate && estimate.activeRows) || {};

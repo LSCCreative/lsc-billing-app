@@ -14,7 +14,9 @@ const {
   overheadRatePerHour,
   minimumJobPrice,
   targetAnnualRevenue,
-  WEEKS_PER_YEAR,
+  hoursPerUnitOf,
+  annualBillableHours,
+  annualBillableHoursFromGoals,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
 
@@ -230,6 +232,150 @@ test('without a rate card, only the rows that carry their own costs still bill',
 });
 
 /**
+ * HOURS PER UNIT
+ *
+ * `totalHours` is Σ qty × hoursPerUnit, because the card now carries day-unit
+ * labour rows whose quantity is in days. These tests exist for the two ways that
+ * can go wrong, and both are silent:
+ *
+ *   1. A day row counted as one hour. minimumJobPrice allocates overhead across
+ *      totalHours, so a two-day shoot would carry 2 hours of overhead instead of
+ *      ~20 and the advisory floor would come back hundreds of dollars low.
+ *   2. An unusable hoursPerUnit resolving to 0 instead of 1, which drops the
+ *      job's hours out of that allocation entirely — the same failure, with no
+ *      day row needed to trigger it.
+ *
+ * The first test is the one that has to keep passing forever: nothing on the
+ * card today carries hoursPerUnit, and no saved estimate may move by a cent.
+ */
+const DAY_CARD = {
+  taxSetAsideRate: 0.35,
+  travelRows: [],
+  labourSections: [
+    {
+      id: 'prod',
+      label: 'Production',
+      rows: [
+        { name: 'Video Capture — Full Day', rate: 1000, mu: 1400, hoursPerUnit: 10 },
+        { name: 'Video Capture — Hourly', rate: 100, mu: 140 },
+      ],
+    },
+  ],
+};
+
+/**
+ * Today's figures for the worked JOB on a GST-inclusive card, pinned as a whole
+ * object rather than field by field. DEFAULT_PRICING carries no hoursPerUnit on
+ * any row, so this is the behaviour-preservation gate for the default-of-1 path:
+ * if adding the multiplier had moved anything — including the figures derived
+ * from labour, which it must not touch at all — this fails.
+ */
+test('a card with no hoursPerUnit anywhere totals exactly as it did before', () => {
+  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE));
+
+  assert.deepEqual(t, {
+    clientPriceExGst: 3236.36,
+    gst: 323.64,
+    totalIncGst: 3560,
+    labourTotal: 2000,
+    expenseTotal: 1560,
+    passThroughCost: 1420,
+    totalHours: 14,
+    taxSetAside: 636.36,
+    estTakeHome: 1181.82,
+  });
+});
+
+test('two full days at 10 hours a day is 20 hours, not 2', () => {
+  const t = computeTotals(
+    { prod: [{ name: 'Video Capture — Full Day', qty: 2 }] },
+    DAY_CARD,
+    settingsWith({ registered: false }),
+  );
+
+  assert.equal(t.totalHours, 20);
+  // Quantity still drives the price: 2 days × $1,400, not 20 × anything.
+  assert.equal(t.labourTotal, 2800);
+});
+
+test('day rows and hourly rows on one estimate add their hours, not their quantities', () => {
+  const t = computeTotals(
+    {
+      prod: [
+        { name: 'Video Capture — Full Day', qty: 2 },
+        { name: 'Video Capture — Hourly', qty: 3 },
+      ],
+    },
+    DAY_CARD,
+    settingsWith({ registered: false }),
+  );
+
+  assert.equal(t.totalHours, 23); // 2 × 10 + 3 × 1
+  assert.equal(t.labourTotal, 3220); // 2 × 1400 + 3 × 140
+});
+
+test('an unusable hoursPerUnit falls back to 1, never to 0', () => {
+  for (const bad of [0, null, '', 'abc', -8, NaN, {}, true]) {
+    assert.equal(hoursPerUnitOf({ hoursPerUnit: bad }), 1, `hoursPerUnit: ${String(bad)}`);
+  }
+  assert.equal(hoursPerUnitOf({}), 1);
+  assert.equal(hoursPerUnitOf(undefined), 1);
+
+  // And through computeTotals, where it decides the overhead allocation.
+  const card = {
+    taxSetAsideRate: 0.35,
+    travelRows: [],
+    labourSections: [{
+      id: 'prod',
+      label: 'Production',
+      rows: [
+        { name: 'Zero', rate: 100, mu: 140, hoursPerUnit: 0 },
+        { name: 'Negative', rate: 100, mu: 140, hoursPerUnit: -8 },
+        { name: 'Words', rate: 100, mu: 140, hoursPerUnit: 'abc' },
+        { name: 'Null', rate: 100, mu: 140, hoursPerUnit: null },
+      ],
+    }],
+  };
+  const rows = { prod: card.labourSections[0].rows.map((r) => ({ name: r.name, qty: 2 })) };
+  const t = computeTotals(rows, card, settingsWith({ registered: false }));
+
+  assert.equal(t.totalHours, 8); // four rows × qty 2 × the fallback of 1
+});
+
+test('a zeroed hoursPerUnit would silently remove the job from the overhead floor', () => {
+  const rate = 25; // the $25/hr cost basis from the overhead fixture below
+  const card = {
+    taxSetAsideRate: 0.35,
+    travelRows: [],
+    labourSections: [{
+      id: 'prod',
+      label: 'Production',
+      rows: [{ name: 'Shoot', rate: 100, mu: 140, hoursPerUnit: 0 }],
+    }],
+  };
+  const t = computeTotals({ prod: [{ name: 'Shoot', qty: 2 }] }, card, settingsWith({ registered: false }));
+
+  // 2 hours of overhead recovered, not none. Had the fallback been 0, the floor
+  // would equal the direct costs plus margin and read as a real answer.
+  assert.equal(minimumJobPrice(0, t.totalHours, rate, 0), 50);
+});
+
+test('hoursPerUnit is fractional-safe: a half day is 4 hours, not half an hour', () => {
+  const card = {
+    taxSetAsideRate: 0.35,
+    travelRows: [],
+    labourSections: [{
+      id: 'prod',
+      label: 'Production',
+      rows: [{ name: 'Half Day', rate: 500, mu: 800, hoursPerUnit: 4.5 }],
+    }],
+  };
+  const t = computeTotals({ prod: [{ name: 'Half Day', qty: 3 }] }, card, settingsWith({ registered: false }));
+
+  assert.equal(t.totalHours, 13.5);
+});
+
+/**
  * OVERHEAD, GOALS AND THE COST BASIS
  *
  * The second worked example, and the one the brief names: an overhead book
@@ -245,8 +391,12 @@ test('without a rate card, only the rows that carry their own costs still bill',
  *                        -----
  *                        24000
  *
- * The 960 hours are 20 billable hrs/week × WEEKS_PER_YEAR (48, not 52 — four
- * weeks of the year bill nothing; see decision 2 in calc.js's header).
+ * The 960 hours are ANNUAL billable hours, passed to overheadRatePerHour()
+ * finished. They used to be written as 20 hrs/week with the function multiplying
+ * by an assumed 48-week year; that constant is retired (decision 2 in calc.js's
+ * header) and capacity is now four entered fields. 960 is kept as the fixture's
+ * divisor so the $25/hr worked example still reads the same — what changed is
+ * who does the multiplying, not the arithmetic.
  */
 const OVERHEAD = [
   { name: 'Music licence', category: 'software', cost: 50, frequency: 'weekly' },
@@ -286,32 +436,190 @@ test('no overhead items at all totals zero, from any shape of empty', () => {
 });
 
 test('the cost basis: $24,000 of overhead over 960 billable hours is $25/hr', () => {
-  assert.equal(overheadRatePerHour(annualOverheadTotal(OVERHEAD), 20), 25);
+  assert.equal(overheadRatePerHour(annualOverheadTotal(OVERHEAD), 960), 25);
 });
 
-test('billable capacity annualises at 48 weeks, not 52', () => {
-  // The whole difference between the two conventions, pinned: at 52 weeks the
-  // same inputs would give 23.08, and every rate on the card would sit ~8% low.
-  assert.equal(WEEKS_PER_YEAR, 48);
-  assert.equal(overheadRatePerHour(24000, 20), 25);
-  assert.notEqual(overheadRatePerHour(24000, 20), round2(24000 / (20 * 52)));
+/**
+ * The parameter-semantics pin. overheadRatePerHour's second argument was
+ * hours-per-week until 2026-09-27 and the function multiplied by an assumed 48;
+ * it is now annual hours and the function multiplies by nothing.
+ *
+ * This test exists because both directions of that mistake are silent. It asserts
+ * on the two wrong answers by name so a future reader cannot mistake the
+ * parameter for a weekly figure, and cannot "fix" the function by reinstating a
+ * multiplier without a failure.
+ */
+test('overheadRatePerHour takes ANNUAL billable hours, not weekly', () => {
+  assert.equal(overheadRatePerHour(24000, 960), 25);
+
+  // A weekly figure passed by mistake: $1,200/hr, not $25/hr. No error, no NaN.
+  assert.equal(overheadRatePerHour(24000, 20), 1200);
+
+  // And the function must not be annualising anything itself any more.
+  assert.notEqual(overheadRatePerHour(24000, 960), round2(24000 / (960 * 48)));
+  assert.equal(overheadRatePerHour(24000, 960), round2(24000 / 960));
 });
 
 test('no billable capacity gives no rate — never Infinity, NaN or zero', () => {
   // The case that would otherwise divide by zero and put "$Infinity" on a rate
   // card. Null is what the screens render as an em dash.
-  for (const capacity of [0, -5, null, undefined, '', 'twenty']) {
-    const rate = overheadRatePerHour(24000, capacity);
-    assert.equal(rate, null, `capacity ${JSON.stringify(capacity)} should give null`);
+  for (const hours of [0, -5, null, undefined, '', 'twenty']) {
+    const rate = overheadRatePerHour(24000, hours);
+    assert.equal(rate, null, `annual hours ${JSON.stringify(hours)} should give null`);
   }
 });
 
 test('no overhead recorded gives no rate, rather than a $0.00 cost basis', () => {
   // "$0.00" on the rate card would read as a computed answer meaning an hour
   // costs nothing, instead of "you haven't set this up yet".
-  assert.equal(overheadRatePerHour(0, 20), null);
-  assert.equal(overheadRatePerHour(annualOverheadTotal([]), 20), null);
-  assert.equal(overheadRatePerHour(null, 20), null);
+  assert.equal(overheadRatePerHour(0, 960), null);
+  assert.equal(overheadRatePerHour(annualOverheadTotal([]), 960), null);
+  assert.equal(overheadRatePerHour(null, 960), null);
+});
+
+/**
+ * ANNUAL BILLABLE HOURS
+ *
+ * The brief's worked example, and the reason every overhead-derived rate moved:
+ *
+ *   (5 working days × 52 weeks − 30 leave − 8 sick) × 8 hrs/day = 1,776
+ *
+ * against the retired model's 20 hrs/week × 48 = 1,920. Same business, 144 fewer
+ * billable hours, so the recovery rate rises about 8%. That was accepted when
+ * the model was chosen — a test asserting the direction, so nobody later reads
+ * the rise as a regression and "corrects" it.
+ */
+const REFERENCE_CAPACITY = {
+  billableHoursPerDay: 8,
+  workingDaysPerWeek: 5,
+  leaveDaysPerYear: 30,
+  sickDaysPerYear: 8,
+};
+
+test('annual billable hours: the reference defaults give 1,776, not 1,920', () => {
+  assert.equal(annualBillableHours(REFERENCE_CAPACITY), 1776);
+
+  /* The retired model's answer for the SAME business. It took billable hours per
+     WEEK, which for this capacity is 8 × 5 = 40, and multiplied by an assumed 48
+     — so the comparison is 1,920 against 1,776, a 144-hour gap. (Not 20 × 48:
+     that is the OVERHEAD fixture's own weekly figure above, a different
+     business, and mixing the two is how this test was wrong the first time.) */
+  const retiredWeekly = REFERENCE_CAPACITY.billableHoursPerDay * REFERENCE_CAPACITY.workingDaysPerWeek;
+  assert.equal(retiredWeekly, 40);
+  const retired = retiredWeekly * 48;
+  assert.equal(retired, 1920);
+  assert.ok(annualBillableHours(REFERENCE_CAPACITY) < retired);
+
+  // The consequence, at the fixture's overhead book: the rate goes UP.
+  const now = overheadRatePerHour(24000, annualBillableHours(REFERENCE_CAPACITY));
+  const before = overheadRatePerHour(24000, retired);
+  assert.equal(now, 13.51);
+  assert.equal(before, 12.5);
+  assert.ok(now > before, 'retiring the 48-week year must raise the rate, not lower it');
+});
+
+test('leave and sick days are working days: 20, not 28, for four weeks off', () => {
+  // Entering four weeks as calendar days overstates the time off by 8 days and
+  // so understates capacity by 64 hours. Nothing in calc.js can tell the
+  // difference — this pins the arithmetic the entry labels are protecting.
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, leaveDaysPerYear: 20 }), 1856);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, leaveDaysPerYear: 28 }), 1792);
+});
+
+test('a six-day week and a part-time day both compute', () => {
+  assert.equal(
+    annualBillableHours({ billableHoursPerDay: 6, workingDaysPerWeek: 6, leaveDaysPerYear: 0, sickDaysPerYear: 0 }),
+    1872,
+  );
+  assert.equal(
+    annualBillableHours({ billableHoursPerDay: 4, workingDaysPerWeek: 3, leaveDaysPerYear: 10, sickDaysPerYear: 5 }),
+    564,
+  );
+});
+
+test('leave plus sick consuming the working year gives null, not zero or negative', () => {
+  const workingDays = 5 * 52; // 260
+
+  // Exactly equal is still null: zero billable hours divides into an infinite
+  // rate, which is the same empty state as no capacity at all.
+  assert.equal(
+    annualBillableHours({ ...REFERENCE_CAPACITY, leaveDaysPerYear: 260, sickDaysPerYear: 0 }),
+    null,
+  );
+  assert.equal(
+    annualBillableHours({ ...REFERENCE_CAPACITY, leaveDaysPerYear: 200, sickDaysPerYear: 60 }),
+    null,
+  );
+  assert.equal(
+    annualBillableHours({ ...REFERENCE_CAPACITY, leaveDaysPerYear: 300, sickDaysPerYear: 0 }),
+    null,
+  );
+
+  // One day short of the whole year is a real, if bleak, answer.
+  assert.equal(
+    annualBillableHours({ ...REFERENCE_CAPACITY, leaveDaysPerYear: workingDays - 1, sickDaysPerYear: 0 }),
+    8,
+  );
+});
+
+test('a missing or out-of-range capacity field gives null, never a partial answer', () => {
+  for (const field of ['billableHoursPerDay', 'workingDaysPerWeek', 'leaveDaysPerYear', 'sickDaysPerYear']) {
+    for (const bad of [undefined, null, '', 'abc', -1]) {
+      const capacity = { ...REFERENCE_CAPACITY, [field]: bad };
+      assert.equal(annualBillableHours(capacity), null, `${field} = ${JSON.stringify(bad)}`);
+    }
+  }
+
+  // Zero hours in a day or zero days in a week is no capacity, not a small one.
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, billableHoursPerDay: 0 }), null);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, workingDaysPerWeek: 0 }), null);
+
+  // Out of range: more than 24 hours in a day, more than 7 days in a week.
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, billableHoursPerDay: 25 }), null);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, workingDaysPerWeek: 8 }), null);
+
+  // Zero leave and zero sick days are real answers, unlike the above.
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, leaveDaysPerYear: 0, sickDaysPerYear: 0 }), 2080);
+
+  assert.equal(annualBillableHours({}), null);
+  assert.equal(annualBillableHours(undefined), null);
+});
+
+/**
+ * THE TRANSITIONAL BRIDGE
+ *
+ * annualBillableHoursFromGoals is what the two live call sites use, because the
+ * four capacity fields do not reach the browser until the price-calculator
+ * migration and routes tasks land. Until then it annualises the legacy weekly
+ * column the old way, which is what keeps today's rate card identical to the
+ * cent. Delete the legacy branch — and these two tests with it — when the
+ * Capacity screen ships.
+ */
+test('the bridge prefers the four capacity fields when they are there', () => {
+  assert.equal(annualBillableHoursFromGoals({ ...REFERENCE_CAPACITY }), 1776);
+
+  // Both shapes present: the new fields win, and the legacy column is ignored
+  // rather than averaged or preferred.
+  assert.equal(
+    annualBillableHoursFromGoals({ ...REFERENCE_CAPACITY, billableCapacityHrsPerWeek: 20 }),
+    1776,
+  );
+});
+
+test('the bridge keeps a legacy goals row on exactly the rate it had yesterday', () => {
+  // 20 hrs/week × the retired 48 = 960, which is the fixture's divisor, which is
+  // $25/hr. If this moves, the live rate card moved.
+  assert.equal(annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: 20 }), 960);
+  assert.equal(
+    overheadRatePerHour(annualOverheadTotal(OVERHEAD), annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: 20 })),
+    25,
+  );
+
+  // A never-saved goals row is nulls, and must stay the em-dash empty state.
+  assert.equal(annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: null }), null);
+  assert.equal(annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: 0 }), null);
+  assert.equal(annualBillableHoursFromGoals({}), null);
+  assert.equal(annualBillableHoursFromGoals(undefined), null);
 });
 
 test('minimum job price covers direct costs, overhead allocation and margin', () => {

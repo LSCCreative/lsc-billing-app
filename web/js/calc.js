@@ -56,13 +56,28 @@
  *      not add a wage term back without asking again — it was declined
  *      knowingly, not overlooked.
  *
- *   2. BILLABLE CAPACITY ANNUALISES AT 48 WEEKS, NOT 52 (WEEKS_PER_YEAR).
- *      Hours entered are billable hours in a working week, so the year carries
- *      roughly four weeks of leave and downtime that bill nothing. Costs are
- *      untouched by this — a weekly expense is owed all 52 weeks, which is why
- *      FREQUENCY_MULTIPLIERS.weekly is 52 while capacity uses 48. Fewer
- *      billable hours means a higher recovery rate, so the error direction is
- *      the conservative one. Decided with the user on 2026-09-15.
+ *   2. CAPACITY IS FOUR REAL FIELDS, NOT AN ASSUMED 48-WEEK YEAR.
+ *      SUPERSEDED 2026-09-27 (.design/price-calculator/). This used to read
+ *      "billable capacity annualises at 48 weeks, not 52 (WEEKS_PER_YEAR)":
+ *      hours were entered per week and multiplied by an assumed 48, on the
+ *      grounds that roughly four weeks of the year bill nothing.
+ *
+ *      That constant is retired. Annual billable hours are now derived from
+ *      what the user actually works — annualBillableHours() below — because an
+ *      assumed four weeks of downtime is a guess sitting underneath every rate
+ *      on the card, and the two halves of it (leave, and sick/miscellaneous
+ *      days) cannot be recovered from a single weekly figure.
+ *
+ *      THIS RAISED EVERY OVERHEAD-DERIVED RATE, KNOWINGLY. On the reference
+ *      defaults (8 billable hrs/day, 5 working days/week, 30 leave days, 8 sick
+ *      days) the year is 1,776 billable hours against the old model's 1,920, so
+ *      the recovery rate rises about 8%. The user accepted that when the model
+ *      was chosen: the old figure was flattering the rate, not protecting it.
+ *
+ *      Costs are untouched by any of this — a weekly expense is owed all 52
+ *      weeks, which is why FREQUENCY_MULTIPLIERS.weekly is 52 while capacity
+ *      counts working days. Decided with the user on 2026-09-15, replaced with
+ *      their agreement on 2026-09-27.
  *
  *   3. TAX IS PROVISIONED AGAINST REVENUE, NOT PROFIT. targetAnnualRevenue
  *      solves (overhead + desired net) / (1 - taxRate), treating tax as a flat
@@ -73,6 +88,34 @@
  *      same app disagreeing by thousands. Chosen with the user on 2026-09-15;
  *      it errs high, asking for more revenue than a profit-based calculation
  *      would.
+ *
+ * HOURS AND QUANTITY ARE NOT THE SAME THING (hoursPerUnit)
+ * Added 2026-09-27 for the price calculator (.design/price-calculator/). The
+ * rate card now carries day-unit labour rows — `Video Capture — Full Day`,
+ * `— Half Day` — alongside the hourly ones. A quantity of 2 on a full-day row
+ * is two shoot days, which is roughly twenty billable hours, not two.
+ *
+ * `totalHours` used to be a plain sum of quantities, which was correct only
+ * because every labour row on the card happened to be priced by the hour. It is
+ * now `Σ qty × hoursPerUnit`, where a row's `hoursPerUnit` is how many billable
+ * hours one unit of it consumes.
+ *
+ * This matters because `totalHours` is not a display figure. `minimumJobPrice`
+ * allocates overhead across it, so a two-day shoot left on the old arithmetic
+ * would carry 2 hours of overhead instead of ~20 and the advisory floor would
+ * come back low by hundreds of dollars — silently, with no error and no zero to
+ * notice. That is why this landed in the same change as the day-unit rows rather
+ * than after them.
+ *
+ * `hoursPerUnit` DEFAULTS TO 1, AND ANYTHING UNUSABLE FALLS BACK TO 1
+ * (hoursPerUnitOf below). The default is the whole safety argument: every row
+ * already on the card and every estimate already saved is an hourly row with no
+ * `hoursPerUnit`, and must total identically after this change. The fallback
+ * direction is deliberate too — a missing, zero, negative or non-numeric value
+ * reads as "one hour per unit", never as zero. Zero would drop the job's hours
+ * out of the overhead allocation entirely, which is the expensive direction to
+ * be wrong in: the floor would read as a computed answer while quietly pricing
+ * a shoot as though it took no time at all.
  *
  * UNITS — the one trap in here. `taxRate` and `taxSetAsideRate` are FRACTIONS
  * (0.35 is 35%, as the rate card stores it). `profitMarginPct` is a PERCENT (25
@@ -93,10 +136,29 @@ function num(v) {
 }
 
 /**
+ * How many billable hours one unit of a labour row consumes.
+ *
+ * Self-contained rather than reusing numOrNull() below, because the answer here
+ * is never null: an unusable value resolves to 1, for the reasons in "Hours and
+ * quantity are not the same thing" in the header. Exported so the Rate Card's
+ * day-rate prefill and the Dashboard's full-day floor use this same fallback
+ * instead of each re-deciding what a blank cell means.
+ *
+ * @param {object} def — a rate-card labour row, which may predate hoursPerUnit.
+ * @returns {number} a positive number of hours; 1 when the row does not say.
+ */
+function hoursPerUnitOf(def) {
+  const h = parseFloat(def && def.hoursPerUnit);
+  return Number.isFinite(h) && h > 0 ? h : 1;
+}
+
+/**
  * @param {object} activeRows  { deliverables, preprod, prod, post, travel, crew, equip }
  *   — the rows saved on the estimate. Labour rows carry { name, qty, override },
  *   travel rows { name, qty }, crew/equip rows { days, cost }.
  * @param {object} pricing     the rate card: { labourSections, travelRows, taxSetAsideRate }
+ *   — a labour row def carries { name, mu, rate } and optionally hoursPerUnit
+ *   (absent on every hourly row; see the header).
  * @param {object} settings    { gst: { registered, rate, pricesIncludeGst } }
  * @param {object} [options]   the estimate's own tax treatment: { gstFree }.
  *   Named `options` rather than `estimate` or `document` on purpose — this file
@@ -125,6 +187,10 @@ function computeTotals(activeRows, pricing, settings, options) {
   // ── Labour ──────────────────────────────────────────────────────────────
   // A row is billed at qty × marked-up rate, unless it carries an explicit
   // override (the "Raw Footage Handover [on HDD]" custom-bill case).
+  //
+  // Hours are counted separately from quantity, because a day-unit row's
+  // quantity is in days: totalHours is Σ qty × hoursPerUnit, and it feeds the
+  // overhead allocation in minimumJobPrice rather than the client's price.
   let labourTotal = 0;
   let totalHours = 0;
 
@@ -134,7 +200,7 @@ function computeTotals(activeRows, pricing, settings, options) {
       const def = (section.rows || []).find((r) => r.name === line.name);
       if (!def) continue; // rate removed from the card since this was saved
       const qty = num(line.qty);
-      totalHours += qty;
+      totalHours += qty * hoursPerUnitOf(def);
       const override = num(line.override);
       labourTotal += override > 0 ? override : qty * num(def.mu);
     }
@@ -212,6 +278,8 @@ function computeTotals(activeRows, pricing, settings, options) {
     labourTotal: round2(labourTotal),
     expenseTotal: round2(expenseTotal),
     passThroughCost: round2(passThroughCost),
+    /* Billable hours, not line quantities — see the header. Overhead is
+       allocated across this, so a day row contributes its whole day. */
     totalHours: round2(totalHours),
 
     // What it means for the business
@@ -238,9 +306,6 @@ function gstTreatment(totals, options) {
 /* ── Overhead, goals and the cost basis ──────────────────────────────────────
    See "Overhead, goals and the cost basis" in the header for the decisions
    behind these; the arithmetic below is the easy half. */
-
-/** Billable weeks in a working year — decision 2 in the header. */
-const WEEKS_PER_YEAR = 48;
 
 /**
  * How many times a year each frequency is paid.
@@ -306,13 +371,121 @@ function annualOverheadTotal(items) {
   return round2(total);
 }
 
+/** Weeks in a calendar year. Not the retired WEEKS_PER_YEAR — see above. */
+const WEEKS_IN_YEAR = 52;
+
+/**
+ * The retired 48-week year, kept only for the legacy branch below so that
+ * already-saved goals rows keep producing the rate they produced yesterday.
+ * Not a capacity model any more. Removed with that branch.
+ */
+const LEGACY_WEEKS_PER_YEAR = 48;
+
+/**
+ * How many hours the year can actually be billed for.
+ *
+ *   ((workingDaysPerWeek × 52) − leaveDays − sickDays) × billableHoursPerDay
+ *
+ * This is the divisor behind every overhead-derived rate on the card, and it
+ * replaced an assumed 48-week year — see decision 2 in the header for why, and
+ * for the ~8% rise that came with it.
+ *
+ * LEAVE AND SICK DAYS ARE COUNTED IN WORKING DAYS, NOT CALENDAR DAYS. Four
+ * weeks off is 20, not 28. Nothing here can tell the difference, so the entry
+ * labels carry the burden; getting it wrong overstates capacity by eight days
+ * and under-recovers overhead all year. The 52 is deliberate and is not the
+ * retired constant coming back: weeks in a year is a fact, and the leave that
+ * used to be assumed inside it is now entered.
+ *
+ * @param {object} capacity — { billableHoursPerDay, workingDaysPerWeek,
+ *   leaveDaysPerYear, sickDaysPerYear }, all four required.
+ * @returns {number|null} null when any field is missing or out of range, and
+ *   when leave + sick consume the whole working year. A zero or negative
+ *   capacity is not a smaller number, it is a broken one: every rate derived
+ *   from it would be zero, infinite or negative, and each of those renders as a
+ *   plausible-looking figure. Null is the signal every screen already turns into
+ *   an em dash and a set-up prompt.
+ */
+function annualBillableHours(capacity) {
+  const c = capacity || {};
+
+  const hoursPerDay = numOrNull(c.billableHoursPerDay);
+  if (hoursPerDay === null || hoursPerDay <= 0 || hoursPerDay > 24) return null;
+
+  const daysPerWeek = numOrNull(c.workingDaysPerWeek);
+  if (daysPerWeek === null || daysPerWeek <= 0 || daysPerWeek > 7) return null;
+
+  const leave = numOrNull(c.leaveDaysPerYear);
+  if (leave === null || leave < 0) return null;
+
+  const sick = numOrNull(c.sickDaysPerYear);
+  if (sick === null || sick < 0) return null;
+
+  const workingDaysPerYear = daysPerWeek * WEEKS_IN_YEAR;
+  /* Not `> workingDaysPerYear`: at exactly equal the answer is zero billable
+     hours, which divides into an infinite rate. Both are the same empty state. */
+  if (leave + sick >= workingDaysPerYear) return null;
+
+  return round2((workingDaysPerYear - leave - sick) * hoursPerDay);
+}
+
+/**
+ * Annual billable hours from a goals record, whichever shape it is in.
+ *
+ * TRANSITIONAL — and the transition has a named end. The four capacity fields
+ * live on the goals row only from the migration in
+ * .design/price-calculator/TASKS.md onwards, and reach the browser only once
+ * that file's routes task extends GET /api/goals. Until both have landed, the
+ * live Pricing screen and estimate editor have nothing but the legacy weekly
+ * figure to offer, and switching overheadRatePerHour's parameter without this
+ * bridge would have turned a $25/hr cost basis into $1,200/hr on a live site.
+ *
+ * So: the new fields win when they are there, and the legacy column is
+ * annualised the old way when they are not, which keeps today's rates identical
+ * to the cent. DELETE THE LEGACY BRANCH — and LEGACY_WEEKS_PER_YEAR with it —
+ * as part of the Capacity screen task, once every goals row has the four fields.
+ * Leaving it in place after that would let a half-migrated row silently price
+ * against the old assumption.
+ *
+ * Exported so the two call sites cannot answer this question differently, which
+ * is the failure mode that mattered: one screen's floor disagreeing with the
+ * other's rate is invisible until a client asks about a number.
+ *
+ * @param {object} goals — the /api/goals payload, camelCase.
+ * @returns {number|null} null when neither shape is usable.
+ */
+function annualBillableHoursFromGoals(goals) {
+  const g = goals || {};
+
+  const derived = annualBillableHours(g);
+  if (derived !== null) return derived;
+
+  const legacyHrsPerWeek = numOrNull(g.billableCapacityHrsPerWeek);
+  if (legacyHrsPerWeek === null || legacyHrsPerWeek <= 0) return null;
+  return round2(legacyHrsPerWeek * LEGACY_WEEKS_PER_YEAR);
+}
+
 /**
  * The cost basis: what a single billable hour must earn, before any profit, to
  * carry its share of running the business. Annual overhead ÷ annual billable
- * hours, where the year is WEEKS_PER_YEAR long.
+ * hours.
  *
- * @param {number} annualTotal — from annualOverheadTotal().
- * @param {number} billableCapacityHrsPerWeek — goals.billable_capacity_hrs_per_week.
+ * THE SECOND PARAMETER IS ANNUAL HOURS, NOT WEEKLY HOURS. It was weekly until
+ * 2026-09-27, and this function multiplied it by an assumed 48-week year
+ * itself. It no longer multiplies by anything: the caller passes the finished
+ * annual figure, from annualBillableHours() or annualBillableHoursFromGoals().
+ *
+ * That change is silent and expensive in both directions, which is why it is
+ * stated here and pinned by a test rather than left to the parameter name. A
+ * weekly figure passed by mistake divides $24,000 by 20 and puts $1,200/hr on
+ * the rate card; an annual figure passed to the old signature divided by 46,080
+ * and put $0.52 there. Neither errors, and both look like answers.
+ *
+ * @param {number} annualTotal — from annualOverheadTotal() (or, once the
+ *   price-calculator work lands, annualBusinessCost(), which adds the gear
+ *   replacement reserve).
+ * @param {number} annualBillableHrs — ANNUAL billable hours, from
+ *   annualBillableHours(). Not goals.billable_capacity_hrs_per_week.
  * @returns {number|null} null when the rate cannot be computed: no billable
  *   capacity set, or no overhead recorded. Null rather than 0, Infinity or NaN,
  *   because every screen that renders this shows an em dash for null, and a
@@ -321,14 +494,14 @@ function annualOverheadTotal(items) {
  *   overhead total is treated as that same empty state — a business with
  *   genuinely no costs is not a case worth mispricing every other one for.
  */
-function overheadRatePerHour(annualTotal, billableCapacityHrsPerWeek) {
+function overheadRatePerHour(annualTotal, annualBillableHrs) {
   const total = numOrNull(annualTotal);
   if (total === null || total <= 0) return null;
 
-  const hrsPerWeek = numOrNull(billableCapacityHrsPerWeek);
-  if (hrsPerWeek === null || hrsPerWeek <= 0) return null;
+  const hours = numOrNull(annualBillableHrs);
+  if (hours === null || hours <= 0) return null;
 
-  return round2(total / (hrsPerWeek * WEEKS_PER_YEAR));
+  return round2(total / hours);
 }
 
 /**
@@ -342,7 +515,11 @@ function overheadRatePerHour(annualTotal, billableCapacityHrsPerWeek) {
  *
  * @param {number} directJobCosts — the job's own out-of-pocket costs, i.e.
  *   expenseTotal from computeTotals.
- * @param {number} estimatedHours — totalHours from computeTotals.
+ * @param {number} estimatedHours — totalHours from computeTotals, which is
+ *   Σ qty × hoursPerUnit and not a sum of quantities. This function is the
+ *   reason that distinction exists: it is the only place the job's hours turn
+ *   into money, so a day row counted as one hour under-allocates overhead here
+ *   and nowhere else. See the header.
  * @param {number} overheadRate — from overheadRatePerHour().
  * @param {number} profitMarginPct — a PERCENT (25 is 25%), unlike the tax rates
  *   elsewhere in this file, which are fractions. See UNITS in the header.
@@ -404,25 +581,29 @@ if (typeof module === 'object' && module.exports) {
     computeTotals,
     round2,
     gstTreatment,
+    hoursPerUnitOf,
     annualisedCost,
     annualOverheadTotal,
+    annualBillableHours,
+    annualBillableHoursFromGoals,
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,
     FREQUENCY_MULTIPLIERS,
-    WEEKS_PER_YEAR,
   };
 } else {
   globalThis.LSCCalc = {
     computeTotals,
     round2,
     gstTreatment,
+    hoursPerUnitOf,
     annualisedCost,
     annualOverheadTotal,
+    annualBillableHours,
+    annualBillableHoursFromGoals,
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,
     FREQUENCY_MULTIPLIERS,
-    WEEKS_PER_YEAR,
   };
 }
