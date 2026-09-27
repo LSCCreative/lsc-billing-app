@@ -2,7 +2,7 @@
 
 **Status:** Approved direction, pre-build
 **Date:** 14 August 2026
-**Supersedes:** the storage decision in `BILLING_APP_PLAN.md` (JSON files via Electron IPC). The data model, money model and CRM scope in that plan still stand.
+**Supersedes:** the storage decision in `BILLING_APP_PLAN.md` (JSON files via Electron IPC). The data model and money model in that plan still stand. The CRM scope was superseded on 2026-09-22 by [`../hubspot-crm-sync/`](../hubspot-crm-sync/DESIGN_BRIEF.md).
 
 ---
 
@@ -81,7 +81,7 @@ Reverse proxy / Tailscale ──► UGREEN DXP4800 Pro
 | Estimate editor | Modify | Save goes through the API; add a saving/saved/failed state to the button. |
 | Pricing screen | Modify | "Save Rates" finally writes. This is the headline bug fix. |
 | Invoice Settings modal | Modify | Reads/writes `/api/settings` instead of `localStorage`. One-time import of any existing `localStorage` value on first login. |
-| Clients screen + typeahead | **New** | The CRM from `BILLING_APP_PLAN.md`, built against the API rather than a JSON file. |
+| Clients screen + typeahead | **New** | Built (local `clients` table). **Being replaced by a two-way HubSpot sync** — see [`../hubspot-crm-sync/`](../hubspot-crm-sync/DESIGN_BRIEF.md). |
 | PDF export button | Modify | Calls `POST /api/estimates/:id/pdf`, streams a download. Loses "Open Folder." |
 | App header | Modify | Drop Electron drag regions; add logout. |
 

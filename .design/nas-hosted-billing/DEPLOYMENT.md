@@ -141,6 +141,63 @@ What the workflow does on every run, so nothing here needs to be repeated by han
 Push to `main` (or trigger manually from the Actions tab) to deploy. The deployed URL is
 `https://lsccreative.github.io/lsc-billing-app/`.
 
+## 5.5. Redeploying `server/` code to the NAS (fix this before the next redeploy)
+
+The API code didn't have a repeatable redeploy path — `git clone`/`git pull` was never set up on
+the NAS, so the only way anyone had to get newer `server/` code onto it was to copy files over by
+hand (`rsync`/`tar` over SSH). **That caused a real outage on 2026-09-22**: copying the whole
+`server/` tree onto `/volume4/lsc-billing/app` overwrote the NAS's `docker-compose.yml` with the
+git-tracked version, whose `volumes:` line is `./data:/data` (the local-dev default — see the
+comment in `server/docker-compose.yml`). The NAS's copy of that file had been hand-edited to
+`/volume4/lsc-billing/data:/data`, the actual host path (`server/docker-compose.yml`'s own header
+comment tells you to do exactly this edit — "NAS: change the volume's host path to a real share").
+The overwrite silently reverted that edit. `docker compose up -d --build` then created a **new,
+empty** `./data` folder next to the compose file, owned by the SSH login user, which the
+container's non-root `node` user (uid 1000 inside the image) can't write to — the container
+crash-looped on `EACCES: mkdir '/data/backups'` and the site was down until the volume line was
+fixed back by hand and the container recreated. The real `billing.db` was never touched (it's a
+different path than the one the broken container mounted), and a manual snapshot was taken first
+into `/volume4/lsc-billing/manual-backup/` — but this must not depend on getting lucky twice.
+
+**Root cause:** the host-side data path is a NAS-specific fact that only exists as a hand-edit to
+a git-tracked file. Nothing enforces that the edit survives a redeploy, and nothing in this doc
+told the next person doing a code-only redeploy that `docker-compose.yml` was one of the
+NAS-local files, alongside `.env` and `data/`, that must not be blindly overwritten.
+
+**Fix to make (not yet done — first task for whoever picks this up, see TASKS.md):**
+
+1. **Parameterize the host data path** in `server/docker-compose.yml` instead of hard-coding it:
+   ```yaml
+   volumes:
+     - ${HOST_DATA_DIR:-./data}:/data
+   ```
+   Docker Compose reads `${VAR}` substitutions in the compose file itself from a `.env` file in
+   the same directory (this is separate from the `env_file:` directive, which only injects vars
+   *into the container*) — so this makes `docker-compose.yml` identical on every machine, and the
+   one thing that differs (the real host path) lives in `.env`, which is already gitignored and
+   already NAS-local. Add `HOST_DATA_DIR=/volume4/lsc-billing/data` to the NAS's real `.env`, and
+   document the var (with the `./data` local default) in `server/.env.example`.
+   After this change, a wholesale overwrite of `docker-compose.yml` can never again silently
+   switch the volume mount back to the local-dev default.
+2. **Write down a safe redeploy procedure** here (replacing ad hoc `rsync`/`tar` by hand) — the
+   three files that must never be blown away by a redeploy are `.env`, `data/`, and (until step 1
+   ships) `docker-compose.yml`. Once step 1 ships, `docker-compose.yml` stops being NAS-local and
+   can be copied freely. Two reasonable options, either is fine:
+   - **Git on the NAS**: `git clone` the repo into `/volume4/lsc-billing/app` once, then
+     `git pull && docker compose up -d --build` for every redeploy. Simplest, and gets you `git
+     diff`/`git log` on the NAS for free if something looks wrong after a deploy. Needs deploy
+     access to the repo from the NAS (an SSH deploy key or HTTPS token), and `.env`/`data/` must
+     stay gitignored (already true) so `git clean`/`git pull` never touches them.
+   - **rsync with an explicit exclude list**, if git-on-NAS isn't wanted: always exclude
+     `node_modules`, `data`, `.env`, and — until step 1 ships — `docker-compose.yml`, e.g.
+     `rsync -az --delete --exclude node_modules --exclude data --exclude .env --exclude
+     docker-compose.yml server/ user@nas:/volume4/lsc-billing/app/`.
+3. **After any redeploy**, don't just check `docker ps`/`/health` — those were green in the
+   original incident's "healthy" reading right before the crash loop, and `/health` had been
+   returning 200 the whole time because it was still answering off the *old* container image.
+   Confirm the new code actually took effect (e.g. hit a route that didn't exist in the old build,
+   like `GET /api/goals`, and expect 200 not 404) before calling a redeploy done.
+
 ## 6. Verified end to end (2026-09-14)
 
 - `https://lsccreative.github.io/lsc-billing-app/` loads the login screen with no error banner.

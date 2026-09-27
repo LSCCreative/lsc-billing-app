@@ -3,6 +3,10 @@
 For a fresh agent picking this up. Root: the repo containing this `.design/` folder. Read
 [CLAUDE.md](../../CLAUDE.md) first for the model/effort guidance and the two-codebases warning.
 
+> **2026-09-22:** the Clients CRM described below is being replaced by a two-way HubSpot sync — see
+> [`../hubspot-crm-sync/HANDOVER.md`](../hubspot-crm-sync/HANDOVER.md). The `clients` table and
+> `client_json` snapshot behaviour documented here remain the starting point for that work.
+
 ## What this is
 
 Overhauling the LSC Billing App from a memoryless Electron desktop app into a real website.
@@ -13,6 +17,37 @@ rationale, architecture diagram and experience principles: [DESIGN_BRIEF.md](DES
 is live: **https://lsccreative.github.io/lsc-billing-app/** talking to
 **https://billing.lsccreative.studio**. All that remains is the user signing in once with real
 credentials, per the "Login accounts" note below)
+
+> **2026-09-22 — NAS was running stale code; redeploy process needs fixing before it's used
+> again.** The user reported Overhead and Goals saves failing ("The server rejected that
+> request.") and Pricing not surviving a refresh. Cause: the NAS container's `server/src/routes`
+> had no `overhead.js`/`goals.js` at all — it was still running roughly the 2026-09-14 build, from
+> before the `overhead-finance` track's backend work ever shipped to it. There was never a
+> redeploy step in this project after the initial "make it live" pass in this doc's Deployment
+> section; every subsequent feature (overhead-finance's whole backend) landed in the repo but
+> never made it onto the NAS. Fixed for now by copying current `server/` onto the NAS and
+> rebuilding — but that redeploy **caused a second, unrelated outage** by overwriting the NAS's
+> hand-edited `docker-compose.yml` (see [DEPLOYMENT.md § 5.5](DEPLOYMENT.md#55-redeploying-server-code-to-the-nas-fix-this-before-the-next-redeploy)
+> for the full incident and the fix, which is **not yet done** — that section is the first task
+> for the next agent, tagged in TASKS.md).
+>
+> **Verified working after the fix** (from a real signed-in browser session against
+> `https://billing.lsccreative.studio`): `GET`/`PUT /api/goals` and `GET`/`POST`/`DELETE
+> /api/overhead-items` all now 200 instead of 404. `GET /api/pricing` was already 200 before the
+> redeploy — the "Pricing doesn't survive a refresh" report was never independently reproduced or
+> root-caused, and may simply have been the same stale-server symptom reported alongside the
+> others, or may be a separate bug. **Re-check pricing persistence first** on the new build before
+> assuming it's fixed.
+>
+> **One known loose end left by this session's own testing**: verifying the `PUT /api/goals` fix
+> required writing real values through the API, and Goals has no delete route to cleanly undo
+> that — it left a real `{0, 0%, 0hrs}` row in the `goals` table instead of the true "never saved"
+> (`null`) state the UI expects to show as blank. Clean it up with:
+> ```bash
+> ssh lsc-nas 'docker exec lsc-billing node -e "const D=require(\"better-sqlite3\");const db=new D(\"/data/billing.db\");db.prepare(\"DELETE FROM goals WHERE id=1\").run();console.log(db.prepare(\"SELECT * FROM goals\").all());"'
+> ```
+> This is a one-time fixup, not a recurring task — nothing else in normal use should ever need a
+> raw `DELETE` against this database.
 
 Working tree: `server/` (the API, Node/Express + SQLite) and `web/` (the GitHub Pages frontend —
 new as of 8 Sept 2026, see below). `index.html`/`main.js`/`preload.js` at repo root are the old
