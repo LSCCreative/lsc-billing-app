@@ -375,13 +375,6 @@ function annualOverheadTotal(items) {
 const WEEKS_IN_YEAR = 52;
 
 /**
- * The retired 48-week year, kept only for the legacy branch below so that
- * already-saved goals rows keep producing the rate they produced yesterday.
- * Not a capacity model any more. Removed with that branch.
- */
-const LEGACY_WEEKS_PER_YEAR = 48;
-
-/**
  * How many hours the year can actually be billed for.
  *
  *   ((workingDaysPerWeek × 52) − leaveDays − sickDays) × billableHoursPerDay
@@ -397,8 +390,18 @@ const LEGACY_WEEKS_PER_YEAR = 48;
  * retired constant coming back: weeks in a year is a fact, and the leave that
  * used to be assumed inside it is now entered.
  *
+ * THE LEGACY WEEKLY COLUMN IS NOT AN INPUT. goals.billableCapacityHrsPerWeek
+ * is display-only since migration v5 (recomputed on save as this ÷ 52). Until
+ * the Capacity screen shipped, a transitional annualBillableHoursFromGoals()
+ * fell back to it × the retired 48 when the four fields were absent; that
+ * branch was deleted with the screen's arrival on 2026-09-27, because every
+ * goals row has carried the four fields since v5 and a fallback left in place
+ * would let a half-migrated row price silently against the old assumption. A
+ * goals payload is passed straight in — its four fields have these names.
+ *
  * @param {object} capacity — { billableHoursPerDay, workingDaysPerWeek,
- *   leaveDaysPerYear, sickDaysPerYear }, all four required.
+ *   leaveDaysPerYear, sickDaysPerYear }, all four required. The /api/goals
+ *   payload qualifies as it is.
  * @returns {number|null} null when any field is missing or out of range, and
  *   when leave + sick consume the whole working year. A zero or negative
  *   capacity is not a smaller number, it is a broken one: every rate derived
@@ -430,42 +433,6 @@ function annualBillableHours(capacity) {
 }
 
 /**
- * Annual billable hours from a goals record, whichever shape it is in.
- *
- * TRANSITIONAL — and the transition has a named end. The four capacity fields
- * live on the goals row only from the migration in
- * .design/price-calculator/TASKS.md onwards, and reach the browser only once
- * that file's routes task extends GET /api/goals. Until both have landed, the
- * live Pricing screen and estimate editor have nothing but the legacy weekly
- * figure to offer, and switching overheadRatePerHour's parameter without this
- * bridge would have turned a $25/hr cost basis into $1,200/hr on a live site.
- *
- * So: the new fields win when they are there, and the legacy column is
- * annualised the old way when they are not, which keeps today's rates identical
- * to the cent. DELETE THE LEGACY BRANCH — and LEGACY_WEEKS_PER_YEAR with it —
- * as part of the Capacity screen task, once every goals row has the four fields.
- * Leaving it in place after that would let a half-migrated row silently price
- * against the old assumption.
- *
- * Exported so the two call sites cannot answer this question differently, which
- * is the failure mode that mattered: one screen's floor disagreeing with the
- * other's rate is invisible until a client asks about a number.
- *
- * @param {object} goals — the /api/goals payload, camelCase.
- * @returns {number|null} null when neither shape is usable.
- */
-function annualBillableHoursFromGoals(goals) {
-  const g = goals || {};
-
-  const derived = annualBillableHours(g);
-  if (derived !== null) return derived;
-
-  const legacyHrsPerWeek = numOrNull(g.billableCapacityHrsPerWeek);
-  if (legacyHrsPerWeek === null || legacyHrsPerWeek <= 0) return null;
-  return round2(legacyHrsPerWeek * LEGACY_WEEKS_PER_YEAR);
-}
-
-/**
  * The cost basis: what a single billable hour must earn, before any profit, to
  * carry its share of running the business. Annual overhead ÷ annual billable
  * hours.
@@ -473,7 +440,7 @@ function annualBillableHoursFromGoals(goals) {
  * THE SECOND PARAMETER IS ANNUAL HOURS, NOT WEEKLY HOURS. It was weekly until
  * 2026-09-27, and this function multiplied it by an assumed 48-week year
  * itself. It no longer multiplies by anything: the caller passes the finished
- * annual figure, from annualBillableHours() or annualBillableHoursFromGoals().
+ * annual figure, from annualBillableHours().
  *
  * That change is silent and expensive in both directions, which is why it is
  * stated here and pinned by a test rather than left to the parameter name. A
@@ -848,7 +815,6 @@ if (typeof module === 'object' && module.exports) {
     replacementReserveTotal,
     annualBusinessCost,
     annualBillableHours,
-    annualBillableHoursFromGoals,
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,
@@ -872,7 +838,6 @@ if (typeof module === 'object' && module.exports) {
     replacementReserveTotal,
     annualBusinessCost,
     annualBillableHours,
-    annualBillableHoursFromGoals,
     overheadRatePerHour,
     minimumJobPrice,
     targetAnnualRevenue,

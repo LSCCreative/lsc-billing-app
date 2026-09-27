@@ -283,7 +283,14 @@ const GoalsView = (() => {
         'goals-capacity',
         'Billable Capacity (hrs / week)',
         form.capacity,
-        'Hours you can actually bill in a working week — annualised over 48 weeks, so leave and downtime don’t flatter the rate. This is the divisor behind every rate on your card.',
+        /* Replaced with the Capacity screen: "annualised over 48 weeks" stopped
+           being true when calc.js's legacy branch was deleted. This field is
+           now display-only (the route recomputes it from Capacity's four
+           fields and ignores what is sent); the Profit Goals task turns it into
+           a read-only figure. Until then the hint says so plainly. */
+        'Worked out from the ' +
+          '<button type="button" class="goals-link" data-go-tab="capacity">Capacity screen</button>' +
+          ' — annual billable hours ÷ 52. Change it there; a number typed here isn’t saved.',
         'min="0" max="168" step="0.5"'
       ) +
       '</div>' +

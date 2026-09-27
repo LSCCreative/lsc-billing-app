@@ -16,7 +16,6 @@ const {
   targetAnnualRevenue,
   hoursPerUnitOf,
   annualBillableHours,
-  annualBillableHoursFromGoals,
   replacementReserveTotal,
   annualBusinessCost,
   currentFinancialYear,
@@ -592,40 +591,28 @@ test('a missing or out-of-range capacity field gives null, never a partial answe
 });
 
 /**
- * THE TRANSITIONAL BRIDGE
+ * THE LEGACY WEEKLY COLUMN IS NOT A CAPACITY INPUT
  *
- * annualBillableHoursFromGoals is what the two live call sites use, because the
- * four capacity fields do not reach the browser until the price-calculator
- * migration and routes tasks land. Until then it annualises the legacy weekly
- * column the old way, which is what keeps today's rate card identical to the
- * cent. Delete the legacy branch — and these two tests with it — when the
- * Capacity screen ships.
+ * Replaces the two "bridge" tests, deleted with the transitional
+ * annualBillableHoursFromGoals() when the Capacity screen shipped. If a
+ * fallback to billableCapacityHrsPerWeek × 48 ever comes back, the first
+ * assertion below fails — a row missing its four fields must read as "not set
+ * up", never as the retired assumption quietly pricing the card.
  */
-test('the bridge prefers the four capacity fields when they are there', () => {
-  assert.equal(annualBillableHoursFromGoals({ ...REFERENCE_CAPACITY }), 1776);
-
-  // Both shapes present: the new fields win, and the legacy column is ignored
-  // rather than averaged or preferred.
+test('the legacy weekly figure alone gives no capacity, and never outvotes the four fields', () => {
+  assert.equal(annualBillableHours({ billableCapacityHrsPerWeek: 20 }), null);
+  // A /api/goals payload, passed straight in as both call sites do.
   assert.equal(
-    annualBillableHoursFromGoals({ ...REFERENCE_CAPACITY, billableCapacityHrsPerWeek: 20 }),
+    annualBillableHours({ ...REFERENCE_CAPACITY, billableCapacityHrsPerWeek: 20, desiredNetIncome: 80000 }),
     1776,
   );
-});
-
-test('the bridge keeps a legacy goals row on exactly the rate it had yesterday', () => {
-  // 20 hrs/week × the retired 48 = 960, which is the fixture's divisor, which is
-  // $25/hr. If this moves, the live rate card moved.
-  assert.equal(annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: 20 }), 960);
+  // A never-saved goals row is nulls, and stays the em-dash empty state.
   assert.equal(
-    overheadRatePerHour(annualOverheadTotal(OVERHEAD), annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: 20 })),
-    25,
+    annualBillableHours({
+      billableHoursPerDay: null, workingDaysPerWeek: null, leaveDaysPerYear: null, sickDaysPerYear: null,
+    }),
+    null,
   );
-
-  // A never-saved goals row is nulls, and must stay the em-dash empty state.
-  assert.equal(annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: null }), null);
-  assert.equal(annualBillableHoursFromGoals({ billableCapacityHrsPerWeek: 0 }), null);
-  assert.equal(annualBillableHoursFromGoals({}), null);
-  assert.equal(annualBillableHoursFromGoals(undefined), null);
 });
 
 test('minimum job price covers direct costs, overhead allocation and margin', () => {

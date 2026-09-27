@@ -333,13 +333,13 @@ const PricingView = (() => {
          document-unique id with the same constraint #tax-inp carries (see
          onScreen above): no other screen may reuse it. */
       '<p class="pricing-rate-note" id="pricing-rate-note">' +
-      'Rate is calculated automatically from your Overhead and Goals settings and can’t be ' +
+      'Rate is calculated automatically from your Overhead and Capacity settings and can’t be ' +
       /* &nbsp; before the dash so a wrap can't start a line with it — the copy
          is unchanged, the break just moves to after the dash instead. */
       'edited here&nbsp;— update it on the ' +
       '<button type="button" class="pricing-rate-note-link" data-go-tab="overhead">Overhead</button>' +
       ' / ' +
-      '<button type="button" class="pricing-rate-note-link" data-go-tab="goals">Goals</button>' +
+      '<button type="button" class="pricing-rate-note-link" data-go-tab="capacity">Capacity</button>' +
       ' tabs. Mark-Up stays yours to set.</p>' +
       '<div class="pricing-grid">';
 
@@ -666,10 +666,10 @@ const PricingView = (() => {
        figure it used to be — overheadRatePerHour no longer multiplies by an
        assumed 48-week year. Passing goals.billableCapacityHrsPerWeek straight in
        would read as 20 annual hours and put $1,200/hr on the card, silently, so
-       it goes through the shared bridge. */
+       it is derived from the four capacity fields the goals payload carries. */
     computedRate = LSCCalc.overheadRatePerHour(
       LSCCalc.annualOverheadTotal(LSCData.overheadItems()),
-      LSCCalc.annualBillableHoursFromGoals(LSCData.goals())
+      LSCCalc.annualBillableHours(LSCData.goals())
     );
     baseline = snapshot();
 

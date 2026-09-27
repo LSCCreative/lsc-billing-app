@@ -392,6 +392,68 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 6,
+    name: 'goals: income and margin may be unset, capacity confirmation',
+    up(db) {
+      // Two changes the Capacity screen needs, both about telling "not set"
+      // apart from a real number.
+      //
+      // 1. desired_net_income AND target_profit_margin_pct BECOME NULLABLE.
+      //    v4 made them NOT NULL because one screen (Goals) wrote all three
+      //    fields at once. Capacity is now a second writer to the same
+      //    singleton row, and it can be the FIRST — the IA doc's first-run flow
+      //    goes Dashboard → Capacity → save before Profit Goals is ever opened.
+      //    With NOT NULL, that first insert has to invent an income and a
+      //    margin, and the only candidate is 0. A 0% margin is not an empty
+      //    state: minimumJobPrice() accepts it as "break even" and the floor
+      //    renders as a real figure that nobody chose. NULL keeps the em-dash
+      //    set-up prompt, which is what an unset margin already means
+      //    everywhere else (GET returns nulls for a row that doesn't exist).
+      //
+      // 2. capacity_confirmed_at IS NEW. v5 seeded 8 / 5 / 30 / 8 onto every
+      //    row, and the Capacity screen must flag those as defaults until the
+      //    user confirms them. Comparing against 8/5/30/8 can't answer that —
+      //    they are the user's own reference-spreadsheet figures, so a person
+      //    who genuinely works them would be nagged forever. So the route
+      //    stamps this when a PUT carries all four capacity fields (only the
+      //    Capacity screen does), and NULL means "never confirmed".
+      //
+      // SQLite cannot drop a NOT NULL constraint in place, so the table is
+      // rebuilt. Every column and value is carried across unchanged, including
+      // the legacy billable_capacity_hrs_per_week (still NOT NULL: the route
+      // always computes it) and v5's seeded capacity fields. No foreign key
+      // references goals, so the drop is safe with foreign_keys = ON.
+      db.exec(`
+        CREATE TABLE goals_v6 (
+          id                             INTEGER PRIMARY KEY CHECK (id = 1),
+          desired_net_income             REAL,
+          target_profit_margin_pct       REAL,
+          billable_capacity_hrs_per_week REAL NOT NULL,
+          created_at                     TEXT NOT NULL,
+          updated_at                     TEXT NOT NULL,
+          billable_hours_per_day         REAL NOT NULL DEFAULT 8,
+          working_days_per_week          REAL NOT NULL DEFAULT 5,
+          leave_days_per_year            REAL NOT NULL DEFAULT 30,
+          sick_days_per_year             REAL NOT NULL DEFAULT 8,
+          iawo_threshold                 REAL,
+          capacity_confirmed_at          TEXT
+        );
+        INSERT INTO goals_v6 (
+          id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+          created_at, updated_at, billable_hours_per_day, working_days_per_week,
+          leave_days_per_year, sick_days_per_year, iawo_threshold, capacity_confirmed_at
+        )
+        SELECT
+          id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+          created_at, updated_at, billable_hours_per_day, working_days_per_week,
+          leave_days_per_year, sick_days_per_year, iawo_threshold, NULL
+        FROM goals;
+        DROP TABLE goals;
+        ALTER TABLE goals_v6 RENAME TO goals;
+      `);
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

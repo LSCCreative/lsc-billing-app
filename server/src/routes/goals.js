@@ -26,6 +26,7 @@ function loadGoals(row) {
       leaveDaysPerYear: null,
       sickDaysPerYear: null,
       iawoThreshold: null,
+      capacityConfirmedAt: null,
     };
   }
   return {
@@ -37,7 +38,34 @@ function loadGoals(row) {
     leaveDaysPerYear: row.leave_days_per_year,
     sickDaysPerYear: row.sick_days_per_year,
     iawoThreshold: row.iawo_threshold,
+    capacityConfirmedAt: row.capacity_confirmed_at,
   };
+}
+
+// The four fields only the Capacity screen sends together. A PUT carrying all
+// four is that screen's save, and is what confirms the v5-seeded defaults.
+const CAPACITY_KEYS = ['billableHoursPerDay', 'workingDaysPerWeek', 'leaveDaysPerYear', 'sickDaysPerYear'];
+
+/**
+ * Resolves desiredNetIncome or targetProfitMarginPct for a PUT: the body's
+ * value when the caller sent it, otherwise what is already stored, otherwise
+ * NULL — never 0.
+ *
+ * WHY: this row has two writers since the Capacity screen shipped, and each
+ * sends only its own fields. This used to be `Number(body.x) || 0` for both,
+ * which meant a Capacity save silently zeroed the income target and the profit
+ * margin — and a 0% margin is not an empty state, it is a break-even floor that
+ * minimumJobPrice() prices every job against. Migration v6 made both columns
+ * nullable so that a Capacity save onto a row that doesn't exist yet can leave
+ * them unset instead of inventing a number.
+ *
+ * A value that IS sent keeps the old coercion exactly (`Number(x) || 0`), so
+ * the Goals screen's saves behave as before.
+ */
+function resolveGoalField(body, existing, key, column) {
+  if (body[key] !== undefined) return Number(body[key]) || 0;
+  if (existing && existing[column] !== undefined) return existing[column];
+  return null;
 }
 
 /**
@@ -45,13 +73,12 @@ function loadGoals(row) {
  * sent it, otherwise the value already on the row, otherwise the reference
  * default.
  *
- * WHY THIS MATTERS: the Capacity screen (next task) is the first UI that will
- * ever send these five fields. Until it ships, `views/goals.js` keeps PUTting
- * only desiredNetIncome / targetProfitMarginPct / billableCapacityHrsPerWeek —
- * and this route's INSERT ... ON CONFLICT DO UPDATE writes every column on
- * every save. Without this fallback, that still-live screen's next save would
- * silently zero out whatever capacity a later session had already set, or (on
- * a brand new row) write zeros instead of the seeded defaults. Falling back to
+ * WHY THIS MATTERS: the Capacity screen is the only UI that sends these
+ * fields. `views/goals.js` PUTs only desiredNetIncome / targetProfitMarginPct /
+ * billableCapacityHrsPerWeek — and this route's INSERT ... ON CONFLICT DO
+ * UPDATE writes every column on every save. Without this fallback, a Goals
+ * save would silently zero out the capacity the Capacity screen set, or (on a
+ * brand new row) write zeros instead of the seeded defaults. Falling back to
  * "whatever is stored" rather than "the default" for an UPDATE also means a
  * user's own edited values are never quietly reset to 8/5/30/8 by an
  * old-shaped request.
@@ -139,13 +166,18 @@ function registerGoalsRoutes(app, db) {
     const legacyHrsPerWeek = annualHours === null ? 0 : Math.round((annualHours / 52) * 100) / 100;
 
     const now = nowIso();
+    // Stamped by a save that carries all four capacity fields — the Capacity
+    // screen's — and otherwise carried forward. See migration v6.
+    const confirmsCapacity = CAPACITY_KEYS.every((key) => body[key] !== undefined);
+    const capacityConfirmedAt = confirmsCapacity ? now : (existing ? existing.capacity_confirmed_at : null);
+
     db.prepare(`
       INSERT INTO goals (
         id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
         billable_hours_per_day, working_days_per_week, leave_days_per_year, sick_days_per_year,
-        iawo_threshold, created_at, updated_at
+        iawo_threshold, capacity_confirmed_at, created_at, updated_at
       )
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         desired_net_income = excluded.desired_net_income,
         target_profit_margin_pct = excluded.target_profit_margin_pct,
@@ -155,16 +187,18 @@ function registerGoalsRoutes(app, db) {
         leave_days_per_year = excluded.leave_days_per_year,
         sick_days_per_year = excluded.sick_days_per_year,
         iawo_threshold = excluded.iawo_threshold,
+        capacity_confirmed_at = excluded.capacity_confirmed_at,
         updated_at = excluded.updated_at
     `).run(
-      Number(body.desiredNetIncome) || 0,
-      Number(body.targetProfitMarginPct) || 0,
+      resolveGoalField(body, existing, 'desiredNetIncome', 'desired_net_income'),
+      resolveGoalField(body, existing, 'targetProfitMarginPct', 'target_profit_margin_pct'),
       legacyHrsPerWeek,
       capacity.billableHoursPerDay,
       capacity.workingDaysPerWeek,
       capacity.leaveDaysPerYear,
       capacity.sickDaysPerYear,
       capacity.iawoThreshold,
+      capacityConfirmedAt,
       now,
       now
     );

@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 7 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 8 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -54,16 +54,19 @@ service business that sells shoot days rather than units.
       - [x] **Sidebar rail + router restructure + `Finance & Price` rename** (frontend —
             Opus/high) — done 2026-09-27. The first visible change. See "What landed" below —
             **read its deploy-order warning before pushing anything.**
-      - [ ] ← **NEXT: Capacity screen** (money math — Opus/high — it renders the divisor behind
-            every rate). New `web/js/views/capacity.js`, exported as **`CapacityView`** — the
-            router already resolves that exact name. Also deletes the `calc.js` legacy bridge
-            branch; see its task entry.
+      - [x] **Capacity screen** (money math — Opus/high) — done 2026-09-27. Added **migration v6**,
+            which the task didn't list — see "What landed — Capacity" below.
+      - [ ] ← **NEXT: Dashboard** (money math — Opus/high). New `web/js/views/finance-dashboard.js`,
+            exported as **`FinanceDashboardView`** — the router already resolves that exact name.
+            Read-only, no `LSCUnsaved` watcher.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Seven tasks of 21 are built — the entire Foundation group plus the rail. The Finance area now has
-its left rail and lands on a Dashboard placeholder; Dashboard and Capacity still show "isn't built
-yet" with a button to the Rate Card. `server/src/defaults.js` is untouched. **Nothing is pushed or
-deployed** — the rail commit needs the NAS redeployed first (see "What landed — the rail").
+Eight tasks of 21 are built — the Foundation group, the rail and the Capacity screen. The Finance
+area lands on a Dashboard placeholder ("isn't built yet", with a button to the Rate Card).
+`server/src/defaults.js` is untouched. **Nothing is pushed or deployed** — the NAS needs the new
+server code first (see "What landed — the rail", deploy order). An agent attempt to redeploy over SSH
+on 2026-09-27 was blocked by the permission classifier as a production read, so **the user does the
+NAS redeploy**, or grants the agent that access explicitly.
 
 **This task's deploy is the one that changes the live rate**, not the Capacity screen's. `GET
 /api/goals` now returns the four real capacity fields, already seeded 8/5/30/8 by migration v5 on
@@ -371,6 +374,64 @@ can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longe
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
 
+## What landed (2026-09-27) — Capacity
+
+`web/js/views/capacity.js` (`CapacityView`), `web/css/capacity.css`. Order per the IA doc: first-run
+note → **Annual billable hours** (live, `aria-live="polite"`, with the working spelled out: "5 days ×
+52 weeks = 260 working days, less 30 leave and 8 sick = 222 billable days × 8 hrs") → the four fields
+(labels say *working days*) → save bar → **Full-day hours** readout (billable hours per day under a
+second name; half-day shown as half — the Rate Card task owns the actual rows). Reuses Goals'
+`.goals-outcome` / `.goals-hint` classes rather than a third copy, as `goals.css` asks.
+
+### Migration v6 — the task didn't list it; here's why it exists
+
+1. **A Capacity save was going to zero the income target and profit margin.** `PUT /api/goals`
+   wrote `Number(body.desiredNetIncome) || 0` (same for margin) on every save. The existing API
+   test's capacity-only PUT was already doing it, unasserted. A 0% margin isn't "unset" —
+   `minimumJobPrice()` treats it as break-even and the floor renders as a real figure. Now
+   `resolveGoalField()` does body → stored → **null**. A value that *is* sent keeps the old `|| 0`
+   coercion, so the Goals screen behaves exactly as before.
+2. **v6 rebuilds `goals`** so `desired_net_income` / `target_profit_margin_pct` are nullable — the
+   IA doc's first-run flow saves Capacity before Profit Goals ever exists, and NOT NULL would force a
+   0 in. Every value carries across; the upgrade test builds the real v5 table shape, rewinds
+   `schema_version`, and runs `migrate()` over it (the path the NAS DB will take).
+3. **`capacity_confirmed_at`** (→ `capacityConfirmedAt`) drives the "defaults — confirm these are
+   yours" note. Stamped by the route only when a PUT carries **all four** capacity fields (only
+   Capacity sends them); carried forward otherwise. Deliberately not "fields equal 8/5/30/8" — those
+   are the user's own spreadsheet figures and may be real. Every live row starts NULL after v6, so
+   the note **will show on the live site** until the user saves Capacity once.
+
+### Also changed
+
+- **`annualBillableHoursFromGoals()` is deleted outright**, not just its legacy branch, with
+  `LEGACY_WEEKS_PER_YEAR`. Both call sites now use `annualBillableHours(LSCData.goals())`. The "bridge"
+  tests are replaced by one that fails if a weekly-figure fallback ever returns. v5's SQL comment
+  still names the old function — shipped migrations aren't edited.
+- **The Capacity screen sends only its four fields** — never echoes income/margin from cache (the
+  header explains: that's how two writers of one row clobber each other).
+- **0 hours/day is refused on screen** though the route accepts it: it stores fine and then every
+  rate goes to an em dash. The route was left alone.
+- **The save confirm** shows before/after hours *and* before/after overhead cost per hour, computed
+  exactly as `pricing.js` computes its rate column (`annualOverheadTotal`, not yet
+  `annualBusinessCost`) so the dialog's number is the Rate Card's number — verified: confirm said
+  $14.15 → $13.51, Rate Card then read 13.51. **When the Dashboard/Rate Card switch to
+  `annualBusinessCost`, move `rateFor()` in `capacity.js` with them.** No confirm when the hours don't
+  change (e.g. confirming defaults as they stand), or when there was no capacity before.
+- Copy made wrong by this task, fixed: the Rate Card note now says the rate comes from Overhead and
+  **Capacity**; the Goals capacity hint links to Capacity and says a value typed there isn't saved
+  (the Profit Goals task still makes that field read-only).
+
+### Verified (local, scratch DB)
+
+First run with no goals row (defaults shown + flagged, save doesn't confirm, flag clears, income and
+margin stay **null**); before/after confirm text and figures; decline saves nothing; unsaved guard on
+leaving; Rate Card rate after save; zero hours, over-full leave+sick (both fields flagged, focus to the
+first), blank field; Goals → Capacity link; 1280 and 375px (no overflow; save button no longer wraps).
+Found in passing, not a code bug: the browser served a cached old `pricing.js` beside a new `calc.js`
+and Rate Card threw `annualBillableHoursFromGoals is not a function`. **GitHub Pages caches for ~10
+minutes and `index.html` has no cache-busting**, so the same mixed-version window can happen for a
+few minutes after the push — a hard refresh fixes it.
+
 ## What landed (2026-09-27) — the rail, the router, the rename
 
 `web/js/views/finance.js` rewritten around a `.finance-shell` grid: a `<nav class="finance-rail">`
@@ -386,7 +447,9 @@ screen** shows "Couldn't load your pricing and finance settings" — not just Fi
 
 1. Redeploy `server/` to the NAS first, and read `nas-hosted-billing/DEPLOYMENT.md` §5.5 before
    doing it — a hand-copy of `server/` caused an outage on 2026-09-22 by overwriting the NAS's
-   `docker-compose.yml` volume path. Confirm with `GET /api/depreciation-assets` → 200, not 404.
+   `docker-compose.yml` volume path. The boot log must show **both** `migrated to v5` and `migrated to
+   v6`. Confirm with `GET /api/depreciation-assets` → 401 when signed out (not 404). Take a DB backup
+   first: v6 rebuilds the `goals` table.
 2. Remember that same redeploy flips the live rate onto the capacity model (see "What landed —
    routes" below). That's resolved decision 2, but it happens at step 1, not at push time.
 3. Only then push `main`.

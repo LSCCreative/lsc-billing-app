@@ -1,0 +1,85 @@
+/* Capacity screen — additive only, like goals.css.
+ *
+ * The screen borrows Goals' stat card and hint text as they are
+ * (.goals-outcome, .goals-outcome-value, .goals-outcome-note, .goals-hint):
+ * same kind of figure, same kind of sentence, and goals.css's own note asks
+ * that a third stat card reuse rather than copy. This file is only what Capacity
+ * does differently.
+ */
+
+/* Above the fields rather than below the save bar as on Goals — the IA doc's
+   order for this screen, because the figure is what people come here for. */
+.cap-outcome {
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+
+/* .form-grid's own two columns, kept: the four fields pair up as a week (hours
+   a day, days a week) and a year (leave, sick), and every hint is a sentence
+   that needs the width a four-across row would take from it. align-items so a
+   short hint doesn't stretch its neighbour's input. */
+.cap-grid {
+  align-items: start;
+  margin-bottom: 22px;
+}
+
+/* The first-run flag. A 2px accent rule on the left — the same mark the rail
+   and the nav use for "this one" — with the text in --text and --muted, never
+   in the accent itself, which is under 4.5:1 on this background. role="note",
+   not alert: it's there on arrival, not something that just happened. */
+.cap-defaults {
+  margin-bottom: 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  max-width: 78ch;
+}
+.cap-defaults .sum-label {
+  color: var(--text);
+}
+.cap-defaults p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* "Save Capacity" is one word longer than "Save Goals", and beside this bar's
+   two-line sentence the flex row squeezed it onto two lines. The sentence is
+   what should wrap. */
+#capacity-save {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Full-day hours: a consequence for the Rate Card, read-only, so it sits under
+   the save bar at a size below the headline figure. */
+.cap-fullday {
+  margin-top: 26px;
+  max-width: 78ch;
+}
+.cap-fullday-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.cap-fullday-value.is-empty {
+  color: var(--muted);
+}
+
+/* Same treatment as #goals-error, #pricing-error and #overhead-error. */
+#capacity-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#capacity-error.show {
+  display: block;
+}

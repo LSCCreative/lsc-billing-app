@@ -248,6 +248,11 @@ test('goals: the five capacity fields are settable, validated, and recompute the
     body: JSON.stringify({ workingDaysPerWeek: 4, leaveDaysPerYear: 20, sickDaysPerYear: 5 }),
   }).then((r) => r.json());
   assert.equal(kept.goals.iawoThreshold, 20000);
+  // A PUT that doesn't send income or margin keeps them. These were
+  // `Number(x) || 0` before migration v6, so any save from a screen that owns
+  // other fields zeroed the margin — and 0% is a break-even floor, not "unset".
+  assert.equal(kept.goals.desiredNetIncome, 80000);
+  assert.equal(kept.goals.targetProfitMarginPct, 25);
   const cleared = await api('/api/goals', {
     method: 'PUT',
     body: JSON.stringify({ iawoThreshold: null }),
@@ -280,6 +285,59 @@ test('goals: the five capacity fields are settable, validated, and recompute the
   });
   assert.equal(noCapacityLeft.status, 400);
   assert.equal((await noCapacityLeft.json()).error, 'leave_and_sick_exceed_working_year');
+});
+
+test('goals: only a save carrying all four capacity fields confirms capacity', async () => {
+  const fourFields = { billableHoursPerDay: 8, workingDaysPerWeek: 5, leaveDaysPerYear: 30, sickDaysPerYear: 8 };
+
+  // A Goals-screen-shaped save: no capacity fields, so nothing is confirmed —
+  // the seeded defaults are still a guess the Capacity screen must flag.
+  db.prepare('DELETE FROM goals').run();
+  const goalsShaped = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ desiredNetIncome: 80000, targetProfitMarginPct: 25 }),
+  }).then((r) => r.json());
+  assert.equal(goalsShaped.goals.capacityConfirmedAt, null);
+  assert.equal(goalsShaped.goals.billableHoursPerDay, 8);
+
+  // Three of the four is not the Capacity screen's save either.
+  const partial = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ workingDaysPerWeek: 5, leaveDaysPerYear: 30, sickDaysPerYear: 8 }),
+  }).then((r) => r.json());
+  assert.equal(partial.goals.capacityConfirmedAt, null);
+
+  // All four confirms — even when they are exactly the seeded values, because
+  // 8/5/30/8 can genuinely be someone's week. Income and margin are untouched.
+  const confirmed = await api('/api/goals', { method: 'PUT', body: JSON.stringify(fourFields) })
+    .then((r) => r.json());
+  assert.ok(confirmed.goals.capacityConfirmedAt);
+  assert.equal(confirmed.goals.desiredNetIncome, 80000);
+  assert.equal(confirmed.goals.targetProfitMarginPct, 25);
+
+  // A later Goals save carries the confirmation forward rather than clearing it.
+  const later = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ desiredNetIncome: 90000, targetProfitMarginPct: 30 }),
+  }).then((r) => r.json());
+  assert.equal(later.goals.capacityConfirmedAt, confirmed.goals.capacityConfirmedAt);
+});
+
+test('goals: a Capacity save onto a row that does not exist leaves income and margin unset', async () => {
+  // The IA doc's first-run flow: Dashboard → Capacity → Save, before Profit
+  // Goals has ever been opened. The margin must stay null (the em-dash set-up
+  // prompt), not become a 0% margin that prices every floor at break-even.
+  db.prepare('DELETE FROM goals').run();
+  const put = await api('/api/goals', {
+    method: 'PUT',
+    body: JSON.stringify({ billableHoursPerDay: 7, workingDaysPerWeek: 5, leaveDaysPerYear: 20, sickDaysPerYear: 5 }),
+  }).then((r) => r.json());
+  assert.equal(put.goals.desiredNetIncome, null);
+  assert.equal(put.goals.targetProfitMarginPct, null);
+  assert.equal(put.goals.billableHoursPerDay, 7);
+  assert.ok(put.goals.capacityConfirmedAt);
+  // (5 × 52 − 20 − 5) × 7 = 1,645 annual hours ÷ 52 = 31.63
+  assert.equal(put.goals.billableCapacityHrsPerWeek, 31.63);
 });
 
 function depreciationAssetPayload(overrides = {}) {

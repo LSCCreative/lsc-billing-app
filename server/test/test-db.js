@@ -399,6 +399,89 @@ test('depreciation_locks is an append-only log that keeps amendments', () => {
   db.close();
 });
 
-test('the schema knows it is at v5', () => {
-  assert.equal(LATEST_VERSION, 5);
+/**
+ * MIGRATION v6 — goals income and margin may be unset; capacity confirmation.
+ *
+ * A table rebuild, so the upgrade test builds the real v5 shape of `goals`
+ * (NOT NULL income and margin, no capacity_confirmed_at), puts a row in it,
+ * rewinds schema_version, and lets migrate() run v6 over it — the same path the
+ * NAS database takes on its next boot.
+ */
+function rewindGoalsToV5(db) {
+  db.exec(`
+    DROP TABLE goals;
+    CREATE TABLE goals (
+      id                             INTEGER PRIMARY KEY CHECK (id = 1),
+      desired_net_income             REAL NOT NULL,
+      target_profit_margin_pct       REAL NOT NULL,
+      billable_capacity_hrs_per_week REAL NOT NULL,
+      created_at                     TEXT NOT NULL,
+      updated_at                     TEXT NOT NULL,
+      billable_hours_per_day         REAL NOT NULL DEFAULT 8,
+      working_days_per_week          REAL NOT NULL DEFAULT 5,
+      leave_days_per_year            REAL NOT NULL DEFAULT 30,
+      sick_days_per_year             REAL NOT NULL DEFAULT 8,
+      iawo_threshold                 REAL
+    );
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 6').run();
+}
+
+test('v6 carries every goals value across the rebuild and starts unconfirmed', () => {
+  const db = openDatabase(tempDbPath('v6-upgrade'));
+  rewindGoalsToV5(db);
+  db.prepare(`
+    INSERT INTO goals
+      (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+       created_at, updated_at, billable_hours_per_day, working_days_per_week,
+       leave_days_per_year, sick_days_per_year, iawo_threshold)
+    VALUES (1, 80000, 25, 34.15, '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z', 7, 4, 20, 5, 20000)
+  `).run();
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [5, 6, 1]);
+
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual(
+    [g.desired_net_income, g.target_profit_margin_pct, g.billable_capacity_hrs_per_week],
+    [80000, 25, 34.15],
+  );
+  assert.deepEqual(
+    [g.billable_hours_per_day, g.working_days_per_week, g.leave_days_per_year, g.sick_days_per_year],
+    [7, 4, 20, 5],
+    'capacity the user already had must survive the rebuild, not reset to the seeds',
+  );
+  assert.equal(g.iawo_threshold, 20000);
+  assert.equal(g.created_at, '2026-09-01T00:00:00.000Z');
+  assert.equal(g.updated_at, '2026-09-02T00:00:00.000Z');
+  // Nobody has confirmed capacity on the Capacity screen yet — it didn't exist.
+  assert.equal(g.capacity_confirmed_at, null);
+
+  // And the singleton rule survived the rebuild.
+  assert.throws(() => {
+    db.prepare(`
+      INSERT INTO goals (id, billable_capacity_hrs_per_week, created_at, updated_at)
+      VALUES (2, 1, ?, ?)
+    `).run(nowIso(), nowIso());
+  }, /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('v6 lets income and margin be unset rather than forcing a zero', () => {
+  // The Capacity screen can be the first thing ever saved. A NOT NULL margin
+  // would force a 0 in, and 0% is a real break-even margin, not "not set".
+  const db = openDatabase(tempDbPath('v6-nullable'));
+  db.prepare(`
+    INSERT INTO goals (id, billable_capacity_hrs_per_week, created_at, updated_at)
+    VALUES (1, 34.15, ?, ?)
+  `).run(nowIso(), nowIso());
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.equal(g.desired_net_income, null);
+  assert.equal(g.target_profit_margin_pct, null);
+  db.close();
+});
+
+test('the schema knows it is at v6', () => {
+  assert.equal(LATEST_VERSION, 6);
 });
