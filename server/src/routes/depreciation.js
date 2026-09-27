@@ -33,6 +33,55 @@ function loadAsset(row) {
   };
 }
 
+/* A real calendar date in the stored 'YYYY-MM-DD' form. Round-tripped
+   through UTC so 2026-02-30 — which Date would quietly roll into March — is
+   refused rather than stored. */
+function isIsoDate(v) {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(v + 'T00:00:00Z');
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+/**
+ * The disposal fields' rules, checked on every asset write (POST and PUT).
+ *
+ * These are the only asset fields validated here rather than left to the
+ * table's CHECK constraints, because a bad one doesn't fail loudly — it prices
+ * wrongly. A disposal dated before start_date gives the depreciation chain a
+ * negative number of days held, and the asset's last year then shows a decline
+ * and a balancing adjustment computed from time that never happened. The
+ * screen refuses it too; this is the rule, the screen is the courtesy.
+ *
+ * Same-day is allowed (held one day). A future date is NOT refused here: the
+ * server's "today" is the NAS clock, and the screen owns that softer rule.
+ * Proceeds are optional (the chain reads a missing one as 0) but never
+ * negative — a disposal can't cost the buyer less than nothing.
+ *
+ * @returns {{error:string, message:string}|null}
+ */
+function disposalProblem(body) {
+  const date = body.disposalDate;
+  if (date !== undefined && date !== null && date !== '') {
+    if (!isIsoDate(date)) {
+      return { error: 'disposal_date_invalid', message: 'The disposal date isn’t a real date.' };
+    }
+    if (isIsoDate(body.startDate) && date < body.startDate) {
+      return {
+        error: 'disposal_before_start',
+        message: `The disposal date can’t be before the asset’s start date (${body.startDate}).`,
+      };
+    }
+  }
+  const proceeds = body.disposalProceeds;
+  if (proceeds !== undefined && proceeds !== null && proceeds !== '') {
+    const n = Number(proceeds);
+    if (!Number.isFinite(n) || n < 0) {
+      return { error: 'disposal_proceeds_invalid', message: 'Disposal proceeds must be $0 or more.' };
+    }
+  }
+  return null;
+}
+
 function loadLock(row) {
   return {
     id: row.id,
@@ -295,6 +344,8 @@ function registerDepreciationRoutes(app, db) {
   // definition of the enum, not two.
   app.post('/api/depreciation-assets', (req, res) => {
     const body = req.body || {};
+    const problem = disposalProblem(body);
+    if (problem) return res.status(400).json(problem);
     const id = newId('da');
     const now = nowIso();
     db.prepare(`
@@ -314,6 +365,8 @@ function registerDepreciationRoutes(app, db) {
   app.put('/api/depreciation-assets/:id', (req, res) => {
     const existing = db.prepare('SELECT * FROM depreciation_assets WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'not_found' });
+    const problem = disposalProblem(req.body || {});
+    if (problem) return res.status(400).json(problem);
     const now = nowIso();
     db.prepare(`
       UPDATE depreciation_assets SET

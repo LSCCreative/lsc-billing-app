@@ -25,11 +25,25 @@
  *
  * EDIT MUST CARRY THE DISPOSAL FIELDS THROUGH
  * PUT /api/depreciation-assets/:id writes every column, and a disposal date
- * that isn't sent is written as NULL — "still held". This modal doesn't edit
- * disposal (that is the Disposal flow's own task), so an edit that sent only
+ * that isn't sent is written as NULL — "still held". The Edit modal doesn't
+ * edit disposal (the Dispose dialog below does), so an edit that sent only
  * the fields on screen would silently un-dispose a sold asset: it would rejoin
  * the replacement reserve, raise every rate, and drop its balancing adjustment
  * from the disposal year. body() copies them from the stored asset.
+ *
+ * DISPOSAL IS RECORDED, NOT DELETED (2026-09-27)
+ * Each held asset has a Dispose button; a disposed one has Disposal, to
+ * correct or undo it. The dialog takes the date, the proceeds and a reason,
+ * and says before saving what it will do: the asset leaves the replacement
+ * reserve at once (sold gear must stop inflating every rate), while staying
+ * on its disposal year's schedule with the balancing adjustment — that year's
+ * tax event — previewed from the same LSCDepreciation the server runs. A
+ * disposal dated in a year already marked lodged is allowed but warned about:
+ * the schedule will show the lodged figures and flag the change, which is an
+ * amendment for the accountant, not something this screen quietly rewrites.
+ * A disposal before the start date is refused here AND by the route (which
+ * is the rule; see disposalProblem in routes/depreciation.js). A future date
+ * is refused here only: record a disposal once it has happened.
  *
  * ATO FIGURES ARE THE USER'S TO ENTER
  * Effective lives and the write-off threshold move with the federal budget, so
@@ -107,6 +121,11 @@ const DepreciationView = (() => {
   let saving = false;
   let baseline = '';
   let opener = null;
+  // The Dispose dialog (shares the overlay, `saving` and `opener` above).
+  let disposing = null; // the stored asset being disposed of, or whose disposal is being corrected
+  let dform = null;
+  let dbaseline = '';
+  let lodgedFys = null; // Set of lodged FY labels, fetched when the dialog opens
 
   // The write-off threshold field, as typed.
   let iawoRaw = '';
@@ -233,6 +252,9 @@ const DepreciationView = (() => {
           '<td class="oh-act" data-label="">' +
           '<button type="button" class="btn btn-ghost btn-sm" data-dep-edit="' + esc(a.id) + '"' +
           ' aria-label="Edit ' + esc(a.name || 'this asset') + '">Edit</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-dep-dispose="' + esc(a.id) + '"' +
+          ' aria-label="' + (isDisposed(a) ? 'Change or undo the disposal of ' : 'Dispose of ') +
+          esc(a.name || 'this asset') + '">' + (isDisposed(a) ? 'Disposal' : 'Dispose') + '</button>' +
           '<button type="button" class="del-btn" data-dep-del="' + esc(a.id) + '"' +
           ' title="Delete this asset" aria-label="Delete ' + esc(a.name || 'this asset') + '">×</button>' +
           '</td></tr>'
@@ -871,6 +893,305 @@ const DepreciationView = (() => {
     }
   }
 
+  // ── Disposal ──────────────────────────────────────────────────────────────
+
+  /* Stored as the words themselves — disposal_reason is free text, printed
+     nowhere that needs a code, and read by a person. */
+  const REASONS = ['Sold', 'Traded in', 'Scrapped', 'Lost or stolen', 'Given away', 'Other'];
+
+  const dsnapshot = () => JSON.stringify(dform);
+
+  function isRealDate(v) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return false;
+    const d = new Date(v + 'T00:00:00Z');
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  }
+
+  /* The asset as it would be stored — what the preview runs the chain on. */
+  function disposalCandidate() {
+    return Object.assign({}, disposing, {
+      disposalDate: dform.date,
+      disposalProceeds: dform.proceeds === '' ? null : parseFloat(dform.proceeds),
+    });
+  }
+
+  function disposalProblems() {
+    const found = [];
+    const start = disposing.startDate;
+    if (!isRealDate(dform.date)) {
+      found.push({ msg: 'Enter the date it left the business.', field: $m('dep-disp-date') });
+    } else if (start && dform.date < start) {
+      found.push({
+        msg: 'The disposal date can’t be before its start date, ' + start + '.',
+        field: $m('dep-disp-date'),
+      });
+    } else if (dform.date > LSCUtil.today()) {
+      found.push({
+        msg: 'That date hasn’t happened yet — record a disposal once it has.',
+        field: $m('dep-disp-date'),
+      });
+    }
+    const proceeds = dform.proceeds === '' ? NaN : parseFloat(dform.proceeds);
+    if (!Number.isFinite(proceeds) || proceeds < 0) {
+      found.push({
+        msg: 'Enter what you got for it, in dollars — 0 if it was scrapped, lost or given away.',
+        field: $m('dep-disp-proceeds'),
+      });
+    }
+    return found;
+  }
+
+  /* Proceeds are the ATO's "termination value": for a GST-registered business
+     the GST on the sale is excluded, since it goes to the ATO. */
+  function proceedsHint() {
+    const registered = (LSCData.settings().gst || {}).registered === true;
+    return registered
+      ? 'What you received. You’re registered for GST, so enter it excluding any GST you charged on the sale.'
+      : 'What you received for it. 0 if it was scrapped, lost or given away.';
+  }
+
+  /* What saving will do, from the figures as typed. Only once the date and
+     proceeds are usable — a preview of a half-typed date would be a guess. */
+  function disposalPreviewMarkup() {
+    if (!dform || disposalProblems().length) {
+      return '<p class="oh-hint">Enter the date and what you got for it to see what this changes.</p>';
+    }
+    const candidate = disposalCandidate();
+    const fy = fyLabel(dform.date);
+    const lines = [];
+
+    if (isDisposed(disposing)) {
+      lines.push('It’s already out of your replacement reserve.');
+    } else {
+      const reserve = replacementReserveTotal([Object.assign({}, disposing, { disposalDate: null })]);
+      lines.push(
+        reserve > 0
+          ? 'Your replacement reserve drops by <strong>' + fmt(reserve) + ' a year</strong> from today, and every ' +
+              'rate on your card comes down with it.'
+          : 'It adds nothing to your replacement reserve, so no rate changes.'
+      );
+    }
+
+    if (LSCDepreciation.isPooledMethod(disposing.method)) {
+      lines.push(
+        'It’s in the ' + esc((POOL_LABEL[disposing.method] || 'pool').toLowerCase()) + ', so the business share ' +
+          'of what you got comes off the pool’s balance in ' + esc(fyDisplay(fy)) + '. Pooled gear has no balancing ' +
+          'adjustment of its own.'
+      );
+    } else {
+      const bal = LSCDepreciation.balancingAdjustment(candidate);
+      if (bal) {
+        lines.push(
+          'It stays on the <strong>' + esc(fyDisplay(bal.fy)) + '</strong> schedule, with an adjustable value at ' +
+            'disposal of ' + fmt(bal.adjustableValue) + ' and a balancing adjustment of <strong>' +
+            signedFmt(bal.amount) + '</strong>' +
+            (bal.amount > 0 ? ' — assessable income' : bal.amount < 0 ? ' — a further deduction' : '') +
+            '. Nothing on the schedules after that year.'
+        );
+      }
+    }
+
+    let warn = '';
+    if (lodgedFys && lodgedFys.has(fy)) {
+      warn =
+        '<p class="dep-disp-warn">' + esc(fyDisplay(fy)) + ' is marked as lodged. Recording this changes that ' +
+        'year’s figures: its schedule will keep showing what was lodged and flag the difference. That’s an ' +
+        'amendment to talk to your accountant about.</p>';
+    }
+    return lines.map((l) => '<p>' + l + '</p>').join('') + warn;
+  }
+
+  function refreshDisposalPreview() {
+    const box = $m('dep-disp-preview');
+    if (!box) return;
+    const next = disposalPreviewMarkup();
+    if (box.innerHTML !== next) box.innerHTML = next;
+    /* A refusal from the last Save stops being true the moment the figures
+       are usable; left up, it would contradict the preview right above it. */
+    if (!disposalProblems().length) LSCUtil.clearFieldErrors($m('dep-modal-error'));
+  }
+
+  function disposeMarkup() {
+    const a = disposing;
+    const already = isDisposed(a);
+    const name = esc(a.name || 'this asset');
+    return (
+      '<div class="modal-box dep-modal" role="dialog" aria-modal="true" aria-labelledby="dep-disp-title">' +
+      '<h2 class="modal-title" id="dep-disp-title">' + (already ? 'Disposal of ' : 'Dispose of ') + name + '</h2>' +
+      '<p class="oh-hint dep-disp-intro">Record it here when it’s sold, traded in, scrapped, lost or given away — ' +
+      'not by deleting it. It leaves your replacement reserve straight away, and stays on its disposal year’s ' +
+      'depreciation schedule, because that year’s balancing adjustment is a tax figure.</p>' +
+      '<div class="form-grid">' +
+      field('dep-disp-date', 'Disposal date',
+        '<input id="dep-disp-date" type="date" value="' + esc(dform.date) + '"' +
+        (a.startDate ? ' min="' + esc(a.startDate) + '"' : '') + ' max="' + esc(LSCUtil.today()) + '"' +
+        ' aria-describedby="dep-disp-date-hint">',
+        'The day it left the business' + (a.startDate ? ' — on or after its start date, ' + esc(a.startDate) : '') +
+          '. It decides which financial year the adjustment belongs to.') +
+      field('dep-disp-proceeds', 'Proceeds ($)',
+        '<input id="dep-disp-proceeds" type="number" min="0" step="0.01" inputmode="decimal" value="' +
+        esc(dform.proceeds) + '" aria-describedby="dep-disp-proceeds-hint">',
+        proceedsHint()) +
+      field('dep-disp-reason', 'Reason',
+        '<select id="dep-disp-reason"><option value=""' + (dform.reason ? '' : ' selected') + '>Choose (optional)</option>' +
+        REASONS.map((r) => '<option' + (r === dform.reason ? ' selected' : '') + '>' + esc(r) + '</option>').join('') +
+        /* A stored reason not on the list (typed before the list existed) is
+           kept as an option rather than silently dropped on the next save. */
+        (dform.reason && REASONS.indexOf(dform.reason) === -1
+          ? '<option selected>' + esc(dform.reason) + '</option>' : '') +
+        '</select>', '', true) +
+      '</div>' +
+      '<div class="dep-disp-preview" id="dep-disp-preview" aria-live="polite"></div>' +
+      '<div id="dep-modal-error" role="alert"></div>' +
+      '<div class="modal-actions">' +
+      (already
+        ? '<button type="button" class="btn btn-ghost btn-sm dep-disp-undo" id="dep-disp-undo" data-write>Undo disposal</button>'
+        : '') +
+      '<button type="button" class="btn btn-ghost btn-sm" id="dep-cancel">Cancel</button>' +
+      '<button type="button" class="btn btn-accent" id="dep-disp-save" data-write>' +
+      '<span class="spinner" id="dep-disp-spin"></span>' +
+      '<span id="dep-disp-save-label">' + (already ? 'Save Disposal' : 'Record Disposal') + '</span></button>' +
+      '</div></div>'
+    );
+  }
+
+  function setDisposing(next) {
+    saving = next;
+    if (!$m('dep-disp-save')) return;
+    $m('dep-disp-save').disabled = next;
+    $m('dep-cancel').disabled = next;
+    if ($m('dep-disp-undo')) $m('dep-disp-undo').disabled = next;
+    $m('dep-disp-spin').style.display = next ? 'inline-block' : 'none';
+    $m('dep-disp-save-label').textContent = next
+      ? 'Saving…'
+      : isDisposed(disposing) ? 'Save Disposal' : 'Record Disposal';
+  }
+
+  /* One write for record, correct and undo: the whole stored asset with only
+     the three disposal fields changed. PUT writes every column (see the
+     header), so anything not carried from the stored copy would be blanked. */
+  async function writeDisposal(fields, doneText) {
+    const asset = disposing;
+    setDisposing(true);
+    Toast.working('Saving…');
+    try {
+      await LSCApi.put('/api/depreciation-assets/' + encodeURIComponent(asset.id), Object.assign({}, asset, fields));
+      await refreshCache();
+      dbaseline = dsnapshot();
+      /* Land the schedule on the year the adjustment belongs to, so the tax
+         half of what just happened is on screen, not one menu away. */
+      if (fields.disposalDate) selectedFy = fyLabel(fields.disposalDate);
+      Toast.ok(doneText);
+      saving = false;
+      closeModal();
+      if (!onScreen()) return;
+      render();
+      /* render() replaced the button closeModal() just focused. Back onto that
+         row's button when it's still listed, else the filter that now hides it
+         — never <body>, which drops a keyboard user at the top of the page. */
+      const again = root.querySelector('[data-dep-dispose="' + asset.id + '"]') || $('dep-show-disposed');
+      if (again) again.focus();
+    } catch (err) {
+      setDisposing(false);
+      Toast.hide();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      const el = $m('dep-modal-error');
+      if (el) {
+        el.textContent = failureText(err, 'save the disposal');
+        el.classList.add('show');
+      }
+    }
+  }
+
+  function saveDisposal() {
+    if (saving) return;
+    LSCUtil.clearFieldErrors($m('dep-modal-error'));
+    const found = disposalProblems();
+    if (found.length) {
+      LSCUtil.showFieldErrors($m('dep-modal-error'), found);
+      return;
+    }
+    const hidden = !showDisposed && !isDisposed(disposing);
+    writeDisposal(
+      {
+        disposalDate: dform.date,
+        disposalProceeds: parseFloat(dform.proceeds),
+        disposalReason: dform.reason,
+      },
+      hidden ? 'Disposal recorded. Tick “Show disposed” to see it in the register.' : 'Disposal saved.'
+    );
+  }
+
+  function undoDisposal() {
+    if (saving) return;
+    const a = disposing;
+    const reserve = replacementReserveTotal([Object.assign({}, a, { disposalDate: null })]);
+    if (
+      !window.confirm(
+        'Undo the disposal of “' + (a.name || 'this asset') + '”?\n\n' +
+          'It goes back to being held: ' +
+          (reserve > 0 ? 'your replacement reserve rises by ' + fmt(reserve) + ' a year, which raises every rate, and ' : '') +
+          'it returns to the schedules after ' + fyDisplay(fyLabel(a.disposalDate)) + ' with no balancing adjustment.'
+      )
+    ) return;
+    writeDisposal({ disposalDate: null, disposalProceeds: null, disposalReason: '' }, 'Disposal undone.');
+  }
+
+  function openDispose(asset, openedBy) {
+    disposing = asset;
+    editing = null;
+    form = null;
+    opener = openedBy || null;
+    saving = false;
+    dform = {
+      date: toField(asset.disposalDate),
+      proceeds: asset.disposalDate ? toField(asset.disposalProceeds === null ? 0 : asset.disposalProceeds) : '',
+      reason: toField(asset.disposalReason),
+    };
+    dbaseline = dsnapshot();
+    lodgedFys = null;
+
+    overlay.innerHTML = disposeMarkup();
+    overlay.classList.add('open');
+    document.addEventListener('keydown', onKeydown);
+    overlay.addEventListener('click', onOverlayClick);
+
+    const on = (id, event, key) =>
+      $m(id).addEventListener(event, function () {
+        dform[key] = this.value;
+        refreshDisposalPreview();
+      });
+    on('dep-disp-date', 'input', 'date');
+    on('dep-disp-date', 'change', 'date');
+    on('dep-disp-proceeds', 'input', 'proceeds');
+    on('dep-disp-reason', 'change', 'reason');
+    $m('dep-cancel').addEventListener('click', dismissModal);
+    $m('dep-disp-save').addEventListener('click', saveDisposal);
+    if ($m('dep-disp-undo')) $m('dep-disp-undo').addEventListener('click', undoDisposal);
+    refreshDisposalPreview();
+
+    LSCUnsaved.watch('depreciation-disposal', {
+      label: 'this disposal',
+      onScreen: () => Boolean(overlay && overlay.querySelector('#dep-disp-save')),
+      dirty: () => dform !== null && dsnapshot() !== dbaseline,
+    });
+
+    /* Which years are lodged, for the warning. Not in LSCData — only this
+       dialog asks — so fetched here; until it lands (or if it fails) the
+       preview simply has no warning to give. */
+    const target = asset;
+    LSCApi.get('/api/depreciation-locks')
+      .then((reply) => {
+        if (disposing !== target) return;
+        lodgedFys = new Set((reply.locks || []).map((l) => l.fyLabel));
+        refreshDisposalPreview();
+      })
+      .catch(() => {});
+
+    $m('dep-disp-date').focus();
+  }
+
   // ── The threshold ─────────────────────────────────────────────────────────
 
   async function saveThreshold() {
@@ -1066,6 +1387,14 @@ const DepreciationView = (() => {
       });
     }
 
+    // The route refuses this too (disposal_before_start); said here on the field.
+    if (editing && editing.disposalDate && ymd.test(f.startDate || '') && f.startDate > editing.disposalDate) {
+      found.push({
+        msg: 'It was disposed of on ' + editing.disposalDate + ', so the start date can’t be after that.',
+        field: $m('dep-start'),
+      });
+    }
+
     const cost = parseFloat(f.costIncGst);
     if (!Number.isFinite(cost) || cost < 0) found.push({ msg: 'Cost must be a dollar amount, 0 or more.', field: $m('dep-cost') });
     const gst = f.gstAmount === '' ? 0 : parseFloat(f.gstAmount);
@@ -1204,6 +1533,8 @@ const DepreciationView = (() => {
     overlay.removeEventListener('click', onOverlayClick);
     form = null;
     editing = null;
+    disposing = null;
+    dform = null;
     if (opener && opener.isConnected) opener.focus();
     opener = null;
   }
@@ -1297,6 +1628,12 @@ const DepreciationView = (() => {
     });
     root.querySelectorAll('[data-dep-del]').forEach((btn) => {
       btn.addEventListener('click', () => remove(btn.dataset.depDel));
+    });
+    root.querySelectorAll('[data-dep-dispose]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const asset = assets().find((a) => a.id === btn.dataset.depDispose);
+        if (asset) openDispose(asset, btn);
+      });
     });
     const toggle = $('dep-show-disposed');
     if (toggle) {

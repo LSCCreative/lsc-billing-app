@@ -131,6 +131,48 @@
   color: var(--text);
 }
 
+/* ── The Dispose dialog ─────────────────────────────────────────────────────
+   Same .modal-box and .form-grid as Add / Edit. The preview is what saving
+   will do, so it reads as a statement in --text with the figures emphasised;
+   the lodged-year line is a warning (accent rule, --accent-text), not an
+   error — the save is still allowed. Undo sits apart at the left of the
+   actions row so it isn't mistaken for Cancel. */
+.dep-disp-intro {
+  margin: -4px 0 16px;
+}
+.dep-disp-preview {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.dep-disp-preview p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dep-disp-preview p:last-child {
+  margin-bottom: 0;
+}
+.dep-disp-preview strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dep-disp-preview .dep-disp-warn {
+  margin-top: 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--accent-text);
+}
+.dep-disp-undo {
+  margin-right: auto;
+}
+.dep-modal .field select#dep-disp-reason {
+  max-width: 100%;
+}
+
 /* ── The schedule ───────────────────────────────────────────────────────────
    A section of its own under the register: a heading row carrying the FY
    <select> (the page's .doc-type-select, which responsive.css already raises

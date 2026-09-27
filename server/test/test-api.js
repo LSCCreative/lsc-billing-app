@@ -564,6 +564,103 @@ test('depreciation schedule, CSV and lodgement lock', async () => {
   assert.ok(locks.locks.some((l) => l.id === lock.lock.id));
 });
 
+/**
+ * THE DISPOSAL FLOW (2026-09-27). The default payload: cost 1100 − 100 GST
+ * credit = 1000 cost base, prime cost over 5 years (200 a full year), started
+ * 1 July 2024, replacement reserve 3000 ÷ 3 = 1000 a year.
+ */
+test('disposal: refused before the start date, with a bad date, or with negative proceeds', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ name: 'Disposal Guard Camera' })),
+  }).then((r) => r.json());
+  const id = created.asset.id;
+  const put = (overrides) => api(`/api/depreciation-assets/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(depreciationAssetPayload(overrides)),
+  });
+
+  const before = await put({ disposalDate: '2024-06-30', disposalProceeds: 0 });
+  assert.equal(before.status, 400);
+  assert.equal((await before.json()).error, 'disposal_before_start');
+  // The same rule on create: an asset can't arrive already sold before it started.
+  const createdBefore = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ disposalDate: '2024-06-30' })),
+  });
+  assert.equal(createdBefore.status, 400);
+
+  const notADate = await put({ disposalDate: '2025-02-30', disposalProceeds: 0 });
+  assert.equal(notADate.status, 400);
+  assert.equal((await notADate.json()).error, 'disposal_date_invalid');
+
+  const negative = await put({ disposalDate: '2025-01-01', disposalProceeds: -1 });
+  assert.equal(negative.status, 400);
+  assert.equal((await negative.json()).error, 'disposal_proceeds_invalid');
+
+  // Nothing above was stored.
+  const list = await api('/api/depreciation-assets').then((r) => r.json());
+  assert.equal(list.assets.find((a) => a.id === id).disposalDate, null);
+
+  // Disposed the same day it started is a real (one-day) holding, not an error.
+  assert.equal((await put({ disposalDate: '2024-07-01', disposalProceeds: 0 })).status, 200);
+
+  await api(`/api/depreciation-assets/${id}`, { method: 'DELETE' });
+});
+
+test('disposal: leaves the reserve at once, stays on its own FY with the balancing adjustment', async () => {
+  const reserveNow = async () => {
+    const snaps = (await api('/api/overhead-snapshots').then((r) => r.json())).snapshots;
+    return snaps[snaps.length - 1].byCategory.depreciation_reserve || 0;
+  };
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ name: 'Disposal Flow Camera' })),
+  }).then((r) => r.json());
+  const id = created.asset.id;
+  const held = await reserveNow();
+  const put = (overrides) => api(`/api/depreciation-assets/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(depreciationAssetPayload(overrides)),
+  }).then((r) => r.json());
+  const rowFor = async (fy) => {
+    const reply = await api(`/api/depreciation-schedule?fy=${fy}`).then((r) => r.json());
+    return reply.schedule.assets.find((r) => r.assetId === id) || null;
+  };
+
+  // Sold on the last day of FY2024-25 — before the current FY started, so it
+  // belongs to that earlier year. Held all 365 days: decline 200, adjustable
+  // value 800; sold for 900 → balancing adjustment +100 (assessable).
+  const sold = await put({ disposalDate: '2025-06-30', disposalProceeds: 900, disposalReason: 'Sold' });
+  assert.equal(sold.asset.disposalDate, '2025-06-30');
+  assert.equal(sold.asset.disposalReason, 'Sold');
+  assert.equal(await reserveNow(), held - 1000, 'the reserve drops by the asset’s 1000/yr at once');
+
+  const soldRow = await rowFor('FY2024-25');
+  assert.equal(soldRow.disposed, true);
+  assert.equal(soldRow.daysHeld, 365);
+  assert.equal(soldRow.closingAdjustableValue, 800);
+  assert.equal(soldRow.balancingAdjustment, 100);
+  assert.equal(await rowFor('FY2025-26'), null, 'no schedule after the disposal year');
+
+  // Scrapped for nothing mid FY2025-26: held 1 Jul – 31 Dec = 184 days,
+  // decline 1000 × 184/365 × 20% = 100.82, adjustable value 699.18, and a
+  // balancing adjustment of −699.18 (a further deduction).
+  await put({ disposalDate: '2025-12-31', disposalProceeds: 0, disposalReason: 'Scrapped' });
+  const scrapped = await rowFor('FY2025-26');
+  assert.equal(scrapped.daysHeld, 184);
+  assert.equal(scrapped.decline, 100.82);
+  assert.equal(scrapped.closingAdjustableValue, 699.18);
+  assert.equal(scrapped.balancingAdjustment, -699.18);
+  assert.equal((await rowFor('FY2024-25')).balancingAdjustment, null, 'the earlier year is back to an ordinary one');
+
+  // Undone: back in the reserve.
+  await put({ disposalDate: null, disposalProceeds: null, disposalReason: '' });
+  assert.equal(await reserveNow(), held);
+
+  await api(`/api/depreciation-assets/${id}`, { method: 'DELETE' });
+});
+
 test('the depreciation CSV defuses a name a spreadsheet would run as a formula', async () => {
   const created = await api('/api/depreciation-assets', {
     method: 'POST',

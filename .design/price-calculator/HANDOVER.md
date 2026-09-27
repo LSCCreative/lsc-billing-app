@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 17 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 18 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -74,16 +74,19 @@ service business that sells shoot days rather than units.
       - [x] **Post-ratio readout** (frontend — Opus/high) — done 2026-09-27. See "What landed —
             Post-ratio readout". **Live** (Pages, 2026-09-27, run 36315790751).
       - [x] **Double-count guard on large one-off expenses** (frontend — Opus/high) — done
-            2026-09-27. See "What landed — Double-count hint". **Committed, not pushed** (web only).
-      - [ ] ← **NEXT: Disposal flow** (money math — Opus/high). A `Dispose` action per register row;
-            the asset leaves the replacement reserve at once but stays on the disposal FY's schedule
-            with its balancing adjustment.
+            2026-09-27. See "What landed — Double-count hint". **Live** (Pages, run 36316035048).
+      - [x] **Disposal flow** (money math — Opus/high) — done 2026-09-27. See "What landed —
+            Disposal flow". **Committed, not pushed, NAS not redeployed** — it has a server change.
+      - [ ] ← **NEXT: Profit Goals — capacity becomes a derived read-only figure** (frontend —
+            Opus/high). `goals.js`' Billable Capacity input becomes a read-only annual-hours figure
+            linking to Capacity, and its stale 48-week hint goes.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Seventeen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
+Eighteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
-lock), the shared info control, the GST mirror, the post-ratio readout and the double-count hint.
-**The double-count hint is committed but not pushed** (web only). Everything before it is live — the info control and the GST mirror went to
+lock, disposal), the shared info control, the GST mirror, the post-ratio readout and the double-count
+hint. **The disposal flow is committed but not pushed, and its server change is not on the NAS** —
+see its deploy note. Everything before it is live — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
 web-only, so the NAS needed no redeploy.
 
@@ -414,6 +417,71 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Disposal flow
+
+**Register** (`web/js/views/depreciation.js`): each held asset gets a **Dispose** button; a disposed
+one (visible under "Show disposed") gets **Disposal**, which reopens the same dialog to correct it or
+**Undo disposal**. **Dialog**: disposal date (min = start date, max = today), proceeds, an optional
+reason (Sold / Traded in / Scrapped / Lost or stolen / Given away / Other — stored as the words), and a
+live preview of what saving does: the reserve drop per year, then either the disposal FY, adjustable
+value at disposal and signed balancing adjustment (from `LSCDepreciation.balancingAdjustment`, the
+server's own chain) or, for a pooled asset, that the proceeds come off the pool's balance with no
+adjustment of its own. On save the schedule jumps to the disposal FY. **Route**
+(`server/src/routes/depreciation.js`): `disposalProblem()` on POST and PUT. `depreciation.css` has the
+dialog styles.
+
+### Decisions made here
+
+1. **The route enforces the date rule, not just the screen.** A disposal before `start_date` makes
+   the chain count negative days held and produces a decline and adjustment from time that never
+   happened — a wrong number, not an error. 400 `disposal_before_start` (same day allowed),
+   `disposal_date_invalid` (not a real calendar date — 2025-02-30 is refused, not rolled into March),
+   `disposal_proceeds_invalid` (negative). Each carries a `message` the screens show.
+2. **Future dates are refused on screen only** ("record a disposal once it has happened"). The server
+   would judge "today" by the NAS clock, so it stays out of that.
+3. **Proceeds are required on screen** (0 allowed — scrapped, lost, given away) though the route
+   accepts null (the chain reads it as 0). The hint follows GST registration: registered → exclude
+   the GST charged on the sale (the ATO's termination value excludes it); not registered → the full
+   amount.
+4. **A lodged disposal year is warned about, not refused.** The dialog fetches
+   `/api/depreciation-locks` when it opens; if the disposal FY is lodged it says the schedule will
+   keep the lodged figures and flag the change, and that it's an amendment for the accountant. This
+   matches "no unlock from this UI" — the lock already shows divergences.
+5. **Undo is a real action** (confirm names the reserve rise and the schedules it rejoins). Without
+   it, a mis-dated disposal could only be fixed by re-dating it, and a wrongly-disposed asset not at
+   all short of deleting it.
+6. **Edit refuses a start date after an existing disposal** on the field (the route refuses it too).
+7. **One write for record / correct / undo**: the whole stored asset with the three disposal fields
+   swapped in — PUT writes every column, so anything not carried would be blanked.
+8. Focus after save returns to the row's button (or the "Show disposed" filter when the row is now
+   hidden), never `<body>`. A stale refusal clears as soon as the figures become valid.
+
+### Deploy note — this one has a server change
+
+`server/src/routes/depreciation.js` changed (validation only — no migration, no new route, same
+response shapes). **Order doesn't matter** for safety: the web build validates the same rules and
+doesn't depend on the new error codes, so pushing Pages first is fine; the server rule only becomes
+enforced once the NAS is redeployed (§5.5 of `nas-hosted-billing/DEPLOYMENT.md`; take a backup, copy
+`server/` excluding `node_modules`, `data`, `.env`, `docker-compose.yml`; `Dockerfile` /
+`package*.json` unchanged so cached layers apply). The last deploy's check for this one: `POST
+/api/depreciation-assets` signed out → 401.
+
+### Verified
+
+185 tests pass (2 new API tests: refusals — before start, 2025-02-30, negative proceeds, on both POST
+and PUT — plus same-day allowed; and the flow — disposal on 30 Jun 2025 belongs to FY2024-25 with
++100, reserve drops by 1,000 at once, nothing on FY2025-26; re-dated to 31 Dec 2025 for $0: 184 days,
+decline 100.82, adjustable value 699.18, −699.18; undo restores the reserve). Mutation checked:
+disabling the before-start rule fails the refusal test. **In the browser** (local `api-scratch`,
+restarted for the route change): all five refusals on their fields (blank, before start, future,
+blank proceeds, negative); FX6 sold 20 Sep 2026 for $5,000 previewed **and** scheduled at 78 days,
+decline $1,253.70, adjustable value $7,546.30, balancing **−$2,037.04** — matching the hand working;
+business cost $26,850 → $25,050 (the $1,800 reserve) and overhead/hr $15.12 → $14.10; schedule jumped
+to FY 2026–27 with a Disposals block; MacBook (small business pool) into lodged FY 2025–26 showed the
+pool wording and the lodged warning; Disposal reopened prefilled; Undo restored $26,850 and focus went
+to the row; Edit on the disposed drone refused a start date after its disposal. 375px: row buttons
+44px, no overlap, dialog fits. No console errors. **Scratch data left as found** (FX6 held again).
 
 ## What landed (2026-09-27) — Double-count hint
 

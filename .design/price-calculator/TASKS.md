@@ -370,7 +370,13 @@ change to it is two identical edits. A task that edits one and not the other is 
   a confirm and opens Add Asset with the name (not the GST-exclusive cost) carried over; Dismiss
   hides it for that modal. Also touched `depreciation.js` (`openAdd` prefill) and `overhead.css`.
 
-- [ ] **Disposal flow** (money math — Opus/high): A `Dispose` action per register row opening a modal for `disposal_date`, `disposal_proceeds` and `disposal_reason`. On save the asset **leaves the replacement reserve immediately** — sold gear must stop inflating overhead — while **staying on the disposal FY's schedule with its balancing adjustment**, because that is that year's tax event. Verify both halves: the Dashboard's annual business cost drops, and the schedule for the disposal year still lists the asset. Covers: disposal for zero proceeds, disposal before the FY start (belongs to the earlier year), and a disposal date before `start_date` (rejected with a field error). _New. Depends on: the register, the depreciation chain._
+- [x] **Disposal flow** (money math — Opus/high) — done 2026-09-27: A `Dispose` action per register row opening a modal for `disposal_date`, `disposal_proceeds` and `disposal_reason`. On save the asset **leaves the replacement reserve immediately** — sold gear must stop inflating overhead — while **staying on the disposal FY's schedule with its balancing adjustment**, because that is that year's tax event. Verify both halves: the Dashboard's annual business cost drops, and the schedule for the disposal year still lists the asset. Covers: disposal for zero proceeds, disposal before the FY start (belongs to the earlier year), and a disposal date before `start_date` (rejected with a field error). _New. Depends on: the register, the depreciation chain._
+
+  **Done 2026-09-27.** Dispose / Disposal per row, one dialog for record, correct and **undo**, with a
+  live preview (reserve drop; disposal FY, adjustable value and balancing adjustment, or the pool
+  wording) and a warning when the disposal FY is lodged. The before-start rule is **also enforced by
+  the route** (`disposalProblem()`, 400s with messages) — a server change, so the NAS needs a
+  redeploy for it. 2 new API tests; figures matched hand working in the browser. See HANDOVER.
 
 - [ ] **Profit Goals — capacity becomes a derived read-only figure** (frontend — Opus/high): In `web/js/views/goals.js`, the `Billable Capacity (hrs / week)` input becomes a **read-only derived figure** showing annual billable hours, with a link to the Capacity screen — one writer per number, per the IA doc's read/write map. Its existing hint text ("annualised over 48 weeks, so leave and downtime don't flatter the rate") is now wrong and must be replaced: the year is no longer 48 weeks and the leave is no longer assumed. Everything else on the screen is unchanged, including the tax reserve mirror. _Modifies: `web/js/views/goals.js`. Depends on: capacity math, the Capacity screen._
 
