@@ -36,6 +36,18 @@
  * lists and puts them in LSCData. That also keeps the promise resolved decision
  * 19 depends on: the Pricing tab computes its rate from this cache at mount, so
  * a cache left stale here shows a stale rate one click away.
+ *
+ * TWO INNER TABS: OPERATING COSTS AND DEPRECIATION (2026-09-27)
+ * A horizontal .nav-link row under the page head — the pattern the Finance &
+ * Price rail vacated, so the area has one navigation idea, not two (IA doc,
+ * "Tertiary navigation"). Operating Costs is everything this file already was,
+ * unchanged. Depreciation is the capital-asset register in views/depreciation.js
+ * (DepreciationView), which renders into #oh-inner and owns its own modal.
+ * The page-head button follows the tab: "+ Add Expense" or "+ Add Asset".
+ *
+ * `handlers.inner` picks the tab on mount: 'depreciation' lands on it — the
+ * Dashboard's Replacement reserve link sends exactly that through FinanceView's
+ * selectTab(id, opts) — and anything else lands on Operating Costs.
  */
 
 const OverheadView = (() => {
@@ -72,6 +84,12 @@ const OverheadView = (() => {
   let root = null;
   let handlers = null;
   let overlay = null;
+  let innerTab = 'operating'; // 'operating' | 'depreciation'
+
+  const INNER_TABS = [
+    { id: 'operating', label: 'Operating Costs' },
+    { id: 'depreciation', label: 'Depreciation' },
+  ];
 
   // Modal state, live only while it is open.
   let form = null;
@@ -163,11 +181,39 @@ const OverheadView = (() => {
     );
   }
 
-  function markup() {
+  /* Not role="tablist", for the reason finance.js gives for its rail: these
+     swap a screen's content, they don't implement ARIA tab keyboarding. */
+  function innerNavMarkup() {
+    return (
+      '<nav class="oh-inner-tabs" aria-label="Overhead sections">' +
+      INNER_TABS.map(
+        (t) =>
+          '<button type="button" class="nav-link' + (t.id === innerTab ? ' active" aria-current="page' : '') +
+          '" data-inner-tab="' + t.id + '">' + t.label + '</button>'
+      ).join('') +
+      '</nav>'
+    );
+  }
+
+  function headMarkup() {
+    const asset = innerTab === 'depreciation';
     return (
       '<div class="page-head"><div><h1 class="page-title">Overhead</h1>' +
-      '<div class="page-sub">What it costs to keep the business open, before any job</div></div>' +
-      '<button type="button" class="btn btn-accent" id="oh-add" data-write>+ Add Expense</button></div>' +
+      '<div class="page-sub">' +
+      (asset
+        ? 'The gear the business earns with, and what it costs to keep replacing it'
+        : 'What it costs to keep the business open, before any job') +
+      '</div></div>' +
+      '<button type="button" class="btn btn-accent" id="oh-add" data-write>' +
+      (asset ? '+ Add Asset' : '+ Add Expense') + '</button></div>' +
+      innerNavMarkup()
+    );
+  }
+
+  function markup() {
+    if (innerTab === 'depreciation') return headMarkup() + '<div id="oh-inner"></div>';
+    return (
+      headMarkup() +
       summaryMarkup() +
       '<p class="oh-note">Enter costs GST-exclusive. The app assumes you claim GST back on business ' +
       'expenses, so including it would overstate every rate computed from this total.</p>' +
@@ -459,7 +505,27 @@ const OverheadView = (() => {
 
   // ── Mounting ──────────────────────────────────────────────────────────────
 
+  /* Switching inner tabs replaces the content below the row, so it asks the
+     same question every other screen swap does — the Depreciation tab's
+     write-off threshold field registers a watcher. Re-selecting the current
+     tab does nothing. */
+  function selectInner(id) {
+    if (id === innerTab || !INNER_TABS.some((t) => t.id === id)) return;
+    if (!LSCUnsaved.confirmLeave()) return;
+    innerTab = id;
+    render();
+    const btn = root.querySelector('[data-inner-tab="' + id + '"]');
+    if (btn) btn.focus();
+  }
+
   function bind() {
+    root.querySelectorAll('[data-inner-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => selectInner(btn.dataset.innerTab));
+    });
+    if (innerTab === 'depreciation') {
+      $('oh-add').addEventListener('click', (event) => DepreciationView.openAdd(event.currentTarget));
+      return;
+    }
     $('oh-add').addEventListener('click', (event) => openModal(null, event.currentTarget));
     root.querySelectorAll('[data-edit]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -474,6 +540,11 @@ const OverheadView = (() => {
 
   function render() {
     root.innerHTML = markup();
+    if (innerTab === 'depreciation') {
+      DepreciationView.mount($('oh-inner'), handlers);
+      bind();
+      return;
+    }
     // After the markup is in the document, not before: the chart is drawn at
     // the container's measured pixel width, which a detached div doesn't have.
     OverheadCharts.drawTrend(snapshots());
@@ -485,6 +556,7 @@ const OverheadView = (() => {
     handlers = viewHandlers || {};
     overlay = document.getElementById('modal-overhead-item');
     saving = false;
+    innerTab = handlers.inner === 'depreciation' ? 'depreciation' : 'operating';
     // Reads the cache when it fires rather than closing over today's list, so a
     // resize after a write redraws the chart the screen is actually showing.
     OverheadCharts.bindResize(snapshots);

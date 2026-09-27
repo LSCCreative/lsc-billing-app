@@ -1,0 +1,132 @@
+/* Overhead → Depreciation — see js/views/depreciation.js.
+ *
+ * Additive. The summary card is overhead.css's .oh-summary / .oh-stat (the same
+ * two-stat card the Operating Costs tab opens with, so the two tabs start the
+ * same way); the register is .est-block / .est-table / .oh-table, inheriting
+ * the <768px stacked layout through data-label; the threshold row is
+ * .tax-setting; the modal is .modal-box with .form-grid and .field. This file
+ * is only what those don't do.
+ */
+
+.dep-stat-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The disposed filter sits just above the register it filters. */
+.dep-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.dep-filter input {
+  accent-color: var(--accent);
+}
+
+/* A disposed asset stays readable — it is still on its disposal year's
+   schedule — but steps back, and says why in words, not only by colour. */
+.dep-table tr.dep-disposed td {
+  color: var(--muted);
+}
+.dep-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.dep-iawo {
+  margin-top: 22px;
+}
+.dep-iawo-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Same treatment as #overhead-error: inline, above what refused. */
+#dep-error,
+#dep-modal-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#dep-error.show,
+#dep-modal-error.show {
+  display: block;
+}
+
+/* ── The modal ──────────────────────────────────────────────────────────────
+   Longer than the expense modal — five groups of fields — so it is wider, and
+   the overlay scrolls it (as #modal-invoice-settings does) rather than letting
+   the Save button fall off a short screen. */
+#modal-depreciation-asset {
+  overflow-y: auto;
+  align-items: flex-start;
+  padding: 40px 16px;
+}
+.dep-modal {
+  width: 640px;
+  max-width: 100%;
+}
+/* Group headings: the rate card's 10px tracked label, in --text, with a rule
+   above — the only divider inside the box, one per group. */
+.dep-group {
+  margin: 22px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+.dep-modal .field select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  padding: 9px 12px;
+  width: 100%;
+}
+.dep-modal .field textarea {
+  resize: vertical;
+}
+/* A checkbox with its sentence as the label. `.field label` (app.css) makes
+   every field label a 10px uppercase caption and `.field input` makes every
+   input full-width; this one is a statement you tick, so both are undone at a
+   specificity that beats them rather than with !important. */
+.field label.dep-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.field .dep-check input {
+  width: auto;
+  accent-color: var(--accent);
+}
+.dep-reserve-line {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text);
+}

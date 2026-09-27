@@ -743,6 +743,13 @@
   .finance-rail .nav-link.active {
     border-bottom-color: var(--accent);
   }
+  /* Overhead's inner tabs: the second row of .nav-links under the rail's row,
+     as the IA doc's mobile model asks. Same fix as the rail's for the 44px
+     target: seat the label at the bottom so the accent underline stays a mark
+     on the item rather than a rule under the row. */
+  .oh-inner-tabs .nav-link {
+    align-items: flex-end;
+  }
 
   /* ── The Invoice Settings modal ──────────────────────────────────────────
      css/settings.css already scrolls this overlay (the modal is 915px tall

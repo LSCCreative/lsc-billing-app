@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 10 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 11 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -57,16 +57,18 @@ service business that sells shoot days rather than units.
       - [x] **Capacity screen** (money math — Opus/high) — done 2026-09-27. Added **migration v6**,
             which the task didn't list — see "What landed — Capacity" below.
       - [x] **Dashboard** (money math — Opus/high) — done 2026-09-27, items 1–5; **live** (pushed).
-      - [x] **Rate Card — day rows and `hoursPerUnit`** (money math — Opus/high) — done 2026-09-27.
-            See "What landed — Rate Card". **Committed, not pushed.**
-      - [ ] ← **NEXT: Overhead inner tabs + Depreciation asset register** (frontend — Opus/high).
-            `OverheadView.mount` must read `handlers.inner === 'depreciation'` — the Dashboard's
-            Replacement reserve link already sends it, and the router already forwards it.
+      - [x] **Rate Card — day rows and `hoursPerUnit`** (money math — Opus/high) — done 2026-09-27;
+            **live** (pushed).
+      - [x] **Overhead inner tabs + Depreciation asset register** (frontend — Opus/high) — done
+            2026-09-27. See "What landed — Depreciation register". **Committed, not pushed.**
+      - [ ] ← **NEXT: Depreciation schedule + FY selector** (money math — Opus/high). Renders below
+            the register in `DepreciationView.markup()`; `GET /api/depreciation-schedule?fy=` already
+            exists and returns the frozen lock figures for a locked FY.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Ten tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard and the Rate
-Card's day rows. **The Rate Card work is committed but not pushed.** Pushing `main` ships it; no NAS
-redeploy is needed for the screen. `server/src/defaults.js` did change (seeded day rows), which only
+Eleven tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
+Card's day rows and the Depreciation register. **The register is committed but not pushed**; pushing
+`main` ships it (no server change). Everything before it is live. `server/src/defaults.js` did change (seeded day rows), which only
 matters to **Reset Defaults** and fresh databases — redeploy the NAS whenever convenient for Reset to
 include them.
 
@@ -384,6 +386,43 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — Depreciation register
+
+`web/js/views/overhead.js` (inner tabs), new `web/js/views/depreciation.js` (`DepreciationView` —
+not the `LSCDepreciation` maths in `web/js/depreciation.js`), `web/css/depreciation.css`, inner-tab
+rules in `overhead.css` / `responsive.css`, overlay `#modal-depreciation-asset` in `index.html`.
+
+- **Inner tabs** are a `<nav aria-label="Overhead sections">` of `.nav-link`s — the row the rail
+  vacated. Operating Costs renders exactly as before. The page-head button follows the tab (+ Add
+  Expense / + Add Asset). Switching asks `LSCUnsaved.confirmLeave()` (the threshold field watches).
+- **Top of the tab: replacement reserve / year beside this FY's tax deduction**, each captioned (in
+  every rate / in no rate), plus a one-paragraph explanation where the info button will go. The
+  deduction is `LSCDepreciation.financialYearSchedule(cache, currentFinancialYear()).totalDeductible`
+  — **live, not the locked figure**; when the lock task lands, decide whether a locked current FY
+  should show its frozen total here.
+- **Register**: `.est-table` with `data-label` on every cell (verified at 375px), API order
+  (category, start date), disposed hidden behind a "Show disposed (N)" toggle with counts in the
+  heading, disposed rows muted and tagged "Disposed <date>". Empty state names the capital vs running
+  cost rule.
+- **Modal**: five groups (identity / dates / cost & GST / for tax / for pricing), `LSCModal.trapTab`,
+  Escape and backdrop dismiss via `LSCUnsaved`, focus returns to the opener. Method and category
+  re-render the box (effective life appears for diminishing value and prime cost only; car limit for
+  vehicles only) with focus kept. Live "Adds $X a year to your replacement reserve" line. GST note
+  states the current `settings.gst.registered` and doesn't disable the checkbox (the credit belongs
+  to the purchase, not today's registration). Validation includes start date before purchase date.
+- **The trap avoided: edits carry the disposal fields through.** The PUT writes every column and a
+  missing `disposalDate` becomes NULL, so an edit sending only on-screen fields would un-dispose a
+  sold asset. Verified by disposing via the API, renaming in the modal, and re-reading.
+- **Effective-life placeholders** (camera 3, computer 2, drone 3, vehicle 8) are placeholders only,
+  never values, each with "confirm with your accountant". Worth the accountant checking them.
+- **Write-off threshold**: its own small save at the foot of the tab, `PUT /api/goals
+  { iawoThreshold }` only — verified it leaves income, margin, capacity and `capacityConfirmedAt`
+  untouched. Blank clears it to NULL ("not confirmed").
+- **Verified numbers**: FX6 $8,800, 80%, DV 3 yrs from 5 Jul 2026 → deduction $4,641.90 (361/365 ×
+  200%/3 × 80%); reserve $9,000 ÷ 4 × 80% = $1,800; pooled MacBook $4,400 × 70% → $785.40 in its
+  second year; total $5,427.30. With the reserve, Dashboard and Rate Card both read $14.53/hr
+  ($25,800 ÷ 1,776).
 
 ## What landed (2026-09-27) — Rate Card day rows
 

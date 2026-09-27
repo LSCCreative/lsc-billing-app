@@ -411,3 +411,24 @@
   flex: 1 1 100%;
   margin: 0;
 }
+
+/* ── Inner tabs: Operating Costs / Depreciation ────────────────────────────
+   The horizontal .nav-link row the Finance & Price rail replaced, reused here
+   so the area keeps one navigation idea (IA doc, "Tertiary navigation"): the
+   header's own uppercase 11px links, accent underline on the active one. The
+   negative margin pulls the first link's 10px padding back so its text lines
+   up with the page title above. No rule under the row — .page-head already
+   draws one just above it, and two close rules read as a ladder. */
+.oh-inner-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -10px 0 20px -10px;
+}
+/* responsive.css narrows .nav-link's side padding to 8px below 1100px for the
+   header; held at 10px here so the -10px offset above keeps the first label on
+   the page title's edge at every width. */
+.oh-inner-tabs .nav-link {
+  padding-left: 10px;
+  padding-right: 10px;
+}
