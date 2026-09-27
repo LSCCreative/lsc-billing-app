@@ -821,11 +821,26 @@ function targetAnnualRevenue(annualTotal, desiredNetIncome, taxRate) {
 /* This file is the single source of the money model. The server requires it,
  * and web/js/calc.js is a byte-identical copy the browser loads as a plain
  * script, so the editor's live totals cannot disagree with what the server
- * computes and stores. test/test-calc.js fails if the two copies drift. */
+ * computes and stores. test/test-calc.js fails if the two copies drift.
+ *
+ * THE ATO DEPRECIATION CHAIN LIVES IN ITS SIBLING, depreciation.js, under the
+ * same two-copy rule. It was split out at 867 lines rather than pushing this
+ * file past 1,300: the two answer different questions (what to charge, versus
+ * what to tell the accountant) and are meant to produce different numbers for
+ * the same camera. It depends on this file, not the other way round, and the
+ * browser loads calc.js first.
+ *
+ * numOrNull, field and businessUseShare are exported for it. They are the
+ * shared primitives, not general utilities — businessUseShare in particular
+ * exists so that the percent-not-fraction rule from migration v5 is applied in
+ * exactly one place. */
 if (typeof module === 'object' && module.exports) {
   module.exports = {
     computeTotals,
     round2,
+    numOrNull,
+    field,
+    businessUseShare,
     gstTreatment,
     hoursPerUnitOf,
     annualisedCost,
@@ -847,6 +862,9 @@ if (typeof module === 'object' && module.exports) {
   globalThis.LSCCalc = {
     computeTotals,
     round2,
+    numOrNull,
+    field,
+    businessUseShare,
     gstTreatment,
     hoursPerUnitOf,
     annualisedCost,

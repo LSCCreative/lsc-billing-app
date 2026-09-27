@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 4 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 5 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -45,14 +45,17 @@ service business that sells shoot days rather than units.
       - [x] **Cost of the business — `annualBusinessCost()` and the replacement reserve** (money
             math — Opus/high) — done 2026-09-27, including the shared Australian FY helper. See
             "What landed" below; two conventions were set here that the rest of the feature depends on.
-      - [ ] ← **NEXT: The ATO depreciation chain** (money math — Opus/high). The largest and
-            second-riskiest task in the feature. The FY helper it depends on now exists. Read
-            "Accounting rules a fresh agent will get wrong" above before starting, and note
-            `business_use_pct` is a PERCENT — divide by 100, or use `businessUseShare()`, which
-            already does.
+      - [x] **The ATO depreciation chain** (money math — Opus/high) — done 2026-09-27 in a sibling
+            `depreciation.js`. See "What landed" below; it found a live-site bug that no unit test
+            could catch.
+      - [ ] ← **NEXT: Routes — capacity fields, assets, schedule, locks** (backend — Sonnet/high).
+            The last Foundation task; every function it needs now exists. **Bucket is Sonnet/high**
+            — the previous three were built on Opus at the user's direction, but this one is genuinely
+            pattern-matching `server/src/routes/*.js`.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Four tasks of 21 are built: the money-model rewrite and the schema behind it. No route added, no new
+Five tasks of 21 are built — the whole Foundation group except its routes. Still no route and no
+new view. No route added, no new
 view, `server/src/defaults.js` untouched, and the only edits outside `calc.js` / `db.js` are the two
 call sites in `views/pricing.js` and `views/estimate-editor.js`. **The live site still behaves exactly
 as it did** — verified, not assumed (see "Rates have not moved yet" below). Nothing visible changes
@@ -240,6 +243,57 @@ its container runs UTC.
   "no gear recorded" is a complete answer, and it must be safe to add without null-checking each term.
 - The reserve **raises** the rate, which is the point: $24k operating + a $6k body on a 3-year cycle
   takes 13.51 → 14.64/hr at 1,776 hours.
+
+## What landed (2026-09-27) — the ATO depreciation chain
+
+**New files: `server/src/depreciation.js` and `web/js/depreciation.js`**, byte-identical, with their
+own drift test and `server/test/test-depreciation.js`. Split out rather than added to `calc.js`, which
+was already at 867 lines. `calc.js` now exports `numOrNull`, `field` and `businessUseShare` for it, and
+**`web/index.html` has a new `<script>` after `calc.js`** — the order matters, and a test enforces it.
+
+`costBaseOf`, `daysHeldInFy`, `declineInValue`, `assetSchedule`, `assetScheduleRows`,
+`balancingAdjustment`, `poolSchedule`, `poolScheduleRows`, and `financialYearSchedule(assets, fy)` —
+the whole-year view with reconciling totals that the schedule screen and the CSV both read.
+
+### The bug this task found, and why the test for it looks strange
+
+In the browser, `calc.js` and `depreciation.js` are plain `<script>` tags sharing **one global scope**.
+A top-level `const { round2 } = ...` in the second collides with the first's top-level
+`function round2`: `SyntaxError: Identifier 'round2' has already been declared`, which takes the page
+down with it.
+
+**Node structurally cannot see this** — each file is a module with its own scope there, so all 155
+other tests passed while the deployed site would have been blank. It surfaced only by loading both web
+copies into one shared `vm` context, the way a browser does. `depreciation.js` is therefore **wrapped
+in an IIFE**, and a permanent test loads the web copies in `index.html` order and fails if they
+collide. **Adding a third sibling? Wrap it, and extend that test** — the unit tests will lie to you here.
+
+### Things that look wrong and are correct
+
+- **Schedules walk forward from the asset's first FY.** Diminishing value compounds, so year three's
+  base is year two's closing value; with a mid-year start date and a possible disposal there is no
+  closed form. The loop is the algorithm.
+- **Diminishing value reads the opening adjustable value; prime cost reads the cost base.** Swapping
+  either fails 5 and 13 tests.
+- **A leap financial year yields 366 ÷ 365** — slightly more than a full year's decline. The divisor is
+  always 365 while `daysHeld` is real days. Published formula; correcting it fails 15 tests.
+- **Pools are backwards from individual assets on purpose**: they apportion business use on the way
+  IN (so the whole pool decline is deductible) and take a reduced first-year rate INSTEAD of day-count
+  pro-rata. An asset pooled on 29 June still gets the full 15%.
+- **No "rate applied" field on pool rows** — in a year with both an opening balance and additions both
+  rates apply, and one label would be wrong on a page the accountant reads.
+- **A disposed asset returns `null` for later years, not a zero row**, which would read as "still held,
+  nothing claimed".
+- **Steps 4 and 5 diverge**, and the dedicated test is the only thing that fails when they are merged.
+  Verified: merging them breaks exactly that one test and nothing else.
+
+### Verification
+
+156 tests pass. Ten mutations checked to fail: merged steps 4/5 (1 — the dedicated test),
+`purchase_date` for `start_date` (19), 150% factor (5), DV off cost base (5), prime cost compounding
+(13), divisor 366 (15), pools double-apportioned (5), pool additions at the ongoing rate (13), GST
+always subtracted (3), car limit on every category (1). Every per-method figure was hand-checked
+against the formula before the tests were written.
 
 ## Resolved decisions (Lachlan, 2026-09-27 — do not re-litigate)
 

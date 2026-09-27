@@ -147,7 +147,49 @@ change to it is two identical edits. A task that edits one and not the other is 
   `replacementReserveTotal` returns **0, not null**, for no assets, so it is safe to add to
   `annualOverheadTotal` without null-checking every term.
 
-- [ ] **The ATO depreciation chain** (money math — Opus/high): Add `declineInValue(asset, fyLabel)` and `assetSchedule(asset, fyLabel)` implementing the IA doc's five-step order exactly: (1) `costBase = cost_inc_gst − (gst_credit_claimed ? gst_amount : 0)`; (2) cap at the user-entered car limit for vehicles; (3) method-specific decline, pro-rata `daysHeld ÷ 365` — `diminishing_value: base × (daysHeld ÷ 365) × (200% ÷ life)`, `prime_cost: costBase × (daysHeld ÷ 365) × (100% ÷ life)`, `instant_writeoff: costBase` in the first FY only; (4) `deductible = decline × business_use_pct`; (5) `adjustableValue −= decline` — **the full decline, not the apportioned one.** Step 4 vs 5 is the one to get right: apportioning both is the common error and it overstates the closing value of every part-personal asset for the rest of its life. Add a test that fails if someone "simplifies" them into one. `daysHeld` runs from **`start_date`**, not `purchase_date`, and ends at FY end or `disposal_date`. `÷ 365` even in a leap year, and `200%` is a named constant carrying the "assets held from 10 May 2006" date in its comment so nobody corrects it to 150%. Also `balancingAdjustment(asset)` = `(disposal_proceeds − adjustableValue) × business_use_pct`, belonging to the disposal FY. Pools are **pool-level**: `poolSchedule(assets, fyLabel)` for `small_business_pool` (15% first FY, 30% after) and `low_value_pool` (18.75%, then 37.5%) — a pooled asset contributes its cost base to a balance rather than pretending to have its own decline. Cents throughout via `round2`; no pre-rounding to whole dollars. Tests: a worked example per method with a mid-year `start_date`; a 60%-business asset checking steps 4 and 5 diverge correctly; a disposal mid-FY; a pool with two assets added in different years. _Modifies: `server/src/calc.js` + `web/js/calc.js` — or a sibling `depreciation.js` if `calc.js` is getting crowded, matching whichever keeps the decision-docblock convention intact. **The largest and second-riskiest task.** Depends on: `annualBusinessCost` (for the FY helper)._
+- [x] **The ATO depreciation chain** (money math — Opus/high): Add `declineInValue(asset, fyLabel)` and `assetSchedule(asset, fyLabel)` implementing the IA doc's five-step order exactly: (1) `costBase = cost_inc_gst − (gst_credit_claimed ? gst_amount : 0)`; (2) cap at the user-entered car limit for vehicles; (3) method-specific decline, pro-rata `daysHeld ÷ 365` — `diminishing_value: base × (daysHeld ÷ 365) × (200% ÷ life)`, `prime_cost: costBase × (daysHeld ÷ 365) × (100% ÷ life)`, `instant_writeoff: costBase` in the first FY only; (4) `deductible = decline × business_use_pct`; (5) `adjustableValue −= decline` — **the full decline, not the apportioned one.** Step 4 vs 5 is the one to get right: apportioning both is the common error and it overstates the closing value of every part-personal asset for the rest of its life. Add a test that fails if someone "simplifies" them into one. `daysHeld` runs from **`start_date`**, not `purchase_date`, and ends at FY end or `disposal_date`. `÷ 365` even in a leap year, and `200%` is a named constant carrying the "assets held from 10 May 2006" date in its comment so nobody corrects it to 150%. Also `balancingAdjustment(asset)` = `(disposal_proceeds − adjustableValue) × business_use_pct`, belonging to the disposal FY. Pools are **pool-level**: `poolSchedule(assets, fyLabel)` for `small_business_pool` (15% first FY, 30% after) and `low_value_pool` (18.75%, then 37.5%) — a pooled asset contributes its cost base to a balance rather than pretending to have its own decline. Cents throughout via `round2`; no pre-rounding to whole dollars. Tests: a worked example per method with a mid-year `start_date`; a 60%-business asset checking steps 4 and 5 diverge correctly; a disposal mid-FY; a pool with two assets added in different years. _Modifies: `server/src/calc.js` + `web/js/calc.js` — or a sibling `depreciation.js` if `calc.js` is getting crowded, matching whichever keeps the decision-docblock convention intact. **The largest and second-riskiest task.** Depends on: `annualBusinessCost` (for the FY helper)._
+
+  **Done 2026-09-27**, in a **sibling `depreciation.js`** (server + web, byte-identical, own drift
+  test) — `calc.js` was at 867 lines and this would have pushed it past 1,300. `calc.js` now exports
+  `numOrNull`, `field` and `businessUseShare` for it. **New `<script src="js/depreciation.js">` in
+  `web/index.html`, after `calc.js`.** 156 tests pass; ten mutations checked to fail.
+
+  Implemented: `costBaseOf`, `daysHeldInFy`, `declineInValue`, `assetSchedule`, `assetScheduleRows`,
+  `balancingAdjustment`, `poolSchedule`, `poolScheduleRows`, plus `financialYearSchedule(assets, fy)`
+  — the whole-year view the schedule screen and the CSV both need, with reconciling totals.
+
+  **A live-site bug this task found, which no unit test could have caught.** In the browser, `calc.js`
+  and `depreciation.js` are plain `<script>` tags sharing **one global scope**, so a top-level
+  `const { round2 } = ...` in the second file collides with the first file's top-level
+  `function round2` — `SyntaxError: Identifier 'round2' has already been declared`, which takes the
+  page down. **Node cannot see this**: there each file is a module with its own scope, so the entire
+  suite passed while the deployed site would have been blank. Caught by loading both copies into one
+  shared `vm` context, which is what a browser does. `depreciation.js` is therefore **wrapped in an
+  IIFE**, and there is now a permanent test that loads the web copies in `index.html` order and fails
+  if they collide. **If a later task adds a third sibling, extend that test rather than trusting the
+  unit tests** — and wrap it.
+
+  **Decisions and non-obvious behaviour a later task must not "fix":**
+
+  - **Schedules walk forward from the asset's first FY**, they do not jump to the requested one.
+    Diminishing value compounds — year three's base is year two's closing value — so there is no
+    closed form once a mid-year start date and a possible disposal are involved. The loop is the
+    algorithm, not an inefficiency.
+  - **Diminishing value reads the OPENING ADJUSTABLE VALUE; prime cost reads the COST BASE.** Both are
+    passed to `declineForYear` for that reason. Swapping either fails 5 and 13 tests respectively.
+  - **A leap financial year gives 366 ÷ 365**, slightly over a full year's decline, because the
+    divisor is always 365 while `daysHeld` is real days. Published formula; "correcting" it fails 15
+    tests and puts the app out of step with the accountant.
+  - **Pools apportion business use on the way IN and take a reduced first-year rate INSTEAD of
+    day-count pro-rata** — the exact opposite of step 4 for an individual asset. Apportioning the pool
+    decline as well halves a 50% asset twice. An asset pooled on 29 June still gets the full 15%.
+  - **Pool rows carry no single "rate applied" field.** In a year with both an opening balance and
+    additions, *both* rates apply, and one label on a screen the accountant reads would be wrong.
+    `POOL_RATES` is exported if a view wants to show them.
+  - **A disposed asset has no row after its disposal FY** — `assetSchedule` returns `null`, not a zero
+    row, because a zero row reads as "still held, nothing claimed".
+  - An asset with **no effective life declines nothing** rather than having a life guessed for it, and
+    nothing ever declines below zero.
 
 - [ ] **Routes — capacity fields, assets, schedule, locks** (backend — Sonnet/high): Extend `PUT /api/goals` to accept and validate the five new columns (`working_days_per_week` 1–7, `billable_hours_per_day` 0–24, leave and sick ≥ 0 with `leave + sick < workingDaysPerYear` rejected, `iawo_threshold` ≥ 0), and recompute `billable_capacity_hrs_per_week` as `annualBillableHours ÷ 52` on every save. New `server/src/routes/depreciation.js`: `GET/POST/PUT/DELETE /api/depreciation-assets`; `GET /api/depreciation-schedule?fy=FY2025-26` returning the computed schedule (**computed on read — never stored**, so it cannot drift from the assets); `GET /api/depreciation-schedule.csv?fy=…` for the export; `GET/POST /api/depreciation-locks` (post only, no update or delete). **Every asset write appends an `overhead_snapshots` row in the same handler**, exactly as the overhead CRUD handlers already do — assets now move the annual total, so a change that skipped the snapshot would leave the trend chart lying. Tests in `test-api.js` following the existing pattern, including the `leave + sick` rejection and a locked-FY read. _New: `server/src/routes/depreciation.js`. Modifies: `server/src/routes/goals.js`. Depends on: the migration, the depreciation chain, capacity math._
 
