@@ -195,3 +195,77 @@
   display: flex;
   align-items: center;
 }
+
+/* ── 7. GST mirror ─────────────────────────────────────────────────────────
+   .tax-setting as Goals and the Rate Card use it: copy left, controls right,
+   stacking to one column below 768px (responsive.css, which also sizes it
+   for touch there). The checkbox rows are
+   settings.css's .set-check and the registered-off dimming its .set-row-off —
+   the modal's own controls, since this edits the modal's own field.
+
+   .tax-setting input { width: 90px } (app.css) and, below 768px,
+   { width: 100%; min-height: 44px } (responsive.css) are written for its one
+   number field and would stretch a checkbox across the row, so checkboxes are
+   put back to their own size here. The label around each one is the target. */
+.dash-gst {
+  align-items: flex-start;
+  gap: 28px;
+  margin-bottom: 0;
+}
+.dash-gst-copy {
+  max-width: 62ch;
+}
+.dash-gst-note {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dash-gst-note:last-child {
+  margin-bottom: 0;
+}
+.dash-gst-note strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.dash-gst-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.dash-gst-detail {
+  display: grid;
+  grid-template-columns: auto 90px;
+  align-items: center;
+  gap: 10px 12px;
+}
+.dash-gst-detail .set-check {
+  grid-column: 1 / -1;
+}
+.dash-gst-rate {
+  font-size: 13px;
+  color: var(--text);
+}
+.dash-gst input[type='checkbox'] {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+}
+.dash-gst .set-check {
+  min-height: 24px;
+}
+#dash-gst-error {
+  display: none;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#dash-gst-error.show {
+  display: block;
+}

@@ -25,6 +25,13 @@
  * GST half of the money model was unreachable. The desktop modal had no GST
  * because the desktop app had no GST.
  *
+ * It is no longer the only screen that sets it: the Finance & Price Dashboard
+ * carries an editable mirror of settings.gst (finance-dashboard.js, section
+ * 7), writing the same stored object with the same merge and the same rules
+ * (ABN before registering; rate 0–100 only while registered). Change a GST
+ * rule here and change it there, or the two screens will disagree about what
+ * a valid setting is.
+ *
  * SAVING MERGES, IT DOES NOT REPLACE
  * PUT /api/settings writes the request body over the whole settings row. This
  * modal owns `gst` and `payment` and nothing else, so it PUTs those merged onto
@@ -324,6 +331,9 @@ const SettingsView = (() => {
       // And the estimates empty state, whose first-run checklist may still be
       // listing the invoice details this save has just filled in.
       EstimateList.refreshFirstRun();
+      // And the Dashboard's GST mirror, which can be open behind this modal
+      // showing the setting this save just replaced.
+      FinanceDashboardView.refreshGst();
       saving = false;
       close();
     } catch (err) {

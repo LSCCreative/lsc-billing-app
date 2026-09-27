@@ -7,10 +7,11 @@
  * for, whether each row on the rate card clears that, and the chain of numbers
  * the floors come from, each linked to the screen that owns it.
  *
- * READ-ONLY, AND IT OWNS NO NUMBER
- * Nothing here is stored and nothing here is editable, so there is no save and
- * no LSCUnsaved watcher. Every figure is derived on mount from the LSCData
- * cache (and, for jobs needed, the estimates list), through calc.js — the same
+ * READ-ONLY, BAR ONE MIRROR, AND IT OWNS NO NUMBER
+ * Nothing in sections 1–5 is stored or editable (the GST mirror, section 7,
+ * edits a number Invoice Settings owns — see below). Every figure is derived
+ * on mount from the LSCData cache (and, for jobs needed, the estimates list),
+ * through calc.js — the same
  * functions the Rate Card, the estimate editor, Capacity and Profit Goals use —
  * so this screen cannot show a number another screen disagrees with. The one
  * computation more than one screen needs, overhead cost per hour, comes from
@@ -25,10 +26,35 @@
  *      Replacement reserve, because that split is the only place a camera
  *      entered both as an expense and as an asset becomes visible;
  *   4. target annual revenue, with per-month and per-week averages;
- *   5. jobs needed per year, beside the average job it was divided by.
- * Still to come, each its own task: the post-ratio readout (6) and the GST
- * mirror (7) go below these. The comparison's explanation lives in its info
- * control (js/info.js), beside the section heading, not in a note under it.
+ *   5. jobs needed per year, beside the average job it was divided by;
+ *   7. the GST mirror — last, because it changes rarely and is currently off.
+ * Still to come, its own task: the post-ratio readout (6), between 5 and 7.
+ * The comparison's explanation lives in its info control (js/info.js), beside
+ * the section heading, not in a note under it.
+ *
+ * THE GST MIRROR IS AN EDITABLE MIRROR, NOT A COPY
+ * Section 7 edits settings.gst — the same stored object the Invoice Settings
+ * modal edits, through the same PUT /api/settings — exactly as Profit Goals
+ * mirrors the rate card's tax set-aside rate, and its copy says so. Three
+ * rules carried over from settings.js on purpose, because two screens writing
+ * one field must not disagree about it:
+ *   - The save MERGES. PUT /api/settings replaces the whole row, and this
+ *     block owns `gst` only, so it reads the row fresh at save time and swaps
+ *     `gst` into that — never into LSCData's boot-time copy, which could be
+ *     missing an ABN or bank details saved since. Sending { gst } alone would
+ *     delete the payment block off every invoice.
+ *   - Same validation: registering needs an ABN, and the rate is 0–100 only
+ *     while registered (an inert field on an unregistered business isn't
+ *     worth blocking a save over, and an unusable one keeps what's stored).
+ *   - If the stored GST changed since this block loaded (another device, or
+ *     the modal while this block had unsaved edits), nothing is written: the
+ *     block shows what is stored and says so, rather than silently reverting
+ *     someone's change. SettingsView calls refreshGst() after its own save so
+ *     the ordinary same-tab case just updates in place.
+ * The block has its own Save and its own LSCUnsaved watcher; nothing else on
+ * the page is editable. It changes no figure in sections 1–5 while the card is
+ * GST-exclusive: the comparison is the only GST-aware part (priceExGst backs
+ * GST out of a GST-inclusive card), so that section alone is redrawn on save.
  *
  * THE HEADLINE DAY FLOORS USE CAPACITY'S FULL-DAY HOURS
  * The IA doc writes fullDayFloor = hourlyFloor × (Full Day row's hoursPerUnit).
@@ -48,7 +74,7 @@
  */
 
 const FinanceDashboardView = (() => {
-  const { esc, fmt } = LSCUtil;
+  const { esc, fmt, num } = LSCUtil;
   const {
     annualOverheadTotal,
     replacementReserveTotal,
@@ -65,7 +91,17 @@ const FinanceDashboardView = (() => {
   let handlers = null;
   let mountId = 0; // guards the async estimates fetch against a re-mount
 
-  const hrs = (n) => Number(n).toLocaleString('en-AU', { maximumFractionDigits: 2 });
+  // The GST mirror (section 7): the fields as typed, and as the server last
+  // confirmed them. Same shape as the Invoice Settings modal's GST fields.
+  let gstForm = null;
+  let gstSaved = null;
+  let gstSaving = false;
+
+  /* FRACTION -> PERCENT for the rate field, verbatim from settings.js
+     (including the snap that keeps 0.07 from rendering as 7.000000000000001). */
+  const toPercent = (rate) => String(Math.round(num(rate) * 1e8) / 1e6);
+
+  const hrs =(n) => Number(n).toLocaleString('en-AU', { maximumFractionDigits: 2 });
 
   /* A figure's label as a link to the screen that owns it. A button, not an
      anchor: navigation inside the router, never a page load. data-inner rides
@@ -366,6 +402,251 @@ const FinanceDashboardView = (() => {
     box.innerHTML = jobsMarkup(f, avg);
   }
 
+  // ── 7. The GST mirror ─────────────────────────────────────────────────────
+
+  /* The three GST fields as the settings object stores them, read the way
+     calc.js reads them: registered and pricesIncludeGst strictly === true. */
+  function gstFields(settings) {
+    const gst = (settings && settings.gst) || {};
+    return {
+      registered: gst.registered === true,
+      rateRaw: toPercent(gst.rate),
+      pricesIncludeGst: gst.pricesIncludeGst === true,
+    };
+  }
+
+  const gstDirty = () => JSON.stringify(gstForm) !== JSON.stringify(gstSaved);
+  const gstOnScreen = () => Boolean(document.getElementById('dash-gst-save'));
+
+  /* What the stored setting does today, in one sentence — the status line
+     reads the SAVED values, not the half-edited form, so it never describes a
+     configuration that isn't in force. */
+  function gstStatus(g) {
+    if (!g.registered) {
+      return 'You’re not registered, so quotes and invoices carry no GST at all.';
+    }
+    return (
+      'You’re registered at ' + esc(g.rateRaw) + '%. ' +
+      (g.pricesIncludeGst
+        ? 'Your rate card’s prices already include it, so GST is backed out of them and the client total stays the card’s price.'
+        : 'Your rate card is ex-GST, so GST is added on top of the client price.')
+    );
+  }
+
+  function gstInnerMarkup() {
+    const off = !gstForm.registered;
+    return (
+      '<div class="dash-gst-copy">' +
+      '<div class="sum-label" style="margin-bottom:4px">GST registration</div>' +
+      '<p class="dash-gst-note">The same setting as <strong>Invoice Settings</strong> — change it here and it ' +
+      'changes there. It decides whether quotes and invoices charge GST. ' +
+      '<span id="dash-gst-status">' + gstStatus(gstSaved) + '</span></p>' +
+      '<p class="dash-gst-note">Every figure on this page stays <strong>ex-GST</strong> either way: GST is ' +
+      'collected for the ATO, not earned, so it is never part of a floor, a cost or a target.</p>' +
+      '<p class="dash-gst-note">Registering changes the cost base of gear bought from then on — a GST credit you ' +
+      'claim back comes off the asset’s cost. Gear already on the ' + link('overhead', 'depreciation register', 'depreciation') +
+      ' keeps its own “GST credit claimed” tick, because that was settled when you bought it.</p>' +
+      '</div>' +
+      '<div class="dash-gst-ctl">' +
+      '<label class="set-check"><input type="checkbox" id="dash-gst-reg"' + (gstForm.registered ? ' checked' : '') +
+      '><span>Registered for GST</span></label>' +
+      '<div class="dash-gst-detail' + (off ? ' set-row-off' : '') + '" id="dash-gst-detail">' +
+      '<label class="dash-gst-rate" for="dash-gst-rate">Rate (%)</label>' +
+      '<input type="number" id="dash-gst-rate" min="0" max="100" step="0.5" value="' + esc(gstForm.rateRaw) + '"' +
+      (off ? ' disabled' : '') + '>' +
+      '<label class="set-check"><input type="checkbox" id="dash-gst-inc"' +
+      (gstForm.pricesIncludeGst ? ' checked' : '') + (off ? ' disabled' : '') +
+      '><span>Prices include GST</span></label>' +
+      '</div>' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="dash-gst-save" data-write>' +
+      '<span class="spinner" id="dash-gst-spin"></span><span id="dash-gst-save-label">Save GST</span></button>' +
+      '</div>'
+    );
+  }
+
+  function gstMarkup() {
+    return (
+      '<section class="dash-section" aria-labelledby="dash-gst-h">' +
+      '<h2 class="dash-h" id="dash-gst-h">GST</h2>' +
+      '<div id="dash-gst-error" role="alert"></div>' +
+      '<div class="tax-setting dash-gst" id="dash-gst">' + gstInnerMarkup() + '</div>' +
+      '</section>'
+    );
+  }
+
+  /* Rebuild the block's contents from gstForm/gstSaved — after a save, after a
+     conflict, or when Invoice Settings changed the stored value. Only the
+     block: the rest of the page doesn't depend on the form. */
+  function redrawGst() {
+    const box = document.getElementById('dash-gst');
+    if (!box) return;
+    box.innerHTML = gstInnerMarkup();
+  }
+
+  /* The one GST-aware part of sections 1–5: labourFloorComparison takes GST
+     out of a GST-inclusive card's `mu` (priceExGst). Redrawn in place from the
+     updated cache so it can't disagree with the setting shown below it. */
+  function redrawComparison() {
+    const section = root && root.querySelector('section[aria-labelledby="dash-compare-h"]');
+    if (!section || !section.isConnected) return;
+    const holder = document.createElement('div');
+    holder.innerHTML = comparisonMarkup(figures());
+    section.replaceWith(holder.firstElementChild);
+  }
+
+  function showGstError(message, withSettingsButton) {
+    const el = document.getElementById('dash-gst-error');
+    if (!el) return;
+    el.textContent = message;
+    /* The fix lives on another screen, so offer the way there — the same
+       button estimate-detail.js puts beside its missing-ABN export error. */
+    if (withSettingsButton) {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'btn btn-ghost btn-xs';
+      open.textContent = 'Open Invoice Settings';
+      open.addEventListener('click', () => SettingsView.open({ onAuthLost: handlers.onAuthLost }, open));
+      el.append(' ', open);
+    }
+    el.classList.add('show');
+  }
+
+  function clearGstError() {
+    const el = document.getElementById('dash-gst-error');
+    if (el) LSCUtil.clearFieldErrors(el);
+  }
+
+  function setGstSaving(next) {
+    gstSaving = next;
+    if (!gstOnScreen()) return;
+    document.getElementById('dash-gst-save').disabled = next;
+    document.getElementById('dash-gst-spin').style.display = next ? 'inline-block' : 'none';
+    document.getElementById('dash-gst-save-label').textContent = next ? 'Saving…' : 'Save GST';
+  }
+
+  async function saveGst() {
+    if (gstSaving) return;
+    clearGstError();
+
+    /* Only while registered — calc.js ignores the rate otherwise, and so does
+       the Invoice Settings modal's check, word for word. */
+    const percent = parseFloat(gstForm.rateRaw);
+    const usable = Number.isFinite(percent) && percent >= 0 && percent <= 100;
+    if (gstForm.registered && !usable) {
+      LSCUtil.showFieldErrors(document.getElementById('dash-gst-error'), [
+        { msg: 'The GST rate must be a number between 0 and 100.', field: document.getElementById('dash-gst-rate') },
+      ]);
+      return;
+    }
+
+    setGstSaving(true);
+    Toast.working('Saving GST…');
+
+    try {
+      /* Fresh, not LSCData's copy: this is the merge base for a whole-row
+         write, and the modal's header explains why a stale one is dangerous. */
+      const fresh = (await LSCApi.get('/api/settings')).settings || {};
+
+      /* Changed somewhere else since this block loaded — don't overwrite it
+         with a form built on the old value. */
+      if (JSON.stringify(gstFields(fresh)) !== JSON.stringify(gstSaved)) {
+        LSCData.setSettings(fresh);
+        gstSaved = gstFields(fresh);
+        gstForm = Object.assign({}, gstSaved);
+        setGstSaving(false);
+        Toast.hide();
+        redrawGst();
+        redrawComparison();
+        showGstError(
+          'GST was changed somewhere else since this page loaded — Invoice Settings, or another window — so ' +
+            'nothing was saved. This now shows ' +
+            'what’s stored — make your change again if you still want it.'
+        );
+        return;
+      }
+
+      // Registration without an ABN can't happen — every GST-bearing invoice
+      // would then refuse to export. The modal refuses it too.
+      if (gstForm.registered && !LSCUtil.abnDigits(fresh.business && fresh.business.abn)) {
+        setGstSaving(false);
+        Toast.hide();
+        showGstError('GST registration needs your ABN — add it in Invoice Settings first.', true);
+        return;
+      }
+
+      const body = Object.assign({}, fresh, {
+        gst: Object.assign({}, fresh.gst, {
+          registered: gstForm.registered,
+          // An unusable rate only gets here while unregistered, where it's
+          // inert: keep what's stored rather than invent one (settings.js).
+          rate: usable ? percent / 100 : num(fresh.gst && fresh.gst.rate),
+          pricesIncludeGst: gstForm.pricesIncludeGst,
+        }),
+      });
+      const reply = await LSCApi.put('/api/settings', body);
+      // From here on, every estimate is priced against this.
+      LSCData.setSettings(reply.settings);
+      gstSaved = gstFields(reply.settings);
+      gstForm = Object.assign({}, gstSaved);
+      Toast.ok('GST settings saved.');
+      setGstSaving(false);
+      if (!gstOnScreen()) return;
+      redrawGst();
+      redrawComparison();
+      const btn = document.getElementById('dash-gst-save');
+      if (btn) btn.focus();
+    } catch (err) {
+      setGstSaving(false);
+      Toast.hide();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      showGstError(
+        err.kind === 'network'
+          ? 'Couldn’t save — the server is unreachable. Your changes are still here; try again once it’s back.'
+          : 'Couldn’t save: ' + (err.message || 'the server refused the request.')
+      );
+    }
+  }
+
+  /* Delegated on root, because redrawGst() replaces the controls. Field edits
+     write straight to the form with no redraw, so typing never loses focus;
+     the registration toggle only enables or disables the two fields that mean
+     nothing without it, as the modal does. */
+  function bindGst() {
+    root.addEventListener('input', (event) => {
+      if (event.target.id === 'dash-gst-rate') gstForm.rateRaw = event.target.value;
+    });
+    root.addEventListener('change', (event) => {
+      const t = event.target;
+      if (t.id === 'dash-gst-inc') gstForm.pricesIncludeGst = t.checked;
+      if (t.id === 'dash-gst-reg') {
+        gstForm.registered = t.checked;
+        document.getElementById('dash-gst-rate').disabled = !t.checked;
+        document.getElementById('dash-gst-inc').disabled = !t.checked;
+        document.getElementById('dash-gst-detail').classList.toggle('set-row-off', !t.checked);
+      }
+    });
+    root.addEventListener('click', (event) => {
+      if (event.target.closest('#dash-gst-save')) saveGst();
+    });
+  }
+
+  /* Called by SettingsView after the Invoice Settings modal saves, which can
+     happen with this screen open behind it. With no unsaved edits here the
+     block (and the GST-aware comparison) simply follows the new setting. With
+     edits, the block is left exactly as it is — including gstSaved, which is
+     what saveGst()'s conflict check compares against: moving it forward here
+     would let a form built on the old value overwrite the modal's change. */
+  function refreshGst() {
+    if (!gstOnScreen() || gstSaving) return;
+    if (!gstDirty()) {
+      gstSaved = gstFields(LSCData.settings());
+      gstForm = Object.assign({}, gstSaved);
+      redrawGst();
+    }
+    redrawComparison();
+  }
+
   // ── Mount ─────────────────────────────────────────────────────────────────
 
   function markup(f) {
@@ -376,7 +657,8 @@ const FinanceDashboardView = (() => {
       floorsMarkup(f) +
       comparisonMarkup(f) +
       chainMarkup(f) +
-      targetsMarkup(f)
+      targetsMarkup(f) +
+      gstMarkup()
     );
   }
 
@@ -384,6 +666,9 @@ const FinanceDashboardView = (() => {
     root = container;
     handlers = viewHandlers || {};
     mountId += 1;
+    gstSaving = false;
+    gstSaved = gstFields(LSCData.settings());
+    gstForm = Object.assign({}, gstSaved);
 
     const f = figures();
     root.innerHTML = markup(f);
@@ -397,8 +682,15 @@ const FinanceDashboardView = (() => {
       handlers.onGoTab(btn.getAttribute('data-go-tab'), inner ? { inner } : undefined);
     });
 
+    bindGst();
+    LSCUnsaved.watch('dashboard-gst', {
+      label: 'the GST settings',
+      onScreen: gstOnScreen,
+      dirty: gstDirty,
+    });
+
     loadJobs(f, mountId);
   }
 
-  return { mount };
+  return { mount, refreshGst };
 })();

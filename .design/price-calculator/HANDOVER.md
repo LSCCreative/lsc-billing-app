@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-27 (Phase 6 — 14 of 21 tasks done)
+## State as of 2026-09-27 (Phase 6 — 15 of 21 tasks done)
 
 `/design-flow` sequence position:
 
@@ -69,14 +69,16 @@ service business that sells shoot days rather than units.
             2026-09-27 ~20:40 AEST.**
       - [x] **Info button + popover — shared component** (frontend — Opus/high) — done 2026-09-27.
             See "What landed — Info control". **Committed, not pushed** (no server change).
-      - [ ] ← **NEXT: GST mirror block** (money math — Opus/high). The `.tax-setting` block on the
-            Dashboard writing `settings.gst` through `/api/settings`; verify the round trip with
-            Invoice Settings both ways.
+      - [x] **GST mirror block** (money math — Opus/high) — done 2026-09-27. See "What landed — GST
+            mirror". **Committed, not pushed** (web only, no server change).
+      - [ ] ← **NEXT: Post-ratio readout** (frontend — Opus/high). Dashboard section (6), slotting in
+            between jobs needed (5) and the GST mirror (7). Display-local, saves nothing.
 - [ ] Phase 7 — Design Review. On request only, after there is something built.
 
-Fourteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
-Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement lock) and the shared
-info control. **The info control is committed but not pushed** (web only). Everything before it is
+Fifteen tasks of 21 are built — the Foundation group, the rail, Capacity, the Dashboard, the Rate
+Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement lock), the shared
+info control and the GST mirror. **The info control and the GST mirror are committed but not
+pushed** (web only — pushing `main` deploys Pages; no NAS step needed). Everything before them is
 live on both the NAS and Pages.
 
 **Deployed 2026-09-27 (~20:40 AEST), with the user's explicit go-ahead** — the CSV/lock task's
@@ -406,6 +408,67 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-27) — GST mirror
+
+Dashboard section (7), last on the page: a `.tax-setting` block (`#dash-gst`) with `Registered for
+GST`, `Rate (%)` and `Prices include GST`, and its own **Save GST** button, writing `settings.gst`
+through the existing `PUT /api/settings`. Copy says out loud that it is the same setting as Invoice
+Settings, states what the stored setting does today (a status line built from the **saved** values,
+never the half-edited form), and names both consequences: every figure on the page stays ex-GST,
+and registering changes the cost base of gear bought from then on — existing assets keep their own
+`gst_credit_claimed` tick (with a deep link to the register). Files: `web/js/views/finance-dashboard.js`
+(section 7 + header), `web/js/views/settings.js` (one call + header note), `web/css/finance-dashboard.css`,
+`web/css/responsive.css` (<768px touch targets only). No server change; 178 tests pass.
+
+### Decisions made here — read before touching either GST screen
+
+1. **The Dashboard is no longer strictly read-only.** Its header now says "read-only, bar one
+   mirror": sections 1–5 still own and edit nothing; section 7 edits a number Invoice Settings owns.
+   It registers one `LSCUnsaved` watcher (`dashboard-gst`, label "the GST settings") scoped to the
+   block, so leaving with an unticked-but-unsaved change asks first.
+2. **The save merges onto a FRESH read, not the LSCData cache** — `GET /api/settings` at save time,
+   swap in `gst`, `PUT` the whole row. Same reason the modal reads fresh on open: the route replaces
+   the whole row, and a boot-time cache can lack an ABN or bank details saved since. Sending `{ gst }`
+   alone would wipe the payment block off every invoice.
+3. **Same validation as the modal, deliberately duplicated in wording:** registering needs an ABN
+   (checked against the fresh row; the error carries an **Open Invoice Settings** button, the same
+   one `estimate-detail.js` uses for its missing-ABN export error); the rate must be 0–100 only
+   while registered; an unusable rate while unregistered keeps the stored rate. `settings.js`'s
+   header now says the rules live in two places and must move together.
+4. **Conflict check — new, not in the task.** If the stored `gst` no longer matches what the block
+   loaded (another window, or the modal saved while this block had unsaved edits), nothing is
+   written: the block redraws with what is stored and says so. Without it, a form built on the old
+   value would silently revert someone else's change to a field that moves the money on every
+   estimate.
+5. **`FinanceDashboardView.refreshGst()`**, called by `SettingsView` after its save (alongside
+   `EstimateEditor.refreshTotals()` / `EstimateList.refreshFirstRun()`, same no-op-unless-on-screen
+   shape). The modal opens over any screen, including this one: with no unsaved edits the block
+   follows the new setting in place; with edits, it leaves them **and leaves `gstSaved` alone**, so
+   decision 4's check fires on the next save rather than the stale form winning.
+6. **Only the comparison table redraws on save.** It is the one GST-aware part of sections 1–5
+   (`labourFloorComparison` → `priceExGst` backs GST out of a GST-inclusive card's `mu`). Floors,
+   chain and targets don't read GST. The rest of the page isn't re-rendered, so focus stays on Save.
+7. **Checkboxes inside `.tax-setting` needed putting back to their own size**: `app.css`'s
+   `.tax-setting input { width: 90px }` and `responsive.css`'s `{ width: 100%; min-height: 44px }`
+   are written for the block's one number field. `.dash-gst input[type='checkbox']` overrides them;
+   below 768px each checkbox *label* is the 44px target instead.
+
+### Verified (local `api-scratch` + `web`, dispatched events per the memory note)
+
+Initial state (unregistered, 10%, exclusive; rate and inclusive disabled). Registered with no ABN →
+refused, error + Open Invoice Settings button, stored `gst` unchanged. Unsaved guard on the rail
+(confirm text "unsaved changes to the GST settings", declined → stays). Error button → modal → ABN
+only → saved; the Dashboard kept its unsaved tick through the modal's save, then Save GST registered
+**and the ABN the modal had just written survived the merge**. Dashboard → 15% inclusive → Invoice
+Settings modal showed registered / 15 / inclusive / the ABN; the comparison's first row went
+$56.00 → $48.70 (= 56 ÷ 1.15). Invoice Settings → 10% exclusive with the Dashboard behind it → mirror
+followed in place, comparison back to $56.00, not dirty. Conflict: edited the mirror, changed the rate
+to 12.5% by a direct PUT, saved → refused with the conflict message, stored 12.5% intact, block
+showing 12.5%. Deregister with a blank rate → saved, stored rate kept at 12.5%. Registered at 150% →
+field error, `aria-invalid`, focus on the rate, nothing stored. 1280px and 375px (no horizontal
+scroll; checkbox labels 44px tall on the phone, checkboxes 13px). No console errors. **Scratch
+settings restored to exactly what they were** (unregistered, 10%, no ABN).
 
 ## What landed (2026-09-27) — Info control
 
