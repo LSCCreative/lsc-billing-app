@@ -547,16 +547,16 @@ const OverheadCharts = (() => {
      nothing for a click to do here, and a focusable row that does nothing is
      worse for a keyboard user than a plain list. */
   function legendMarkup(groups) {
+    const row = (group, sub) =>
+      '<li class="oh-legend-row' + (sub ? ' oh-legend-sub' : '') + '">' +
+      (sub ? '<span aria-hidden="true"></span>' : '<span class="oh-swatch ' + group.colour + '" aria-hidden="true"></span>') +
+      '<span class="oh-legend-name">' + esc(group.label) + '</span>' +
+      '<span class="oh-legend-amt">' + esc(fmt(group.annual)) + '</span>' +
+      '<span class="oh-legend-pct">' + group.pct.toFixed(1) + '%</span>' +
+      '</li>';
+    // A folded slice's row, then each category inside it, unswatched.
     const rows = groups
-      .map(
-        (group) =>
-          '<li class="oh-legend-row">' +
-          '<span class="oh-swatch ' + group.colour + '" aria-hidden="true"></span>' +
-          '<span class="oh-legend-name">' + esc(group.label) + '</span>' +
-          '<span class="oh-legend-amt">' + esc(fmt(group.annual)) + '</span>' +
-          '<span class="oh-legend-pct">' + group.pct.toFixed(1) + '%</span>' +
-          '</li>'
-      )
+      .map((group) => row(group, false) + (group.members || []).map((m) => row(m, true)).join(''))
       .join('');
     return '<ul class="oh-legend">' + rows + '</ul>';
   }
@@ -574,12 +574,36 @@ const OverheadCharts = (() => {
    *   overhead.js and passed in rather than copied: the database CHECK-constrains
    *   these spellings, and a second list here is a second thing to keep in step.
    */
+  /* The ramp has six steps, and there are ten categories since 2026-09-28.
+     Past six, ranks six and down all took the last step — up to five slices in
+     one grey, which no reader can tell apart. So the ring shows the five
+     largest and folds the rest into one "N more categories" slice in that last
+     step. The legend still lists every folded category and its figure under
+     that row, so no number leaves the screen; only the ring is simplified. */
+  const RING_STEPS = 6;
+
+  function ringGroups(groups) {
+    if (groups.length <= RING_STEPS) return groups;
+    const shown = groups.slice(0, RING_STEPS - 1);
+    const rest = groups.slice(RING_STEPS - 1);
+    return shown.concat([{
+      value: '_more',
+      label: rest.length + ' more categories',
+      annual: Math.round(rest.reduce((sum, g) => sum + g.annual, 0) * 100) / 100,
+      // Tenths summed as integers, so 0.1 + 0.2 can't print as 0.30000000000000004.
+      pct: rest.reduce((sum, g) => sum + Math.round(g.pct * 10), 0) / 10,
+      colour: 'oh-c' + RING_STEPS,
+      members: rest,
+    }]);
+  }
+
   function donutMarkup(items, categories) {
-    const { groups, total } = byCategory(items, categories);
+    const { groups: all, total } = byCategory(items, categories);
+    const groups = ringGroups(all);
     const head =
       '<div class="est-block-head"><h2 class="est-block-label">Category Breakdown</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
-      (groups.length ? groups.length + ' categor' + (groups.length === 1 ? 'y' : 'ies') : '') +
+      (all.length ? all.length + ' categor' + (all.length === 1 ? 'y' : 'ies') : '') +
       '</span></div>';
 
     let body;

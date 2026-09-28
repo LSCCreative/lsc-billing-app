@@ -508,6 +508,45 @@ const MIGRATIONS = [
       for (const r of rows) set.run(fyLabel(String(r.created_at || '').slice(0, 10)), r.id);
     },
   },
+  {
+    version: 8,
+    name: 'overhead_items: five more operating-cost categories',
+    up(db) {
+      // Asked for by the user 2026-09-28: Motor vehicle expenses, Mobile phone
+      // and internet, Home office, Advertising and marketing, Training and
+      // education. "Advertising and marketing" is the existing 'marketing'
+      // value with a new label (views/overhead.js) — a second marketing
+      // category beside the first would split one kind of cost across two
+      // slices of the donut. So four new values, and no row changes category.
+      //
+      // SQLite can't alter a CHECK in place, so the table is rebuilt — the same
+      // pattern as v6. Every column and row is carried across unchanged, and
+      // nothing references overhead_items, so the drop is safe with
+      // foreign_keys = ON. overhead_snapshots keys its by_category_json on
+      // these same values and needs no change.
+      db.exec(`
+        CREATE TABLE overhead_items_v8 (
+          id         TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          category   TEXT NOT NULL
+                       CHECK (category IN
+                         ('software', 'admin_legal', 'marketing', 'hosting', 'tax', 'other',
+                          'motor_vehicle', 'phone_internet', 'home_office', 'training')),
+          cost       REAL NOT NULL,
+          frequency  TEXT NOT NULL
+                       CHECK (frequency IN
+                         ('weekly', 'monthly', 'quarterly', 'annual', 'one_off')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO overhead_items_v8 (id, name, category, cost, frequency, created_at, updated_at)
+          SELECT id, name, category, cost, frequency, created_at, updated_at FROM overhead_items;
+        DROP TABLE overhead_items;
+        ALTER TABLE overhead_items_v8 RENAME TO overhead_items;
+        CREATE INDEX idx_overhead_items_category ON overhead_items (category);
+      `);
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

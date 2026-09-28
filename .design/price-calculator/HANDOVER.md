@@ -445,6 +445,25 @@ can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longe
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
 
+## What landed (2026-09-28) — five more operating-cost categories
+
+Asked for by the user: **Motor vehicle expenses, Mobile phone and internet, Home office,
+Advertising and marketing, Training and education.** Advertising and marketing is the existing
+`marketing` value relabelled — not a second marketing category — so four new values
+(`motor_vehicle`, `phone_internet`, `home_office`, `training`) and no row changes category.
+**Schema v8** rebuilds `overhead_items` with the wider CHECK (v6's rebuild pattern; every row
+carried across, index recreated; tested). `CATEGORIES` in `views/overhead.js` is the dropdown and
+donut order.
+
+**The donut folds past six.** Its ramp has six steps and ranks 6+ all took the last one, which was
+harmless at six categories and unreadable at ten. `ringGroups` (overhead-charts.js) now shows the
+five largest and one "N more categories" slice; the legend lists each folded category under it,
+unswatched, so every figure is still on screen. Verified on scratch with eight categories: six
+slices, shares sum to 100.0, no errors.
+
+**Deploy order: NAS before Pages** — a Pages build offering the new categories to the old server
+would have its saves refused by the old CHECK.
+
 ## What landed (2026-09-28) — audit fixes
 
 The money-math audit (`/code-review`, 15 findings) — all fixed, four of them after the user

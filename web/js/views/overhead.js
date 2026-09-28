@@ -78,12 +78,21 @@ const OverheadView = (() => {
 
   /* value: the spelling the database CHECK accepts. label: what a person reads.
      Keep them apart — the temptation to derive one from the other is how
-     'admin_legal' ends up written to the column as 'Admin / Legal'. */
+     'admin_legal' ends up written to the column as 'Admin / Legal'.
+
+     The list order is the dropdown's and the donut's tie-break order. Four
+     values joined, and 'marketing' was relabelled, on 2026-09-28 (migration
+     v8 widened the CHECK to match): Advertising and marketing is the old
+     Marketing, not a second category beside it. Other stays last. */
   const CATEGORIES = [
     { value: 'software', label: 'Software' },
-    { value: 'admin_legal', label: 'Admin / Legal' },
-    { value: 'marketing', label: 'Marketing' },
     { value: 'hosting', label: 'Hosting' },
+    { value: 'phone_internet', label: 'Mobile phone and internet' },
+    { value: 'admin_legal', label: 'Admin / Legal' },
+    { value: 'marketing', label: 'Advertising and marketing' },
+    { value: 'motor_vehicle', label: 'Motor vehicle expenses' },
+    { value: 'home_office', label: 'Home office' },
+    { value: 'training', label: 'Training and education' },
     { value: 'tax', label: 'Tax' },
     { value: 'other', label: 'Other' },
   ];

@@ -515,7 +515,7 @@ test('v7 backfills opening_value_fy from created_at, and only where an opening v
   insert.run('da_new', null, '2025-10-02T01:00:00.000Z', '2025-10-02T01:00:00.000Z');
 
   const result = migrate(db);
-  assert.deepEqual([result.from, result.to], [6, 7]);
+  assert.deepEqual([result.from, result.to], [6, LATEST_VERSION]);
   const byId = (id) => db.prepare('SELECT opening_value_fy FROM depreciation_assets WHERE id = ?').get(id);
   assert.equal(byId('da_old').opening_value_fy, 'FY2025-26');
   assert.equal(byId('da_new').opening_value_fy, null);
@@ -523,6 +523,43 @@ test('v7 backfills opening_value_fy from created_at, and only where an opening v
   db.close();
 });
 
-test('the schema knows it is at v7', () => {
-  assert.equal(LATEST_VERSION, 7);
+/**
+ * MIGRATION v8 — five more operating-cost categories (four new values; the
+ * fifth is the existing 'marketing', relabelled on screen). A table rebuild, so
+ * the upgrade test puts a row in the v7 shape, rewinds, and lets v8 run.
+ */
+test('v8 keeps every overhead row and widens the category list', () => {
+  const db = openDatabase(tempDbPath('v8-upgrade'));
+  db.prepare(`
+    INSERT INTO overhead_items (id, name, category, cost, frequency, created_at, updated_at)
+    VALUES ('oh_keep', 'Website ads', 'marketing', 120, 'monthly', '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z')
+  `).run();
+  db.prepare('DELETE FROM schema_version WHERE version >= 8').run();
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [7, 8, 1]);
+  const row = db.prepare("SELECT * FROM overhead_items WHERE id = 'oh_keep'").get();
+  assert.deepEqual(
+    [row.name, row.category, row.cost, row.frequency, row.created_at, row.updated_at],
+    ['Website ads', 'marketing', 120, 'monthly', '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z'],
+  );
+
+  const insert = db.prepare(`
+    INSERT INTO overhead_items (id, name, category, cost, frequency, created_at, updated_at)
+    VALUES (?, 'x', ?, 1, 'monthly', ?, ?)
+  `);
+  for (const c of ['motor_vehicle', 'phone_internet', 'home_office', 'training']) {
+    insert.run('oh_' + c, c, nowIso(), nowIso());
+  }
+  assert.throws(() => insert.run('oh_bad', 'fuel', nowIso(), nowIso()), /CHECK constraint failed/);
+  // The category index came back with the rebuild.
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'idx_overhead_items_category'").get().n,
+    1,
+  );
+  db.close();
+});
+
+test('the schema knows it is at v8', () => {
+  assert.equal(LATEST_VERSION, 8);
 });

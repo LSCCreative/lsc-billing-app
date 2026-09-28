@@ -474,3 +474,15 @@
   padding-left: 10px;
   padding-right: 10px;
 }
+
+/* The categories folded into the donut's "N more categories" slice
+   (overhead-charts.js, ringGroups): listed under it, unswatched, in --muted,
+   so they read as the slice's contents rather than as slices of their own. */
+.oh-legend-sub {
+  padding: 4px 0;
+  font-size: 11px;
+}
+.oh-legend-sub .oh-legend-name,
+.oh-legend-sub .oh-legend-amt {
+  color: var(--muted);
+}
