@@ -38,6 +38,30 @@
  *     line's price for the one that client was quoted last time, matched by
  *     category and row id, then name. Turning it off puts the prices back.
  *
+ * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/)
+ * A labour service sells by the hour, the half day or the full day, each with
+ * its own price on the card (LSCCalc.unitDef — typed, or auto from the income
+ * floor and Target Markup). The picker is service → unit → Add, and the unit
+ * starts on Hour every time a service is chosen (brief decision 11). A line is
+ * one service at one unit; the same service can be on a quote twice at two
+ * units. Its unit is a select on the line: switching re-snapshots the line
+ * from the card at the new unit, keeping its quantity. So a line's unit is
+ * part of its snapshot (`dayUnit`, absent for an hour), and both rate actions
+ * match by unit too — row id + unit, then name + unit:
+ *   - "Update to current rates" re-prices each line at its OWN unit. A unit
+ *     with no price on the card yet (auto, no income floor) keeps its
+ *     snapshot, and the message counts it.
+ *   - "Use rates from last project" swaps in last time's price only for the
+ *     same service at the same unit. A unit switch or a new line while it is
+ *     on takes last time's price at that unit when there is one, and
+ *     remembers today's card price as the line's own for turning it off.
+ * A unit with no price is listed disabled ("no price yet, needs Profit
+ * Goals": the brief asks a disabled option to say why, and an auto unit with
+ * no income floor is the only way to have none) in both selects, never offered
+ * at $0 (IA: `mu: null` means unavailable). The auto price a
+ * line is added at is frozen into its snapshot like any other: this file never
+ * resolves a price after that except on one of the actions above.
+ *
  * CLIENT FIELDS
  * The estimate carries a client *snapshot* — {businessName, contactName, email,
  * phone, abn, address} — not the desktop app's flat businessName/clientName/
@@ -71,6 +95,11 @@ const EstimateEditor = (() => {
   let overheadRate = null;
   let profitMarginPct = null; // a MARKUP percent — the stored column predates the rename
   let incomeFloor = null; // LSCData.incomeFloor(), for the job's income line
+  /* LSCData.priceContext(), for resolving a service's auto prices at a unit.
+     Resolved at mount for the same reason as the three above — except its GST
+     settings, which the Invoice Settings modal can change over this screen:
+     refreshTotals() takes it again. */
+  let priceCtx = null;
 
   /* The client's last project, for "Use rates from last project":
      { estimate, rates: Map(key → snapshot) } once looked up, null when there is
@@ -129,6 +158,157 @@ const EstimateEditor = (() => {
 
   const snapOf = (tr) => (tr.dataset.snap ? JSON.parse(tr.dataset.snap) : null);
 
+  // ── Service units ─────────────────────────────────────────────────────────
+
+  const UNIT_NAMES = { hour: 'Hour', half: 'Half day', full: 'Full day' };
+
+  /* The Rate Card's own money format for a price in a sentence: whole dollars
+     without cents ("$1,120"), anything else to the cent. */
+  const money = (n) => (Number.isInteger(n) ? '$' + n.toLocaleString('en-AU') : fmt(n));
+
+  /* Which unit a line (or snapshot) is sold in, as the rate-matching key: 'hour',
+     'half' or 'full', or — for a line saved before service units with some other
+     number of hours and no day marker — 'unit' plus its hours, which matches
+     nothing on today's card. Travel snapshots carry no hours and read as 'hour'. */
+  function unitKey(snap) {
+    const u = LSCRows.labourUnit(snap);
+    return u.kind === 'unit' ? 'unit' + u.hoursPerUnit : u.kind;
+  }
+
+  /* The live card's row for a line, in its own category, by row id then name.
+     `sectionId` '' is Travel. Null for a line whose service has gone. */
+  function cardRowFor(sectionId, rowId, name) {
+    const pricing = LSCData.pricing();
+    const defs = sectionId
+      ? ((pricing.labourSections || []).find((sec) => sec.id === sectionId) || { rows: [] }).rows
+      : pricing.travelRows || [];
+    return (rowId && defs.find((r) => r.id === rowId)) || defs.find((r) => r.name === name) || null;
+  }
+
+  /* Today's card price for a row at one unit, as a line snapshot — or null when
+     that unit has no price yet (an auto unit with no income floor, or a unit the
+     card doesn't sell). A row without `prices` (Travel) has one price and no
+     units. */
+  function cardSnap(row, unit) {
+    if (!row) return null;
+    if (!row.prices) return LSCCalc.lineSnapshot(row);
+    const def = LSCCalc.unitDef(row, unit, LSCData.pricing(), priceCtx);
+    return def && def.mu !== null ? LSCCalc.lineSnapshot(def) : null;
+  }
+
+  /* What a line of this row at this unit would be priced at: the client's
+     last-project price for it while that toggle is on and there is one,
+     otherwise today's card. `own` is today's card price, which the line goes
+     back to when the toggle is turned off. `snap` null: it can't be priced. */
+  function unitSnap(sectionId, row, unit) {
+    const own = cardSnap(row, unit);
+    const last = ratesFromLast ? lastRateFor(sectionId, row.id, row.name, unit) : null;
+    return { snap: last || own, own };
+  }
+
+  /* Marks a row priced from the last project with the price it would otherwise
+     have, for setRatesFromLast(false) to put back; clears the mark otherwise. */
+  function markOwn(tr, picked) {
+    if (picked.snap && picked.snap !== picked.own) tr.dataset.prevSnap = picked.own ? JSON.stringify(picked.own) : 'none';
+    else delete tr.dataset.prevSnap;
+  }
+
+  /* The options of a unit select. `current` is the unit a line is already in:
+     its option is just the unit's name, since the line's price sits beside it
+     in the Mark-Up column and the closed select should read "per full day".
+     Every other option says what the line would be priced at in that unit, or
+     that it can't be yet — disabled, with the reason in its text (a <select>
+     can hold nothing else). `lower`: the line's inline wording ("per half
+     day"), rather than the picker's ("Half day · $640"). */
+  function unitOptions(sectionId, row, current, lower) {
+    const name = (u) => (lower ? UNIT_NAMES[u].toLowerCase() : UNIT_NAMES[u]);
+    let html = '';
+    if (current && LSCCalc.SERVICE_UNITS.indexOf(current) === -1) {
+      // A legacy line in no unit the card sells: shown as it is, not switchable back to.
+      html += '<option value="' + esc(current) + '" selected>unit</option>';
+    }
+    LSCCalc.SERVICE_UNITS.forEach((u) => {
+      if (u === current) {
+        html += '<option value="' + u + '" selected>' + name(u) + '</option>';
+        return;
+      }
+      const { snap } = unitSnap(sectionId, row, u);
+      html +=
+        '<option value="' + u + '"' + (snap ? '' : ' disabled') + '>' + name(u) + ' · ' +
+        (snap ? money(snap.mu) : 'no price yet, needs Profit Goals') + '</option>';
+    });
+    return html;
+  }
+
+  /* The picker's unit select, for whichever service its service select shows.
+     Starts on Hour every time the service changes (brief decision 11) — or, when
+     the hour has no price, on the first unit that has one. `keep` (a repaint
+     after the rates toggle) holds the current choice if it can still be priced.
+     No priceable unit: every option disabled, and Add with it. */
+  function paintPicker(section, keep) {
+    const svc = $('sel-' + section.id);
+    const unitSel = $('unit-' + section.id);
+    const add = $('add-' + section.id);
+    if (!svc || !unitSel || !add) return;
+    const row = section.rows.find((r) => r.name === svc.value) || null;
+    if (!row || !row.prices) {
+      unitSel.innerHTML = row ? '<option value="hour">' + UNIT_NAMES.hour + '</option>' : '';
+      unitSel.disabled = true;
+      add.disabled = !row;
+      return;
+    }
+    const was = unitSel.value;
+    unitSel.innerHTML = unitOptions(section.id, row, null, false);
+    unitSel.disabled = false;
+    const open = Array.from(unitSel.options).filter((o) => !o.disabled);
+    const pick = (keep && open.find((o) => o.value === was)) || open.find((o) => o.value === 'hour') || open[0];
+    unitSel.value = pick ? pick.value : 'hour';
+    add.disabled = !pick;
+  }
+
+  /* A line's unit select, repainted in place: its other options' prices depend
+     on the rates toggle, which can change without the line being rebuilt. */
+  function paintLineUnits() {
+    sections.forEach((section) => {
+      rowsIn(section.id).forEach((tr) => {
+        const sel = tr.querySelector('.lab-unit-sel');
+        if (!sel) return;
+        const snap = snapOf(tr) || {};
+        const row = cardRowFor(section.id, snap.rowId, tr.dataset.name);
+        if (row && row.prices) sel.innerHTML = unitOptions(section.id, row, unitKey(snap), true);
+      });
+      paintPicker(section, true);
+    });
+  }
+
+  /* Switching a line's unit: a fresh snapshot from the card at the new unit
+     (or last time's, per unitSnap), the typed quantity and custom bill kept,
+     totals recalculated, and the new price announced. A unit that can't be
+     priced is disabled and can't be picked; if one ever is, the line stays put. */
+  function switchUnit(tr, unit) {
+    const snap = snapOf(tr) || {};
+    const sectionId = tr.dataset.section;
+    const row = cardRowFor(sectionId, snap.rowId, tr.dataset.name);
+    const picked = row && row.prices ? unitSnap(sectionId, row, unit) : { snap: null, own: null };
+    if (!picked.snap) {
+      const sel = tr.querySelector('.lab-unit-sel');
+      if (sel) sel.value = unitKey(snap);
+      return;
+    }
+    const fresh = reprice(tr, picked.snap);
+    markOwn(fresh, picked);
+    recalc();
+    const sel = fresh.querySelector('.lab-unit-sel');
+    if (sel) sel.focus();
+    const hours = LSCCalc.hoursPerUnitOf(picked.snap);
+    LSCUtil.announce(
+      $('editor-live'),
+      tr.dataset.name + ': now per ' + UNIT_NAMES[unit].toLowerCase() + ', ' + money(picked.snap.mu) +
+        (unit === 'hour' ? '' : ', ' + hours + ' billable ' + (hours === 1 ? 'hr' : 'hrs')) +
+        (picked.snap !== picked.own ? ', as on the last project' : '') + '.'
+    );
+  }
+
   /* One labour or travel row read back as a saved line: name, snapshot, and
      what was typed. */
   function lineFrom(tr, withOverride) {
@@ -156,13 +336,15 @@ const EstimateEditor = (() => {
      it here contradicted Pricing on the same data. Travel rows keep theirs: a
      travel rate is still entered by hand. The same column is gone from
      estimate-detail.js. */
-  /* DAY ROWS (2026-09-27, .design/price-calculator/). In a category whose card
-     has any day row, the quantity column is headed "Qty" and every row says
-     what its quantity counts on a line under its name — "per hour", "per full
-     day · 8 billable hrs" — the Rate Card's own wording. A category of hourly
-     rows only keeps its "Hours" heading and no extra line, exactly as before.
-     The stacked mobile label and the input's accessible name say the unit
-     either way ("Full days for …"), since neither can see the heading. */
+  /* UNITS ON THE LINE (2026-09-27 day rows; 2026-09-28 service units). Every
+     labour category heads its quantity column "Qty", and every priced line
+     says what its quantity counts on a line under its name — "per [full day ▾]
+     · 8 billable hrs", the Rate Card's own wording. The unit is a select while
+     the line's service is still on the card (see switchUnit), and plain text
+     when it isn't — an archived category, or a service since deleted — since
+     there is nothing left to re-price it from. The hours are the line's own,
+     from its snapshot. The stacked mobile label and the input's accessible name
+     say the unit too ("Full days for …"), since neither can see the heading. */
   function buildLabourRow(section, def, line) {
     const tr = document.createElement('div');
     tr.className = 'gt-row labour-grid';
@@ -181,9 +363,14 @@ const EstimateEditor = (() => {
 
     const unit = LSCRows.labourUnit(def);
     const qtyLabel = LSCRows.qtyLabel(unit.kind);
-    const unitLine = !def || !LSCRows.sectionHasUnits(section)
+    const cardRow = def && !section.archived ? cardRowFor(section.id, def.rowId, line.name) : null;
+    const unitCtl = cardRow && cardRow.prices
+      ? '<select class="lab-unit-sel" aria-label="Unit for ' + esc(line.name) + '">' +
+        unitOptions(section.id, cardRow, unitKey(def), true) + '</select>'
+      : LSCRows.unitWord(unit.kind, 1);
+    const unitLine = !def
       ? ''
-      : '<div class="lab-unit">per ' + LSCRows.unitWord(unit.kind, 1) +
+      : '<div class="lab-unit">per ' + unitCtl +
         (unit.kind === 'hour' ? '' : ' · ' + unit.hoursPerUnit + ' billable ' + (unit.hoursPerUnit === 1 ? 'hr' : 'hrs')) +
         '</div>';
 
@@ -197,6 +384,8 @@ const EstimateEditor = (() => {
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button></div>';
 
     bindRow(tr, ['.qty-inp', '.custom-bill-inp']);
+    const unitSel = tr.querySelector('.lab-unit-sel');
+    if (unitSel) unitSel.addEventListener('change', () => switchUnit(tr, unitSel.value));
     return tr;
   }
 
@@ -330,11 +519,13 @@ const EstimateEditor = (() => {
 
     // An archived category has no picker: its services are gone from the rate
     // card, so there is nothing left to add. Existing rows stay visible and
-    // removable.
+    // removable. The unit select is filled by paintPicker() once bound.
     const picker = section.archived
       ? ''
       : '<div class="bb-picker"><select class="svc-select" id="sel-' + esc(section.id) +
         '" aria-label="Service to add to ' + esc(section.label) + '">' + options + '</select>' +
+        '<select class="svc-select unit-select" id="unit-' + esc(section.id) +
+        '" aria-label="Unit to add for ' + esc(section.label) + '"></select>' +
         '<button type="button" class="btn btn-accent btn-sm" id="add-' + esc(section.id) + '">+ Add Service</button></div>';
 
     const tag = section.archived
@@ -346,8 +537,7 @@ const EstimateEditor = (() => {
       '<div class="bb-head"><div><h2 class="bb-label">' + esc(section.label) + '</h2>' + tag + '</div>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + esc(section.id) + '">$0.00</b></span></div>' +
       picker +
-      '<div class="gt-head labour-grid"><div>Service</div><div class="right">' +
-      (LSCRows.sectionHasUnits(section) ? 'Qty' : 'Hours') + '</div>' +
+      '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
       '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
       bodyMarkup(section.id, 'No services added. Use the selector above to add one.') +
       '</div>'
@@ -557,7 +747,9 @@ const EstimateEditor = (() => {
           (estimate && estimate.gstFree ? ' checked' : '') + '><span>GST-free job</span></label>'
         : '') +
       '</div>' +
-      ratesBarMarkup();
+      ratesBarMarkup() +
+      // Where a line's unit switch is announced (switchUnit).
+      '<p class="sr-only" id="editor-live" aria-live="polite"></p>';
 
     html += deliverablesSectionMarkup();
     sections.forEach((section) => {
@@ -646,7 +838,7 @@ const EstimateEditor = (() => {
       let subtotal = 0;
       rowsIn(section.id).forEach((tr) => {
         const line = lineFrom(tr, true);
-        subtotal += paintRow(tr, labourBill(labourDef(section, line), line));
+        subtotal += paintRow(tr, labourBill(labourDef(section, line, pricing), line));
       });
       setText('sum-' + section.id, fmt(subtotal));
     });
@@ -939,26 +1131,25 @@ const EstimateEditor = (() => {
   /* Every priced row: labour rows carry data-section, travel rows don't. */
   const priceRows = () => sections.flatMap((sec) => rowsIn(sec.id)).concat(rowsIn('travel'));
 
-  /* The live card row for a line, by row id then name, in its own category. */
-  function liveDefFor(tr) {
-    const snap = snapOf(tr) || {};
-    const pricing = LSCData.pricing();
-    const defs = tr.dataset.section
-      ? ((pricing.labourSections || []).find((sec) => sec.id === tr.dataset.section) || { rows: [] }).rows
-      : pricing.travelRows || [];
-    return (snap.rowId && defs.find((r) => r.id === snap.rowId)) || defs.find((r) => r.name === tr.dataset.name) || null;
-  }
-
+  /* Each line at its own unit. A line whose service has left the card, or whose
+     unit has no price on it yet, keeps the snapshot it has — re-pricing it at
+     nothing, or at some other unit, would be a change nobody asked for. */
   function updateToCurrent() {
     let changed = 0;
     let missing = 0;
+    let unpriced = 0;
     priceRows().forEach((tr) => {
-      const def = liveDefFor(tr);
-      if (!def) {
+      const snap = snapOf(tr) || {};
+      const row = cardRowFor(tr.dataset.section || '', snap.rowId, tr.dataset.name);
+      if (!row) {
         missing += 1;
         return;
       }
-      const next = LSCCalc.lineSnapshot(def);
+      const next = cardSnap(row, unitKey(snap));
+      if (!next) {
+        unpriced += 1;
+        return;
+      }
       if (JSON.stringify(next) !== JSON.stringify(snapOf(tr))) {
         delete tr.dataset.prevSnap;
         reprice(tr, next);
@@ -969,17 +1160,24 @@ const EstimateEditor = (() => {
     ratesFromLast = false;
     const box = $('f-rates-last');
     if (box) box.checked = false;
+    $('rates-note').textContent = 'Each line keeps the price it was added at.';
+    paintLineUnits();
     recalc();
+    const lines = (n) => n + ' line' + (n === 1 ? '' : 's');
+    const kept = (n) => (n === 1 ? ' kept its' : ' kept their') + ' price';
     Toast.ok(
       (changed ? changed + ' price' + (changed === 1 ? '' : 's') + ' updated to the rate card' : 'Every price already matches the rate card') +
-        (missing ? '; ' + missing + ' line' + (missing === 1 ? ' isn’t' : 's aren’t') + ' on it any more and kept ' + (missing === 1 ? 'its' : 'their') + ' price' : '') + '.'
+        (missing ? '; ' + lines(missing) + (missing === 1 ? ' isn’t' : ' aren’t') + ' on it any more and' + kept(missing) : '') +
+        (unpriced ? '; ' + lines(unpriced) + ' at a unit with no price on it yet' + kept(unpriced) : '') + '.'
     );
   }
 
-  const rateKey = (sectionId, by) => (sectionId || 'travel') + '|' + by;
+  /* Category + unit + (row id or name). The unit is unitKey()'s: last time's
+     full-day price is never offered for an hour. */
+  const rateKey = (sectionId, unit, by) => (sectionId || 'travel') + '|' + unit + '|' + by;
 
   /* The client's most recent other estimate that recorded its prices, and its
-     prices keyed by category + row id and category + name. */
+     prices keyed by category + unit + row id and category + unit + name. */
   function buildLastProject(estimates, clientId) {
     const mine = estimates
       .filter((e) => e.clientId === clientId && (!existing || e.id !== existing.id))
@@ -992,8 +1190,9 @@ const EstimateEditor = (() => {
           const snap = snapFor(null, line);
           if (!snap) return;
           const section = key === 'travel' ? '' : key;
-          if (snap.rowId) rates.set(rateKey(section, 'id:' + snap.rowId), snap);
-          rates.set(rateKey(section, 'name:' + line.name), snap);
+          const unit = unitKey(snap);
+          if (snap.rowId) rates.set(rateKey(section, unit, 'id:' + snap.rowId), snap);
+          rates.set(rateKey(section, unit, 'name:' + line.name), snap);
         });
       });
       if (rates.size) return { estimate: e, rates };
@@ -1001,10 +1200,10 @@ const EstimateEditor = (() => {
     return mine.length ? { estimate: mine[0], rates: new Map() } : null;
   }
 
-  function lastRateFor(sectionId, rowId, name) {
+  function lastRateFor(sectionId, rowId, name, unit) {
     if (!lastProject || !lastProject.rates.size) return null;
-    return (rowId && lastProject.rates.get(rateKey(sectionId, 'id:' + rowId))) ||
-      lastProject.rates.get(rateKey(sectionId, 'name:' + name)) || null;
+    return (rowId && lastProject.rates.get(rateKey(sectionId, unit, 'id:' + rowId))) ||
+      lastProject.rates.get(rateKey(sectionId, unit, 'name:' + name)) || null;
   }
 
   function paintLastToggle() {
@@ -1050,7 +1249,7 @@ const EstimateEditor = (() => {
     priceRows().forEach((tr) => {
       if (on) {
         const snap = snapOf(tr) || {};
-        const last = lastRateFor(tr.dataset.section || '', snap.rowId, tr.dataset.name);
+        const last = lastRateFor(tr.dataset.section || '', snap.rowId, tr.dataset.name, unitKey(snap));
         if (!last) return;
         const mark = tr.dataset.snap || '';
         const fresh = reprice(tr, last);
@@ -1069,13 +1268,8 @@ const EstimateEditor = (() => {
     $('rates-note').textContent = on
       ? swapped + ' line' + (swapped === 1 ? '' : 's') + ' priced as last time; anything new to this job is at today’s rates.'
       : 'Each line keeps the price it was added at.';
+    paintLineUnits();
     recalc();
-  }
-
-  /* A new line while the toggle is on takes the last project's price for it. */
-  function priceForNewLine(sectionId, def) {
-    const last = ratesFromLast ? lastRateFor(sectionId, def.id, def.name) : null;
-    return last ? Object.assign({ name: def.name, qty: 0 }, last) : { name: def.name, qty: 0 };
   }
 
   // ── Saving ────────────────────────────────────────────────────────────────
@@ -1185,6 +1379,9 @@ const EstimateEditor = (() => {
       gstFree: gstFreeNow(),
       client,
       activeRows: collect(),
+      // Says this build prices lines from the v9 card; the server refuses an
+      // estimate write without it (calc.js PRICING_SHAPE says why).
+      pricingShape: LSCCalc.PRICING_SHAPE,
     };
   }
 
@@ -1291,7 +1488,7 @@ const EstimateEditor = (() => {
   function restoreRows(activeRows, pricing) {
     sections.forEach((section) => {
       (activeRows[section.id] || []).forEach((line) => {
-        injectRow($('tbody-' + section.id), buildLabourRow(section, labourDef(section, line), line));
+        injectRow($('tbody-' + section.id), buildLabourRow(section, labourDef(section, line, pricing), line));
       });
     });
     (activeRows.travel || []).forEach((line) => {
@@ -1350,14 +1547,23 @@ const EstimateEditor = (() => {
 
     $('mjp-help').addEventListener('click', (event) => openBreakdown(event.currentTarget));
 
+    /* A new line is snapshotted at the picked unit there and then — an auto
+       price as the number it resolves to now. While "Use rates from last
+       project" is on it takes last time's price for that service at that unit,
+       when there is one (unitSnap). */
     sections.forEach((section) => {
       const add = $('add-' + section.id);
       if (!add) return; // archived categories have no picker
+      $('sel-' + section.id).addEventListener('change', () => paintPicker(section, false));
+      paintPicker(section, false);
       add.addEventListener('click', () => {
-        const select = $('sel-' + section.id);
-        const def = section.rows.find((r) => r.name === (select && select.value));
-        if (!def) return;
-        injectRow($('tbody-' + section.id), buildLabourRow(section, def, priceForNewLine(section.id, def)));
+        const row = section.rows.find((r) => r.name === $('sel-' + section.id).value);
+        if (!row) return;
+        const picked = unitSnap(section.id, row, row.prices ? $('unit-' + section.id).value : 'hour');
+        if (!picked.snap) return; // no price yet — the button is disabled for it
+        const tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 0 }, picked.snap));
+        markOwn(tr, picked);
+        injectRow($('tbody-' + section.id), tr);
       });
     });
 
@@ -1366,7 +1572,10 @@ const EstimateEditor = (() => {
       const defs = (pricing && pricing.travelRows) || [];
       const def = defs.find((r) => r.name === (select && select.value));
       if (!def) return;
-      injectRow($('tbody-travel'), buildTravelRow(def, priceForNewLine('', def)));
+      const picked = unitSnap('', def, 'hour');
+      const tr = buildTravelRow(null, Object.assign({ name: def.name, qty: 0 }, picked.snap));
+      markOwn(tr, picked);
+      injectRow($('tbody-travel'), tr);
     });
 
     $('add-crew').addEventListener('click', () => injectRow($('tbody-crew'), buildCostRow('crew', {})));
@@ -1403,6 +1612,7 @@ const EstimateEditor = (() => {
     overheadRate = LSCData.overheadRate();
     profitMarginPct = LSCData.goals().targetProfitMarginPct;
     incomeFloor = LSCData.incomeFloor();
+    priceCtx = LSCData.priceContext();
     lastProject = undefined;
     lastProjectFor = null;
     ratesFromLast = false;
@@ -1435,11 +1645,20 @@ const EstimateEditor = (() => {
        the GST configuration leaves the summary bar showing figures from the old
        one until the next keystroke happens to recompute them.
 
+       The auto prices move with it: on a GST-inclusive card an auto price
+       carries GST inside it. So the price context is taken again and the unit
+       pickers repainted, or the next line added would be snapshotted at the
+       old configuration's figure and read under the new one. Lines already on
+       the estimate keep their snapshots, as they would for any rate-card
+       change; "Update to current rates" now re-prices them at the new figure.
+
        The guard is what makes this safe to call blind: `root` stays set after
        another view has replaced the markup inside it, so the sentinel asks
        whether the editor is actually on screen rather than whether it ever was. */
     refreshTotals() {
       if (!root || !root.querySelector('#s-gst')) return;
+      priceCtx = LSCData.priceContext();
+      paintLineUnits();
       recalc();
     },
   };

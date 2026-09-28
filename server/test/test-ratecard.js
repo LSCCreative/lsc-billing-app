@@ -17,6 +17,7 @@ const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const { readPricing, readSettings } = require('../src/ratecard');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
+const { PRICING_SHAPE } = require('../src/calc');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -57,9 +58,18 @@ test.after(() => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-function api(pathname, opts = {}) {
+/* Every estimate write here comes from a v9 client, as the web build's all do,
+   so it carries calc.js's PRICING_SHAPE. `bare: true` sends the body as given,
+   for the tests of what the route does with a write that doesn't. */
+const ESTIMATE_WRITE = /^\/api\/estimates(\/[^/]+)?$/;
+function api(pathname, { bare, ...opts } = {}) {
+  let body = opts.body;
+  if (!bare && body && ESTIMATE_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
+    body = JSON.stringify({ pricingShape: PRICING_SHAPE, ...JSON.parse(body) });
+  }
   return fetch(`${baseUrl}${pathname}`, {
     ...opts,
+    body,
     headers: { 'content-type': 'application/json', cookie, ...(opts.headers || {}) },
   });
 }

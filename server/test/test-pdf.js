@@ -16,6 +16,7 @@ const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const { buildEstimateHtml, exportBlocker, exportFilename, resolveExecutablePath } = require('../src/pdf');
+const { PRICING_SHAPE } = require('../src/calc');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -32,7 +33,8 @@ const QUOTE = {
 };
 
 const PRICING = {
-  labourSections: [{ id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] }],
+  serviceDay: { fullHours: 8, halfHours: 4 },
+  labourSections: [{ id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } }] }],
   travelRows: [],
   taxSetAsideRate: 0.35,
 };
@@ -164,13 +166,14 @@ test('POST /api/estimates/:id/pdf renders a real PDF and writes a copy to export
       headers: { 'content-type': 'application/json', cookie, ...(opts.headers || {}) },
     });
 
-    await api('/api/pricing', { method: 'PUT', body: JSON.stringify(PRICING) });
+    const saved = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(PRICING) });
+    assert.equal(saved.status, 200);
 
     const created = await api('/api/estimates', {
       method: 'POST',
       body: JSON.stringify({
         name: QUOTE.name, upid: QUOTE.upid, date: QUOTE.date,
-        client: QUOTE.client, activeRows: QUOTE.activeRows,
+        client: QUOTE.client, activeRows: QUOTE.activeRows, pricingShape: PRICING_SHAPE,
       }),
     }).then((r) => r.json());
 

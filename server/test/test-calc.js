@@ -25,7 +25,8 @@ const {
   fyDisplay,
   hourlyFloor,
   priceExGst,
-  labourFloorComparison,
+  serviceFloorComparison,
+  lineDef,
   averageJobValue,
   jobsNeededPerYear,
   postRatioReadout,
@@ -35,8 +36,14 @@ const {
   incomeFloorPerHour,
   taxRatesAt,
   lineSnapshot,
+  unitHours,
+  suggestedPrice,
+  unitDef,
+  SERVICE_UNITS,
+  cardShapeOutdated,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
+const { V8_DEFAULT_PRICING } = require('../src/migrations/v9-service-units');
 
 /**
  * The worked example. BILLING_APP_PLAN.md §1.2 defines the model but never
@@ -953,6 +960,442 @@ test('the replacement reserve is net of expected resale value', () => {
   assert.equal(replacementReserveTotal([{ ...asset, expectedResaleValue: 12000 }]), 0);
 });
 
+/* ── Service units (service rate tiers, 2026-09-28) ───────────────────────── */
+
+const SU_NO_GST = settingsWith({ registered: false });
+const SU_GST_INC = settingsWith({ registered: true, rate: 0.1, pricesIncludeGst: true });
+const SU_GST_EXC = settingsWith({ registered: true, rate: 0.1, pricesIncludeGst: false });
+
+test('unitHours: an hour is 1, a service day is the card\'s own 8 / 4', () => {
+  const card = { serviceDay: { fullHours: 10, halfHours: 5 } };
+  assert.equal(unitHours(card, 'hour'), 1);
+  assert.equal(unitHours(card, 'full'), 10);
+  assert.equal(unitHours(card, 'half'), 5);
+  assert.equal(unitHours({ serviceDay: { fullHours: 7.5, halfHours: 3.5 } }, 'full'), 7.5);
+  // No serviceDay at all: the 8 / 4 a day on a job is by default.
+  assert.equal(unitHours({}, 'full'), 8);
+  assert.equal(unitHours(undefined, 'half'), 4);
+  // Anything that is not half or full is an hour.
+  assert.equal(unitHours(card, 'fortnight'), 1);
+});
+
+test('unitHours: an unusable service day falls back to 8 / 4, never to 0', () => {
+  for (const bad of [0, -8, 25, 'abc', '', null, undefined, NaN]) {
+    const card = { serviceDay: { fullHours: bad, halfHours: bad } };
+    assert.equal(unitHours(card, 'full'), 8, 'full day from ' + String(bad));
+    assert.equal(unitHours(card, 'half'), 4, 'half day from ' + String(bad));
+  }
+  assert.equal(unitHours({ serviceDay: { fullHours: 24 } }, 'full'), 24);
+});
+
+test('cardShapeOutdated: the v8 card is outdated, the v9 default is not, and one old row is enough', () => {
+  assert.equal(cardShapeOutdated(DEFAULT_PRICING), false);
+  assert.equal(cardShapeOutdated(V8_DEFAULT_PRICING), true);
+  assert.equal(cardShapeOutdated(null), true);
+
+  const withRow = (row) => {
+    const c = JSON.parse(JSON.stringify(DEFAULT_PRICING));
+    c.labourSections[0].rows[0] = row;
+    return c;
+  };
+  const prices = { hour: 140, half: null, full: null };
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', prices })), false);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', mu: 140, prices })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', hoursPerUnit: 8, prices })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', dayUnit: 'full', prices })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A' })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', prices: [140, null, null] })), true);
+  assert.equal(cardShapeOutdated(withRow(null)), true);
+  // Every row in the new shape, but no service day: what a v9 screen that
+  // filled one in for itself would otherwise have been left to guess at.
+  const { serviceDay, ...noDay } = DEFAULT_PRICING;
+  assert.ok(serviceDay);
+  assert.equal(cardShapeOutdated(noDay), true);
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, serviceDay: 8 }), true);
+  // Travel rows keep `mu`: one price, no units.
+  assert.ok(DEFAULT_PRICING.travelRows.some((r) => r.mu !== undefined));
+});
+
+test('suggestedPrice: $45.05 an hour at 25% markup is $57, rounded up from $56.31', () => {
+  assert.equal(suggestedPrice(45.05, 1, 25, SU_NO_GST), 57);
+  // Registered but pricing GST-exclusive: the card price carries no GST.
+  assert.equal(suggestedPrice(45.05, 1, 25, SU_GST_EXC), 57);
+  // pricesIncludeGst means nothing while unregistered.
+  assert.equal(suggestedPrice(45.05, 1, 25, settingsWith({ registered: false, pricesIncludeGst: true })), 57);
+});
+
+test('suggestedPrice: a figure already on a whole dollar stays there, float noise and all', () => {
+  // 4.48 × 10 × 1.25 is 56.00000000000001 in floating point; a bare ceil says $57.
+  assert.equal(4.48 * 10 * 1.25 > 56, true);
+  assert.equal(suggestedPrice(4.48, 10, 25, SU_NO_GST), 56);
+  assert.equal(4.56 * 10 * 1.25 < 57, true);
+  assert.equal(suggestedPrice(4.56, 10, 25, SU_NO_GST), 57);
+  assert.equal(suggestedPrice(45.6, 1, 25, SU_NO_GST), 57);
+});
+
+test('suggestedPrice: 0% markup is the floor rounded up; unset markup is no price', () => {
+  assert.equal(suggestedPrice(45.05, 1, 0, SU_NO_GST), 46);
+  assert.equal(suggestedPrice(45, 1, 0, SU_NO_GST), 45);
+  assert.equal(suggestedPrice(45, 1, '0', SU_NO_GST), 45);
+  for (const markup of [null, undefined, '', -5, 'abc']) {
+    assert.equal(suggestedPrice(45.05, 1, markup, SU_NO_GST), null, 'markup ' + String(markup));
+  }
+});
+
+test('suggestedPrice: no income floor is no price, not $0', () => {
+  for (const floor of [null, undefined, '', 0, -10]) {
+    assert.equal(suggestedPrice(floor, 8, 25, SU_NO_GST), null, 'floor ' + String(floor));
+  }
+  assert.equal(suggestedPrice(45.05, 0, 25, SU_NO_GST), null);
+});
+
+test('suggestedPrice: a GST-inclusive card puts GST inside the auto price', () => {
+  // $56.31 ex GST is $61.94 inc; up to $62, which is $56.36 ex GST.
+  assert.equal(suggestedPrice(45.05, 1, 25, SU_GST_INC), 62);
+  assert.ok(priceExGst(62, SU_GST_INC) >= 56.31);
+});
+
+test('suggestedPrice: a GST-inclusive auto price never falls a cent under its target', () => {
+  // The brief's literal recipe (× 1.1, cent-round, ceil) gives $41 here, which is
+  // $37.27 ex GST against a $37.28 floor. The search against priceExGst gives $42.
+  assert.equal(round2(4.97 * 7.5), 37.28);
+  assert.equal(priceExGst(41, SU_GST_INC), 37.27);
+  assert.equal(suggestedPrice(4.97, 7.5, 0, SU_GST_INC), 42);
+
+  let checked = 0;
+  for (let cents = 1; cents <= 30000; cents += 7) {
+    const floor = cents / 100;
+    for (const hours of [1, 0.5, 4, 4.5, 7.5, 8, 10]) {
+      for (const markup of [0, 12.5, 25]) {
+        const target = round2(floor * hours * (1 + markup / 100));
+        for (const settings of [SU_NO_GST, SU_GST_INC]) {
+          const p = suggestedPrice(floor, hours, markup, settings);
+          const exact = floor * hours * (1 + markup / 100);
+          const exGst = (price) => (settings === SU_GST_INC ? price / 1.1 : price);
+          assert.ok(Number.isInteger(p), 'whole dollars');
+          assert.ok(priceExGst(p, settings) >= target, `${floor} × ${hours} @ ${markup}% → ${p}`);
+          // Against the exact target, float noise aside…
+          assert.ok(exGst(p) >= exact - 1e-8, `${p} is under the exact ${exact}`);
+          // …and it is the least such dollar: rounding up, not padding.
+          assert.ok(p === 0 || exGst(p - 1) < exact - 1e-8, `${p} is not the least dollar`);
+          checked++;
+        }
+      }
+    }
+  }
+  assert.ok(checked > 100000);
+});
+
+test('suggestedPrice: the hours it is given are rounded as one figure', () => {
+  assert.equal(suggestedPrice(45.05, 1, 25, SU_NO_GST), 57);
+  assert.equal(suggestedPrice(45.05, 8, 25, SU_NO_GST), 451); // $450.50 up, not 8 × $57 = $456
+  assert.equal(suggestedPrice(45.05, 4, 25, SU_NO_GST), 226); // $225.25 up
+});
+
+const TIERED = {
+  serviceDay: { fullHours: 8, halfHours: 4 },
+  labourSections: [{
+    id: 'prod',
+    label: 'Production',
+    rows: [
+      { id: 'vc', name: 'Video Capture', rate: 15, prices: { hour: 139.5, half: null, full: 1120 } },
+      { id: 'dr', name: 'Drone', rate: 15, customBill: true, prices: { hour: null, half: null, full: null } },
+    ],
+  }],
+  travelRows: [],
+  taxSetAsideRate: 0.35,
+};
+const CTX = { floorPerHour: 45.05, markupPct: 25, settings: SU_NO_GST };
+
+test('unitDef: a set-by-you price comes back exactly as stored, unrounded', () => {
+  const def = unitDef(TIERED.labourSections[0].rows[0], 'hour', TIERED, CTX);
+  assert.deepEqual(def, { id: 'vc', name: 'Video Capture', mu: 139.5, auto: false, rate: 15, hoursPerUnit: 1 });
+  assert.equal('dayUnit' in def, false, 'an hour carries no dayUnit');
+  assert.deepEqual(unitDef(TIERED.labourSections[0].rows[0], 'full', TIERED, CTX),
+    { id: 'vc', name: 'Video Capture', mu: 1120, auto: false, rate: 15, hoursPerUnit: 8, dayUnit: 'full' });
+  // A typed 0 is a price, not auto.
+  assert.deepEqual(unitDef({ id: 'z', name: 'Z', prices: { hour: 0 } }, 'hour', TIERED, CTX).mu, 0);
+});
+
+test('unitDef: one service can mix set-by-you and auto units', () => {
+  const row = TIERED.labourSections[0].rows[0];
+  const half = unitDef(row, 'half', TIERED, CTX);
+  assert.equal(half.auto, true);
+  assert.equal(half.mu, 558); // the typed $139.50 an hour × 4
+  assert.equal(half.hoursPerUnit, 4);
+  assert.equal(half.dayUnit, 'half');
+  assert.equal(unitDef(row, 'hour', TIERED, CTX).auto, false);
+});
+
+test('unitDef: an auto unit follows the service day and the goals', () => {
+  const row = TIERED.labourSections[0].rows[1];
+  assert.equal(unitDef(row, 'full', TIERED, CTX).mu, 456); // the auto $57 an hour × 8
+  assert.equal(unitDef(row, 'full', { ...TIERED, serviceDay: { fullHours: 10, halfHours: 5 } }, CTX).mu, 570);
+  assert.equal(unitDef(row, 'hour', TIERED, { ...CTX, markupPct: 0 }).mu, 46);
+  assert.equal(unitDef(row, 'hour', TIERED, { ...CTX, settings: SU_GST_INC }).mu, 62);
+  assert.equal(unitDef(row, 'hour', TIERED, CTX).customBill, true);
+});
+
+test('unitDef: an auto day is the service\'s hourly price × the day\'s hours', () => {
+  const svc = (hour, half = null, full = null) => ({ id: 's', name: 'S', prices: { hour, half, full } });
+  // Typed $140 an hour: the day follows it, whatever the floor says.
+  assert.equal(unitDef(svc(140), 'full', TIERED, CTX).mu, 1120);
+  assert.equal(unitDef(svc(140), 'half', TIERED, CTX).mu, 560);
+  assert.equal(unitDef(svc(140), 'full', TIERED, undefined).mu, 1120, 'no floor needed');
+  // To the cent, not rounded up: a typed hour may carry cents, and a day may be 7.5 hrs.
+  assert.equal(unitDef(svc(139.55), 'full', TIERED, CTX).mu, 1116.4);
+  const short = { ...TIERED, serviceDay: { fullHours: 7.5, halfHours: 3.5 } };
+  assert.equal(unitDef(svc(57), 'full', short, CTX).mu, 427.5);
+  assert.equal(unitDef(svc(57), 'half', short, CTX).mu, 199.5);
+  // Auto $57 an hour: the day is 8 of those ($456), not the day rounded on its own ($451).
+  assert.equal(unitDef(svc(null), 'full', TIERED, CTX).mu, 456);
+  // A GST-inclusive card: $62 an hour, GST in, and so is the day.
+  assert.equal(unitDef(svc(null), 'full', TIERED, { ...CTX, settings: SU_GST_INC }).mu, 496);
+  // A typed day price wins, and is its own figure.
+  assert.equal(unitDef(svc(140, 640), 'half', TIERED, CTX).mu, 640);
+  assert.equal(unitDef(svc(140, 640), 'half', TIERED, CTX).auto, false);
+  assert.equal(unitDef(svc(140, 640), 'full', TIERED, CTX).mu, 1120);
+  // A typed $0 an hour is a price, so the day built on it is $0 (and will badge).
+  assert.equal(unitDef(svc(0), 'full', TIERED, CTX).mu, 0);
+  // No hourly price at all: no day price either, never $0.
+  assert.equal(unitDef(svc(null), 'full', TIERED, { ...CTX, floorPerHour: null }).mu, null);
+});
+
+test('unitDef: an auto unit with no floor or no markup has no price, never $0', () => {
+  const row = TIERED.labourSections[0].rows[1];
+  for (const ctx of [undefined, {}, { ...CTX, floorPerHour: null }, { ...CTX, markupPct: null }]) {
+    const def = unitDef(row, 'full', TIERED, ctx);
+    assert.equal(def.mu, null);
+    assert.equal(def.auto, true);
+  }
+  // A row with no prices object at all is all auto.
+  assert.equal(unitDef({ id: 'x', name: 'X' }, 'hour', TIERED, CTX).mu, 57);
+});
+
+test('unitDef: no row, or a unit off the list, resolves to nothing', () => {
+  assert.equal(unitDef(null, 'hour', TIERED, CTX), null);
+  assert.equal(unitDef(TIERED.labourSections[0].rows[0], 'week', TIERED, CTX), null);
+  assert.equal(unitDef(TIERED.labourSections[0].rows[0], undefined, TIERED, CTX), null);
+});
+
+test('a line added from unitDef snapshots and totals exactly as the old flat day row did', () => {
+  const oldRow = { id: 'vc', name: 'Video Capture', rate: 15, mu: 1120, dayUnit: 'full', hoursPerUnit: 8 };
+  const def = unitDef(TIERED.labourSections[0].rows[0], 'full', TIERED, CTX);
+  assert.deepEqual(lineSnapshot(def), lineSnapshot(oldRow));
+
+  const oldHalf = { id: 'vc', name: 'Video Capture', rate: 15, mu: 558, dayUnit: 'half', hoursPerUnit: 4 };
+  assert.deepEqual(lineSnapshot(unitDef(TIERED.labourSections[0].rows[0], 'half', TIERED, CTX)), lineSnapshot(oldHalf));
+
+  const line = (d) => ({ name: 'Video Capture', qty: 2, ...lineSnapshot(d) });
+  const oldCard = { labourSections: [{ id: 'prod', rows: [oldRow] }], travelRows: [], taxSetAsideRate: 0.35 };
+  const before = computeTotals({ prod: [line(oldRow)] }, oldCard, SU_NO_GST);
+  const after = computeTotals({ prod: [line(def)] }, TIERED, SU_NO_GST);
+  assert.deepEqual(after, before);
+  assert.equal(after.labourTotal, 2240);
+  assert.equal(after.totalHours, 16);
+});
+
+test('an hourly line from unitDef totals as an hourly row always has', () => {
+  const def = unitDef(TIERED.labourSections[0].rows[0], 'hour', TIERED, CTX);
+  const t = computeTotals({ prod: [{ name: 'Video Capture', qty: 3, ...lineSnapshot(def) }] }, TIERED, SU_NO_GST);
+  assert.equal(t.labourTotal, 418.5);
+  assert.equal(t.totalHours, 3);
+});
+
+/* serviceFloorComparison: one entry per service, three units each. */
+
+test('serviceFloorComparison: each unit is set against floorPerHour × its own hours', () => {
+  const [vc, dr] = serviceFloorComparison(TIERED, SU_NO_GST, 45.05, { markupPct: 25 });
+  assert.equal(vc.sectionId, 'prod');
+  assert.equal(vc.sectionLabel, 'Production');
+  assert.equal(vc.name, 'Video Capture');
+  assert.equal(vc.rowIndex, 0);
+  assert.equal(dr.rowIndex, 1);
+  assert.deepEqual(Object.keys(vc.units), ['hour', 'half', 'full']);
+
+  assert.deepEqual(vc.units.hour, { mu: 139.5, muExGst: 139.5, auto: false, hoursPerUnit: 1, floor: 45.05, gap: 0, belowFloor: false });
+  assert.deepEqual(vc.units.full, { mu: 1120, muExGst: 1120, auto: false, hoursPerUnit: 8, floor: 360.4, gap: 0, belowFloor: false });
+  assert.deepEqual(vc.units.half, { mu: 558, muExGst: 558, auto: true, hoursPerUnit: 4, floor: 180.2, gap: 0, belowFloor: false });
+  assert.equal(dr.units.full.mu, 456);
+
+  // The floor per unit is the hourly floor × the card's own day, to the cent.
+  const card = { ...TIERED, serviceDay: { fullHours: 7.5, halfHours: 3.5 } };
+  for (const perHour of [45.05, 31.27, 0.01, 123.456]) {
+    const [s] = serviceFloorComparison(card, SU_NO_GST, perHour, { markupPct: 25 });
+    for (const unit of SERVICE_UNITS) {
+      assert.equal(s.units[unit].floor, round2(perHour * unitHours(card, unit)), `${unit} at ${perHour}`);
+    }
+  }
+});
+
+test('serviceFloorComparison: a set-by-you unit $1 under its floor badges a $1 gap', () => {
+  // Full-day floor at $45.05 × 8 = $360.40. Typed $359.40 is $1 under; $360.40 is at it.
+  const card = { serviceDay: { fullHours: 8, halfHours: 4 }, labourSections: [{ id: 'p', label: 'P', rows: [
+    { id: 'a', name: 'Under', rate: 999, prices: { hour: 44.95, half: null, full: 359.4 } },
+    { id: 'b', name: 'At', prices: { hour: 45.05, half: null, full: 360.4 } },
+    { id: 'c', name: 'Free', prices: { hour: 0, half: null, full: null } },
+  ] }] };
+  const [under, at, free] = serviceFloorComparison(card, SU_NO_GST, 45.05, { markupPct: 25 });
+  assert.equal(under.units.full.belowFloor, true);
+  assert.equal(under.units.full.gap, 1);
+  // `rate` plays no part: Under's internal rate of $999 doesn't rescue it.
+  // A gap is money, in cents: 45.05 − 44.95 is 0.0999… in floating point.
+  assert.equal(under.units.hour.gap, 0.1);
+  // Exactly at the floor is not below it.
+  assert.equal(at.units.full.belowFloor, false);
+  assert.equal(at.units.hour.belowFloor, false);
+  assert.equal(at.units.full.gap, 0);
+  // A typed $0 is a price, and the lowest one there is.
+  assert.equal(free.units.hour.auto, false);
+  assert.equal(free.units.hour.belowFloor, true);
+  assert.equal(free.units.hour.gap, 45.05);
+});
+
+test('serviceFloorComparison: a GST-inclusive price is compared ex GST', () => {
+  const card = { serviceDay: { fullHours: 8, halfHours: 4 }, labourSections: [{ id: 'x', label: 'X', rows: [
+    { id: 'r', name: 'Row', prices: { hour: 33, half: null, full: null } },
+  ] }] };
+  // $33 inc GST is $30 ex — under a $31.25 floor by $1.25. Read raw it would pass.
+  const [row] = serviceFloorComparison(card, SU_GST_INC, 31.25, { markupPct: 25 });
+  assert.equal(row.units.hour.mu, 33);
+  assert.equal(row.units.hour.muExGst, 30);
+  assert.equal(row.units.hour.belowFloor, true);
+  assert.equal(row.units.hour.gap, 1.25);
+  assert.equal(serviceFloorComparison(card, SU_NO_GST, 31.25, { markupPct: 25 })[0].units.hour.belowFloor, false);
+});
+
+test('serviceFloorComparison: an auto unit is never below its floor', () => {
+  let checked = 0;
+  for (const settings of [SU_NO_GST, SU_GST_EXC, SU_GST_INC]) {
+    for (const serviceDay of [{ fullHours: 8, halfHours: 4 }, { fullHours: 7.5, halfHours: 3.5 }, { fullHours: 10, halfHours: 5 }]) {
+      const card = { serviceDay, labourSections: [{ id: 'p', label: 'P', rows: [{ id: 'a', name: 'All auto', prices: { hour: null, half: null, full: null } }] }] };
+      // Whole-cent floors, and unrounded ones like a real income floor (a
+      // quotient): an hourly price a fraction of a cent short would be a
+      // whole cent short over a day.
+      for (let cents = 1; cents <= 20000; cents += 13) {
+        for (const floor of [cents / 100, cents / 100 + 0.0041, cents / 99.7]) {
+        for (const markup of [0, 0.5, 12.5, 25, 100]) {
+          const [s] = serviceFloorComparison(card, settings, floor, { markupPct: markup });
+          for (const unit of SERVICE_UNITS) {
+            const u = s.units[unit];
+            assert.equal(u.auto, true);
+            assert.equal(u.belowFloor, false, `${floor}/hr ${unit} @ ${markup}% → $${u.mu} (${u.muExGst} ex) vs ${u.floor}`);
+            assert.equal(u.gap, 0);
+            checked++;
+          }
+        }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 100000);
+});
+
+test('serviceFloorComparison: no price or no floor is "can\'t tell", not "fine" or "below"', () => {
+  // No markup: an auto hour has no price, nor has a day built on one. The
+  // typed ones, and a day built on a typed hour, are still compared.
+  const [vc, dr] = serviceFloorComparison(TIERED, SU_NO_GST, 45.05, { markupPct: null });
+  for (const unit of SERVICE_UNITS) {
+    assert.equal(dr.units[unit].mu, null, unit);
+    assert.equal(dr.units[unit].muExGst, null, unit);
+    assert.equal(dr.units[unit].belowFloor, null, unit);
+    assert.equal(dr.units[unit].gap, null, unit);
+  }
+  assert.equal(dr.units.half.floor, 180.2);
+  assert.equal(vc.units.hour.belowFloor, false);
+  assert.equal(vc.units.half.mu, 558);
+  assert.equal(vc.units.half.belowFloor, false);
+  // No ctx at all is the same as no markup.
+  assert.equal(serviceFloorComparison(TIERED, SU_NO_GST, 45.05)[1].units.half.mu, null);
+
+  // No floor: nothing can be told, typed or auto.
+  for (const floor of [null, 0, -5, '']) {
+    for (const s of serviceFloorComparison(TIERED, SU_NO_GST, floor, { markupPct: 25 })) {
+      for (const unit of SERVICE_UNITS) {
+        assert.equal(s.units[unit].floor, null);
+        assert.equal(s.units[unit].belowFloor, null, `${s.name} ${unit} with floor ${String(floor)}`);
+        assert.equal(s.units[unit].gap, null);
+      }
+    }
+  }
+});
+
+test('serviceFloorComparison: an auto price comes from the floor it is compared with, not ctx\'s', () => {
+  // A ctx carrying a different floor must not price the auto unit off it.
+  const [dr] = serviceFloorComparison(TIERED, SU_NO_GST, 45.05, { floorPerHour: 10, markupPct: 25, settings: SU_GST_INC }).slice(1);
+  assert.equal(dr.units.hour.mu, 57);
+  assert.equal(dr.units.full.mu, 456);
+});
+
+test('serviceFloorComparison: labour services only, never travel', () => {
+  const card = { ...TIERED, travelRows: [{ id: 't', name: 'Transport & Logistics Hrs', rate: 25, mu: 1, ownTime: true }] };
+  const rows = serviceFloorComparison(card, SU_NO_GST, 45.05, { markupPct: 25 });
+  assert.equal(rows.length, 2);
+  assert.ok(!rows.some((r) => r.name === 'Transport & Logistics Hrs'));
+  assert.deepEqual(serviceFloorComparison(undefined, SU_NO_GST, 45.05, { markupPct: 25 }), []);
+});
+
+/* lineDef's no-snapshot fallback on a service with three prices. */
+
+test('lineDef: a line with no snapshot prices from its service\'s typed price for its unit', () => {
+  const rows = TIERED.labourSections[0].rows;
+  // Found by id, an hour: Video Capture's typed $139.50.
+  const hour = lineDef(rows, { rowId: 'vc', name: 'Old name', qty: 2 }, TIERED);
+  assert.equal(hour.mu, 139.5);
+  assert.equal(hour.hoursPerUnit, 1);
+  assert.equal('dayUnit' in hour, false);
+  // Found by name, at a day unit the line names: the typed $1,120 full day.
+  const full = lineDef(rows, { name: 'Video Capture', qty: 1, dayUnit: 'full' }, TIERED);
+  assert.equal(full.mu, 1120);
+  assert.equal(full.hoursPerUnit, 8);
+  assert.equal(full.dayUnit, 'full');
+  // The card's own service day, not 8 / 4.
+  const long = { ...TIERED, serviceDay: { fullHours: 10, halfHours: 5 } };
+  assert.equal(lineDef(rows, { name: 'Video Capture', dayUnit: 'full' }, long).hoursPerUnit, 10);
+});
+
+test('lineDef: a unit that needs the floor has no price on the fallback path, and prices at nothing', () => {
+  const rows = TIERED.labourSections[0].rows;
+  // The server has no floor, so an auto hour cannot be priced — not $0, not
+  // guessed — and nor can a day built on one.
+  for (const dayUnit of [undefined, 'half', 'full']) {
+    assert.equal(lineDef(rows, { rowId: 'dr', name: 'Drone', dayUnit }, TIERED), null, String(dayUnit));
+  }
+  // An auto day on a typed hour needs no floor: $139.50 × 4.
+  const half = lineDef(rows, { rowId: 'vc', name: 'Video Capture', dayUnit: 'half' }, TIERED);
+  assert.deepEqual([half.mu, half.auto, half.hoursPerUnit], [558, true, 4]);
+
+  const t = computeTotals({ prod: [
+    { rowId: 'vc', name: 'Video Capture', qty: 2 },               // typed hour: 2 × 139.5
+    { rowId: 'vc', name: 'Video Capture', qty: 1, dayUnit: 'full' }, // typed full day: 1120, 8 hrs
+    { rowId: 'vc', name: 'Video Capture', qty: 1, dayUnit: 'half' }, // auto half on the typed hour: 558, 4 hrs
+    { rowId: 'dr', name: 'Drone', qty: 3 },                       // auto: nothing, like a lost row
+  ] }, TIERED, SU_NO_GST);
+  assert.equal(t.labourTotal, 1957);
+  assert.equal(t.totalHours, 14);
+  assert.equal(labourHoursBreakdown({ prod: [{ rowId: 'dr', name: 'Drone', qty: 3 }] }, TIERED).totalHours, 0);
+
+  // Totals and the hours breakdown hand the card through, so a 10-hour service
+  // day counts 10 hours, not the 8-hour fallback.
+  const long = { ...TIERED, serviceDay: { fullHours: 10, halfHours: 5 } };
+  const dayLine = { prod: [{ rowId: 'vc', name: 'Video Capture', qty: 1, dayUnit: 'full' }] };
+  assert.equal(computeTotals(dayLine, long, SU_NO_GST).totalHours, 10);
+  assert.equal(labourHoursBreakdown(dayLine, long).totalHours, 10);
+});
+
+test('lineDef: a snapshot and a flat row are untouched by the prices path', () => {
+  const rows = TIERED.labourSections[0].rows;
+  const snapped = { rowId: 'dr', name: 'Drone', qty: 1, mu: 99, hoursPerUnit: 4, dayUnit: 'half' };
+  assert.equal(lineDef(rows, snapped, TIERED), snapped);
+  const flat = { id: 'f', name: 'Flat', mu: 80 };
+  assert.equal(lineDef([flat], { rowId: 'f', name: 'Flat' }), flat);
+  assert.equal(lineDef(rows, { rowId: 'gone', name: 'Gone' }, TIERED), null);
+});
+
+test('SERVICE_UNITS lists the units in the order the screens show them', () => {
+  assert.deepEqual(SERVICE_UNITS, ['hour', 'half', 'full']);
+});
+
 /**
  * The browser runs this same file. web/js/calc.js is loaded as a plain script
  * by the estimate editor so its live totals are computed by the same code the
@@ -1226,69 +1669,6 @@ test('a GST-inclusive rate card is compared ex-GST', () => {
   assert.equal(priceExGst(110, inclusive), 100);
 });
 
-const FLOOR_CARD = {
-  labourSections: [
-    {
-      id: 'prod',
-      label: 'Production',
-      rows: [
-        { name: 'Hourly', rate: 1, mu: 40 },
-        { name: 'At the floor', rate: 1, mu: 31.25 },
-        { name: 'Full day', rate: 1, mu: 280, hoursPerUnit: 8 },
-        { name: 'Cheap day', rate: 999, mu: 200, hoursPerUnit: 8 },
-      ],
-    },
-  ],
-  travelRows: [{ name: 'Transport & Logistics Hrs', rate: 25, mu: 1 }],
-  taxSetAsideRate: 0.35,
-};
-const NO_GST = { gst: { registered: false } };
-
-test('each labour row is compared at its own hours per unit, against mu', () => {
-  const rows = labourFloorComparison(FLOOR_CARD, NO_GST, 31.25);
-  const by = Object.fromEntries(rows.map((r) => [r.name, r]));
-
-  assert.equal(by['Hourly'].floor, 31.25);
-  assert.equal(by['Hourly'].belowFloor, false);
-  assert.equal(by['Hourly'].gap, 0);
-
-  // Exactly at the floor is not below it.
-  assert.equal(by['At the floor'].belowFloor, false);
-
-  // A day row's floor is eight hours of floor.
-  assert.equal(by['Full day'].floor, 250);
-  assert.equal(by['Full day'].belowFloor, false);
-  assert.equal(by['Cheap day'].belowFloor, true);
-  assert.equal(by['Cheap day'].gap, 50);
-  // `rate` plays no part: Cheap day's internal rate of 999 doesn't rescue it.
-
-  // Labour rows only — the $1 travel row would be badged if it were included.
-  assert.equal(rows.length, 4);
-  assert.ok(!rows.some((r) => r.name === 'Transport & Logistics Hrs'));
-  assert.equal(by['Hourly'].sectionLabel, 'Production');
-});
-
-test('a GST-inclusive price is below its floor when its ex-GST share is', () => {
-  const card = { labourSections: [{ id: 'x', label: 'X', rows: [{ name: 'Row', mu: 33 }] }] };
-  const inclusive = { gst: { registered: true, rate: 0.1, pricesIncludeGst: true } };
-  // $33 inc GST is $30 ex — under a $31.25 floor by $1.25. Read raw it would pass.
-  const [row] = labourFloorComparison(card, inclusive, 31.25);
-  assert.equal(row.muExGst, 30);
-  assert.equal(row.belowFloor, true);
-  assert.equal(row.gap, 1.25);
-  assert.equal(labourFloorComparison(card, NO_GST, 31.25)[0].belowFloor, false);
-});
-
-test('with no floor to compare against, a row is "can\'t tell", not "fine"', () => {
-  const rows = labourFloorComparison(FLOOR_CARD, NO_GST, null);
-  assert.equal(rows.length, 4);
-  for (const r of rows) {
-    assert.equal(r.floor, null);
-    assert.equal(r.belowFloor, null);
-    assert.equal(r.gap, null);
-  }
-});
-
 test('average job value counts won work from the last twelve months only', () => {
   const job = (status, date, price) => ({ status, date, totals: { clientPriceExGst: price } });
   const avg = averageJobValue(
@@ -1378,40 +1758,47 @@ test('post ratio: no capacity, or a missing or negative input, is null', () => {
 /**
  * THE SEEDED DAY ROWS (Rate Card task, 2026-09-27).
  */
-test('the default card seeds a full day and an independently priced half day', () => {
+test('the default card prices Video Capture at all three units, the half day its own figure', () => {
+  assert.deepEqual(DEFAULT_PRICING.serviceDay, { fullHours: 8, halfHours: 4 });
   const prod = DEFAULT_PRICING.labourSections.find((s) => s.id === 'prod');
-  const full = prod.rows.find((r) => r.dayUnit === 'full');
-  const half = prod.rows.find((r) => r.dayUnit === 'half');
-  assert.ok(full && half, 'both day rows exist and are marked by dayUnit, not by name');
-  assert.equal(full.hoursPerUnit, 8);
-  assert.equal(half.hoursPerUnit, 4);
-  // No 0.5 multiplier: a half day carries its own price.
-  assert.notEqual(half.mu, full.mu / 2);
-  assert.ok(prod.rows.some((r) => r.name === 'Overtime — per hour' && r.hoursPerUnit === undefined));
+  const vc = prod.rows.find((r) => r.name === 'Video Capture');
+  assert.deepEqual(vc.prices, { hour: 140, half: 640, full: 1120 });
+  // No 0.5 multiplier: a typed half day carries its own price.
+  assert.notEqual(vc.prices.half, vc.prices.full / 2);
+  // The old separate day rows folded into it.
+  assert.ok(!prod.rows.some((r) => /Full Day|Half Day/.test(r.name)));
 });
 
-test('every row that was on the card before day rows is still hourly', () => {
-  // The hourly Video Capture row was deliberately not renamed to "— Hourly":
-  // saved estimates find rows by name.
-  const before = [
-    'Pre-Production Meeting with Client', 'Video Capture', 'Photo Capture', 'Drone Aerial Capture',
-    'Video Editor — Socials', 'Photo Editor',
-  ];
+test('every default service is in the new shape, its old price kept as the hourly one', () => {
+  // The v8 defaults' hourly prices, by name. Names are unchanged: saved
+  // estimates found rows by name.
+  const before = {
+    'Pre-Production Meeting with Client': 56, 'Video Capture': 140, 'Photo Capture': 112,
+    'Drone Aerial Capture': 84, 'Overtime — per hour': 210, 'Video Editor — Socials': 126,
+    'Raw Footage Handover [on HDD]': 98, 'Photo Editor': 154,
+  };
   const rows = DEFAULT_PRICING.labourSections.flatMap((s) => s.rows);
-  for (const name of before) {
+  for (const row of rows) {
+    for (const old of ['mu', 'hoursPerUnit', 'dayUnit']) assert.equal(row[old], undefined, `${row.name} has ${old}`);
+    assert.deepEqual(Object.keys(row.prices), SERVICE_UNITS, row.name);
+    assert.equal(typeof row.prices.hour, 'number', row.name);
+    if (row.name !== 'Video Capture') assert.deepEqual([row.prices.half, row.prices.full], [null, null], row.name);
+  }
+  for (const [name, hour] of Object.entries(before)) {
     const row = rows.find((r) => r.name === name);
     assert.ok(row, name + ' is still on the default card');
-    assert.equal(row.hoursPerUnit, undefined, name + ' gained hours per unit');
-    assert.equal(row.dayUnit, undefined);
+    assert.equal(row.prices.hour, hour, name);
   }
+  assert.equal(rows.find((r) => r.name === 'Raw Footage Handover [on HDD]').customBill, true);
 });
 
 test('two seeded full days carry sixteen hours into Minimum Job Price', () => {
-  const t = computeTotals(
-    { prod: [{ name: 'Video Capture — Full Day', qty: 2 }] },
-    DEFAULT_PRICING,
-    settingsWith({ registered: false }),
-  );
-  assert.equal(t.totalHours, 16);
-  assert.equal(t.labourTotal, 2240);
+  const vc = DEFAULT_PRICING.labourSections.find((s) => s.id === 'prod').rows.find((r) => r.name === 'Video Capture');
+  const added = { name: 'Video Capture', qty: 2, ...lineSnapshot(unitDef(vc, 'full', DEFAULT_PRICING)) };
+  // As the estimator will add it (a snapshot), and as the fallback prices a bare line.
+  for (const line of [added, { name: 'Video Capture', qty: 2, dayUnit: 'full' }]) {
+    const t = computeTotals({ prod: [line] }, DEFAULT_PRICING, settingsWith({ registered: false }));
+    assert.equal(t.totalHours, 16);
+    assert.equal(t.labourTotal, 2240);
+  }
 });

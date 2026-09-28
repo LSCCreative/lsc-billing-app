@@ -8,67 +8,67 @@
  * numbers the Electron build did. Once the Pricing screen writes to the
  * database these are only used for "reset to defaults".
  *
- * `rate` is the internal cost, `mu` is the marked-up rate the client is billed.
+ * `rate` is the internal cost (inert on labour rows since 2026-09-21). What the
+ * client is billed is a travel row's `mu`, or a labour row's `prices` below.
  * `directCost: true` means the row is billed straight through at cost, no
  * markup, and counts as a pass-through rather than revenue.
 *
- * DAY ROWS (added 2026-09-27, .design/price-calculator/). A labour row may
- * carry `hoursPerUnit` — how many billable hours one unit of it consumes
- * (calc.js, hoursPerUnitOf; absent means 1) — and `dayUnit: 'full' | 'half'`,
- * which is what marks it as a day row on the Rate Card rather than its name,
- * because names are the user's to edit. Three seeded here:
+ * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/; this replaced the
+ * day rows of 2026-09-27). A labour row is a service with three prices,
+ * `prices: { hour, half, full }`: a number is a price the user set, `null` is
+ * auto — derived on read by calc.js's unitDef from the income floor and Target
+ * Markup, never stored. `serviceDay` says how many billable hours a full and a
+ * half day on a job are; deliberately not Capacity's billable hours per day,
+ * which is a yearly planning average. Labour rows carry no `mu`,
+ * `hoursPerUnit` or `dayUnit` any more; PUT /api/pricing refuses one that does.
  *
- *   - The half day carries ITS OWN `mu`, deliberately not half the full day's:
- *     setup, travel and turnaround don't halve, so there is no 0.5 multiplier
- *     anywhere. $640 against $1,120 is a starting point, not a formula.
- *   - `hoursPerUnit` 8 and 4 match the Capacity screen's reference 8-hour day.
- *     The Rate Card prefills a day row from the user's real Capacity figure
- *     when they create one; defaults can't read it.
- *   - There is no separate "Video Capture — Hourly" row, though the task list
- *     named one: the existing "Video Capture" row IS the hourly rate, and
- *     renaming it would orphan every saved estimate that references it by name
- *     (computeTotals finds rows by name) on any database still on these
- *     defaults.
+ *   - Video Capture has all three prices set, $140 / $640 / $1,120: the old
+ *     "— Full Day" and "— Half Day" rows folded into the one service. The half
+ *     day is its own figure, not half the full day's: setup, travel and
+ *     turnaround don't halve.
+ *   - Every other service keeps its old price as its hourly one, with the half
+ *     and full day auto. Until Profit Goals are set up those read as no price
+ *     yet, which is why the defaults don't try to guess them.
+ *   - Travel rows are unchanged: they are not services and have no units.
  */
 const DEFAULT_PRICING = {
+  serviceDay: { fullHours: 8, halfHours: 4 },
   labourSections: [
     {
       id: 'preprod',
       label: 'Pre-Production',
       rows: [
-        { name: 'Pre-Production Meeting with Client', rate: 40, mu: 56 },
-        { name: 'Pre-Production Development & Admin', rate: 30, mu: 42 },
+        { name: 'Pre-Production Meeting with Client', rate: 40, prices: { hour: 56, half: null, full: null } },
+        { name: 'Pre-Production Development & Admin', rate: 30, prices: { hour: 42, half: null, full: null } },
       ],
     },
     {
       id: 'prod',
       label: 'Production',
       rows: [
-        { name: 'Video Capture', rate: 100, mu: 140 },
-        { name: 'Photo Capture', rate: 80, mu: 112 },
-        { name: 'Drone Aerial Capture', rate: 60, mu: 84 },
-        { name: 'Video Capture — Full Day', rate: 800, mu: 1120, hoursPerUnit: 8, dayUnit: 'full' },
-        { name: 'Video Capture — Half Day', rate: 400, mu: 640, hoursPerUnit: 4, dayUnit: 'half' },
-        { name: 'Overtime — per hour', rate: 150, mu: 210 },
+        { name: 'Video Capture', rate: 100, prices: { hour: 140, half: 640, full: 1120 } },
+        { name: 'Photo Capture', rate: 80, prices: { hour: 112, half: null, full: null } },
+        { name: 'Drone Aerial Capture', rate: 60, prices: { hour: 84, half: null, full: null } },
+        { name: 'Overtime — per hour', rate: 150, prices: { hour: 210, half: null, full: null } },
       ],
     },
     {
       id: 'post',
       label: 'Post-Production',
       rows: [
-        { name: 'Video Editor — Project Setup', rate: 35, mu: 49 },
-        { name: 'Video Editor — B-Roll Offline Edit', rate: 45, mu: 63 },
-        { name: 'Video Editor — A-Roll Offline Edit', rate: 45, mu: 63 },
-        { name: 'Video Editor — A-Roll RC', rate: 100, mu: 140 },
-        { name: 'Video Editor — Longform RC', rate: 100, mu: 140 },
-        { name: 'Video Editor — Longform AC', rate: 100, mu: 140 },
-        { name: 'Video Editor — Longform Draft', rate: 100, mu: 140 },
-        { name: 'Video Editor — Longform Colour', rate: 100, mu: 140 },
-        { name: 'Video Editor — Longform Sound Mix/Master', rate: 100, mu: 140 },
-        { name: 'Video Editor — Socials', rate: 90, mu: 126 },
-        { name: 'Processed Footage Handover [Over Cloud]', rate: 35, mu: 49 },
-        { name: 'Raw Footage Handover [on HDD]', rate: 70, mu: 98, customBill: true },
-        { name: 'Photo Editor', rate: 110, mu: 154 },
+        { name: 'Video Editor — Project Setup', rate: 35, prices: { hour: 49, half: null, full: null } },
+        { name: 'Video Editor — B-Roll Offline Edit', rate: 45, prices: { hour: 63, half: null, full: null } },
+        { name: 'Video Editor — A-Roll Offline Edit', rate: 45, prices: { hour: 63, half: null, full: null } },
+        { name: 'Video Editor — A-Roll RC', rate: 100, prices: { hour: 140, half: null, full: null } },
+        { name: 'Video Editor — Longform RC', rate: 100, prices: { hour: 140, half: null, full: null } },
+        { name: 'Video Editor — Longform AC', rate: 100, prices: { hour: 140, half: null, full: null } },
+        { name: 'Video Editor — Longform Draft', rate: 100, prices: { hour: 140, half: null, full: null } },
+        { name: 'Video Editor — Longform Colour', rate: 100, prices: { hour: 140, half: null, full: null } },
+        { name: 'Video Editor — Longform Sound Mix/Master', rate: 100, prices: { hour: 140, half: null, full: null } },
+        { name: 'Video Editor — Socials', rate: 90, prices: { hour: 126, half: null, full: null } },
+        { name: 'Processed Footage Handover [Over Cloud]', rate: 35, prices: { hour: 49, half: null, full: null } },
+        { name: 'Raw Footage Handover [on HDD]', rate: 70, prices: { hour: 98, half: null, full: null }, customBill: true },
+        { name: 'Photo Editor', rate: 110, prices: { hour: 154, half: null, full: null } },
       ],
     },
   ],

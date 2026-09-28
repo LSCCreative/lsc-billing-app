@@ -1,9 +1,32 @@
 'use strict';
 
 const { newId, nowIso } = require('../db');
-const { computeTotals } = require('../calc');
+const { computeTotals, PRICING_SHAPE } = require('../calc');
 const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeLineField } = require('../ratecard');
 const { loadEstimate: loadJson } = require('../estimate');
+
+/**
+ * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
+ * A browser still running the web build from before v9 — a cached Pages copy, a
+ * tab left open over the deploy — snapshots every labour line it adds at $0,
+ * and its "Update to current rates" re-prices every labour line to $0: its
+ * lineSnapshot reads a price from `mu`, which v9 rows no longer have. Each such
+ * line is a valid snapshot as far as computeTotals can tell, so nothing past
+ * this point could catch it. Every write from a v9 build carries
+ * `pricingShape` (calc.js PRICING_SHAPE); one without it is refused, checked
+ * FIRST, as the rate card's is, so an old build always gets this code.
+ *
+ * `message` is what the old build shows: it prints the server's message and
+ * knows no codes from after it was built.
+ */
+const OUTDATED = {
+  error: 'pricing_shape_outdated',
+  message:
+    'This page is out of date — the rate card has changed shape since it was opened, and saving from it ' +
+    'would price new work at $0. Copy anything you need from the form, reload the page, and make your ' +
+    'changes again.',
+};
+const outdated = (body) => body.pricingShape !== PRICING_SHAPE;
 
 function registerEstimateRoutes(app, db) {
   app.get('/api/estimates', (_req, res) => {
@@ -23,6 +46,7 @@ function registerEstimateRoutes(app, db) {
     const now = nowIso();
     const pricing = readPricing(db);
     const gstFree = body.gstFree === true;
+    if (outdated(body)) return res.status(400).json(OUTDATED);
     const negative = negativeLineField(body.activeRows);
     if (negative) return res.status(400).json({ error: 'negative_line_value', field: negative });
     const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), {
@@ -59,6 +83,7 @@ function registerEstimateRoutes(app, db) {
     // Absent means false, matching every other field here: a PUT that omits it
     // is a save from a screen that decided the estimate is GST-bearing.
     const gstFree = body.gstFree === true;
+    if (outdated(body)) return res.status(400).json(OUTDATED);
     const negative = negativeLineField(body.activeRows);
     if (negative) return res.status(400).json({ error: 'negative_line_value', field: negative });
     const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), {

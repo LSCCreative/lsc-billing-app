@@ -73,7 +73,7 @@ const EstimateDetail = (() => {
      the record of what was quoted. */
   /* Every section table is four columns (labour lost its Rate column on
      2026-09-21 — see estimate-editor.js's buildLabourRow), and .est-table-4
-     gives them one shared set of column edges, so Hours, Mark-Up and Bill line
+     gives them one shared set of column edges, so Qty, Mark-Up and Bill line
      up down the page the way a printed rate card does. */
   function labourBlocks(estimate, pricing) {
     const activeRows = estimate.activeRows || {};
@@ -85,22 +85,22 @@ const EstimateDetail = (() => {
       const lines = (activeRows[section.id] || []).filter((line) => (line.qty || 0) > 0);
       if (!lines.length) return;
 
-      /* Day rows (2026-09-27): a category whose card has one heads the column
-         "Qty" and spells each quantity's unit — "2 full days", "3 hours" — as
-         the editor does. Hourly-only categories read exactly as before. The
-         unit is the live card's, like the Mark-Up beside it. */
-      const hasUnits = LSCRows.sectionHasUnits(section);
+      /* Every labour category heads the column "Qty" and spells each
+         quantity's unit — "2 full days", "3 hours" — as the editor does
+         (service rate tiers, 2026-09-28: every service now sells at three
+         units). The unit is the line's own, from its snapshot, like the
+         Mark-Up beside it. A line with no price left says a bare number. */
       let subtotal = 0;
       const rows = lines
         .map((line) => {
-          const def = labourDef(section, line);
+          const def = labourDef(section, line, pricing);
           const bill = labourBill(def, line);
           if (bill !== null) subtotal += bill;
           const unit = LSCRows.labourUnit(def);
-          const qty = hasUnits && def ? line.qty + ' ' + LSCRows.unitWord(unit.kind, line.qty) : line.qty;
+          const qty = def ? line.qty + ' ' + LSCRows.unitWord(unit.kind, line.qty) : line.qty;
           return (
             '<tr><td data-label="Service">' + esc(line.name) + '</td>' +
-            '<td class="right muted-td" data-label="' + (hasUnits ? 'Qty' : 'Hours') + '">' + esc(qty) + '</td>' +
+            '<td class="right muted-td" data-label="Qty">' + esc(qty) + '</td>' +
             '<td class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</td>' +
             '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
           );
@@ -111,8 +111,7 @@ const EstimateDetail = (() => {
         '<div class="est-block"><div class="est-block-head">' +
         '<h2 class="est-block-label">' + esc(section.label) + '</h2>' +
         '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
-        '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">' +
-        (hasUnits ? 'Qty' : 'Hours') + '</th>' +
+        '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">Qty</th>' +
         '<th class="right">Mark-Up</th><th class="right">Bill</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     });

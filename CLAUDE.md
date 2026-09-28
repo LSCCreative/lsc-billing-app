@@ -6,7 +6,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
 ## Start here
 
 `.design/` holds one self-contained folder per feature track — each has its own `DESIGN_BRIEF.md`,
-`TASKS.md`, and (once any work has happened on it) `HANDOVER.md`. Four tracks exist right now:
+`TASKS.md`, and (once any work has happened on it) `HANDOVER.md`. Five tracks exist right now:
 
 1. [`.design/nas-hosted-billing/`](.design/nas-hosted-billing/) — the base website rewrite
    (Electron → GitHub Pages + NAS-hosted API/SQLite). Largely complete and **live** (Cloudflare
@@ -55,6 +55,13 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    knowingly), and **Finance is renamed `Finance & Price` and restructured, not supplemented** — a
    second area writing the same singleton `goals` row would break "one number, one truth". The full
    list of eleven resolved decisions is in its `HANDOVER.md`.
+5. [`.design/service-rate-tiers/`](.design/service-rate-tiers/) — every labour service gets
+   hourly / half-day / full-day prices on one Rate Card row (a `per [unit ▾]` view switch), each
+   auto-filled as income floor × unit hours × (1 + Target Markup), rounded up to the dollar, until the
+   user types over it; a card-level Service Day (8 / 4 billable hrs, **not** Capacity's figure); and
+   service → unit → Add in the estimate editor. **Brief, IA and tasks written 2026-09-28. Building on branch `service-rate-tiers` (not `main`): tasks 1–9 done (calc.js unit pricing incl. decision 13 — an auto day is the hourly × its hours, per-service floor comparison, schema v9 + `pricing_shape_outdated` guard, Rate Card rows, Service Day + Show switch, estimate editor unit picker + line unit switch, Dashboard on Service Day + one row per service, responsive pass, accessibility pass); a code review on 2026-09-29 added a fix list (TASKS.md "Code review fixes" R1–R14; R1–R4, the pre-deploy ones, done 2026-09-29; R5–R14 can follow the deploy), then task 10 (deploy — ask the user first; Sonnet/medium). The branch is coherent end to end again, but it needs schema v9 on the NAS first — don't merge before task 10.**
+   It knowingly overturns price-calculator's "nothing auto-writes the rate card" — see its brief's
+   Resolved Decisions. Read its `HANDOVER.md` first. Build bucket: Opus, effort high (money math).
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes
 what's being built (the old `localStorage`/Electron-targeted overhead brief, the old

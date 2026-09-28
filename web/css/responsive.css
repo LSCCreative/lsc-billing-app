@@ -1023,6 +1023,88 @@
     font-size: 12px;
   }
 
+  /* ── Service rate tiers: the phone pass (2026-09-28) ─────────────────────
+     Measured at 375 and 320 before this: nothing overflowed, and the row's
+     unit line, a day's hours and the hidden-unit notice already sit under the
+     name (they are inside the first cell, which is a block here). What was
+     missing was size, not placement.
+
+     The Rate Card state line's links — "↺ use $103", "needs Profit Goals" —
+     were 17px tall, and the hidden-unit notice 14px. A 44px overlay (the
+     .dash-badge technique) would not do here: the state line sits directly
+     under the price field, and an overlay reaching 13px up would take taps
+     meant for the bottom of that field. So the link itself is 44px tall and
+     the line grows around it; the words before it stay on its baseline. Only
+     set-by-you rows and unpriced ones carry a link, so an auto row's line
+     keeps its height. The notice keeps pricing.css's full-width line under
+     the unit switch, as it has at every width. */
+  .pricing-state-link,
+  .pricing-hidden-note {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  /* The Service Day's two fields share the row, as the tax rate's single
+     field above it takes the row: "Full [   ] hrs · Half [   ] hrs", each
+     field growing, so the two blocks line up rather than leaving two 64px
+     boxes on the left of a 343px card. */
+  .pricing-day-ctl label {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .tax-setting .pricing-day-ctl input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+  /* "Show": the label on its own line, then the three units as equal thirds
+     of the width. Three content-sized buttons left a ragged 60px gap on the
+     right at 375. At 320 a third is 92px and the longest label, "HALF DAY",
+     is 51px, so .btn-sm's 14px sides still fit (measured). */
+  .pricing-show {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .pricing-show-label {
+    grid-column: 1 / -1;
+    margin: 0 0 2px;
+  }
+  .pricing-show-btn {
+    justify-content: center;
+  }
+
+  /* The estimator. The picker's unit select is also a .svc-select, so the
+     stacking rule above already gave it the full width — but only because
+     this file loads after estimates.css, whose `.bb-picker .unit-select`
+     (flex: 0 0 auto) has the same specificity. Stated here so the stack
+     doesn't hang on load order. */
+  .bb-picker .unit-select {
+    flex: 1 1 100%;
+  }
+  /* A line's "per [full day ▾]" was 28px tall — the one control in a stacked
+     line under 44px. Its width is 7.6em (estimates.css), which at the 16px
+     every phone field has is 122px: "per", the select and "· 8 billable hrs"
+     still share one line at 320. */
+  .lab-unit {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0 5px;
+  }
+  .lab-unit-sel {
+    min-height: 44px;
+    padding: 2px 8px;
+  }
+
+  /* The Dashboard comparison's unit cells, stacked: a price over a "Below by
+     $X" badge is 43px, so two badges in a row sat 43px apart and their 44px
+     targets (above) overlapped by a pixel. 2px more padding each side. */
+  .dash-table td.dash-unit {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
   /* ── The Invoice Settings modal ──────────────────────────────────────────
      css/settings.css already scrolls this overlay (the modal is 915px tall
      here). At 375px the centred 95vw box wastes 19px of a screen that has none

@@ -537,7 +537,8 @@ test('v8 keeps every overhead row and widens the category list', () => {
   db.prepare('DELETE FROM schema_version WHERE version >= 8').run();
 
   const result = migrate(db);
-  assert.deepEqual([result.from, result.to, result.applied], [7, 8, 1]);
+  // v9 runs too; with no pricing row and no estimates it changes nothing.
+  assert.deepEqual([result.from, result.to, result.applied], [7, 9, 2]);
   const row = db.prepare("SELECT * FROM overhead_items WHERE id = 'oh_keep'").get();
   assert.deepEqual(
     [row.name, row.category, row.cost, row.frequency, row.created_at, row.updated_at],
@@ -560,6 +561,258 @@ test('v8 keeps every overhead row and widens the category list', () => {
   db.close();
 });
 
-test('the schema knows it is at v8', () => {
-  assert.equal(LATEST_VERSION, 8);
+/* ── v9: services priced per hour, half day and full day ───────────────────── */
+
+const { computeTotals } = require('../src/calc');
+const { readPricing, readSettings } = require('../src/ratecard');
+const { DEFAULT_PRICING } = require('../src/defaults');
+const { pricingProblem } = require('../src/routes/pricing');
+const { reshapeCard, snapshotLegacyLines, V8_DEFAULT_PRICING } = require('../src/migrations/v9-service-units');
+
+/* A v8 card with one of every kind of labour row the migration must place. */
+const V8_CARD = {
+  labourSections: [
+    {
+      id: 'prod',
+      label: 'Production',
+      rows: [
+        { id: 'vc', name: 'Video Capture', rate: 100, mu: 140 },
+        { id: 'vcf', name: 'Video Capture — Full Day', rate: 800, mu: 1120, hoursPerUnit: 8, dayUnit: 'full' },
+        { name: 'Video Capture — Half Day', rate: 400, mu: 640, hoursPerUnit: 4, dayUnit: 'half' },
+        { id: 'dd', name: 'Drone Day', rate: 0, mu: 900, hoursPerUnit: 6, dayUnit: 'full' },
+        { name: 'Eight-hour row', rate: 0, mu: 700, hoursPerUnit: 8 },
+        { name: 'Four-hour row', rate: 0, mu: 380, hoursPerUnit: 4 },
+        { name: 'Long block', rate: 0, mu: 500, hoursPerUnit: 5 },
+        { name: 'Unpriced', rate: 0 },
+      ],
+    },
+    {
+      id: 'post',
+      label: 'Post-Production',
+      rows: [{ id: 'raw', name: 'Raw Footage Handover [on HDD]', rate: 70, mu: 98, customBill: true }],
+    },
+  ],
+  travelRows: [
+    { name: 'Fuel & Tolls', rate: 1, mu: 1, directCost: true },
+    { name: 'Crew Meals', rate: 30, mu: 33, unit: 'meals' },
+    { name: 'Transport & Logistics Hrs', rate: 25, mu: 35, ownTime: true },
+  ],
+  taxSetAsideRate: 0.35,
+};
+
+const V9_ESTIMATES = [
+  {
+    id: 'est_legacy', gstFree: 0,
+    rows: {
+      prod: [
+        { rowId: 'vc', name: 'Renamed since', qty: 3 },
+        { name: 'Video Capture — Full Day', qty: 2 },
+        { rowId: 'vcf', name: 'Video Capture — Full Day', qty: 1 },
+        { name: 'Video Capture — Half Day', qty: 1 },
+        { name: 'Drone Day', qty: 2 },
+        { name: 'Eight-hour row', qty: 1 },
+        { name: 'Long block', qty: 2 },
+        { name: 'Unpriced', qty: 4 },
+      ],
+      post: [{ rowId: 'raw', name: 'Raw Footage Handover [on HDD]', qty: 1, override: 250 }],
+      travel: [
+        { name: 'Fuel & Tolls', qty: 120 },
+        { name: 'Crew Meals', qty: 4 },
+        { name: 'Transport & Logistics Hrs', qty: 3 },
+      ],
+      crew: [{ name: 'Gaffer', days: 2, cost: 500 }],
+      equip: [{ name: 'Lens', days: 2, cost: 150 }],
+    },
+  },
+  {
+    // Snapshotted already, and lines no card can price.
+    id: 'est_mixed', gstFree: 1,
+    rows: {
+      prod: [
+        { rowId: 'vc', name: 'Video Capture', qty: 2, mu: 99 },
+        { rowId: 'vcf', name: 'Video Capture — Full Day', qty: 1, mu: 1000, hoursPerUnit: 8, dayUnit: 'full' },
+        { name: 'Gone from the card', qty: 5 },
+        { name: 'Video Capture', qty: 1 },
+      ],
+      oldcat: [{ name: 'Video Capture', qty: 7 }],
+    },
+  },
+];
+
+const GST_INC_SETTINGS = { gst: { registered: true, rate: 0.1, pricesIncludeGst: true } };
+
+/** A database at v8, holding `card` (or no pricing row) and the estimates above. */
+function v8Database(label, card) {
+  const db = openDatabase(tempDbPath(label));
+  db.prepare('DELETE FROM schema_version WHERE version >= 9').run();
+  if (card) {
+    db.prepare("INSERT INTO pricing (id, data_json, updated_at) VALUES (1, ?, '2026-09-01T00:00:00.000Z')")
+      .run(JSON.stringify(card));
+  }
+  db.prepare("INSERT INTO settings (id, data_json, updated_at) VALUES (1, ?, '2026-09-01T00:00:00.000Z')")
+    .run(JSON.stringify(GST_INC_SETTINGS));
+  const insert = db.prepare(`
+    INSERT INTO estimates (id, name, active_rows_json, gst_free, created_at, updated_at)
+    VALUES (?, ?, ?, ?, '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z')
+  `);
+  for (const e of V9_ESTIMATES) insert.run(e.id, e.id, JSON.stringify(e.rows), e.gstFree);
+  return db;
+}
+
+/** Every estimate's totals as the server would compute them now. */
+function recomputedTotals(db) {
+  const pricing = readPricing(db);
+  const settings = readSettings(db);
+  const out = {};
+  for (const e of db.prepare('SELECT id, active_rows_json, gst_free FROM estimates ORDER BY id').all()) {
+    out[e.id] = computeTotals(JSON.parse(e.active_rows_json), pricing, settings, {
+      gstFree: e.gst_free === 1,
+      overheadRate: 30,
+    });
+  }
+  return out;
+}
+
+function quietly(t) {
+  const log = t.mock.method(console, 'log', () => {});
+  return () => log.mock.calls.map((c) => c.arguments.join(' '));
+}
+
+test('v9 leaves every estimate\'s recomputed totals exactly as they were', (t) => {
+  const logs = quietly(t);
+  const db = v8Database('v9-totals', V8_CARD);
+  const before = recomputedTotals(db);
+  // The fixture means something: labour is priced, and some of it by day rows.
+  assert.ok(before.est_legacy.labourTotal > 0);
+  assert.ok(before.est_legacy.totalHours > 20);
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [8, 9, 1]);
+  assert.deepEqual(recomputedTotals(db), before);
+  assert.ok(logs().some((l) => /migrated to v9/.test(l)));
+
+  // …and they now come from each line's own snapshot, not the card.
+  const legacy = JSON.parse(db.prepare("SELECT active_rows_json FROM estimates WHERE id = 'est_legacy'").get().active_rows_json);
+  assert.deepEqual(legacy.prod[1], { name: 'Video Capture — Full Day', qty: 2, mu: 1120, rowId: 'vcf', hoursPerUnit: 8, dayUnit: 'full', rate: 800 });
+  assert.deepEqual(legacy.prod[0], { rowId: 'vc', name: 'Renamed since', qty: 3, mu: 140, rate: 100 });
+  assert.deepEqual(legacy.prod[4], { name: 'Drone Day', qty: 2, mu: 900, rowId: 'dd', hoursPerUnit: 6, dayUnit: 'full', rate: 0 });
+  assert.deepEqual(legacy.post[0], { rowId: 'raw', name: 'Raw Footage Handover [on HDD]', qty: 1, override: 250, mu: 98, rate: 70, customBill: true });
+  assert.deepEqual(legacy.travel[2], { name: 'Transport & Logistics Hrs', qty: 3, mu: 35, rate: 25, ownTime: true });
+  assert.deepEqual(legacy.crew, V9_ESTIMATES[0].rows.crew);
+  assert.deepEqual(legacy.prod[7], { name: 'Unpriced', qty: 4, mu: 0, rate: 0 });
+
+  // A line that already had its price, or has nowhere to get one, is untouched.
+  const mixed = JSON.parse(db.prepare("SELECT active_rows_json FROM estimates WHERE id = 'est_mixed'").get().active_rows_json);
+  assert.deepEqual(mixed.prod.slice(0, 3), V9_ESTIMATES[1].rows.prod.slice(0, 3));
+  assert.deepEqual(mixed.oldcat, V9_ESTIMATES[1].rows.oldcat);
+  assert.deepEqual(mixed.prod[3], { name: 'Video Capture', qty: 1, rowId: 'vc', mu: 140, rate: 100 });
+
+  // A migration is not an edit.
+  for (const r of db.prepare('SELECT updated_at FROM estimates').all()) assert.equal(r.updated_at, '2026-09-02T00:00:00.000Z');
+  assert.equal(db.prepare('SELECT updated_at FROM pricing').get().updated_at, '2026-09-01T00:00:00.000Z');
+  db.close();
+});
+
+test('v9 puts each row\'s one price in one slot and keeps everything else on the card', (t) => {
+  quietly(t);
+  const db = v8Database('v9-card', V8_CARD);
+  migrate(db);
+  const card = readPricing(db);
+
+  assert.deepEqual(card.serviceDay, { fullHours: 8, halfHours: 4 });
+  assert.deepEqual(card.travelRows, V8_CARD.travelRows);
+  assert.equal(card.taxSetAsideRate, 0.35);
+  const rows = Object.fromEntries(card.labourSections.flatMap((s) => s.rows).map((r) => [r.name, r]));
+  const slots = (name) => rows[name].prices;
+  assert.deepEqual(slots('Video Capture'), { hour: 140, half: null, full: null });
+  assert.deepEqual(slots('Video Capture — Full Day'), { hour: null, half: null, full: 1120 });
+  assert.deepEqual(slots('Video Capture — Half Day'), { hour: null, half: 640, full: null });
+  assert.deepEqual(slots('Drone Day'), { hour: null, half: null, full: 900 }); // dayUnit wins over 6 hrs
+  assert.deepEqual(slots('Eight-hour row'), { hour: null, half: null, full: 700 });
+  assert.deepEqual(slots('Four-hour row'), { hour: null, half: 380, full: null });
+  assert.deepEqual(slots('Long block'), { hour: 500, half: null, full: null });
+  assert.deepEqual(slots('Unpriced'), { hour: null, half: null, full: null });
+  // Nothing merged by name, nothing lost.
+  assert.equal(Object.keys(rows).length, 9);
+  assert.deepEqual(rows['Raw Footage Handover [on HDD]'], {
+    id: 'raw', name: 'Raw Footage Handover [on HDD]', rate: 70, customBill: true, prices: { hour: 98, half: null, full: null },
+  });
+  assert.equal(rows['Video Capture'].id, 'vc');
+  for (const r of Object.values(rows)) {
+    for (const old of ['mu', 'hoursPerUnit', 'dayUnit']) assert.equal(r[old], undefined, `${r.name} kept ${old}`);
+  }
+  // The card it leaves is one the Rate Card can save back.
+  assert.equal(pricingProblem(card), null);
+  db.close();
+});
+
+test('v9 logs every row whose unit of work changed length', (t) => {
+  const logs = quietly(t);
+  const db = v8Database('v9-log', V8_CARD);
+  migrate(db);
+  const v9 = logs().filter((l) => l.startsWith('[db] v9: '));
+  assert.ok(v9.includes('[db] v9: Production › Drone Day: was 6 hrs a unit, now a full day of 8 hrs. Price kept ($900).'), v9.join('\n'));
+  assert.ok(v9.includes('[db] v9: Production › Long block: was 5 hrs a unit, now an hour of 1 hrs. Price kept ($500).'));
+  assert.ok(v9.includes('[db] v9: Production › Unpriced: had no price; an hour is now auto.'));
+  assert.ok(v9.some((l) => /snapshotted \d+ line\(s\) on 2 estimate\(s\)/.test(l)));
+  // Rows whose hours match their slot are not mentioned.
+  assert.ok(!v9.some((l) => /Video Capture|Eight-hour|Four-hour|Raw Footage/.test(l)), v9.join('\n'));
+  db.close();
+});
+
+test('v9 on a database that never saved a card snapshots against the old defaults', (t) => {
+  quietly(t);
+  const db = v8Database('v9-no-card', null);
+  // What these estimates priced from until now: v8's defaults, frozen in the migration.
+  const pricedAt = (activeRows, card) => computeTotals(activeRows, card, GST_INC_SETTINGS, { overheadRate: 30 });
+  const before = pricedAt(V9_ESTIMATES[0].rows, V8_DEFAULT_PRICING);
+  // Three full days and a half day from the old day rows, and the hour of handover.
+  // The fixture's other services were never on the default card.
+  assert.equal(before.totalHours, 24 + 4 + 1);
+
+  migrate(db);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM pricing').get().n, 0, 'no card is written');
+  assert.deepEqual(readPricing(db), DEFAULT_PRICING);
+  const rows = JSON.parse(db.prepare("SELECT active_rows_json FROM estimates WHERE id = 'est_legacy'").get().active_rows_json);
+  assert.deepEqual(pricedAt(rows, readPricing(db)), before);
+  db.close();
+});
+
+test('v9 on a fresh database changes nothing, and running it again changes nothing', (t) => {
+  quietly(t);
+  const fresh = openDatabase(tempDbPath('v9-fresh'));
+  assert.equal(fresh.prepare('SELECT COUNT(*) AS n FROM pricing').get().n, 0);
+  assert.deepEqual(readPricing(fresh), DEFAULT_PRICING);
+  fresh.close();
+
+  const db = v8Database('v9-twice', V8_CARD);
+  migrate(db);
+  assert.equal(migrate(db).applied, 0);
+  const state = () => JSON.stringify([
+    db.prepare('SELECT data_json FROM pricing').all(),
+    db.prepare('SELECT id, active_rows_json FROM estimates ORDER BY id').all(),
+  ]);
+  const once = state();
+  // Even forced to run a second time over its own output, v9 is a no-op.
+  db.prepare('DELETE FROM schema_version WHERE version >= 9').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.equal(state(), once);
+  db.close();
+});
+
+test('the v9 steps leave their inputs alone', () => {
+  const card = JSON.parse(JSON.stringify(V8_CARD));
+  reshapeCard(card);
+  assert.deepEqual(card, V8_CARD);
+  const rows = JSON.parse(JSON.stringify(V9_ESTIMATES[0].rows));
+  snapshotLegacyLines(rows, V8_CARD);
+  assert.deepEqual(rows, V9_ESTIMATES[0].rows);
+  // A negative price from before the audit's validation is not carried across.
+  const neg = reshapeCard({ labourSections: [{ id: 'p', label: 'P', rows: [{ name: 'Neg', mu: -5 }] }] });
+  assert.deepEqual(neg.card.labourSections[0].rows[0].prices, { hour: 0, half: null, full: null });
+  assert.equal(neg.notes.length, 1);
+});
+
+test('the schema knows it is at v9', () => {
+  assert.equal(LATEST_VERSION, 9);
 });

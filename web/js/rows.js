@@ -67,9 +67,12 @@ const LSCRows = (() => {
   }
 
   /* Null means "no price known" — the caller renders “—” and leaves it out of
-     the subtotal, matching what calc.js counted. */
-  function labourDef(section, line) {
-    return LSCCalc.lineDef(section && !section.archived ? section.rows : [], line);
+     the subtotal, matching what calc.js counted. `pricing` is the whole card,
+     passed on so a legacy line's fallback reads its Service Day, as
+     computeTotals's does. No price context, deliberately: the server has none,
+     so an auto unit prices at nothing here exactly as it does there. */
+  function labourDef(section, line, pricing) {
+    return LSCCalc.lineDef(section && !section.archived ? section.rows : [], line, pricing);
   }
 
   function travelDef(line, pricing) {
@@ -95,10 +98,13 @@ const LSCRows = (() => {
      Added 2026-09-27 (.design/price-calculator/). A labour row used to be
      priced by the hour, full stop, so both estimate screens headed the quantity
      column "Hours". Day rows broke that: a 2 on a full-day row is two shoot
-     days. These say which unit a row sells in, by the same rule calc.js's
-     labourHoursBreakdown uses — `dayUnit` marks a day row (never its name), and
+     days. These say which unit a line sells in, by the same rule calc.js's
+     labourHoursBreakdown uses — `dayUnit` marks a day (never its name), and
      hours other than one without a marker are a generic "unit" rather than
-     being passed off as hours. */
+     being passed off as hours. Since service rate tiers (2026-09-28) every
+     service sells at three units, so both screens head the column "Qty" in
+     every labour category and spell each line's unit; the old per-category
+     test (sectionHasUnits) is gone. */
   const UNIT_WORDS = {
     hour: ['hour', 'hours'],
     full: ['full day', 'full days'],
@@ -123,13 +129,6 @@ const LSCRows = (() => {
     return num(qty) === 1 ? words[0] : words[1];
   }
 
-  /* Whether a category's quantity column can still just say "Hours". Judged on
-     the live card's rows for the category, not on the lines an estimate happens
-     to hold, so the heading doesn't change under the user as they add a row. */
-  function sectionHasUnits(section) {
-    return ((section && section.rows) || []).some((r) => labourUnit(r).kind !== 'hour');
-  }
-
   return {
     RESERVED_SECTION_IDS,
     sectionsFor,
@@ -141,6 +140,5 @@ const LSCRows = (() => {
     labourUnit,
     unitWord,
     qtyLabel,
-    sectionHasUnits,
   };
 })();

@@ -145,6 +145,17 @@ const LSCData = (() => {
       const r = LSCData.revenueTarget();
       return LSCCalc.incomeFloorPerHour(r && r.total, LSCCalc.annualBillableHours(goals || {}));
     },
+    /* What an auto price on the rate card is worked out from (calc.js unitDef,
+       .design/service-rate-tiers/): the income floor, Target Markup — a
+       PERCENT, stored in a column that predates the rename — and the GST
+       settings, which decide whether the price carries GST inside it. One
+       builder, so the Rate Card, the estimator's unit picker and the Dashboard
+       can't resolve the same auto price two ways. */
+    priceContext: () => ({
+      floorPerHour: LSCData.incomeFloor(),
+      markupPct: (goals || {}).targetProfitMarginPct,
+      settings: settings || {},
+    }),
     /* For the first-run setup checklist on the estimates empty state. */
     pricingConfigured: () => pricingSaved,
     settingsConfigured: () => settingsSaved,
