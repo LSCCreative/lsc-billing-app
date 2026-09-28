@@ -42,7 +42,8 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    2026-09-28, live on Pages); what remains is a real VoiceOver pass by a person. A money-math
    audit the same day fixed 15 findings and **re-decided four settled points with the user**
    (income floor, markup rename, ATO tax brackets, per-line price snapshots) — see the handover's
-   decisions 6–9; that work is committed but **needs a NAS redeploy (migration v7) before Pages**. All 23
+   decisions 6–9; it is live (NAS migrated to v7, then Pages, 2026-09-28). **Deploy order for
+   any future server change that adds a boot-time route: NAS before Pages.** All 23
    build tasks are live (NAS + Pages, 2026-09-27/28);
    check its handover for anything
    committed since but not yet pushed or deployed.

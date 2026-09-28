@@ -97,13 +97,11 @@ service business that sells shoot days rather than units.
       should-fixes" below. **Live** — pushed with the must-fix on 2026-09-28 with the user's go-ahead
       (Pages run 36364499560, success; web only, no NAS redeploy).
 - [x] **Money-math audit — all 15 findings fixed** (money math — Opus/high), 2026-09-28. See "What
-      landed — audit fixes" below. **Committed, NOT deployed. The NAS must be redeployed BEFORE
-      Pages is pushed**: the new web build loads `/api/tax-years` at boot, which the old server
-      404s, and that takes the whole app down. Migration v7 runs on the NAS's next boot.
-- [ ] ← **NEXT: (a) deploy — NAS first (backup, migration v7), then Pages — with the user's
-      go-ahead; (b) the user saves their FY 2026–27 tax scale on Profit Goals** (until then the
-      Dashboard's floors and the Rate Card's floor lines are em dashes, by design); **(c) should-fix
-      4, a real VoiceOver pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
+      landed — audit fixes" below. **Live — NAS (migration v7) then Pages, 2026-09-28 ~13:35 AEST,
+      with the user's go-ahead.** Deploy record under "What landed — audit fixes".
+- [ ] ← **NEXT: (a) the user saves their FY 2026–27 tax scale on Profit Goals** (until then the
+      live Dashboard's floors and the Rate Card's floor lines are em dashes, by design) and decides
+      whether any travel row is "Your time"; **(b) should-fix 4, a real VoiceOver pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
       for the announcer regions inside the `aria-modal` dialogs and judging the one-second debounce.
       An agent can't do this one. Also still open: overhead-finance decision 74's estimate-editor
       half (no announcements there).
@@ -492,6 +490,21 @@ What changed in the money, and where:
 
 **After deploy, the live Dashboard's floors read "—"** until the user saves the FY 2026–27 tax
 scale on Profit Goals — deliberate: the placeholders are not the user's figures until saved.
+
+### Deployed 2026-09-28 (~13:35 AEST), NAS first, with the user's go-ahead
+
+**Order matters for this one**: the web build loads `/api/tax-years` at boot, which an older
+server 404s — Pages must never go out ahead of the NAS. `Dockerfile`, `package*.json` and
+`.dockerignore` md5-identical to the NAS copies, so cached layers. Backup via `sqlite3 ".backup"`
+to `/volume4/lsc-billing/data/backups/pre-v7-20260928-1332.db`, integrity ok (schema v6, 0
+estimates, 0 assets, 6 overhead items). `server/` copied with the usual `COPYFILE_DISABLE=1 tar`
+excluding `node_modules`, `./data`, `.env`, `docker-compose.yml` (both md5-identical after).
+`docker compose up -d --build`: recreated, `healthy`, boot log `migrated to v7`. Live DB after:
+integrity ok, v7, 6 overhead items, goals kept (net $65,000, markup 25%, super/bad debt unset),
+0 tax years. Public `/health` 200; `/api/tax-years` and `/api/goals` 401 signed out. Then `main`
+pushed: Pages run 36374324219, success; live `data.js` / `calc.js` / editor carry the new code,
+and the live site boots to sign-in with no script errors (the only 404 is the site-root
+`favicon.ico`, which never existed).
 
 ## What landed (2026-09-28) — review should-fixes
 
