@@ -98,7 +98,7 @@ review. **Don't merge before task 10.**
 **The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
 DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
 
-**Exact next item:** **task 10, "Deploy: NAS (v9) first, then Pages"** (deploy — Sonnet/medium).
+**DEPLOYED 2026-09-29 (see "Deployed" below). Exact next item is now task 11 (design review on the live site), then R5–R14.** _Old text:_ task 10, "Deploy: NAS (v9) first, then Pages"** (deploy — Sonnet/medium).
 R1–R4 are done. R5–R14 can follow the deploy, or come first if the user prefers. **New since R2:**
 from the moment the NAS runs v9 until Pages is live, the live site can't save an estimate at all.
 Its saves lack `pricingShape` and are refused with a "reload" message. So do the Pages push
@@ -178,3 +178,21 @@ As for price-calculator: `npm test` in `server/`; identical `calc.js` in both co
 test); for money math, break the line and confirm a test fails. Pin in tests: the rounding
 (`ceil` after cent-rounding, per unit), GST-inclusive cards, the `null` floor, a mixed auto /
 set-by-you service, and a line whose unit is switched after being added.
+
+## Deployed 2026-09-29 (~09:15 AEST), NAS first, with the user's go-ahead
+
+Branch committed and merged to `main` locally (`25ba574`), `launch.json` temp entries dropped (R14).
+`npm test` 252 pass. Backup via `sqlite3 ".backup"` to
+`/volume4/lsc-billing/data/backups/pre-v9-20260929-0911.db`, integrity ok (schema v8). `server/`
+copied with the usual `COPYFILE_DISABLE=1 tar` (excluding `node_modules`, `./data`, `.env`,
+`docker-compose.yml`; the NAS compose still mounts `/volume4/lsc-billing/data:/data`).
+`docker compose up -d --build`: `healthy`, boot log `migrated to v9`. The log printed no per-row
+day-hours lines. The live card's labour rows all had no day rows to convert. Live DB after:
+integrity ok, v9, 9 overhead items, `serviceDay` 8/4 present, no labour row has `mu` (Travel keeps
+its own). Public `/health` 200, `/api/goals` 401 signed out. Then `main` pushed: Pages run
+36497076581, success; live `calc.js` carries `suggestedPrice`; the site boots signed in with no
+console errors. The NAS-to-Pages gap was about a minute.
+
+**Only the user can do:** save the FY 2026–27 tax scale on Profit Goals (until then every auto
+hourly, and any auto day on one, reads `—`), and fold the old "— Full Day" / "— Half Day" rows into
+their services by hand.

@@ -744,7 +744,7 @@ math, and a browser check for anything a person looks at.
 
 ## Ship
 
-- [ ] **10. Deploy: NAS (v9) first, then Pages** (deploy — Sonnet/medium; **ask the user before
+- [x] **10. Deploy: NAS (v9) first, then Pages** (deploy — Sonnet/medium; **ask the user before
   starting**): Merge `service-rate-tiers` → `main` locally, but **don't push yet**.
   1. On the NAS, back up the live DB with `sqlite3 ".backup"` to
      `/volume4/lsc-billing/data/backups/pre-v9-<stamp>.db`, and check integrity.
