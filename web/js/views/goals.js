@@ -288,6 +288,21 @@ const GoalsView = (() => {
       '<div class="page-sub">What the business needs to earn, and what’s left over once it’s paid for</div>' +
       '</div></div>' +
 
+      /* First, above the fields — where Capacity puts its annual hours, so the
+         two sibling screens read the same way: the output people open the
+         screen for, then the inputs that move it. The card's own border is
+         what separates it from everything editable. This used to sit below
+         the save bar, per the overhead-finance IA; moved 2026-09-28 by the
+         user's call (Finance & Price design review, should-fix 8). */
+      '<div class="proj-card goals-outcome">' +
+      '<div class="sum-label">Target Annual Revenue</div>' +
+      '<div class="goals-outcome-value' + (value === null ? ' is-empty' : '') + '" id="goals-tar-value">' +
+      (value === null ? '—' : fmt(value)) + '</div>' +
+      '<p class="goals-outcome-note" id="goals-tar-note">' + outcomeNote(value) + '</p>' +
+      '</div>' +
+      // Spoken once typing pauses — see LSCUtil.announce().
+      '<p class="sr-only" id="goals-tar-live" aria-live="polite"></p>' +
+
       '<div class="form-grid goals-grid">' +
       fieldMarkup(
         'goals-net',
@@ -327,19 +342,7 @@ const GoalsView = (() => {
       '<span class="saved-msg" id="goals-saved-msg">✓ Goals saved</span>' +
       '<button type="button" class="btn btn-accent" id="goals-save" data-write>' +
       '<span class="spinner" id="goals-spin"></span><span id="goals-save-label">Save Goals</span></button>' +
-      '</div></div>' +
-
-      /* Below the save bar, not among the fields: it is an output, and the IA
-         doc asks for it to be separated from everything editable. The bar is
-         what does the separating — there is no second rule to draw. */
-      '<div class="proj-card goals-outcome">' +
-      '<div class="sum-label">Target Annual Revenue</div>' +
-      '<div class="goals-outcome-value' + (value === null ? ' is-empty' : '') + '" id="goals-tar-value">' +
-      (value === null ? '—' : fmt(value)) + '</div>' +
-      '<p class="goals-outcome-note" id="goals-tar-note">' + outcomeNote(value) + '</p>' +
-      '</div>' +
-      // Spoken once typing pauses — see LSCUtil.announce().
-      '<p class="sr-only" id="goals-tar-live" aria-live="polite"></p>'
+      '</div></div>'
     );
   }
 

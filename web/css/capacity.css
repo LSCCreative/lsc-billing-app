@@ -7,13 +7,6 @@
  * does differently.
  */
 
-/* Above the fields rather than below the save bar as on Goals — the IA doc's
-   order for this screen, because the figure is what people come here for. */
-.cap-outcome {
-  margin-top: 0;
-  margin-bottom: 24px;
-}
-
 /* .form-grid's own two columns, kept: the four fields pair up as a week (hours
    a day, days a week) and a year (leave, sick), and every hint is a sentence
    that needs the width a four-across row would take from it. align-items so a

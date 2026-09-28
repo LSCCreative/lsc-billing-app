@@ -77,6 +77,11 @@ Items 5–10 were filed as could-improve and moved here at the user's request, t
 the whole list is now the fix backlog. Item 3 is site-wide and item 8 overturns an
 overhead-finance IA decision; both want the user's go-ahead before they're built.
 
+**Status 2026-09-28: 1–3 and 5–10 fixed** (the user approved 3 and 8 as suggested); **4 stays
+open**, because it needs a person listening to VoiceOver. Each item's outcome is under it. Verified
+with headless Chrome against `api-scratch`, by measurement and screenshot; see the handover's
+"What landed — review should-fixes".
+
 1. **The floor comparison table wraps across the whole tablet band.** At 1100px it fits on one line
    per row; at 1000px 13 of 21 rows run to two lines, at 900px 15, and at 768 the "Against floor"
    column splits "$37.10 / over" and Section hyphenates "Pre- / Production". A 21-row table becomes
@@ -85,6 +90,9 @@ overhead-finance IA decision; both want the user's go-ahead before they're built
    column (the service names already carry it, and the <768 cards and the Rate Card both show it)
    and `white-space: nowrap` the four numeric columns. `finance-dashboard.css` / `responsive.css`,
    the Dashboard's own table only._
+   **Fixed.** Section hidden and the figure cells held to one line in a bounded 768–1099 query;
+   the headings may wrap and the cells lose 4px a side. Rows wrapping: 0 from 1099 down to 850
+   (was 13 at 1000 and 15 at 900); 3 of 21 at 768, long service names only.
 2. **"Below by $X" looks like a link and isn't one.** `.dash-badge` is a `<span>` drawn with an
    accent underline (`finance-dashboard.css:104`), the same visual language as the Dashboard's real
    links, so it invites a click that does nothing. The IA's "Checking a day rate" flow has it go to
@@ -94,6 +102,9 @@ overhead-finance IA decision; both want the user's go-ahead before they're built
    `screenshots/review-dashboard-below-floor-table-desktop-1280.png`. _Fix: make it a `<button>`
    calling `onGoTab('pricing', { focusRow: … })`, and have the Rate Card focus that row's Mark-Up
    on mount. Key the row by section id + index, not name — names are user-editable._
+   **Fixed** as suggested. The accessible name reads "Below by $17.90: change <service>'s Mark-Up
+   on the Rate Card". All three below-floor badges were clicked and each landed on its own
+   row's Mark-Up, focused and centred.
 3. **Every text input is 13px on phones, so iOS Safari zooms the page on focus.** Tapping Capacity's
    hours, a Mark-Up, the post-ratio fields or anything in the asset dialog zooms in and leaves the
    page zoomed after blur. This is **site-wide** — `app.css` sets 13px on all inputs and
@@ -101,25 +112,39 @@ overhead-finance IA decision; both want the user's go-ahead before they're built
    feature adds more inputs than any screen before it. _Fix: one rule in `responsive.css`'s <768
    band, `input, select, textarea { font-size: 16px }`. It changes every form on a phone, so it
    wants the user's go-ahead rather than a quiet inclusion._
+   **Fixed with the user's go-ahead.** It needed `!important`, because the sizes it replaces are
+   set by class selectors up to (0,2,1). Checkboxes and radios are excluded. A sweep of every
+   screen, the asset dialog, the estimate editor and login at 375 found no field under 16px and
+   no page overflow. It surfaced one knock-on, now fixed: the estimate editor's service picker
+   ran 16px off-screen until it was given `min-width: 0`.
 4. **No real screen-reader pass yet.** The accessibility pass verified the announcer regions and
    the hidden chart table by reading the DOM, not by listening. Most worth hearing: whether the
    announcer regions inside the `aria-modal` asset and dispose dialogs speak in VoiceOver, and
    whether the one-second debounce feels right while typing. _Fix: ten minutes with VoiceOver on
    Capacity, the Rate Card and the asset dialog._
+   **Still open.** It needs a person, not an agent.
 5. **On a phone the floors push the comparison down ~700px.** Three full-width tiles at ~180px each
    stack before "Rate card against its floors", which is the answer the page is for. See
    `screenshots/review-dashboard-below-floor-mobile-375.png`. _Fix: below 768, render the floors
    as three label-left / figure-right rows in one block (Delight figures kept), about 190px in
    total._
+   **Fixed.** One bordered block with three rows (label and note left, 28px Delight figure
+   right), 180px in total. The comparison now starts at y=583 on a 375×812 phone.
 6. **The comparison info popover opens over the floors it explains.** With less than ~340px below
    the button it flips upward and covers the Half Day tile. See
    `screenshots/review-dashboard-info-open-desktop-1280.png`. _Fix: prefer below and let the page
    scroll, flipping only when the button is in the bottom third of the viewport (`info.js`, shared
    by both info controls)._
+   **Fixed.** The popover flips only when its button is in the bottom third of the viewport,
+   and the side is chosen once, on open, so it doesn't jump around while scrolling. At
+   1280×800 it opens below and overlaps no floor. At 1280×600, where the button is in the
+   bottom third, it flips.
 7. **Day rows mix units in one line.** On the Rate Card, `Video Capture — Full Day` shows a Rate of
    `15.12` (per hour, per the column head) beside a Mark-Up of `1120` (per full day); the floor line
    underneath is what reconciles them. See `screenshots/review-rate-card-desktop-1280.png`.
    _Fix: render the read-only rate as `15.12/hr` on day-unit rows only._
+   **Fixed**, with the day-row field widened to 90px so "15.12/hr" isn't clipped (the extra
+   width goes left, so the column stays aligned).
 8. **Derived outputs sit in different places on the two sibling screens** — Capacity's annual hours
    above its fields, Profit Goals' target revenue below its save bar. Each follows its own IA
    ordering (Goals' placement is the overhead-finance IA's "separated from everything editable").
@@ -127,12 +152,21 @@ overhead-finance IA decision; both want the user's go-ahead before they're built
    matching Capacity — the output is what people open the screen for, and the card's own border
    still separates it from the inputs. This overturns an overhead-finance IA decision, so it is the
    user's call._
+   **Fixed with the user's go-ahead.** Target Annual Revenue now leads Profit Goals. The shared
+   `.goals-outcome` now carries the top-of-screen margin itself, so Capacity's `.cap-outcome`
+   override was deleted. The overhead-finance IA records the reversal.
 9. **Capacity's save-bar sentence strands "at." on its own line at 1280.** See
    `screenshots/review-capacity-desktop-1280.png`. _Fix: `text-wrap: pretty` on
    `.pricing-save-bar p`, which every save bar shares._
+   **Fixed, with `balance` rather than `pretty`.** Chrome's `pretty` only rescues a one-word
+   last line, and "quoted at." is two words, so `pretty` measurably changed nothing. At 1280
+   Capacity's sentence is now two lines of 431 and 401px.
 10. **The Overhead donut legend runs the full block width**, leaving the amount ~350px from its
     category name at desktop. From `overhead-finance`, not this feature. See
     `screenshots/review-overhead-desktop-1280.png`. _Fix: cap the legend at ~420px._
+   **Fixed at 340px, not 420.** The rows were already capped at 480, which is what left the
+   ~300px gap. The category names are a fixed list, the longest ~80px, so at 340 nothing
+   truncates.
 
 ## Checklist Notes
 

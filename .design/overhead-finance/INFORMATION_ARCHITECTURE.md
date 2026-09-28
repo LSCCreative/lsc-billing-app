@@ -115,6 +115,9 @@ second, Finance-specific loading state.
 3. Target Annual Revenue — a computed, read-only output shown below the form, not mixed in with the
    editable fields above it (mirrors how Pricing already separates editable rows from the
    read-only-until-saved totals pattern elsewhere in the app).
+   **Overturned 2026-09-28 by the user.** It now sits *above* the fields, matching Capacity's annual
+   hours, and its card border does the separating — see
+   [`../price-calculator/DESIGN_REVIEW.md`](../price-calculator/DESIGN_REVIEW.md), should-fix 8.
 
 ## User Flows
 

@@ -37,9 +37,10 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    (register, schedule, CSV export, lodgement lock), the shared info control and the Dashboard's
    GST mirror and post-ratio readout, the Operating Costs double-count hint, the disposal flow,
    Profit Goals' read-only capacity, the estimate editor's day-unit wording, the responsive
-   pass, the accessibility pass and the decline curve chart. Next: the review's should-fix list
-   ([`DESIGN_REVIEW.md`](.design/price-calculator/DESIGN_REVIEW.md)), on the user's pick. All 23
-   are live (NAS + Pages, 2026-09-27/28);
+   pass, the accessibility pass and the decline curve chart. The review's must-fix and nine of
+   its ten should-fixes are done ([`DESIGN_REVIEW.md`](.design/price-calculator/DESIGN_REVIEW.md),
+   2026-09-28, committed and not yet pushed); what remains is a real VoiceOver pass by a person. All 23
+   build tasks are live (NAS + Pages, 2026-09-27/28);
    check its handover for anything
    committed since but not yet pushed or deployed.
    Read its `HANDOVER.md` first. Build bucket: Opus, effort high, and **more of it sits in the

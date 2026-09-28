@@ -76,9 +76,20 @@ const LSCInfo = (() => {
   const popFor = (btn) => document.getElementById(btn.getAttribute('aria-controls'));
 
   /* Below the button, left edges roughly aligned, clamped inside the
-     viewport; flipped above when there isn't room below and there is above.
-     --info-nub-x puts the notch under the button wherever the clamp moved the
-     box to. */
+     viewport. --info-nub-x puts the notch under the button wherever the clamp
+     moved the box to.
+
+     Flipped above only when the button sits in the bottom third of the
+     viewport and there is room above. It used to flip whenever the popover
+     didn't fit below, which on the Dashboard (less than ~340px under the
+     comparison's button) opened it upward over the Half Day floor — covering
+     the figures it explains (design review, should-fix 6). Below is the
+     reading order, and a popover running off the bottom is fine: it is
+     re-placed on scroll, so scrolling the page brings the rest into view.
+
+     The side is chosen once, when the popover opens (open.flip), not on every
+     scroll: re-deciding as the button crossed the two-thirds line would make
+     the popover jump from one side to the other under the reader's eyes. */
   function place() {
     if (!open) return;
     if (!open.btn.isConnected) {
@@ -94,7 +105,8 @@ const LSCInfo = (() => {
     const h = pop.offsetHeight;
     const below = r.bottom + GAP;
     const above = r.top - GAP - h;
-    const flip = below + h > window.innerHeight - EDGE && above >= EDGE;
+    if (open.flip === undefined) open.flip = r.top > (window.innerHeight * 2) / 3 && above >= EDGE;
+    const flip = open.flip;
 
     pop.style.left = left + 'px';
     pop.style.top = (flip ? above : below) + 'px';

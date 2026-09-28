@@ -147,6 +147,37 @@
   }
 }
 
+/* ── 768–1099px only: the Dashboard's comparison table ────────────────────
+   Bounded at both ends, unlike the band above, because below 768px this table
+   stacks into cards and the Section line is wanted back there.
+
+   At 1100px the table fits one line per row; at 1000 thirteen of 21 rows ran
+   to two lines, and at 768 "Against floor" split "$37.10 / over" — the one
+   column the table exists for (design review, should-fix 1). Section goes: the
+   service names already say it, and the Rate Card and the phone cards both
+   show it. The figures hold one line each, so it is Service that wraps if
+   anything must.
+
+   The headings are left free to wrap ("You charge / (ex-GST)") — a nowrap
+   head would set its column's width and take it from Service — and the cells
+   lose 4px a side, as the depreciation tables do in this band. Measured on
+   the scratch card's 21 rows: none wrap from 1099 down to 850, and at 768
+   three of the longest names ("Video Editor — Longform Sound Mix/Master") take
+   two lines — the figures beside them never do. */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .dash-table .dash-sec-col {
+    display: none;
+  }
+  .dash-table td.right {
+    white-space: nowrap;
+  }
+  .dash-table th,
+  .dash-table td {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
 /* ── below ~900px ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
@@ -262,10 +293,69 @@
 }
 
 @media (max-width: 767px) {
+  /* iOS Safari zooms the page whenever a focused field's text is under 16px,
+     and leaves it zoomed after blur. Every field in the app was 10.5–13px, so
+     tapping any of them did it (Finance & Price design review, should-fix 3;
+     site-wide by the user's go-ahead, 2026-09-28). 16px is the threshold, not a
+     style choice. The alternative, maximum-scale=1 on the viewport, also stops
+     pinch-zoom on Android — a WCAG 1.4.4 failure — so it is not used.
+
+     !important is deliberate and is the only one in this file: the sizes it
+     replaces are set by more than twenty class selectors up to (0,2,1)
+     (`.pricing-table input.pricing-hpu-inp`, `.dep-modal .field select`), and
+     a new one added later must not quietly bring the zoom back. Checkboxes and
+     radios hold no text and are left out. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
   /* The Dashboard's three floors stack: at 343px, three 40px money figures
-     side by side would be ~100px each and "$135.12" doesn't fit. */
+     side by side would be ~100px each and "$135.12" doesn't fit.
+
+     Stacked as three full tiles they were ~180px each, pushing "Rate card
+     against its floors" — the answer the page is for — ~700px down (design
+     review, should-fix 5). So they become three rows of one block instead,
+     the way .summary-bar already reads on a phone: label and note left, the
+     figure right in Delight at 28px, still the largest type on the page after
+     the title. About 190px for all three. */
   .dash-floors {
     grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .dash-floor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .dash-floor:last-child {
+    border-bottom: none;
+  }
+  .dash-floor .sum-label {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: end;
+    margin-bottom: 3px;
+  }
+  .dash-floor-sub {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+  }
+  .dash-floor-value {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    font-size: 28px;
+    margin: 0;
+    text-align: right;
   }
   /* The Dashboard's post-ratio inputs: two 190px fields don't fit side by side
      in a phone-width panel, so each takes the row rather than wrapping ragged. */
@@ -577,9 +667,14 @@
   .bb-picker {
     flex-wrap: wrap;
   }
+  /* min-width:0 because a select's automatic minimum is its longest option:
+     at the 16px every phone field now has (top of this band), a 40-character
+     service name pushed it 16px past the block. The option text truncates
+     inside the closed select instead; the open list shows it whole. */
   .bb-picker .svc-select {
     flex: 1 1 100%;
     max-width: none;
+    min-width: 0;
     min-height: 44px;
   }
   .bb-picker .btn {
@@ -867,6 +962,20 @@
   }
   .est-block-label > .dash-link {
     text-align: left;
+  }
+  /* "Below by $X" is a button to the Rate Card row: a 44px area centred on
+     it, the same invisible-target technique as the linked headings below. */
+  .dash-badge {
+    position: relative;
+  }
+  .dash-badge::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
   }
 
   /* 44px touch targets for the Dashboard's links that stand on their own.

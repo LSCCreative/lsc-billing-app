@@ -101,11 +101,26 @@
 .dash-sum-below {
   color: var(--accent-text);
 }
+/* A button to that row's Mark-Up on the Rate Card (finance-dashboard.js,
+   statusCell) — it used to be a <span> drawn like a link that did nothing.
+   Button chrome taken off so it still reads as the gap, not as a control
+   competing with the figures; the accent rule thickens on hover and focus, as
+   the page's links change colour, and the focus ring is a11y.css's. */
 .dash-badge {
-  color: var(--accent-text);
+  background: none;
+  border: none;
   border-bottom: 1px solid var(--accent);
-  padding-bottom: 1px;
+  padding: 0 0 1px;
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--accent-text);
   white-space: nowrap;
+  cursor: pointer;
+}
+.dash-badge:hover,
+.dash-badge:focus-visible {
+  border-bottom-width: 2px;
+  padding-bottom: 0;
 }
 .dash-table td:first-child {
   color: var(--text);

@@ -24,6 +24,19 @@
   margin-top: 10px;
 }
 
+/* The save bar's sentence — Rate Card, Profit Goals and Capacity all share the
+   bar. At 1280 Capacity's broke with "at." alone on its last line (Finance &
+   Price design review, should-fix 9). `balance`, not the review's `pretty`:
+   Chrome's `pretty` only rescues a one-word last line, and "quoted at." is
+   two, so it changed nothing (measured). These sentences are one or two lines,
+   which is what `balance` is for; one that fits on a line is left alone, and
+   browsers without it ignore the rule. This does reach >=1100px, which the Desktop
+   Preservation Law otherwise keeps pixel-identical — a deliberate exception,
+   approved with the rest of the review's fixes on 2026-09-28. */
+.pricing-save-bar p {
+  text-wrap: balance;
+}
+
 /* ── The computed rate column ───────────────────────────────────────────────
    Every labour row's Rate ($/hr) is one derived figure now, not a field. It
    stays an <input> so it can carry aria-readonly and the aria-describedby link
@@ -43,6 +56,12 @@
   background: transparent;
   color: var(--text);
   cursor: default;
+}
+/* A day row's rate reads "15.12/hr" (pricing.js, rateDisplay): wider so the
+   unit isn't clipped. Right-aligned like the rest, so the extra width goes
+   left and the figures still line up down the column. */
+.pricing-table input.pricing-rate-ro.pricing-rate-day {
+  width: 90px;
 }
 /* The "no Overhead or Goals data yet" em dash. Muted because it is an absence,
    where the figure above is an answer — and never $0.00, which would read as a

@@ -60,10 +60,14 @@
    declarations, and hoisting means editing a verified screen's markup and CSS
    from a task that doesn't otherwise touch it. If a third stat card appears,
    hoist it then — that is the point where three copies start being three
-   chances to disagree. */
+   chances to disagree.
+
+   It sits at the top of the screen, above the fields, on both Goals and
+   Capacity (moved from below Goals' save bar 2026-09-28, Finance & Price
+   design review should-fix 8). */
 .goals-outcome {
   cursor: default;
-  margin-top: 20px;
+  margin: 0 0 24px;
   max-width: 78ch;
 }
 .goals-outcome:hover {

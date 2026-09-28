@@ -400,14 +400,19 @@
    each row ~700px and left "Hosting" ~350px from its $1,800.00. Capping the
    list itself would do the same job visually but hand its freed space to
    .oh-donut's auto margins (see the note above it) and slide the ring right;
-   the list keeps its flex-grow and only the rows stop growing. Inert at 768px
-   and below, where the legend is already narrower than this. */
+   the list keeps its flex-grow and only the rows stop growing.
+
+   480px still left "Other" ~300px from its $24,000.00 at 1280 (Finance & Price
+   design review, should-fix 10), so it is 340 now. The names are a fixed list
+   (overhead.js, CATEGORIES) and the longest, "Admin / Legal", is ~80px; at 340
+   the name column is ~170px beside a six-figure amount, so nothing truncates.
+   Mostly inert below 768px, where the legend is about this wide anyway. */
 .oh-legend-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto 52px;
   align-items: center;
   gap: 10px;
-  max-width: 480px;
+  max-width: 340px;
   padding: 7px 0;
   border-bottom: 1px solid rgba(61, 74, 92, 0.4);
   font-size: 12px;

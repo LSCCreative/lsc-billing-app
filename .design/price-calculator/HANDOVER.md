@@ -15,7 +15,7 @@ goals, and the hourly / half-day / full-day floors they imply — compared again
 actually charges. Modelled on the user's `Price Calculator` reference spreadsheet, reshaped for a
 service business that sells shoot days rather than units.
 
-## State as of 2026-09-28 (Phases 6 and 7 complete — built, reviewed; review fixes await the user's pick)
+## State as of 2026-09-28 (Phases 6 and 7 complete — built, reviewed; review fixes done except the VoiceOver pass)
 
 `/design-flow` sequence position:
 
@@ -93,15 +93,14 @@ service business that sells shoot days rather than units.
       26 screenshots in `screenshots/`. Its one must-fix (the Depreciation tab 407px wide on a
       375px phone, from the decline curve's screen-reader table) is **fixed and committed, not
       pushed** — it is live on Pages until pushed.
-- [ ] ← **NEXT: the review's should-fix list, on the user's pick.** In the review's order: (1) the
-      Dashboard comparison table wraps through 1099–768 — hide Section, nowrap the numbers; (2)
-      "Below by $X" is a `<span>` styled like a link — make it a button to the Rate Card row, per the
-      IA's "Checking a day rate" flow; (3) 13px inputs zoom iOS Safari on focus — a **site-wide**
-      one-rule fix that needs the user's OK; (4) a real VoiceOver pass; then (5)–(10), the review's
-      former could-improve items, moved up at the user's request 2026-09-28 — (8), aligning where
-      Capacity and Profit Goals put their derived figure, overturns an overhead-finance IA decision
-      and needs the user's call. Also still open:
-      overhead-finance decision 74's estimate-editor half (no announcements there).
+- [x] **The review's should-fix list** — done 2026-09-28 except (4). See "What landed — review
+      should-fixes" below. **Committed, not pushed** — together with the must-fix, it all reaches the live site on
+      the next push (Pages only, web-only change, no NAS redeploy).
+- [ ] ← **NEXT: (a) push to Pages, with the user's go-ahead; (b) should-fix 4, a real VoiceOver
+      pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
+      for the announcer regions inside the `aria-modal` dialogs and judging the one-second debounce.
+      An agent can't do this one. Also still open: overhead-finance decision 74's estimate-editor
+      half (no announcements there).
 
 All 23 build tasks are done — the Foundation group, the rail, Capacity, the Dashboard (all seven
 sections), the Rate Card's day rows, the whole Depreciation tab (register, schedule, CSV, lodgement
@@ -442,6 +441,39 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-28) — review should-fixes
+
+Nine of the ten should-fix items in [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md) are fixed, and each
+item's outcome is written under it there. Web only: no server change, no migration. 188 tests pass.
+Verified with headless Chrome (the server's `puppeteer-core`) against `api-scratch` at 1280 / 1100 /
+1000 / 900 / 850 / 800 / 768 / 375, by measurement plus screenshots. The below-floor state was made
+in the page cache only (`LSCData.setPricing`), and nothing was saved.
+
+Things a fresh agent should know:
+
+- **There is now one `!important` in `responsive.css`**: the <768 rule that sets `font-size: 16px`
+  on every input (except checkboxes and radios), select and textarea. It is deliberate: the sizes
+  it beats are class selectors up to (0,2,1), and a new field must not quietly bring the iOS
+  focus zoom back. It is site-wide, not only Finance & Price, and the user approved that. Any
+  flex item holding a field on a phone may need `min-width: 0`; the estimate editor's
+  `.bb-picker .svc-select` did. At 16px, three long names on the Rate Card also scroll inside
+  their name fields on a phone, which is normal for a text field and was left alone.
+- **`selectTab`'s opts now carry a second key**, `focusRow: { sectionId, index }`, from the
+  Dashboard's "Below by $X" button to `PricingView.focusRow()`. The index is counted per section in
+  `comparisonMarkup` rather than added to `labourFloorComparison`. That keeps `calc.js`, which is
+  money-math and drift-tested, out of this change. The count depends on that function walking
+  sections and rows in card order, which it does.
+- **The Profit Goals layout decision from overhead-finance is reversed** (the user's call):
+  Target Annual Revenue sits above the fields, as on Capacity. `.goals-outcome` now carries the
+  top-of-screen margin itself, and `.cap-outcome` is gone. The overhead-finance IA is annotated.
+- **The save-bar sentence uses `text-wrap: balance`, not the review's `pretty`.** `pretty`
+  measurably did nothing to the two-word orphan. The rule is in `pricing.css` and reaches
+  ≥1100px, a deliberate exception to the Desktop Preservation Law, approved with the review.
+  So do the badge, the popover rule, the `/hr` rates, the Goals order and the legend cap.
+  Everything in the 768–1099 and <768 bands is additive as usual.
+- **The info popover picks its side once, on open** (`open.flip`). If you re-decide it inside
+  `place()`, it will jump sides while the reader scrolls.
 
 ## What landed (2026-09-28) — Decline curve
 

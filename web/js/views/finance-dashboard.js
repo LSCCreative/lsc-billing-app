@@ -225,12 +225,22 @@ const FinanceDashboardView = (() => {
 
   // ── 2. The rate card against its floors ───────────────────────────────────
 
-  function statusCell(row) {
+  /* A below-floor gap is a button to that row's Mark-Up on the Rate Card — the
+     IA's "Checking a day rate" flow. The row is keyed by section id and its
+     index within the section, never by name: names are the user's to change,
+     and two rows may share one. ri is counted here rather than carried by
+     labourFloorComparison, which walks the same sections in the same order.
+     The accessible name starts with the visible text (WCAG 2.5.3) and says
+     where the button goes, which the text alone doesn't. */
+  function statusCell(row, ri) {
     if (row.belowFloor === null) return '<td class="right muted-td" data-label="Against floor">—</td>';
     if (row.belowFloor) {
+      const gap = fmt(row.gap);
       return (
-        '<td class="right" data-label="Against floor"><span class="dash-badge">Below by ' +
-        fmt(row.gap) + '</span></td>'
+        '<td class="right" data-label="Against floor"><button type="button" class="dash-badge"' +
+        ' data-go-tab="pricing" data-focus-sec="' + esc(String(row.sectionId)) + '" data-focus-row="' + ri + '"' +
+        ' aria-label="Below by ' + gap + ': change ' + esc(row.name || 'Untitled') + '’s Mark-Up on the Rate Card">' +
+        'Below by ' + gap + '</button></td>'
       );
     }
     return (
@@ -275,18 +285,22 @@ const FinanceDashboardView = (() => {
           : 'All ' + rows.length + ' clear their floor';
 
     const clear = rows.length - below;
+    const seen = {}; // rows so far per section id — each row's index within its section
     const body = rows
-      .map(
-        (r) =>
+      .map((r) => {
+        const ri = seen[r.sectionId] || 0;
+        seen[r.sectionId] = ri + 1;
+        return (
           '<tr class="' + (r.belowFloor ? 'dash-below' : 'dash-clear') + '">' +
           '<td data-label="Service">' + esc(r.name || 'Untitled') + '</td>' +
-          '<td class="muted-td" data-label="Section">' + esc(r.sectionLabel || '') + '</td>' +
+          '<td class="muted-td dash-sec-col" data-label="Section">' + esc(r.sectionLabel || '') + '</td>' +
           '<td class="right muted-td" data-label="Hours per unit">' + hrs(r.hoursPerUnit) + '</td>' +
           '<td class="right" data-label="You charge (ex-GST)">' + fmt(r.muExGst) + '</td>' +
           '<td class="right" data-label="Floor">' + (r.floor === null ? '—' : fmt(r.floor)) + '</td>' +
-          statusCell(r) +
+          statusCell(r, ri) +
           '</tr>'
-      )
+        );
+      })
       .join('');
 
     return (
@@ -300,7 +314,7 @@ const FinanceDashboardView = (() => {
       '<span class="est-block-sum' + (below ? ' dash-sum-below' : '') + '">' + summary + '</span></div>' +
       (rows.length
         ? '<table class="est-table dash-table' + (showAllRows ? ' dash-table-all' : '') +
-          '" id="dash-compare-table"><thead><tr><th>Service</th><th>Section</th>' +
+          '" id="dash-compare-table"><thead><tr><th>Service</th><th class="dash-sec-col">Section</th>' +
           '<th class="right">Hrs / unit</th><th class="right">You charge (ex-GST)</th>' +
           '<th class="right">Floor</th><th class="right">Against floor</th></tr></thead><tbody>' +
           body + '</tbody></table>' +
@@ -829,7 +843,13 @@ const FinanceDashboardView = (() => {
       const btn = event.target.closest('[data-go-tab]');
       if (!btn || !handlers.onGoTab) return;
       const inner = btn.getAttribute('data-inner');
-      handlers.onGoTab(btn.getAttribute('data-go-tab'), inner ? { inner } : undefined);
+      const focusSec = btn.getAttribute('data-focus-sec');
+      const opts = inner
+        ? { inner }
+        : focusSec !== null
+          ? { focusRow: { sectionId: focusSec, index: Number(btn.getAttribute('data-focus-row')) } }
+          : undefined;
+      handlers.onGoTab(btn.getAttribute('data-go-tab'), opts);
     });
 
     bindPost();

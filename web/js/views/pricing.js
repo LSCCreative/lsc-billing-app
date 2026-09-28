@@ -183,7 +183,14 @@ const PricingView = (() => {
     if (el && row) el.innerHTML = floorLineHtml(row);
   }
 
-  const rateDisplay = () => (computedRate === null ? '—' : computedRate.toFixed(2));
+  /* A day row's Mark-Up is per half or full day while this column is per
+     hour, so on those rows alone the figure carries its unit: "15.12/hr"
+     beside "1120" no longer reads as two prices for the same thing (design
+     review, should-fix 7). Hourly rows match their column head and stay bare. */
+  const rateDisplay = (row) =>
+    computedRate === null
+      ? '—'
+      : computedRate.toFixed(2) + (row && (row.dayUnit === 'full' || row.dayUnit === 'half') ? '/hr' : '');
 
   function newSectionId(taken) {
     let n = 1;
@@ -348,7 +355,8 @@ const PricingView = (() => {
         '</div></td>' +
         '<td style="text-align:right" data-label="Rate ($/hr)"><input type="text" readonly' +
         ' aria-readonly="true" aria-describedby="pricing-rate-note" class="pricing-rate-ro' +
-        (computedRate === null ? ' pricing-rate-none' : '') + '" value="' + rateDisplay() +
+        (computedRate === null ? ' pricing-rate-none' : '') + (unit ? ' pricing-rate-day' : '') +
+        '" value="' + rateDisplay(row) +
         '" aria-label="Internal rate for ' + esc(row.name) + ', calculated automatically"></td>' +
         '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01" value="' + num(row.mu) +
         '" aria-label="Client rate for ' + esc(row.name) + '" aria-describedby="pfl-' + si + '-' + ri +
@@ -864,6 +872,25 @@ const PricingView = (() => {
       dirty: () => snapshot() !== baseline,
     });
     loadUsage();
+    focusRow(handlers && handlers.focusRow);
+  }
+
+  /* The Dashboard's "Below by $X" lands here with { sectionId, index } — the
+     row's section id and its position in that section, since names are
+     editable and needn't be unique. Focuses that row's Mark-Up, the one field
+     the gap is about, and centres it: a Mark-Up in the last category would
+     otherwise sit at the bottom edge. A row that has gone (the card changed in
+     between) just leaves the screen at the top, as a rail click would. */
+  function focusRow(target) {
+    if (!target || typeof target !== 'object') return;
+    const si = card.labourSections.findIndex((sec) => String(sec.id) === String(target.sectionId));
+    if (si < 0) return;
+    const inp = root.querySelector(
+      'input[data-si="' + si + '"][data-ri="' + Number(target.index) + '"][data-field="mu"]'
+    );
+    if (!inp) return;
+    inp.focus({ preventScroll: true });
+    inp.scrollIntoView({ block: 'center' });
   }
 
   return { mount };

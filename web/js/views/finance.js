@@ -127,10 +127,12 @@ const FinanceView = (() => {
   }
 
   /* opts: the optional second argument of selectTab, handed to the child's
-     mount alongside the router's own handlers. The one caller planned is the
-     Dashboard's deep link into Overhead's Depreciation inner tab —
-     onGoTab('overhead', { inner: 'depreciation' }) — and a child that doesn't
-     read a key simply ignores it. The router's own keys are assigned last so
+     mount alongside the router's own handlers. Two callers, both on the
+     Dashboard: the deep link into Overhead's Depreciation inner tab —
+     onGoTab('overhead', { inner: 'depreciation' }) — and "Below by $X", which
+     sends onGoTab('pricing', { focusRow: { sectionId, index } }) for the Rate
+     Card to focus that row's Mark-Up. A child that doesn't read a key simply
+     ignores it. The router's own keys are assigned last so
      that nothing in opts can replace onAuthLost or onGoTab. */
   function mountChild(opts) {
     /* A fresh #finance-sub for every screen. Children bind delegated click

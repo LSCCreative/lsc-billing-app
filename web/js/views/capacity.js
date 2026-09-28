@@ -236,7 +236,7 @@ const CapacityView = (() => {
          people come to this screen for. Not itself a live region — it
          repaints per keystroke; #cap-annual-live speaks it once typing
          pauses (LSCUtil.announce). */
-      '<div class="proj-card goals-outcome cap-outcome">' +
+      '<div class="proj-card goals-outcome">' +
       '<div class="sum-label">Annual billable hours</div>' +
       '<div class="goals-outcome-value" id="cap-annual-value"></div>' +
       '<p class="goals-outcome-note" id="cap-annual-note"></p>' +

@@ -466,4 +466,9 @@ change to it is two identical edits. A task that edits one and not the other is 
   items were moved up at the user's request): comparison table wraps 1099–768; "Below by $X" looks
   like a link but isn't; 13px inputs zoom iOS (site-wide); no real VoiceOver pass; phone floors
   push the comparison down; info popover covers the floors; day rows show a bare per-hour rate;
-  Capacity/Goals output placement differs; save-bar orphan; donut legend width. None started.
+  Capacity/Goals output placement differs; save-bar orphan; donut legend width.
+
+- [x] **The review's should-fix list** (frontend — Opus/high). **Done 2026-09-28** except item 4, which
+  still needs a real VoiceOver pass by a person. Items 1–3 and 5–10 are fixed; item 3 (site-wide 16px
+  phone inputs) and item 8 (Target Annual Revenue moved above Goals' fields) went ahead with the
+  user's approval. The outcome of each is recorded in `DESIGN_REVIEW.md`.
