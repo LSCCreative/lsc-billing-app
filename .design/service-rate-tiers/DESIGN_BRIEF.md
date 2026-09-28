@@ -152,23 +152,34 @@ from Capacity's billable hours per day, which only averages the year.
 
 ### 4. The suggested price (money math — pin with tests)
 
+**Revised 2026-09-28 by the user (decision 13): an auto day follows the hourly price.**
+
 ```
-suggested(unit) = ceilToDollar( incomeFloorPerHour × hours(unit) × (1 + targetMarkupPct / 100) × gstFactor )
-hours(hour) = 1, hours(half) = serviceDay.halfHours, hours(full) = serviceDay.fullHours
+auto hour       = ceilToDollar( incomeFloorPerHour × (1 + targetMarkupPct / 100) × gstFactor )
+auto half / full = the service's hourly price (typed or auto) × hours(unit), to the cent
+hours(half) = serviceDay.halfHours, hours(full) = serviceDay.fullHours
 gstFactor   = 1.1 only when the card is kept GST-inclusive (settings.gst.pricesIncludeGst); else 1
 ```
 
-- **Rounded up per unit**, never down, so an auto price is always at or above floor × markup. Each
-  unit is rounded on its own: the full day is `ceil(floor × 8 × 1.25)`, not 8 × the rounded hourly.
-- Round to the cent first, then ceil, so an exact `$57.00` stays `$57`, not `$58` from float noise.
+- **The hourly is rounded up**, never down, so it is always at or above floor × markup. A day is
+  that hourly × its hours: type $140 an hour and an 8-hour full day is $1,120. So an auto full day
+  is exactly 8 × the (rounded) hourly, which is up to $8 more than rounding the day on its own
+  would give. A typed day price still wins.
+- *Superseded:* this section first said each unit is rounded on its own ("the full day is
+  `ceil(floor × 8 × 1.25)`, not 8 × the rounded hourly"). The user reversed that.
+- The hourly is rounded up against the **exact** floor × markup, allowing only for float noise, so
+  an exact `$57.00` stays `$57`. It was first written as "round to the cent, then ceil". With days
+  now built from the hourly, that let an hourly price a fraction of a cent under the floor pass,
+  and eight of them came to a whole cent under the day's floor.
 - **Refined in build (task 1, 2026-09-28):** on a GST-inclusive card the price is the smallest whole
   dollar whose GST-exclusive part (via `priceExGst`) reaches the cent-rounded floor × hours × markup.
   Multiplying by 1.1 and then rounding lands 1¢ under the floor at a few half-cent edges (0% markup),
   which would badge an auto price below its own floor. Where the two recipes differ, it is by +$1.
 - The floor is the **income floor** (`incomeFloorPerHour`, what the Rate Card's floor line already
   shows), not the cost floor. The markup is **Target Markup**.
-- A consequence the user accepts knowingly: an auto half day is (to the dollar) exactly half an
-  auto full day. Independent half-day pricing still exists; you get it by typing the price.
+- A consequence the user accepts knowingly: an auto half day is exactly half an auto full day
+  (with the 4 / 8 default). Independent half-day pricing still exists; you get it by typing the
+  price.
 
 ### 5. Estimate editor: adding and switching
 
@@ -246,7 +257,8 @@ Decided with the user on 2026-09-28. Don't re-litigate.
    *Overturns* the price-calculator rule "nothing ever auto-writes the rate card / `mu` is never
    written". Auto prices are derived on read, but they do move the card's prices without a save.
    Saved estimates are still protected by line snapshots.
-3. **Auto prices round up to the whole dollar, each unit on its own.**
+3. **Auto prices round up to the whole dollar, each unit on its own.** *Revised by 13:* only the
+   hourly is rounded up; an auto day is the hourly × its hours.
 4. **Service-day hours are one card-level setting, full 8 / half 4**, separate from Capacity.
    *Overturns* the 2026-09-27 day-row rule that prefilled `hoursPerUnit` from Capacity's billable
    hours per day. Also *reverses* the Dashboard's decision 1: headline half/full-day floors now use
@@ -271,6 +283,14 @@ Added during the IA step (2026-09-28). The detail is in
 11. **The estimator's unit picker starts on Hour every time.** It does not remember the last unit.
 12. **The Rate Card gets a card-wide "Show: Hourly / Half day / Full day" switch** that sets every
     row's dropdown at once. It is view-only and resets to Hourly.
+
+Added during the build (2026-09-28, before task 4):
+
+13. **An auto half or full day is the service's hourly price × the Service Day hours.** The hourly
+    price counts whether it's typed or auto. Entering an hourly price carries over to both days
+    ("if full day is 8 hrs it's 1 hourly rate × 8"). A typed day price still wins. Only the hourly
+    comes from the income floor. *Revises* 3 and §4's "each unit rounded on its own". A side
+    effect: a service with a typed hourly has day prices even before Profit Goals are set up.
 
 ## Out of Scope
 

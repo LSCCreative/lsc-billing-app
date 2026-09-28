@@ -151,11 +151,11 @@
  * carries three prices — `prices: { hour, half, full }` — instead of one `mu`,
  * and a card-level `serviceDay: { fullHours, halfHours }` (8 / 4) says how many
  * billable hours a day on a job is. That is deliberately NOT Capacity's
- * billable hours per day, which is a yearly planning average. Three decisions:
+ * billable hours per day, which is a yearly planning average. Five decisions:
  *
  *   1. AUTO IS DERIVED ON READ, NEVER STORED. A price the user has not typed is
- *      `null` on the card, and unitDef computes it each time from the income
- *      floor and Target Markup (suggestedPrice). Storing it would freeze it at
+ *      `null` on the card, and unitDef computes it each time (decision 5 says
+ *      from what). Storing it would freeze it at
  *      whatever the goals were on the day it was written, and "follows the
  *      numbers until you type over it" would need a second flag to remember
  *      which numbers were typed. This overturns price-calculator's "nothing
@@ -169,25 +169,39 @@
  *      because $0 is below every floor only once there is a floor. Callers
  *      disable the unit or show "—". A typed 0, by contrast, is a real price.
  *
- *   3. UP TO THE WHOLE DOLLAR, AND NEVER BELOW THE TARGET. An auto price is the
- *      smallest whole dollar whose GST-exclusive part reaches floor × hours ×
- *      (1 + markup), cent-rounded. Up, because rounding down would sell the
- *      unit under the figure it was derived from; whole dollars, because that
- *      is how the card is priced by hand. Each unit is rounded on its own, so a
- *      full day is never 8 × a rounded hour. The brief's literal recipe —
- *      multiply in GST, cent-round, ceil — lands 1¢ under the floor on some
- *      GST-inclusive cards at 0% markup (half-cent edges; a sweep found ~130),
- *      so the search is done against priceExGst, the same function the floor
- *      comparison takes GST out with. Where the two differ it is by +$1.
+ *   3. UP TO THE WHOLE DOLLAR, AND NEVER BELOW THE TARGET. An auto HOURLY price
+ *      is the smallest whole dollar whose GST-exclusive part reaches floor ×
+ *      (1 + markup) EXACTLY. Up, because rounding down would sell the hour
+ *      under the figure it was derived from; whole dollars, because that is
+ *      how the card is priced by hand. Exactly, not cent-rounded, because an
+ *      auto day is the hourly × its hours (decision 5): an hourly price 0.1¢
+ *      under the true floor passes a cent-rounded check, but eight of them are
+ *      1¢ under the day's floor, and the day is badged. Both a cent-rounded
+ *      target and the brief's literal GST recipe (× 1.1, cent-round, ceil) did
+ *      exactly that; sweeps over unrounded floors found it. Where the exact
+ *      target gives a different price, it is $1 higher.
  *
- *   4. THE SERVER NEVER RESOLVES AN AUTO PRICE. It has no income floor to hand
- *      (that needs goals, overhead and capacity together), so lineDef's
- *      fallback for a line with no snapshot prices only a unit the user typed,
- *      and treats an auto one as a service gone from the card. That path is
- *      near-dead: migration v9 snapshots every legacy line before it reshapes
- *      the card. serviceFloorComparison, by contrast, runs in the browser and
- *      prices auto units from the same floor it compares them against, so an
- *      auto unit can never be badged below the floor it was derived from.
+ *   4. THE SERVER NEVER RESOLVES A FLOOR-DERIVED PRICE. It has no income floor
+ *      to hand (that needs goals, overhead and capacity together), so lineDef's
+ *      fallback for a line with no snapshot prices a unit only when it does not
+ *      need the floor: a typed price, or an auto day on a service whose hourly
+ *      price is typed (decision 5). Anything else is treated as a service gone
+ *      from the card. That path is near-dead: migration v9 snapshots every
+ *      legacy line before it reshapes the card. serviceFloorComparison, by
+ *      contrast, runs in the browser and prices auto units from the same floor
+ *      it compares them against, so an auto unit can never be badged below the
+ *      floor it was derived from.
+ *
+ *   5. AN AUTO DAY IS THE HOURLY PRICE × THE DAY'S HOURS (the user's call,
+ *      2026-09-28, reversing the brief's "each unit rounded on its own"). Only
+ *      the hourly price comes from the floor. An auto half or full day is the
+ *      service's hourly price — typed or auto — × serviceDay's hours, to the
+ *      cent: type $140 an hour and the full day follows as $1,120 at 8 hrs. So
+ *      an auto full day is exactly 8 × the rounded hourly, and costs up to 8 ×
+ *      $1 more than rounding the day on its own would. It is still never below
+ *      its floor: the hourly is at or above the hourly floor, and both scale
+ *      by the same hours. A typed day price wins over all of this, which is how
+ *      a half day stays its own figure rather than half a full day.
  */
 
 /** Money is stored and compared at cent precision, never as raw float sums. */
@@ -236,9 +250,10 @@ function lineDef(defs, line, pricing) {
   const rows = defs || [];
   const row = (line.rowId && rows.find((r) => r.id === line.rowId)) || rows.find((r) => r.name === line.name) || null;
   if (!row || !row.prices) return row;
-  /* A service with three prices: the one for the line's own unit, if the
-     user typed it. An auto unit has no price here (decision 4 under SERVICE
-     UNITS), and prices at nothing, as a missing row does. */
+  /* A service with three prices: the one for the line's own unit, resolved
+     without the income floor (decision 4 under SERVICE UNITS). A unit that
+     needs the floor has no price here, and prices at nothing, as a missing
+     row does. */
   const def = unitDef(row, line.dayUnit === 'full' || line.dayUnit === 'half' ? line.dayUnit : 'hour', pricing);
   return def && def.mu !== null ? def : null;
 }
@@ -1299,12 +1314,16 @@ function unitHours(pricing, unit) {
  * The auto price for a unit of work: the income floor for its hours plus the
  * target markup, as the smallest whole dollar that covers it.
  *
- *   target = round2(floorPerHour × hours × (1 + markupPct ÷ 100))
- *   price  = the least whole dollar p with priceExGst(p, settings) ≥ target
+ *   target = floorPerHour × hours × (1 + markupPct ÷ 100)       (exact)
+ *   price  = the least whole dollar p whose GST-exclusive part,
+ *            p ÷ (1 + gst.rate) on a GST-inclusive card, reaches target
  *
- * which is ceil(target) on a GST-exclusive card, and about ceil(target × (1 +
- * gst.rate)) on a GST-inclusive one — see decision 3 under SERVICE UNITS for
- * why it is a search rather than that multiplication.
+ * which is ceil(target) on a GST-exclusive card and about ceil(target × (1 +
+ * gst.rate)) on a GST-inclusive one. Against the EXACT target, not a
+ * cent-rounded one — see decision 3 under SERVICE UNITS: an auto day is this
+ * price × its hours, and a fraction of a cent short per hour becomes a whole
+ * cent short per day. The only slack is SUGGEST_NOISE, for float error such as
+ * 4.48 × 10 × 1.25 = 56.00000000000001, which is $56, not $57.
  *
  * @param {number|null} floorPerHour — incomeFloorPerHour(), GST-exclusive.
  * @param {number} hours — unitHours() for the unit.
@@ -1323,18 +1342,21 @@ function suggestedPrice(floorPerHour, hours, markupPct, settings) {
   const markup = numOrNull(markupPct);
   if (markup === null || markup < 0) return null;
 
-  const target = round2(floor * h * (1 + markup / 100));
+  const target = floor * h * (1 + markup / 100) - SUGGEST_NOISE;
   const gstCfg = (settings && settings.gst) || {};
   if (gstCfg.registered !== true || gstCfg.pricesIncludeGst !== true) return Math.ceil(target);
 
   const rate = num(gstCfg.rate);
   if (rate < 0) return null;
-  /* Start at or just under the answer; priceExGst is non-decreasing in the
-     price, so this steps up at most twice. */
-  let price = Math.floor(target * (1 + rate));
-  while (priceExGst(price, settings) < target) price += 1;
+  /* Start just under the answer and step up; this runs at most three times. */
+  let price = Math.max(0, Math.floor(target * (1 + rate)) - 1);
+  while (price / (1 + rate) < target) price += 1;
   return price;
 }
+
+/* Float error in floor × hours × markup is ~1e-14 at these sizes; a millionth
+   of a cent is far above it and far below anything that could matter. */
+const SUGGEST_NOISE = 1e-8;
 
 /**
  * One service at one unit, as the flat row every existing caller already
@@ -1343,30 +1365,35 @@ function suggestedPrice(floorPerHour, hours, markupPct, settings) {
  * which is the point: none of them had to learn about `prices`.
  *
  * A number in row.prices[unit] is set by the user and comes back exactly as
- * stored, unrounded. null / missing / blank is auto, priced by suggestedPrice
- * from ctx; `mu: null` then means no price is available, never $0 (decision 2
- * under SERVICE UNITS). `dayUnit` is present only for half and full, as on the
- * old day rows; rate and customBill only when the row has them.
+ * stored, unrounded. null / missing / blank is auto: an hour is priced by
+ * suggestedPrice from ctx, and a half or full day is the service's hourly
+ * price (typed or auto) × the unit's hours, to the cent (decision 5 under
+ * SERVICE UNITS). `mu: null` then means no price is available, never $0
+ * (decision 2). `dayUnit` is present only for half and full, as on the old
+ * day rows; rate and customBill only when the row has them.
  *
  * @param {object} row — a labour row carrying `prices`.
  * @param {string} unit — 'hour' | 'half' | 'full'.
  * @param {object} pricing — the rate card, for serviceDay.
  * @param {object} [ctx] — { floorPerHour, markupPct, settings }; the browser
- *   builds it with LSCData.priceContext(). Without it every auto unit is null.
+ *   builds it with LSCData.priceContext(). Without it an auto hour is null,
+ *   and so is an auto day on a service whose hourly price is auto.
  * @returns {object|null} null for no row or a unit off the list.
  */
 function unitDef(row, unit, pricing, ctx) {
   if (!row || SERVICE_UNITS.indexOf(unit) === -1) return null;
   const hours = unitHours(pricing, unit);
-  const stored = row.prices ? numOrNull(row.prices[unit]) : null;
+  const typed = (u) => (row.prices ? numOrNull(row.prices[u]) : null);
+  const stored = typed(unit);
   const auto = stored === null;
-  const c = ctx || {};
-  const def = {
-    id: row.id,
-    name: row.name,
-    mu: auto ? suggestedPrice(c.floorPerHour, hours, c.markupPct, c.settings) : stored,
-    auto,
-  };
+  let mu = stored;
+  if (auto) {
+    const c = ctx || {};
+    const hourTyped = typed('hour');
+    const hourly = hourTyped !== null ? hourTyped : suggestedPrice(c.floorPerHour, 1, c.markupPct, c.settings);
+    mu = hourly === null ? null : unit === 'hour' ? hourly : round2(hourly * hours);
+  }
+  const def = { id: row.id, name: row.name, mu, auto };
   if (row.rate !== undefined) def.rate = row.rate;
   if (row.customBill) def.customBill = true;
   def.hoursPerUnit = hours;

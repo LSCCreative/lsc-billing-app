@@ -74,6 +74,19 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   unpriced auto → $0; set-by-you price rounded; no 24 h cap; 0 h allowed; `dayUnit` on an hour; an
   unknown unit priced as an hour; full day = 8 × rounded hour; the search returning a dollar high.
 
+  **Amended 2026-09-28 after task 3 (brief decision 13, the user's call):** an auto half or full
+  day is now the hourly price (typed or auto) × the day's hours, to the cent. So "the full day is
+  computed on its own" is reversed, and `unitDef` does it. `suggestedPrice` is called for the hour
+  only, and rounds up against the **exact** floor × markup (minus 1e-8 for float noise) rather than
+  the cent-rounded one. The cent-rounded target let an auto hourly sit up to half a cent under the
+  true floor, and eight of those put an auto full day 1¢ under its floor: a sweep over unrounded
+  floors (`cents/100 + 0.0041`, `cents/99.7`) found it. The GST-inclusive search compares
+  `p ÷ (1 + rate)` to that exact target instead of `priceExGst`. **Mutations checked:** day rounded
+  on its own; day ceiled to the dollar; typed day ignored; typed hour ignored for the day; no hourly
+  → $0 day; cent-rounded target; no noise allowance; a noise allowance of 1¢; the GST search on
+  `priceExGst`; all caught. The GST search starting $1 higher is not caught; the noise allowance
+  makes it land on the same answer for every realistic floor.
+
 - [x] **2. Per-service floor comparison and the legacy `lineDef` fallback** (money math —
   Opus/high): Add `serviceFloorComparison(pricing, settings, floorPerHour, ctx)` **beside** the
   existing `labourFloorComparison`, which stays until task 7 removes its last caller. It returns one
@@ -309,7 +322,7 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   The order is load-bearing: an old Pages build against a v9 server can only fail safely
   (`pricing_shape_outdated`); a new Pages build against a v8 server cannot. Afterwards, tell the
   user the two things only they can do: save the FY 2026–27 tax scale on Profit Goals (until then
-  every auto price reads `—`), and fold the old "— Full Day" / "— Half Day" rows into their services
+  every auto hourly price, and every auto day on one, reads `—`), and fold the old "— Full Day" / "— Half Day" rows into their services
   by hand. Record the deploy in the handover, in the price-calculator handover's "Deployed" style.
   _Depends on: 1–9._
 

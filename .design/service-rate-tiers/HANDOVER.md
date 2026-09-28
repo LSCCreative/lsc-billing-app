@@ -10,9 +10,10 @@ drift-tested), a rate-card data migration, and line-snapshot changes. All of it 
 
 ## What this is
 
-Every labour service gets hourly, half-day and full-day prices on one row. Each price auto-fills as
-income floor × unit hours × (1 + Target Markup), rounded up to the dollar, and follows the numbers
-until the user types over it. A card-level Service Day (full 8 / half 4 billable hrs) replaces
+Every labour service gets hourly, half-day and full-day prices on one row. An auto hourly price is
+income floor × (1 + Target Markup), rounded up to the dollar. An auto half or full day is the
+service's hourly price (typed or auto) × the Service Day hours (brief decision 13). Each follows the
+numbers until the user types over it. A card-level Service Day (full 8 / half 4 billable hrs) replaces
 per-row day hours. The estimate editor picks service → unit → Add, and a line's unit can be switched.
 
 ## State as of 2026-09-28
@@ -42,6 +43,11 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
             (2026-09-28). See its Done note: auto units are priced from the comparison's own floor
             (only `ctx.markupPct` is read), and `lineDef` takes an optional `pricing` third
             argument that `rows.js` should start passing in task 6.
+      - [x] **Amendment (brief decision 13, 2026-09-28):** an auto half or full day is the hourly
+            price × the day's hours, and the auto hourly is rounded up against the exact target.
+            This changes task 1's `unitDef` / `suggestedPrice`; the old tests were updated to the
+            new figures, with new ones for the rule. 10 mutations checked, 9 caught, and the tenth
+            is equivalent in practice (the GST search starting $1 higher).
       - [x] Task 3 — schema v9, reshaped `DEFAULT_PRICING`, and the `pricing_shape_outdated`
             guard (2026-09-28). The migration is `server/src/migrations/v9-service-units.js`. See
             its Done note for the six decisions, especially the frozen v8 default card.
@@ -67,13 +73,18 @@ API (`api-scratch`, login `dev`).
   snapshot.
 - **Service Day hours are not Capacity's billable hours per day.** Capacity's figure is a yearly
   average. A service day on a job is 8 / 4. Don't "helpfully" link them back together.
-- **An auto half day is half an auto full day.** The "half day is not half a full day" rule now
-  applies only to typed prices. The user accepted this.
+- **An auto day is the hourly price × the day's hours** (brief decision 13, the user's call on
+  2026-09-28, made after task 3). Type $140 an hour and the full day reads $1,120 at 8 hrs. This
+  reverses "each unit rounded on its own", so an auto full day *is* 8 × the rounded hourly. It
+  follows that an auto half day is half an auto full day. The "half day is not half a full day"
+  rule now applies only to typed prices.
 - **The unit dropdown on a Rate Card row is a view switch**, not a property of the row. It is not
   saved and does not make the card dirty.
-- **An auto price on a GST-inclusive card is a search, not `ceil(raw × 1.1)`** (task 1). The
-  least whole dollar whose `priceExGst` reaches the cent-rounded target. The literal
-  multiply-then-round recipe lands 1¢ under the floor at half-cent edges. Don't "simplify" it back.
+- **The auto hourly is rounded up against the exact floor × markup**, not a cent-rounded one, and
+  on a GST-inclusive card it's a search (`p ÷ 1.1 ≥ target`), not `ceil(raw × 1.1)`. Because a day
+  multiplies the hourly, an hourly price even 0.1¢ under the true floor becomes a day 1¢ under its
+  floor, and gets badged. Both simpler recipes do that; the sweeps in `test-calc.js` over unrounded
+  floors catch it. Don't "simplify" it back.
 - **The PDF keeps service name only**, even though two units of one service then print as identical
   names. That was the user's call.
 
@@ -89,7 +100,8 @@ All settled in the IA doc; these are what a task list most easily gets wrong:
   `computeTotals` don't change. If a task finds itself editing `computeTotals`, it has gone wrong.
 - **`mu: null` from `unitDef` means unavailable**, never $0.
 - On the live site the income floor reads `—` until the FY 2026–27 tax scale is saved on Profit
-  Goals, so every auto price reads `—` until then. That's expected, not a bug.
+  Goals, so every auto *hourly* price reads `—` until then, and so does any auto day on a service
+  whose hourly is auto. A day on a typed hourly is priced regardless. That's expected, not a bug.
 - **Deploy order: NAS before Pages** (the live DB is on v8; this is v9). Back up first.
 
 ## How to verify your work

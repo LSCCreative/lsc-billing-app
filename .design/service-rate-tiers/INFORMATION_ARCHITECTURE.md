@@ -127,25 +127,31 @@ value, so the fallback only covers a hand-edited or partially migrated card.
 suggestedPrice(floorPerHour, hours, markupPct, settings) → number | null
 
   null when floorPerHour is null or ≤ 0, or markupPct is null, blank or negative
-  target = round2(floorPerHour × hours × (1 + markupPct / 100))   // cent-round: kills float noise
+  target = floorPerHour × hours × (1 + markupPct / 100) − 1e-8     // exact; the 1e-8 absorbs float noise
   GST-exclusive card: price = Math.ceil(target)
   GST-inclusive card (registered && pricesIncludeGst):
-          price = the least whole dollar p with priceExGst(p) ≥ target
+          price = the least whole dollar p with p ÷ (1 + gst.rate) ≥ target
 ```
 
-- *As built (task 1):* the inclusive case is a search against `priceExGst`, not
+- *Revised 2026-09-28 (brief decision 13):* `unitDef` calls this for the **hour only**. An auto
+  day is the hourly × its hours (§3). So the target is exact rather than cent-rounded: a
+  cent-rounded target let an hourly land a fraction of a cent under the floor, which a day
+  multiplies into a whole cent under.
+
+- *As built (task 1, superseded by the exact target above):* the inclusive case is a search against `priceExGst`, not
   `ceil(raw × 1.1)`. The multiply-then-round recipe first written here lands 1¢ under the floor at
   some half-cent edges (0% markup; a sweep found ~130), so an auto price could badge below its own
   floor. The two differ by +$1 where they differ at all. See SERVICE UNITS decision 3 in `calc.js`.
 
-- Each unit is computed from its own hours and rounded on its own. A full day is never
-  8 × the rounded hourly.
+- ~~Each unit is computed from its own hours and rounded on its own.~~ Reversed by brief
+  decision 13: an auto full day is exactly 8 × the hourly.
 - A Target Markup of 0 is valid: the auto price is the floor rounded up. Only *unset* markup gives
   `null`.
 - The GST step mirrors `priceExGst` in reverse, so an auto price on a GST-inclusive card compares
   equal to or above its floor after `labourFloorComparison` takes GST back out.
 - **Pin with tests**: $45.05 × 1 × 1.25 = 56.3125 → $57; an exact $57.00 input stays $57; markup 0;
-  markup null → null; floor null → null; GST-inclusive; full ≠ 8 × hourly after rounding.
+  markup null → null; floor null → null; GST-inclusive; an auto day = hourly × hours; no auto
+  unit below its floor over unrounded floors.
 
 ### 3. Resolving a service at a unit
 
@@ -156,14 +162,18 @@ unitDef(row, unit, pricing, ctx) → flat def | null
   hours  = unitHours(pricing, unit)
   stored = row.prices[unit]
   auto   = stored === null || stored === undefined
-  mu     = auto ? suggestedPrice(ctx.floorPerHour, hours, ctx.markupPct, ctx.settings) : stored
+  hourly = row.prices.hour ?? suggestedPrice(ctx.floorPerHour, 1, ctx.markupPct, ctx.settings)
+  mu     = !auto ? stored
+         : hourly === null ? null
+         : unit === 'hour' ? hourly
+         : round2(hourly × hours)              // brief decision 13: a day follows the hourly
   return { id: row.id, name: row.name, mu, auto, rate: row.rate, customBill: row.customBill,
            hoursPerUnit: hours, dayUnit: unit === 'hour' ? undefined : unit }
 ```
 
 - The return value is **exactly the flat row shape existing code already understands**, so
   `lineSnapshot(def)` is unchanged, and so is everything that prices a snapshot.
-- `mu: null` means "no price available" (auto with no floor). Callers must treat it as unavailable,
+- `mu: null` means "no price available" (an auto hour with no floor, or an auto day on one). Callers must treat it as unavailable,
   never as $0: the estimator disables the unit, and the Rate Card shows `—`.
 - An hourly snapshot carries `hoursPerUnit: 1` and no `dayUnit`, as an hourly row's did.
 
