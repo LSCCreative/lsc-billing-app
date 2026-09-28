@@ -454,6 +454,60 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 7,
+    name: 'money-math audit: tax years, super, bad debt, resale, opening-value FY',
+    up(db) {
+      // From the 2026-09-28 money-math audit (.design/price-calculator/
+      // HANDOVER.md, "What landed — audit fixes"). All additive: nullable
+      // columns and one new table, no rebuild.
+      //
+      // 1. tax_years — the ATO resident income-tax brackets and Medicare levy,
+      //    one row per financial year, ENTERED AND CONFIRMED BY THE USER. They
+      //    change with the federal budget, so nothing here seeds them: the
+      //    Profit Goals screen prefills placeholders the user saves as theirs,
+      //    the same rule as effective lives and the write-off threshold.
+      //    brackets_json is [{ from, ratePct }, …], ascending, PERCENT (15 is
+      //    15%), matching how a tax table is printed. medicare_levy_pct is a
+      //    percent too.
+      //
+      // 2. goals.super_pct / goals.bad_debt_pct — PERCENT, nullable (unset is
+      //    0, and says so on screen). Super is the personal concessional
+      //    contribution the owner wants on top of their pay; bad debt is the
+      //    share of invoices expected never to be paid.
+      //
+      // 3. depreciation_assets.expected_resale_value — what the old body will
+      //    sell for at replacement. The reserve recovers replacement cost LESS
+      //    this. Nullable: unset is 0.
+      //
+      // 4. depreciation_assets.opening_value_fy — the FY an
+      //    opening_adjustable_value applies FROM. Without it the override was
+      //    applied at start_date's FY and then declined again for every year
+      //    since, double-depreciating gear entered part-way through its life.
+      //    Backfilled from created_at for every row that already carries an
+      //    override, because the form described it as the value "when you
+      //    entered it here".
+      db.exec(`
+        CREATE TABLE tax_years (
+          fy_label          TEXT PRIMARY KEY,
+          brackets_json     TEXT NOT NULL,
+          medicare_levy_pct REAL NOT NULL CHECK (medicare_levy_pct >= 0 AND medicare_levy_pct < 100),
+          updated_at        TEXT NOT NULL
+        );
+        ALTER TABLE goals ADD COLUMN super_pct REAL;
+        ALTER TABLE goals ADD COLUMN bad_debt_pct REAL;
+        ALTER TABLE depreciation_assets ADD COLUMN expected_resale_value REAL;
+        ALTER TABLE depreciation_assets ADD COLUMN opening_value_fy TEXT;
+      `);
+
+      const { fyLabel } = require('./calc');
+      const rows = db.prepare(
+        'SELECT id, created_at FROM depreciation_assets WHERE opening_adjustable_value IS NOT NULL'
+      ).all();
+      const set = db.prepare('UPDATE depreciation_assets SET opening_value_fy = ? WHERE id = ?');
+      for (const r of rows) set.run(fyLabel(String(r.created_at || '').slice(0, 10)), r.id);
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

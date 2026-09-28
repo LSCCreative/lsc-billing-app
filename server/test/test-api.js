@@ -489,7 +489,7 @@ test('depreciation schedule, CSV and lodgement lock', async () => {
   assert.deepEqual([...csvBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
   const csvText = csvBytes.subarray(3).toString('utf8');
   assert.ok(csvText.startsWith('Name,Category,Method,Start Date,Days Held,Business Use %,'));
-  assert.match(csvText, /\r\nSchedule Camera,camera,prime_cost,2024-07-01,365,100,800\.00,,200\.00,200\.00,600\.00,,,\r\n/);
+  assert.match(csvText, /\r\nSchedule Camera,camera,prime_cost,2024-07-01,365,100,800\.00,,200\.00,200\.00,600\.00,,,,,\r\n/);
 
   // Lodging a year that hasn't finished is refused: its figures still move.
   const notEnded = await api('/api/depreciation-locks', {
@@ -548,7 +548,7 @@ test('depreciation schedule, CSV and lodgement lock', async () => {
   // The CSV for a locked FY must still read the FROZEN figures — editing
   // effective life in a later session cannot rewrite what was already filed.
   const lockedCsv = await api('/api/depreciation-schedule.csv?fy=FY2025-26').then((r) => r.text());
-  assert.match(lockedCsv, /\r\nSchedule Camera,camera,prime_cost,2024-07-01,365,100,800\.00,,200\.00,200\.00,600\.00,,,\r\n/);
+  assert.match(lockedCsv, /\r\nSchedule Camera,camera,prime_cost,2024-07-01,365,100,800\.00,,200\.00,200\.00,600\.00,,,,,\r\n/);
 
   // An asset deleted after lodging is a divergence, not a silent disappearance.
   await api(`/api/depreciation-assets/${assetId}`, { method: 'DELETE' });
@@ -558,7 +558,7 @@ test('depreciation schedule, CSV and lodgement lock', async () => {
   assert.equal(gone.name, 'Schedule Camera');
   // …and the lodged CSV still lists it, from the snapshot.
   const csvAfterDelete = await api('/api/depreciation-schedule.csv?fy=FY2025-26').then((r) => r.text());
-  assert.match(csvAfterDelete, /\r\nSchedule Camera,,,,365,100,800\.00,,200\.00,200\.00,600\.00,,,\r\n/);
+  assert.match(csvAfterDelete, /\r\nSchedule Camera,,,,365,100,800\.00,,200\.00,200\.00,600\.00,,,,,\r\n/);
 
   const locks = await api('/api/depreciation-locks').then((r) => r.json());
   assert.ok(locks.locks.some((l) => l.id === lock.lock.id));
@@ -877,4 +877,95 @@ test('CORS: an allow-listed origin gets credentialed headers, others get none', 
   } finally {
     config.corsOrigins.pop();
   }
+});
+
+/* ── The 2026-09-28 money-math audit ──────────────────────────────────────── */
+
+test('tax years: saved per FY in normalised order, and an unusable year is refused', async () => {
+  const body = {
+    brackets: [{ from: 45000, ratePct: 30 }, { from: 18200, ratePct: 15 }, { from: 0, ratePct: 0 }],
+    medicareLevyPct: 2,
+  };
+  const saved = await api('/api/tax-years/FY 2026–27', { method: 'PUT', body: JSON.stringify(body) }).then((r) => r.json());
+  assert.equal(saved.taxYear.fy, 'FY2026-27');
+  assert.deepEqual(saved.taxYear.brackets.map((b) => b.from), [0, 18200, 45000]);
+
+  const list = await api('/api/tax-years').then((r) => r.json());
+  assert.ok(list.taxYears.some((t) => t.fy === 'FY2026-27'));
+
+  for (const bad of [
+    { brackets: [], medicareLevyPct: 2 },
+    { brackets: [{ from: 0, ratePct: 99 }], medicareLevyPct: 2 },
+    { brackets: [{ from: 0, ratePct: 'x' }], medicareLevyPct: 2 },
+  ]) {
+    const res = await api('/api/tax-years/FY2026-27', { method: 'PUT', body: JSON.stringify(bad) });
+    assert.equal(res.status, 400);
+  }
+  assert.equal((await api('/api/tax-years/2026', { method: 'PUT', body: JSON.stringify(body) })).status, 400);
+});
+
+test('goals: super and bad debt are stored as percents and kept across other writers\' saves', async () => {
+  const saved = await api('/api/goals', {
+    method: 'PUT', body: JSON.stringify({ desiredNetIncome: 80000, targetProfitMarginPct: 25, superPct: 12, badDebtPct: 2 }),
+  }).then((r) => r.json());
+  assert.deepEqual([saved.goals.superPct, saved.goals.badDebtPct], [12, 2]);
+  // A Capacity-shaped save doesn't carry them and must not wipe them.
+  const cap = await api('/api/goals', {
+    method: 'PUT', body: JSON.stringify({ billableHoursPerDay: 8, workingDaysPerWeek: 5, leaveDaysPerYear: 30, sickDaysPerYear: 8 }),
+  }).then((r) => r.json());
+  assert.deepEqual([cap.goals.superPct, cap.goals.badDebtPct], [12, 2]);
+  assert.equal((await api('/api/goals', { method: 'PUT', body: JSON.stringify({ badDebtPct: 100 }) })).status, 400);
+  assert.equal((await api('/api/goals', { method: 'PUT', body: JSON.stringify({ superPct: -1 }) })).status, 400);
+});
+
+test('pricing: a tax rate stored as a percent, or a negative price, is refused', async () => {
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const put = (body) => api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) });
+  assert.equal((await put({ ...card, taxSetAsideRate: 35 })).status, 400);
+  const neg = JSON.parse(JSON.stringify(card));
+  neg.labourSections[0].rows[0].mu = -1;
+  assert.equal((await put(neg)).status, 400);
+  const badHours = JSON.parse(JSON.stringify(card));
+  badHours.labourSections[0].rows[0].hoursPerUnit = 0;
+  assert.equal((await put(badHours)).status, 400);
+  assert.equal((await put(card)).status, 200);
+});
+
+test('estimates: a negative line is refused; a snapshotted line keeps its price', async () => {
+  const neg = await api('/api/estimates', {
+    method: 'POST', body: JSON.stringify({ name: 'neg', activeRows: { prod: [{ name: 'Video Capture', qty: -2 }] } }),
+  });
+  assert.equal(neg.status, 400);
+  assert.equal((await neg.json()).field, 'prod.qty');
+
+  // Quoted at $99/hr, whatever the card says now.
+  const created = await api('/api/estimates', {
+    method: 'POST', body: JSON.stringify({ name: 'snap', activeRows: { prod: [{ name: 'Video Capture', qty: 2, mu: 99 }] } }),
+  }).then((r) => r.json());
+  assert.equal(created.estimate.totals.labourTotal, 198);
+});
+
+test('depreciation assets: an opening value is dated to its FY, and keeps it across an edit', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ openingAdjustableValue: 500, expectedResaleValue: 400 })),
+  }).then((r) => r.json());
+  assert.equal(created.asset.openingValueFy, currentFinancialYear());
+  assert.equal(created.asset.expectedResaleValue, 400);
+
+  // Dated explicitly, then edited without re-sending the FY: it stays put.
+  const dated = await api(`/api/depreciation-assets/${created.asset.id}`, {
+    method: 'PUT', body: JSON.stringify(depreciationAssetPayload({ openingAdjustableValue: 500, openingValueFy: 'FY2024-25' })),
+  }).then((r) => r.json());
+  assert.equal(dated.asset.openingValueFy, 'FY2024-25');
+  const edited = await api(`/api/depreciation-assets/${created.asset.id}`, {
+    method: 'PUT', body: JSON.stringify(depreciationAssetPayload({ name: 'Renamed', openingAdjustableValue: 500 })),
+  }).then((r) => r.json());
+  assert.equal(edited.asset.openingValueFy, 'FY2024-25');
+
+  const bad = await api('/api/depreciation-assets', {
+    method: 'POST', body: JSON.stringify(depreciationAssetPayload({ expectedResaleValue: -5 })),
+  });
+  assert.equal(bad.status, 400);
+  await api(`/api/depreciation-assets/${created.asset.id}`, { method: 'DELETE' });
 });

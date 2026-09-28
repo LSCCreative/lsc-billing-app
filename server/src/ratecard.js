@@ -1,6 +1,7 @@
 'use strict';
 
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('./defaults');
+const { annualBusinessCost, annualBillableHours, overheadRatePerHour } = require('./calc');
 
 /**
  * Reading the rate card and settings, with the fallback every caller must
@@ -67,4 +68,49 @@ function sectionLabelsFor(activeRows, pricing, existing) {
   return out;
 }
 
-module.exports = { readPricing, readSettings, sectionLabelsFor, RESERVED_SECTION_IDS };
+/**
+ * The overhead rate per billable hour, from the database — the same
+ * computation as the browser's LSCData.overheadRate(), so an estimate's stored
+ * tax set-aside (which deducts the job's overhead share, calc.js "Take-home")
+ * matches what the editor showed. null when overhead or capacity isn't set up.
+ */
+function readOverheadRate(db) {
+  const items = db.prepare('SELECT * FROM overhead_items').all();
+  const assets = db.prepare('SELECT * FROM depreciation_assets').all();
+  const goals = db.prepare('SELECT * FROM goals WHERE id = 1').get() || {};
+  return overheadRatePerHour(
+    annualBusinessCost(items, assets),
+    annualBillableHours({
+      billableHoursPerDay: goals.billable_hours_per_day,
+      workingDaysPerWeek: goals.working_days_per_week,
+      leaveDaysPerYear: goals.leave_days_per_year,
+      sickDaysPerYear: goals.sick_days_per_year,
+    })
+  );
+}
+
+/**
+ * A negative quantity, day count, cost, custom bill or snapshotted price on
+ * any line of an estimate — refused on save (2026-09-28 audit). calc.js
+ * already prices one as nothing; refusing it too means the stored rows can
+ * never say something the stored totals don't.
+ * @returns {string|null} the first offending field, or null.
+ */
+function negativeLineField(activeRows) {
+  const rows = activeRows || {};
+  for (const key of Object.keys(rows)) {
+    if (!Array.isArray(rows[key])) continue;
+    for (const line of rows[key]) {
+      for (const f of ['qty', 'override', 'days', 'cost', 'mu', 'rate', 'hoursPerUnit']) {
+        if (line && line[f] !== undefined && line[f] !== null && line[f] !== '' && Number(line[f]) < 0) {
+          return key + '.' + f;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+module.exports = {
+  readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeLineField, RESERVED_SECTION_IDS,
+};

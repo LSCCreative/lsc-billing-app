@@ -164,7 +164,8 @@ const DepreciationView = (() => {
   function summaryMarkup() {
     const list = assets();
     const fy = currentFinancialYear();
-    const schedule = LSCDepreciation.financialYearSchedule(list, fy);
+    // The threshold drives the small business pool's low-pool-value rule.
+    const schedule = LSCDepreciation.financialYearSchedule(list, fy, { iawoThreshold: LSCData.goals().iawoThreshold });
     const deduction = schedule ? schedule.totalDeductible : null;
     return (
       '<div class="proj-card oh-summary dep-summary">' +
@@ -424,7 +425,10 @@ const DepreciationView = (() => {
           '<td class="right" data-label="Additions (business share)">' + fmt(r.additions) + '</td>' +
           '<td class="right dep-strong" data-label="Decline in value (deductible)">' + fmt(r.decline) + '</td>' +
           '<td class="right" data-label="Disposal proceeds">' + (r.disposalProceeds ? fmt(r.disposalProceeds) : '—') + '</td>' +
-          '<td class="right" data-label="Closing pool balance">' + fmt(r.closingBalance) + '</td>' +
+          '<td class="right" data-label="Closing pool balance">' + fmt(r.closingBalance) +
+          (r.assessableIncome
+            ? '<div class="dep-pool-added">Below nil by ' + fmt(r.assessableIncome) + ' — assessable income</div>'
+            : '') + '</td>' +
           '</tr>'
         );
       })
@@ -438,7 +442,8 @@ const DepreciationView = (() => {
       body + '</tbody></table></div>' +
       '<p class="dep-sched-note">A pool’s whole decline in value is deductible: business use was applied when each ' +
       'asset was added, so it isn’t applied again. Gear disposed of from a pool comes off the balance and has no ' +
-      'balancing adjustment of its own.</p></div>'
+      'balancing adjustment of its own. If disposals take a pool below nil, the excess is assessable income. A small ' +
+      'business pool under your instant write-off threshold is deducted in full.</p></div>'
     );
   }
 
@@ -461,7 +466,8 @@ const DepreciationView = (() => {
           '<td class="right" data-label="Disposal proceeds">' + fmt(disposal.proceeds) + '</td>' +
           '<td class="right" data-label="Adjustable value at disposal">' + fmt(r.closingAdjustableValue) + '</td>' +
           '<td class="right muted-td" data-label="Business use">' + (use === null ? '—' : esc(use + '%')) + '</td>' +
-          '<td class="right dep-strong" data-label="Balancing adjustment">' + balancingText(r.balancingAdjustment) + '</td>' +
+          '<td class="right dep-strong" data-label="Balancing adjustment">' + balancingText(r.balancingAdjustment) +
+          (r.capitalGain ? '<div class="dep-pool-added">+ ' + fmt(r.capitalGain) + ' capital gain</div>' : '') + '</td>' +
           '</tr>'
         );
       })
@@ -473,8 +479,9 @@ const DepreciationView = (() => {
       '<th class="right">Disposal proceeds</th><th class="right">Adjustable value at disposal</th>' +
       '<th class="right">Business use</th><th class="right">Balancing adjustment</th></tr></thead><tbody>' +
       body + '</tbody></table></div>' +
-      '<p class="dep-sched-note">(Proceeds − adjustable value) × business use. Positive is assessable income; ' +
-      'negative is a further deduction. It belongs to the year of disposal.</p></div>'
+      '<p class="dep-sched-note">(Proceeds, up to cost, − adjustable value) × business use. Positive is assessable ' +
+      'income; negative is a further deduction. It belongs to the year of disposal. Anything sold above cost is a ' +
+      'capital gain instead, shown under it — a different line on the return.</p></div>'
     );
   }
 
@@ -490,6 +497,8 @@ const DepreciationView = (() => {
     disposalDate: 'disposal date',
     disposalProceeds: 'disposal proceeds',
     balancingAdjustment: 'balancing adjustment',
+    capitalGain: 'capital gain',
+    assessableIncome: 'pool assessable income',
     openingBalance: 'opening pool balance',
     additions: 'additions',
     closingBalance: 'closing pool balance',
@@ -1322,6 +1331,21 @@ const DepreciationView = (() => {
     );
   }
 
+  /* Financial years an opening value can be dated to: from the asset's first
+     FY (or ten years back, before a start date is entered) to the current one,
+     newest first. */
+  function openingFyOptions() {
+    const current = fyBounds(currentFinancialYear()).startYear;
+    const first = form.startDate && fyLabel(form.startDate) ? fyBounds(fyLabel(form.startDate)).startYear : current - 10;
+    const chosen = form.openingValueFy || currentFinancialYear();
+    let html = '';
+    for (let y = current; y >= Math.min(first, current); y -= 1) {
+      const label = 'FY' + y + '-' + String((y + 1) % 100).padStart(2, '0');
+      html += '<option value="' + label + '"' + (label === chosen ? ' selected' : '') + '>' + esc(fyDisplay(label)) + '</option>';
+    }
+    return html;
+  }
+
   function inputHtml(id, type, key, attrs, hasHint) {
     return (
       '<input id="' + id + '" type="' + type + '" data-key="' + key + '" value="' + esc(form[key]) + '"' +
@@ -1398,8 +1422,13 @@ const DepreciationView = (() => {
         : '') +
       field('dep-opening', 'Opening adjustable value ($) — optional',
         inputHtml('dep-opening', 'number', 'openingAdjustableValue', 'min="0" step="0.01"', true),
-        'Only for gear that was already part-depreciated when you entered it here. Leave blank and it starts ' +
-          'at its cost.', true) +
+        'Only for gear that was already part-depreciated when you entered it here: its written-down value at the ' +
+          'start of the year below. Leave blank and it starts at its cost.') +
+      field('dep-opening-fy', 'Opening value is at the start of',
+        '<select id="dep-opening-fy" data-key="openingValueFy" aria-describedby="dep-opening-fy-hint">' +
+          openingFyOptions() + '</select>',
+        'The schedule starts from this year, not from when the asset was first used — the years before it are ' +
+          'already in the value you entered.') +
       '</div>' +
 
       '<h3 class="dep-group">For pricing</h3><div class="form-grid">' +
@@ -1409,6 +1438,9 @@ const DepreciationView = (() => {
       field('dep-replace', 'Replacement cost ($)',
         inputHtml('dep-replace', 'number', 'replacementCostEstimate', 'min="0" step="1"', true),
         'What the next one will cost, not what this one did.') +
+      field('dep-resale', 'Expected resale ($) — optional',
+        inputHtml('dep-resale', 'number', 'expectedResaleValue', 'min="0" step="1"', true),
+        'What you expect this one to sell for when you replace it. Only the difference needs saving up.') +
       '<p class="oh-hint dep-reserve-line full" id="dep-reserve-line"></p>' +
       '</div>' +
       // The reserve line, spoken once typing pauses — see LSCUtil.announce().
@@ -1437,6 +1469,7 @@ const DepreciationView = (() => {
       {
         replacementCostEstimate: parseFloat(form.replacementCostEstimate),
         replacementCycleYears: parseFloat(form.replacementCycleYears),
+        expectedResaleValue: parseFloat(form.expectedResaleValue) || 0,
         businessUsePct: form.businessUsePct === '' ? 100 : parseFloat(form.businessUsePct),
         disposalDate: editing ? editing.disposalDate : null,
       },
@@ -1499,6 +1532,7 @@ const DepreciationView = (() => {
       ['openingAdjustableValue', 'dep-opening', 'The opening adjustable value must be 0 or more, or blank.'],
       ['carLimit', 'dep-car', 'The car cost limit must be 0 or more, or blank.'],
       ['replacementCostEstimate', 'dep-replace', 'The replacement cost must be 0 or more, or blank.'],
+      ['expectedResaleValue', 'dep-resale', 'Expected resale must be 0 or more, or blank.'],
     ];
     optional.forEach(([key, id, msg]) => {
       if (f[key] === '' || f[key] === undefined) return;
@@ -1534,9 +1568,11 @@ const DepreciationView = (() => {
       effectiveLifeYears: NEEDS_LIFE[f.method] ? numOrNullText(f.effectiveLifeYears) : null,
       businessUsePct: parseFloat(f.businessUsePct),
       openingAdjustableValue: numOrNullText(f.openingAdjustableValue),
+      openingValueFy: f.openingAdjustableValue === '' ? null : f.openingValueFy || null,
       carLimit: f.category === 'vehicle' ? numOrNullText(f.carLimit) : null,
       replacementCycleYears: numOrNullText(f.replacementCycleYears),
       replacementCostEstimate: numOrNullText(f.replacementCostEstimate),
+      expectedResaleValue: numOrNullText(f.expectedResaleValue),
       // Carried through untouched — see "EDIT MUST CARRY THE DISPOSAL FIELDS
       // THROUGH" in the header.
       disposalDate: editing ? editing.disposalDate || null : null,
@@ -1644,7 +1680,7 @@ const DepreciationView = (() => {
           if (again) again.focus();
           return;
         }
-        if (key === 'replacementCostEstimate' || key === 'replacementCycleYears' || key === 'businessUsePct') {
+        if (key === 'replacementCostEstimate' || key === 'replacementCycleYears' || key === 'businessUsePct' || key === 'expectedResaleValue') {
           refreshReserveLine();
           LSCUtil.announce($m('dep-reserve-live'), $m('dep-reserve-line').textContent);
         }
@@ -1682,8 +1718,10 @@ const DepreciationView = (() => {
       effectiveLifeYears: toField(a.effectiveLifeYears),
       carLimit: toField(a.carLimit),
       openingAdjustableValue: toField(a.openingAdjustableValue),
+      openingValueFy: toField(a.openingValueFy) || currentFinancialYear(),
       replacementCycleYears: toField(a.replacementCycleYears),
       replacementCostEstimate: toField(a.replacementCostEstimate),
+      expectedResaleValue: toField(a.expectedResaleValue),
       notes: toField(a.notes),
     };
     baseline = snapshot();

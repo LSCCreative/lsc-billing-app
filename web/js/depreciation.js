@@ -23,7 +23,13 @@
  * THE FIVE-STEP ORDER, AND THE STEP EVERYONE GETS WRONG
  *
  *   1. costBase   = cost_inc_gst − (gst_credit_claimed ? gst_amount : 0)
- *   2. costBase   = min(costBase, car_limit)            // vehicles only
+ *   2. vehicles:  costBase = min(cost_inc_gst, car_limit)
+ *                            − (claimed ? min(gst_amount, that ÷ 11) : 0)
+ *      The car limit caps the GST-INCLUSIVE cost, and the claimable GST credit
+ *      is capped at 1/11 of the limit — so for a registered buyer of a car over
+ *      the limit the cost base is the limit less 1/11 of it, not the limit.
+ *      (Until the 2026-09-28 audit this took the whole credit off first and
+ *      then capped, overstating an $80k car's base by ~$6,300.)
  *   3. decline    = method-specific, pro-rata daysHeld ÷ 365
  *   4. deductible = decline × businessUseShare          // apportion the DEDUCTION
  *   5. adjustable = adjustable − decline                // the FULL decline
@@ -176,17 +182,20 @@
     if (cost === null || cost <= 0) return 0;
 
     const claimed = field(asset, 'gstCreditClaimed', 'gst_credit_claimed');
-    const gstAmount = numOrNull(field(asset, 'gstAmount', 'gst_amount')) || 0;
-    let base = (claimed === 1 || claimed === true) ? cost - gstAmount : cost;
-    if (base < 0) base = 0;
+    const isClaimed = claimed === 1 || claimed === true;
+    const gstAmount = Math.max(0, numOrNull(field(asset, 'gstAmount', 'gst_amount')) || 0);
 
     const category = field(asset, 'category', 'category');
-    if (category === 'vehicle') {
-      const limit = numOrNull(field(asset, 'carLimit', 'car_limit'));
-      if (limit !== null && limit > 0 && base > limit) base = limit;
+    const limit = category === 'vehicle' ? numOrNull(field(asset, 'carLimit', 'car_limit')) : null;
+    if (limit !== null && limit > 0 && cost > limit) {
+      /* Step 2 for a car over the limit: the limit caps the GST-inclusive
+         cost, and the credit is capped at the GST inside the limit. */
+      const credit = isClaimed ? Math.min(gstAmount, limit / 11) : 0;
+      return Math.max(0, limit - credit);
     }
 
-    return base;
+    const base = isClaimed ? cost - gstAmount : cost;
+    return base < 0 ? 0 : base;
   }
 
   /** The FY token an asset's depreciation starts in — from start_date. */
@@ -284,15 +293,30 @@
 
     /* An opening adjustable value is for gear that was already part-depreciated
        when it was entered, so a three-year-old camera does not restart at full
-       value. Absent, the asset starts at its cost base. */
+       value. Absent, the asset starts at its cost base.
+
+       IT APPLIES FROM opening_value_fy, NOT FROM THE ASSET'S FIRST YEAR. It is
+       the written-down value at the start of the year it was entered; applying
+       it at start_date's year and walking forward declined it again for every
+       year in between (a camera first used in FY2023-24 and entered in
+       FY2025-26 at $3,000 opened that year at $331.51 — the 2026-09-28 audit).
+       The walk starts at that FY instead, and years before it produce no rows:
+       they were before this register. No opening FY (a row from before
+       migration v7 backfilled it, or an FY before the asset's first) falls
+       back to the first year. */
     const openingOverride = numOrNull(
       field(asset, 'openingAdjustableValue', 'opening_adjustable_value')
     );
+    const anchor = openingOverride === null
+      ? null
+      : fyBounds(String(field(asset, 'openingValueFy', 'opening_value_fy') || ''));
+    const walkFrom = anchor && anchor.startYear > firstBounds.startYear ? anchor.startYear : firstBounds.startYear;
+    if (walkFrom > target.startYear) return [];
 
     const rows = [];
     let opening = openingOverride === null ? costBase : openingOverride;
 
-    for (let year = firstBounds.startYear; year <= target.startYear; year += 1) {
+    for (let year = walkFrom; year <= target.startYear; year += 1) {
       const bounds = fyBounds(`FY${year}-${String((year + 1) % 100).padStart(2, '0')}`);
       const daysHeld = daysHeldInFy(asset, bounds);
       const isFirstFy = year === firstBounds.startYear;
@@ -311,6 +335,12 @@
         && epochDay(disposal) <= epochDay(bounds.end);
 
       const proceeds = numOrNull(field(asset, 'disposalProceeds', 'disposal_proceeds')) || 0;
+      /* Termination value is capped at the cost base for the balancing
+         adjustment: anything the asset sold for above what it cost is a capital
+         gain (a CGT event, possibly discounted), not assessable Division 40
+         income. Reported separately so the accountant sees both. */
+      const termination = Math.min(proceeds, costBase);
+      const capitalGain = proceeds > costBase ? (proceeds - costBase) * share : 0;
 
       rows.push({
         fy: bounds.label,
@@ -330,7 +360,8 @@
         /* Belongs to the disposal year only. Proceeds are compared against the
            adjustable value AFTER that year's decline, then apportioned — the same
            business-use share, because only the business part was ever deducted. */
-        balancingAdjustment: disposedThisFy ? round2((proceeds - closing) * share) : null,
+        balancingAdjustment: disposedThisFy ? round2((termination - closing) * share) : null,
+        capitalGain: disposedThisFy ? round2(capitalGain) : null,
       });
 
       opening = closing;
@@ -413,8 +444,24 @@
    * from the closing balance in the disposal year; pools have no per-asset
    * balancing adjustment, because the pool has no per-asset adjustable value to
    * compare proceeds against.
+   *
+   * TWO ATO RULES ADDED BY THE 2026-09-28 AUDIT:
+   *
+   *   - A NEGATIVE CLOSING BALANCE IS ASSESSABLE INCOME. When disposals take the
+   *     pool below zero, the excess is income for that year and the pool closes
+   *     at nil. It used to be clamped to zero and simply vanished. Reported as
+   *     `assessableIncome` on the row.
+   *
+   *   - LOW POOL VALUE (small business pool only). When the balance before the
+   *     deduction — opening + additions − disposals — is under the instant
+   *     asset write-off threshold, the whole of it is deductible that year.
+   *     The threshold is the user's own (goals.iawo_threshold), passed in as
+   *     opts.iawoThreshold; absent, the rule does not apply. It is the one
+   *     stored figure, used for every year the walk covers — confirm earlier
+   *     years' thresholds with the accountant.
    */
-  function poolScheduleRows(assets, poolMethod, upToFyLabel) {
+  function poolScheduleRows(assets, poolMethod, upToFyLabel, opts) {
+    const threshold = numOrNull(opts && opts.iawoThreshold);
     const target = fyBounds(upToFyLabel);
     const rates = POOL_RATES[poolMethod];
     if (!target || !rates) return [];
@@ -456,8 +503,20 @@
         }
       }
 
+      if (
+        poolMethod === 'small_business_pool' &&
+        threshold !== null && threshold > 0 &&
+        available - disposals > 0 && available - disposals < threshold
+      ) {
+        decline = available - disposals;
+      }
+
       let closing = available - decline - disposals;
-      if (closing < 0) closing = 0;
+      let assessableIncome = 0;
+      if (closing < 0) {
+        assessableIncome = -closing;
+        closing = 0;
+      }
 
       rows.push({
         fy: label,
@@ -471,6 +530,7 @@
         deductible: round2(decline),
         disposalProceeds: round2(disposals),
         closingBalance: round2(closing),
+        assessableIncome: round2(assessableIncome),
         /* Deliberately no single "rate applied" field: in a year with both an
            opening balance and additions, BOTH rates apply, and one label would be
            wrong on a screen the accountant reads. The two rates are in POOL_RATES
@@ -487,13 +547,13 @@
    * One financial year's row for each pool that has anything in it.
    * @returns {Array<object>} at most one row per pool; empty when nothing pooled.
    */
-  function poolSchedule(assets, forFyLabel) {
+  function poolSchedule(assets, forFyLabel, opts) {
     const bounds = fyBounds(forFyLabel);
     if (!bounds) return [];
 
     const out = [];
     for (const method of POOLED_METHODS) {
-      const rows = poolScheduleRows(assets, method, forFyLabel);
+      const rows = poolScheduleRows(assets, method, forFyLabel, opts);
       const row = rows.length ? rows[rows.length - 1] : null;
       if (row && row.fy === bounds.label) out.push(row);
     }
@@ -507,8 +567,11 @@
    * Computed on read, never stored, so it cannot drift from the assets it
    * describes. The only frozen copy is the lodgement snapshot, which exists to be
    * compared against this — not to replace it.
+   *
+   * @param {object} [opts] — { iawoThreshold }, for the small business pool's
+   *   low-pool-value rule (see poolScheduleRows).
    */
-  function financialYearSchedule(assets, forFyLabel) {
+  function financialYearSchedule(assets, forFyLabel, opts) {
     const bounds = fyBounds(forFyLabel);
     if (!bounds) return null;
 
@@ -521,7 +584,7 @@
       if (row) assetRows.push({ ...row, assetId: field(asset, 'id', 'id'), name: field(asset, 'name', 'name') });
     }
 
-    const poolRows = poolSchedule(list, forFyLabel);
+    const poolRows = poolSchedule(list, forFyLabel, opts);
 
     let totalDeductible = 0;
     for (const r of assetRows) totalDeductible += r.deductible;
@@ -530,12 +593,22 @@
     let totalBalancing = 0;
     for (const r of assetRows) if (r.balancingAdjustment !== null) totalBalancing += r.balancingAdjustment;
 
+    /* Income the schedule creates that is not a balancing adjustment: a pool
+       taken below nil, and capital gains on individual assets sold above cost.
+       Kept apart because they go on different lines of the return. */
+    let totalPoolIncome = 0;
+    for (const r of poolRows) totalPoolIncome += r.assessableIncome || 0;
+    let totalCapitalGain = 0;
+    for (const r of assetRows) totalCapitalGain += r.capitalGain || 0;
+
     return {
       fy: bounds.label,
       assets: assetRows,
       pools: poolRows,
       totalDeductible: round2(totalDeductible),
       totalBalancingAdjustment: round2(totalBalancing),
+      totalPoolAssessableIncome: round2(totalPoolIncome),
+      totalCapitalGain: round2(totalCapitalGain),
     };
   }
 

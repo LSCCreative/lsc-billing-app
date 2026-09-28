@@ -67,6 +67,20 @@
  * and a blank or out-of-range hours field blocks the save rather than being
  * read as 1.
  *
+ * ROW IDS (2026-09-28 audit)
+ * Every row carries a stable `id`, assigned at mount to any row that lacks one
+ * (every row saved before this) and carried by payload(). Saved estimate lines
+ * record it with their own price snapshot, so a renamed service still matches
+ * its row for "Update to current rates" and "Use rates from last project".
+ * Assigned into the baseline too, so a card whose rows just got ids isn't
+ * "unsaved": the ids reach the server on the next real save.
+ *
+ * YOUR-TIME TRAVEL ROWS (2026-09-28 audit)
+ * A travel row ticked "Your time" (ownTime) is the owner's own hours billed as
+ * travel: the whole of it is income for the tax set-aside, and its quantity
+ * counts as billable hours. Otherwise a non-direct row is bought in and
+ * resold, and only its markup above Rate is income (calc.js, Travel).
+ *
  * EACH ROW'S FLOOR, UNDER ITS MARK-UP
  * The least one unit of the row can sell for, or "below floor by $X". Computed
  * by LSCCalc.labourFloorComparison — the exact function the Dashboard's
@@ -140,7 +154,8 @@ const PricingView = (() => {
      mount() is what the brief's "recomputed fresh on every page load" means. */
   let computedRate = null;
 
-  /* The hourly floor — overhead rate plus the target margin — that each row's
+  /* The hourly INCOME floor — target annual revenue ÷ billable hours, since
+     the 2026-09-28 audit (it was overhead × (1 + markup)) — that each row's
      floor line multiplies by its hours. null when either is unset, which the
      line shows as an em dash rather than a floor of $0. Read once per mount,
      for the same reason computedRate is. */
@@ -187,6 +202,22 @@ const PricingView = (() => {
      hour, so on those rows alone the figure carries its unit: "15.12/hr"
      beside "1120" no longer reads as two prices for the same thing (design
      review, should-fix 7). Hourly rows match their column head and stay bare. */
+  /* A stable row id — see ROW IDS above. Random rather than derived from the
+     name, which is the thing it has to survive a change of. */
+  const newRowId = () => 'r_' + Math.random().toString(36).slice(2, 10);
+
+  /* Gives every row an id it doesn't already have. Returns whether any did. */
+  function assignRowIds(c) {
+    let changed = false;
+    c.labourSections.forEach((sec) => sec.rows.forEach((row) => {
+      if (!row.id) { row.id = newRowId(); changed = true; }
+    }));
+    c.travelRows.forEach((row) => {
+      if (!row.id) { row.id = newRowId(); changed = true; }
+    });
+    return changed;
+  }
+
   const rateDisplay = (row) =>
     computedRate === null
       ? '—'
@@ -391,7 +422,7 @@ const PricingView = (() => {
   function travelSectionMarkup() {
     let rows = '';
     if (!card.travelRows.length) {
-      rows = '<tr><td colspan="5" class="pricing-empty-td">No items yet — add one below.</td></tr>';
+      rows = '<tr><td colspan="6" class="pricing-empty-td">No items yet — add one below.</td></tr>';
     }
     card.travelRows.forEach((row, ri) => {
       rows +=
@@ -406,6 +437,11 @@ const PricingView = (() => {
         ' data-ri="' + ri + '" data-field="directCost" data-type="travel"' +
         ' aria-label="Bill ' + esc(row.name) + ' at cost"' +
         ' title="Billed at cost — the quantity entered is the amount billed"></td>' +
+        '<td style="text-align:center" data-label="Your time"><input type="checkbox"' + (row.ownTime ? ' checked' : '') +
+        (row.directCost ? ' disabled' : '') +
+        ' data-ri="' + ri + '" data-field="ownTime" data-type="travel"' +
+        ' aria-label="' + esc(row.name) + ' is your own time"' +
+        ' title="Your own hours: all of it is income, and the quantity counts as billable hours"></td>' +
         '<td class="pricing-act"><button type="button" class="del-btn" title="Delete this item"' +
         ' aria-label="Delete ' + esc(row.name) + '" data-del-travel="' + ri + '">×</button></td></tr>';
     });
@@ -418,6 +454,7 @@ const PricingView = (() => {
       '<th style="text-align:right">Rate ($)</th>' +
       '<th style="text-align:right">Mark-Up ($)</th>' +
       '<th class="pricing-flag-th" title="Billed straight through at cost, with no mark-up">Direct</th>' +
+      '<th class="pricing-flag-th" title="Your own hours, not something bought in">Your time</th>' +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<div class="pricing-sec-foot">' +
       '<span class="pricing-hint">' + card.travelRows.length + ' item' +
@@ -433,8 +470,8 @@ const PricingView = (() => {
       '<div class="page-sub">Add, rename, re-price or remove anything the estimator offers</div></div></div>' +
       '<div class="tax-setting"><div>' +
       '<div class="sum-label" style="margin-bottom:4px">Tax Set-Aside Rate (%)</div>' +
-      '<div style="color:var(--muted);font-size:11px">Provisioned against labour revenue only, before GST. ' +
-      'Expenses and pass-through costs are exempt.</div></div>' +
+      '<div style="color:var(--muted);font-size:11px">Set aside from each job’s profit — labour, your-time travel ' +
+      'and the markup on resold travel, less the overhead its hours carry — before GST. Pass-through costs are exempt.</div></div>' +
       '<input type="number" id="tax-inp" min="0" max="100" step="0.5" value="' + esc(taxRaw) +
       '" aria-label="Tax set-aside rate, percent"></div>' +
       '<div class="pricing-catalogue-bar">' +
@@ -544,10 +581,19 @@ const PricingView = (() => {
           /* Held as '' when blank, not num('') = 0: validation has to be able to
              tell "no hours" from a number, and 0 would fall back to 1 silently. */
           target.hoursPerUnit = input.value === '' ? '' : num(input.value);
-        } else if (field === 'customBill' || field === 'directCost') {
+        } else if (field === 'customBill' || field === 'directCost' || field === 'ownTime') {
           // Absent rather than false, matching the shape defaults.js ships.
           if (input.checked) target[field] = true;
           else delete target[field];
+          /* Direct and your-time are exclusive — a direct row is money passed
+             through, not anybody's hours — so ticking Direct clears and
+             disables Your time. Structural, so it re-renders. */
+          if (field === 'directCost') {
+            delete target.ownTime;
+            render();
+            const again = root.querySelector('input[data-type="travel"][data-ri="' + input.dataset.ri + '"][data-field="directCost"]');
+            if (again) again.focus();
+          }
         } else target[field] = num(input.value);
 
         if (input.dataset.type === 'labour' && (field === 'mu' || field === 'hoursPerUnit')) {
@@ -627,7 +673,7 @@ const PricingView = (() => {
       card.labourSections.push({
         id: newSectionId(takenSectionIds()),
         label: 'New Category',
-        rows: [{ name: 'New Service', rate: 0, mu: 0 }],
+        rows: [{ id: newRowId(), name: 'New Service', rate: 0, mu: 0 }],
       });
       render();
     });
@@ -635,6 +681,7 @@ const PricingView = (() => {
     root.querySelectorAll('[data-add-row]').forEach((btn) => {
       btn.addEventListener('click', () => {
         card.labourSections[parseInt(btn.dataset.addRow, 10)].rows.push({
+          id: newRowId(),
           name: 'New Service',
           rate: 0,
           mu: 0,
@@ -644,7 +691,7 @@ const PricingView = (() => {
     });
 
     $('js-add-travel').addEventListener('click', () => {
-      card.travelRows.push({ name: 'New Item', rate: 0, mu: 0 });
+      card.travelRows.push({ id: newRowId(), name: 'New Item', rate: 0, mu: 0 });
       render();
     });
 
@@ -713,7 +760,7 @@ const PricingView = (() => {
         id: sec.id,
         label: String(sec.label).trim(),
         rows: sec.rows.map((row) => {
-          const out = { name: String(row.name).trim(), rate: num(row.rate), mu: num(row.mu) };
+          const out = { id: row.id, name: String(row.name).trim(), rate: num(row.rate), mu: num(row.mu) };
           if (row.customBill) out.customBill = true;
           if (row.unit) out.unit = row.unit;
           // Carried through — see "payload() USED TO DROP BOTH FIELDS" above.
@@ -726,8 +773,9 @@ const PricingView = (() => {
         }),
       })),
       travelRows: card.travelRows.map((row) => {
-        const out = { name: String(row.name).trim(), rate: num(row.rate), mu: num(row.mu) };
+        const out = { id: row.id, name: String(row.name).trim(), rate: num(row.rate), mu: num(row.mu) };
         if (row.directCost) out.directCost = true;
+        if (row.ownTime && !row.directCost) out.ownTime = true;
         if (row.unit) out.unit = row.unit;
         return out;
       }),
@@ -849,6 +897,7 @@ const PricingView = (() => {
       travelRows: pricing.travelRows || [],
     });
     taxRaw = toPercent(pricing.taxSetAsideRate);
+    assignRowIds(card);
     /* Deliberately outside the working copy and outside snapshot(): this is
        derived, read-only and unsaveable, so it must not make the card look
        dirty or be shipped by payload(). */
@@ -857,7 +906,7 @@ const PricingView = (() => {
        this column, the estimate editor's floor, the Capacity confirm and the
        Dashboard all use one computation. See data.js. */
     computedRate = LSCData.overheadRate();
-    perHourFloor = LSCCalc.hourlyFloor(computedRate, LSCData.goals().targetProfitMarginPct);
+    perHourFloor = LSCData.incomeFloor();
     baseline = snapshot();
 
     render();

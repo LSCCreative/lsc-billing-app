@@ -20,6 +20,8 @@ const {
   DAYS_IN_YEAR_DIVISOR,
   POOL_RATES,
 } = require('../src/depreciation');
+const dep = require('../src/depreciation');
+const { round2 } = require('../src/calc');
 
 /**
  * The worked asset. A $6,600 body bought in August, FIRST USED 1 OCTOBER — the
@@ -556,4 +558,78 @@ test('both browser copies load into one shared global scope without colliding', 
     sandbox.LSCDepreciation.assetSchedule({ ...CAMERA, method: 'diminishing_value' }, FY1).decline,
     assetSchedule({ ...CAMERA, method: 'diminishing_value' }, FY1).decline,
   );
+});
+
+/* ── The 2026-09-28 money-math audit ──────────────────────────────────────── */
+
+test('a car over the limit: the credit is capped at 1/11 of the limit', () => {
+  const car = { costIncGst: 80000, gstCreditClaimed: 1, gstAmount: 7272.73, category: 'vehicle', carLimit: 69674 };
+  // Limit less the GST inside it — not the limit itself, which the old order
+  // (whole credit off, then cap) produced.
+  assert.equal(round2(dep.costBaseOf(car)), 63340);
+  // Unregistered buyer: the limit, GST and all.
+  assert.equal(dep.costBaseOf({ ...car, gstCreditClaimed: 0 }), 69674);
+  // Under the limit nothing changes.
+  assert.equal(round2(dep.costBaseOf({ ...car, costIncGst: 55000, gstAmount: 5000 })), 50000);
+});
+
+test('an opening adjustable value applies from its own FY, not the asset\'s first', () => {
+  const cam = {
+    costIncGst: 9000, method: 'diminishing_value', effectiveLifeYears: 3,
+    startDate: '2023-07-01', openingAdjustableValue: 3000, openingValueFy: 'FY2025-26', businessUsePct: 100,
+  };
+  const rows = dep.assetScheduleRows(cam, 'FY2025-26');
+  // One row: the years before it was entered are not this register's.
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].fy, 'FY2025-26');
+  assert.equal(rows[0].openingAdjustableValue, 3000);
+  assert.equal(rows[0].decline, 2000); // 3000 × 365/365 × 2/3
+  // Nothing for a year before the opening FY.
+  assert.equal(dep.assetSchedule(cam, 'FY2024-25'), null);
+});
+
+test('an opening value with no FY still starts at the asset\'s first year', () => {
+  const cam = {
+    costIncGst: 9000, method: 'prime_cost', effectiveLifeYears: 3,
+    startDate: '2025-07-01', openingAdjustableValue: 6000, businessUsePct: 100,
+  };
+  assert.equal(dep.assetScheduleRows(cam, 'FY2025-26')[0].openingAdjustableValue, 6000);
+});
+
+test('a pool taken below nil reports the excess as assessable income', () => {
+  const pool = [
+    { method: 'small_business_pool', costIncGst: 2000, startDate: '2023-08-01', businessUsePct: 100 },
+    { method: 'small_business_pool', costIncGst: 1000, startDate: '2023-08-01', businessUsePct: 100,
+      disposalDate: '2025-09-01', disposalProceeds: 3000 },
+  ];
+  const last = dep.poolScheduleRows(pool, 'small_business_pool', 'FY2025-26').pop();
+  // 1785 opening − 535.50 decline − 3000 proceeds = −1750.50: income, pool nil.
+  assert.equal(last.closingBalance, 0);
+  assert.equal(last.assessableIncome, 1750.5);
+  assert.equal(dep.financialYearSchedule(pool, 'FY2025-26').totalPoolAssessableIncome, 1750.5);
+});
+
+test('a small business pool under the write-off threshold is deducted in full', () => {
+  const pool = [{ method: 'small_business_pool', costIncGst: 2000, startDate: '2023-08-01', businessUsePct: 100 }];
+  const rows = dep.poolScheduleRows(pool, 'small_business_pool', 'FY2024-25', { iawoThreshold: 20000 });
+  // 2000 is under 20000 in its first year already: all of it, pool closes nil.
+  assert.equal(rows[0].decline, 2000);
+  assert.equal(rows[0].closingBalance, 0);
+  // Without a threshold the ordinary 15% applies.
+  assert.equal(dep.poolScheduleRows(pool, 'small_business_pool', 'FY2023-24')[0].decline, 300);
+  // The low-value pool has no such rule.
+  const lvp = [{ ...pool[0], method: 'low_value_pool' }];
+  assert.equal(dep.poolScheduleRows(lvp, 'low_value_pool', 'FY2023-24', { iawoThreshold: 20000 })[0].decline, 375);
+});
+
+test('proceeds above cost: the balancing adjustment stops at cost, the rest is a capital gain', () => {
+  const sold = {
+    costIncGst: 5000, method: 'prime_cost', effectiveLifeYears: 5, startDate: '2024-07-01',
+    businessUsePct: 100, disposalDate: '2025-08-01', disposalProceeds: 7000,
+  };
+  const b = dep.balancingAdjustment(sold);
+  assert.equal(b.amount, round2(5000 - b.adjustableValue));
+  const row = dep.assetSchedule(sold, 'FY2025-26');
+  assert.equal(row.capitalGain, 2000);
+  assert.equal(dep.financialYearSchedule([sold], 'FY2025-26').totalCapitalGain, 2000);
 });

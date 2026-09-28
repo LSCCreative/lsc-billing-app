@@ -21,9 +21,11 @@ function loadAsset(row) {
     effectiveLifeYears: row.effective_life_years,
     businessUsePct: row.business_use_pct,
     openingAdjustableValue: row.opening_adjustable_value,
+    openingValueFy: row.opening_value_fy,
     carLimit: row.car_limit,
     replacementCycleYears: row.replacement_cycle_years,
     replacementCostEstimate: row.replacement_cost_estimate,
+    expectedResaleValue: row.expected_resale_value,
     disposalDate: row.disposal_date,
     disposalProceeds: row.disposal_proceeds,
     disposalReason: row.disposal_reason,
@@ -80,6 +82,41 @@ function disposalProblem(body) {
     }
   }
   return null;
+}
+
+/**
+ * The FY an opening adjustable value applies from (migration v7). Sent as any
+ * form fyBounds accepts and stored as the canonical token. An opening value
+ * sent without one is dated to the current FY — the year it is being entered
+ * in, which is what the form means by "when you entered it here". No opening
+ * value, no FY.
+ * @returns {{value:string|null}|{error:string, message:string}}
+ */
+function openingFyFor(body) {
+  const v = body.openingAdjustableValue;
+  if (v === undefined || v === null || v === '') return { value: null };
+  const raw = body.openingValueFy;
+  if (raw === undefined || raw === null || raw === '') return { value: currentFinancialYear() };
+  const bounds = fyBounds(String(raw));
+  if (!bounds) return { error: 'opening_value_fy_invalid', message: 'The opening value’s financial year isn’t one this app recognises.' };
+  return { value: bounds.label };
+}
+
+/* Expected resale is a guess at money in, never below zero. */
+function resaleProblem(body) {
+  const v = body.expectedResaleValue;
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0
+    ? null
+    : { error: 'expected_resale_invalid', message: 'Expected resale value must be $0 or more.' };
+}
+
+/* The schedule's options from the goals row: the write-off threshold that the
+   small business pool's low-pool-value rule compares against. */
+function scheduleOpts(db) {
+  const g = db.prepare('SELECT iawo_threshold FROM goals WHERE id = 1').get();
+  return { iawoThreshold: g ? g.iawo_threshold : null };
 }
 
 function loadLock(row) {
@@ -155,6 +192,9 @@ const CSV_HEADER = [
   'Name', 'Category', 'Method', 'Start Date', 'Days Held', 'Business Use %',
   'Opening Adjustable Value', 'Pool Additions', 'Decline in Value', 'Deductible', 'Closing Adjustable Value',
   'Disposal Date', 'Disposal Proceeds', 'Balancing Adjustment',
+  // 2026-09-28 audit: proceeds above cost are a capital gain, not balancing
+  // adjustment; a pool taken below nil is assessable income.
+  'Capital Gain', 'Pool Assessable Income',
 ];
 
 const POOL_NAMES = { small_business_pool: 'Small Business Pool', low_value_pool: 'Low Value Pool' };
@@ -205,6 +245,8 @@ function buildCsv(schedule, assets) {
       disposalDate || '',
       csvMoney(proceeds),
       csvMoney(row.balancingAdjustment),
+      row.capitalGain ? csvMoney(row.capitalGain) : '',
+      '',
     ]));
   }
 
@@ -224,6 +266,8 @@ function buildCsv(schedule, assets) {
       '',
       row.disposalProceeds ? csvMoney(row.disposalProceeds) : '',
       '',
+      '',
+      row.assessableIncome ? csvMoney(row.assessableIncome) : '',
     ]));
   }
 
@@ -246,9 +290,11 @@ function buildCsv(schedule, assets) {
    from before rows carried their inputs can't be said to disagree about them. */
 const ASSET_FIELDS = [
   'daysHeld', 'businessUsePct', 'openingAdjustableValue', 'decline', 'deductible',
-  'closingAdjustableValue', 'disposalDate', 'disposalProceeds', 'balancingAdjustment',
+  'closingAdjustableValue', 'disposalDate', 'disposalProceeds', 'balancingAdjustment', 'capitalGain',
 ];
-const POOL_FIELDS = ['openingBalance', 'additions', 'decline', 'deductible', 'disposalProceeds', 'closingBalance'];
+const POOL_FIELDS = [
+  'openingBalance', 'additions', 'decline', 'deductible', 'disposalProceeds', 'closingBalance', 'assessableIncome',
+];
 
 function lineChanges(lodged, live, fields) {
   const changes = [];
@@ -306,7 +352,7 @@ function registerDepreciationRoutes(app, db) {
     res.json({ ok: true, assets: allAssets(db).map(loadAsset) });
   });
 
-  function writeFields(body) {
+  function writeFields(body, openingFy) {
     return [
       body.name || '',
       body.category,
@@ -324,11 +370,14 @@ function registerDepreciationRoutes(app, db) {
         ? 100 : Number(body.businessUsePct),
       body.openingAdjustableValue === undefined || body.openingAdjustableValue === null || body.openingAdjustableValue === ''
         ? null : Number(body.openingAdjustableValue),
+      openingFy,
       body.carLimit === undefined || body.carLimit === null || body.carLimit === '' ? null : Number(body.carLimit),
       body.replacementCycleYears === undefined || body.replacementCycleYears === null || body.replacementCycleYears === ''
         ? null : Number(body.replacementCycleYears),
       body.replacementCostEstimate === undefined || body.replacementCostEstimate === null || body.replacementCostEstimate === ''
         ? null : Number(body.replacementCostEstimate),
+      body.expectedResaleValue === undefined || body.expectedResaleValue === null || body.expectedResaleValue === ''
+        ? null : Number(body.expectedResaleValue),
       body.disposalDate || null,
       body.disposalProceeds === undefined || body.disposalProceeds === null || body.disposalProceeds === ''
         ? null : Number(body.disposalProceeds),
@@ -344,19 +393,21 @@ function registerDepreciationRoutes(app, db) {
   // definition of the enum, not two.
   app.post('/api/depreciation-assets', (req, res) => {
     const body = req.body || {};
-    const problem = disposalProblem(body);
+    const problem = disposalProblem(body) || resaleProblem(body);
     if (problem) return res.status(400).json(problem);
+    const openingFy = openingFyFor(body);
+    if (openingFy.error) return res.status(400).json(openingFy);
     const id = newId('da');
     const now = nowIso();
     db.prepare(`
       INSERT INTO depreciation_assets (
         id, name, category, serial_number, supplier, purchase_date, start_date,
         cost_inc_gst, gst_amount, gst_credit_claimed, method, effective_life_years,
-        business_use_pct, opening_adjustable_value, car_limit, replacement_cycle_years,
-        replacement_cost_estimate, disposal_date, disposal_proceeds, disposal_reason,
+        business_use_pct, opening_adjustable_value, opening_value_fy, car_limit, replacement_cycle_years,
+        replacement_cost_estimate, expected_resale_value, disposal_date, disposal_proceeds, disposal_reason,
         notes, created_at, updated_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(id, ...writeFields(body), now, now);
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(id, ...writeFields(body, openingFy.value), now, now);
     writeSnapshot(db);
     const row = db.prepare('SELECT * FROM depreciation_assets WHERE id = ?').get(id);
     res.status(201).json({ ok: true, asset: loadAsset(row) });
@@ -365,18 +416,31 @@ function registerDepreciationRoutes(app, db) {
   app.put('/api/depreciation-assets/:id', (req, res) => {
     const existing = db.prepare('SELECT * FROM depreciation_assets WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'not_found' });
-    const problem = disposalProblem(req.body || {});
+    const body = req.body || {};
+    const problem = disposalProblem(body) || resaleProblem(body);
     if (problem) return res.status(400).json(problem);
+    /* An edit that keeps the same opening value keeps its FY: re-saving an
+       asset next year must not re-date the value to that year. */
+    let openingFy = openingFyFor(body);
+    if (openingFy.error) return res.status(400).json(openingFy);
+    if (
+      (body.openingValueFy === undefined || body.openingValueFy === null || body.openingValueFy === '') &&
+      existing.opening_value_fy &&
+      Number(body.openingAdjustableValue) === existing.opening_adjustable_value
+    ) {
+      openingFy = { value: existing.opening_value_fy };
+    }
     const now = nowIso();
     db.prepare(`
       UPDATE depreciation_assets SET
         name = ?, category = ?, serial_number = ?, supplier = ?, purchase_date = ?, start_date = ?,
         cost_inc_gst = ?, gst_amount = ?, gst_credit_claimed = ?, method = ?, effective_life_years = ?,
-        business_use_pct = ?, opening_adjustable_value = ?, car_limit = ?, replacement_cycle_years = ?,
-        replacement_cost_estimate = ?, disposal_date = ?, disposal_proceeds = ?, disposal_reason = ?,
+        business_use_pct = ?, opening_adjustable_value = ?, opening_value_fy = ?, car_limit = ?,
+        replacement_cycle_years = ?, replacement_cost_estimate = ?, expected_resale_value = ?,
+        disposal_date = ?, disposal_proceeds = ?, disposal_reason = ?,
         notes = ?, updated_at = ?
       WHERE id = ?
-    `).run(...writeFields(req.body || {}), now, req.params.id);
+    `).run(...writeFields(body, openingFy.value), now, req.params.id);
     writeSnapshot(db);
     const row = db.prepare('SELECT * FROM depreciation_assets WHERE id = ?').get(req.params.id);
     res.json({ ok: true, asset: loadAsset(row) });
@@ -402,7 +466,7 @@ function registerDepreciationRoutes(app, db) {
     if (!fy) return res.status(400).json({ error: 'invalid_fy' });
 
     const assets = allAssets(db);
-    const schedule = financialYearSchedule(assets, fy);
+    const schedule = financialYearSchedule(assets, fy, scheduleOpts(db));
     const lock = latestLock(db, fy);
     const frozen = lock ? JSON.parse(lock.figures_json) : null;
     const divergences = frozen ? scheduleDivergences(frozen, schedule) : null;
@@ -432,7 +496,7 @@ function registerDepreciationRoutes(app, db) {
 
     const assets = allAssets(db);
     const lock = latestLock(db, fy);
-    const schedule = lock ? JSON.parse(lock.figures_json) : financialYearSchedule(assets, fy);
+    const schedule = lock ? JSON.parse(lock.figures_json) : financialYearSchedule(assets, fy, scheduleOpts(db));
 
     const csv = buildCsv(schedule, assets);
     res.attachment(`depreciation-schedule-${fy}.csv`);
@@ -465,7 +529,7 @@ function registerDepreciationRoutes(app, db) {
       });
     }
 
-    const schedule = financialYearSchedule(allAssets(db), fy);
+    const schedule = financialYearSchedule(allAssets(db), fy, scheduleOpts(db));
     const id = newId('dlk');
     const now = nowIso();
     db.prepare(`

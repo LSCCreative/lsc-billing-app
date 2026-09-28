@@ -2,7 +2,7 @@
 
 const { newId, nowIso } = require('../db');
 const { computeTotals } = require('../calc');
-const { readPricing, readSettings, sectionLabelsFor } = require('../ratecard');
+const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeLineField } = require('../ratecard');
 const { loadEstimate: loadJson } = require('../estimate');
 
 function registerEstimateRoutes(app, db) {
@@ -23,7 +23,12 @@ function registerEstimateRoutes(app, db) {
     const now = nowIso();
     const pricing = readPricing(db);
     const gstFree = body.gstFree === true;
-    const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), { gstFree });
+    const negative = negativeLineField(body.activeRows);
+    if (negative) return res.status(400).json({ error: 'negative_line_value', field: negative });
+    const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), {
+      gstFree,
+      overheadRate: readOverheadRate(db),
+    });
     const sectionLabels = sectionLabelsFor(body.activeRows, pricing, null);
 
     db.prepare(`
@@ -54,7 +59,12 @@ function registerEstimateRoutes(app, db) {
     // Absent means false, matching every other field here: a PUT that omits it
     // is a save from a screen that decided the estimate is GST-bearing.
     const gstFree = body.gstFree === true;
-    const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), { gstFree });
+    const negative = negativeLineField(body.activeRows);
+    if (negative) return res.status(400).json({ error: 'negative_line_value', field: negative });
+    const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), {
+      gstFree,
+      overheadRate: readOverheadRate(db),
+    });
     const sectionLabels = sectionLabelsFor(
       body.activeRows,
       pricing,

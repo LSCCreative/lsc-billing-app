@@ -141,3 +141,93 @@
    carries its own 14px bottom margin and sits between two blocks that already
    space themselves the same way, so the save bar lands where it does with no
    error showing. */
+
+/* ── Super and bad debt (2026-09-28 audit) ──────────────────────────────────
+   A second row of the same grid, two fields, so it doesn't stretch a third
+   column's worth of gap. */
+.goals-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+  margin-top: 4px;
+}
+
+/* ── Income tax: the user's own scale per FY ────────────────────────────────
+   Same flat 1px box as the Dashboard's panels. The bracket table reuses
+   .est-table; its inputs are .text-inp at a fixed width so the two columns
+   read as a tax table, not as a stretched form. */
+.goals-ty {
+  margin: 22px 0;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  max-width: 78ch;
+}
+.goals-ty-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+  margin-bottom: 8px;
+}
+.goals-ty-head .dash-h {
+  margin: 0;
+}
+.goals-ty-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+/* A placeholder is the one state worth marking: the accent rule, never the
+   accent as text (under 4.5:1 here). */
+.goals-ty-status.is-placeholder {
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+}
+.goals-ty-table {
+  margin: 12px 0;
+  max-width: 420px;
+}
+.goals-ty-table .text-inp {
+  width: 130px;
+  text-align: right;
+}
+.goals-ty-act {
+  width: 1%;
+}
+.goals-ty-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+.goals-ty-levy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.goals-ty-levy .text-inp {
+  width: 80px;
+  text-align: right;
+}
+.goals-ty-suggest {
+  margin-top: 12px;
+}
+.goals-ty-suggest strong {
+  color: var(--text);
+  font-weight: 600;
+}
+#goals-ty-error {
+  display: none;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+}
+#goals-ty-error.show {
+  display: block;
+}

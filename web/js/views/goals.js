@@ -5,9 +5,23 @@
  *
  * WHY THIS SCREEN EXISTS
  * The Overhead screen answers "what does the year cost." This one answers "how
- * much is meant to be left over": Target Profit Margin is the margin
- * minimumJobPrice() and every floor on the Dashboard and Rate Card add, and
- * Desired Net Income is a planning figure only.
+ * much is meant to be left over": Target Markup is what minimumJobPrice() and
+ * the cost floor add on top of cost, and Desired Net Income — with super, a
+ * bad-debt allowance and the user's own tax scale — sets Target Annual
+ * Revenue, which the income floor divides across billable hours.
+ *
+ * THE 2026-09-28 AUDIT CHANGED THIS SCREEN (HANDOVER "What landed — audit")
+ *   - "Target Profit Margin" is labelled Target Markup: it has always been
+ *     applied as cost × (1 + pct), which is a markup. The stored column and
+ *     every figure are unchanged.
+ *   - Super (%) and Bad debt allowance (%) are new, both optional (blank is 0).
+ *   - Income tax is the user's own resident scale per financial year — brackets
+ *     plus Medicare levy — in its own block with its own Save, because it is a
+ *     separate record (/api/tax-years/:fy), not a goals field. It prefills
+ *     placeholders for a year never saved, flagged as such; nothing is built in.
+ *   - The tax reserve rate is still the per-job set-aside, now taken from each
+ *     job's PROFIT, and the tax block offers the marginal rate at the income
+ *     target as a suggestion.
  *
  * CAPACITY IS SHOWN HERE, NOT SET HERE (2026-09-27)
  * This screen used to own "Billable Capacity (hrs / week)", annualised over an
@@ -21,13 +35,12 @@
  * sends the weekly figure; the route recomputes that legacy column from the
  * four fields on every write regardless.
  *
- * DESIRED NET INCOME IS A PLANNING FIGURE, NOT A FLOOR
- * It feeds Target Annual Revenue below and nothing else. Nothing in this
- * feature compares it against a per-row or per-job number, and nothing checks
- * that a rate card's mark-ups add up to it — that is the wage-adequacy gap the
- * accounting review on 2026-09-15 put in front of the user, who chose to keep
- * `mu` fully manual and trusted. Don't wire this into a per-job calculation
- * without asking again; it was declined knowingly.
+ * DESIRED NET INCOME NOW FEEDS A FLOOR (2026-09-28)
+ * It was a planning figure only, by the user's choice on 2026-09-15. After the
+ * money-math audit the user chose to measure the rate card against an INCOME
+ * floor — Target Annual Revenue ÷ billable hours — so this figure now reaches
+ * every row's floor on the Dashboard and Rate Card. `mu` is still never
+ * written by anything; the floor only warns.
  *
  * TWO UNITS IN ONE FORM — THE TRAP IN THIS FILE
  * Target Profit Margin is a PERCENT (25 means 25%, and goals.
@@ -76,15 +89,36 @@
 
 const GoalsView = (() => {
   const { esc, fmt, num } = LSCUtil;
-  const { targetAnnualRevenue, annualBillableHours } = LSCCalc;
+  const { revenueTarget, annualBillableHours, normaliseTaxYear, taxRatesAt, currentFinancialYear, fyDisplay } = LSCCalc;
+
+  /* Placeholders for a tax year the user has never saved: the resident scale
+     for FY2026-27 as legislated in 2025 (15% from $18,201, down from 16%), and
+     the 2% Medicare levy. NOT built-in figures — the block says "placeholder,
+     confirm with your accountant", nothing computes from them until saved,
+     and a saved earlier year is preferred as the starting point when there is
+     one. */
+  const PLACEHOLDER_SCALE = {
+    brackets: [
+      { from: 0, ratePct: 0 },
+      { from: 18200, ratePct: 15 },
+      { from: 45000, ratePct: 30 },
+      { from: 135000, ratePct: 37 },
+      { from: 190000, ratePct: 45 },
+    ],
+    medicareLevyPct: 2,
+  };
 
   const hrs = (n) => Number(n).toLocaleString('en-AU', { maximumFractionDigits: 2 });
 
   let root = null;
   let handlers = null;
   let saving = false;
-  let form = null; // the three fields exactly as typed
-  let saved = null; // the same three, as the server last confirmed them
+  let form = null; // the goals fields exactly as typed
+  let saved = null; // the same, as the server last confirmed them
+  let taxFy = null; // the FY the tax block edits — always the current one
+  let tyForm = null; // { brackets: [{from, ratePct}] as strings, levy } as typed
+  let tySaved = null; // the same, as saved — null when this FY was never saved
+  let tySaving = false;
 
   const $ = (id) => root.querySelector('#' + id);
 
@@ -110,7 +144,11 @@ const GoalsView = (() => {
   const toField = (v) => (v === null || v === undefined || v === '' ? '' : String(v));
 
   const snapshot = () => JSON.stringify(form);
-  const dirty = () => snapshot() !== JSON.stringify(saved);
+  const tyDirty = () => tySaved === null || JSON.stringify(tyForm) !== JSON.stringify(tySaved);
+  /* An unsaved placeholder tax year isn't "unsaved work" — nobody typed it —
+     so only an edited or saved-then-changed year counts. */
+  const tyTouched = () => tySaved === null ? JSON.stringify(tyForm) !== JSON.stringify(placeholderForm()) : tyDirty();
+  const dirty = () => snapshot() !== JSON.stringify(saved) || tyTouched();
 
   const failureText = (err, action) =>
     err.kind === 'network'
@@ -128,8 +166,32 @@ const GoalsView = (() => {
       margin: toField(goals.targetProfitMarginPct),
       // The one field on this screen that is converted: stored as a fraction.
       tax: toPercent(LSCData.pricing().taxSetAsideRate),
+      // PERCENTS, optional; blank is 0% and the hints say so.
+      superPct: toField(goals.superPct),
+      badDebtPct: toField(goals.badDebtPct),
     };
   }
+
+  /* A tax year as form strings. */
+  const tyToForm = (ty) => ({
+    brackets: ty.brackets.map((b) => ({ from: String(b.from), ratePct: String(b.ratePct) })),
+    levy: String(ty.medicareLevyPct),
+  });
+
+  /* What a never-saved year starts from: the latest saved year before it, or
+     the placeholder scale. */
+  function placeholderForm() {
+    const earlier = LSCData.taxYearInUse();
+    return tyToForm(earlier && earlier.fy !== taxFy ? earlier : PLACEHOLDER_SCALE);
+  }
+
+  /* The tax block's form as a tax year calc.js can read (strings are fine:
+     normaliseTaxYear parses and validates). */
+  const formTaxYear = () => ({
+    fy: taxFy,
+    brackets: tyForm.brackets.map((b) => ({ from: b.from, ratePct: b.ratePct })),
+    medicareLevyPct: tyForm.levy,
+  });
 
   // ── Validation ────────────────────────────────────────────────────────────
 
@@ -153,7 +215,7 @@ const GoalsView = (() => {
     const margin = parseFloat(form.margin);
     if (!Number.isFinite(margin) || margin < 0) {
       found.push({
-        msg: 'Target Profit Margin must be a number, 0 or more — it’s a percent, so 25 means 25%.',
+        msg: 'Target Markup must be a number, 0 or more — it’s a percent, so 25 means 25%.',
         field: $('goals-margin'),
       });
     }
@@ -164,9 +226,17 @@ const GoalsView = (() => {
        Target Annual Revenue uncomputable, because targetAnnualRevenue() divides
        by (1 - rate). The stat says so; the save is not blocked for it. */
     const tax = parseFloat(form.tax);
-    if (!Number.isFinite(tax) || tax < 0 || tax > 100) {
-      found.push({ msg: 'The tax reserve target must be a number between 0 and 100.', field: $('goals-tax-inp') });
+    if (!Number.isFinite(tax) || tax < 0 || tax >= 100) {
+      found.push({ msg: 'The tax reserve target must be a number from 0 up to (not including) 100.', field: $('goals-tax-inp') });
     }
+
+    [['superPct', 'goals-super', 'Super'], ['badDebtPct', 'goals-baddebt', 'The bad-debt allowance']].forEach(([key, id, name]) => {
+      if (form[key] === '') return;
+      const v = parseFloat(form[key]);
+      if (!Number.isFinite(v) || v < 0 || v >= 100) {
+        found.push({ msg: name + ' must be a percent from 0 up to (not including) 100, or blank.', field: $(id) });
+      }
+    });
 
     return found;
   }
@@ -183,13 +253,12 @@ const GoalsView = (() => {
      than as a zero that would make the arithmetic look answerable. */
   function computeTarget() {
     /* Business cost (operating + gear replacement reserve), the same figure
-       the Dashboard's target annual revenue uses — see LSCData.businessCost(). */
-    return targetAnnualRevenue(
-      LSCData.businessCost(),
-      form.net,
-      // PERCENT -> FRACTION, the write half of the tax conversion.
-      parseFloat(form.tax) / 100
-    );
+       the Dashboard's target annual revenue uses — see LSCData.businessCost().
+       The tax year is the block's form as typed, so the figure follows it. */
+    return revenueTarget(LSCData.businessCost(), form.net, formTaxYear(), {
+      superPct: form.superPct,
+      badDebtPct: form.badDebtPct,
+    });
   }
 
   /* Why the figure can't be computed, in the order targetAnnualRevenue itself
@@ -209,22 +278,29 @@ const GoalsView = (() => {
     if (!Number.isFinite(net) || net < 0) {
       return 'Set a Desired Net Income above and this fills in.';
     }
-    const tax = parseFloat(form.tax);
-    if (!Number.isFinite(tax) || tax < 0) {
-      return 'Set a tax reserve target above and this fills in.';
+    if (!normaliseTaxYear(formTaxYear())) {
+      return 'Fix the income tax scale below — each bracket needs a starting income and a rate — and this fills in.';
     }
-    if (tax >= 100) {
-      return 'A tax reserve of 100% leaves nothing to take home, so there is no revenue figure that reaches your target.';
+    if (parseFloat(form.badDebtPct) >= 100) {
+      return 'A bad-debt allowance of 100% means nothing gets paid, so no revenue reaches your target.';
     }
     return 'Fill in the fields above and this fills in.';
   }
 
-  function outcomeNote(value) {
-    if (value === null) return missingReason();
+  function outcomeNote(r) {
+    if (r === null) return missingReason();
+    const parts = [
+      'running costs ' + fmt(r.businessCost),
+      'pay before tax ' + fmt(r.grossPay) + ' (' + fmt(r.incomeTax) + ' of it income tax and Medicare)',
+    ];
+    if (r.superContribution > 0) parts.push('super ' + fmt(r.superContribution));
+    if (r.badDebtAllowance > 0) parts.push('a bad-debt allowance of ' + fmt(r.badDebtAllowance));
     return (
-      'What the business costs to run, ' + fmt(LSCData.businessCost()) +
-      ' a year, plus the income you want, grossed up so the tax reserve comes out of it. ' +
-      'This is what the business needs to invoice in a year — not what any one job should cost.'
+      esc(parts.join(' + ').replace(/^./, (c) => c.toUpperCase())) + '. ' +
+      'Tax is worked out on your pay only — running costs are deductible — using the ' +
+      esc(fyDisplay(taxFy)) + ' scale below' + (tySaved === null ? ', which isn’t saved yet' : '') + '. ' +
+      'This is what the business needs to invoice in a year, and ÷ your billable hours it is the income floor ' +
+      'your rate card is measured against.'
     );
   }
 
@@ -234,10 +310,32 @@ const GoalsView = (() => {
   function refreshOutcome() {
     const valueEl = $('goals-tar-value');
     if (!valueEl) return;
-    const value = computeTarget();
-    valueEl.textContent = value === null ? '—' : fmt(value);
-    valueEl.classList.toggle('is-empty', value === null);
-    $('goals-tar-note').innerHTML = outcomeNote(value);
+    const r = computeTarget();
+    valueEl.textContent = r === null ? '—' : fmt(r.total);
+    valueEl.classList.toggle('is-empty', r === null);
+    $('goals-tar-note').innerHTML = outcomeNote(r);
+    refreshSuggestion(r);
+  }
+
+  /* The per-job set-aside the brackets suggest: the MARGINAL rate at the pay
+     the target needs, because each extra job's profit is taxed at the top of
+     the scale, not at the average. The effective rate is shown beside it. */
+  function refreshSuggestion(r) {
+    const el = $('goals-ty-suggest');
+    if (!el) return;
+    const rates = r ? taxRatesAt(r.grossPay, formTaxYear()) : null;
+    if (!rates) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML =
+      'At your income target your marginal rate is <strong>' + rates.marginalPct + '%</strong> and your effective ' +
+      'rate ' + rates.effectivePct + '%, Medicare included. Each job’s tax reserve is set aside from its profit at ' +
+      'the rate above — the marginal rate is the safe one. ' +
+      (String(rates.marginalPct) === form.tax
+        ? ''
+        : '<button type="button" class="goals-link" id="goals-use-marginal" data-rate="' + rates.marginalPct + '">Use ' +
+          rates.marginalPct + '%</button>');
   }
 
   // ── Markup ────────────────────────────────────────────────────────────────
@@ -280,8 +378,58 @@ const GoalsView = (() => {
     );
   }
 
+  /* The income-tax block: one row per bracket, the Medicare levy, and its own
+     Save — see the header. */
+  function bracketRows() {
+    return tyForm.brackets
+      .map(
+        (b, i) =>
+          '<tr><td data-label="Taxable income from ($)"><input type="number" class="text-inp goals-ty-from" min="0" step="1"' +
+          ' data-i="' + i + '" value="' + esc(b.from) + '" aria-label="Bracket ' + (i + 1) + ': taxable income from, dollars"></td>' +
+          '<td data-label="Rate (%)"><input type="number" class="text-inp goals-ty-rate" min="0" max="99" step="0.5"' +
+          ' data-i="' + i + '" value="' + esc(b.ratePct) + '" aria-label="Bracket ' + (i + 1) + ': rate, percent"></td>' +
+          '<td class="goals-ty-act">' +
+          (tyForm.brackets.length > 1
+            ? '<button type="button" class="del-btn goals-ty-del" data-i="' + i + '" aria-label="Remove bracket ' + (i + 1) + '">×</button>'
+            : '') +
+          '</td></tr>'
+      )
+      .join('');
+  }
+
+  function taxStatus() {
+    if (tySaved === null) {
+      return 'Placeholder figures — not saved. Confirm them with your accountant, then save them as yours.';
+    }
+    return tyDirty() ? 'Changed — not saved yet.' : 'Your saved figures for ' + fyDisplay(taxFy) + '.';
+  }
+
+  function taxYearMarkup() {
+    return (
+      '<section class="goals-ty" aria-labelledby="goals-ty-h">' +
+      '<div class="goals-ty-head"><h2 class="dash-h" id="goals-ty-h">Income tax — ' + esc(fyDisplay(taxFy)) + '</h2>' +
+      '<span class="goals-ty-status' + (tySaved === null ? ' is-placeholder' : '') + '" id="goals-ty-status">' +
+      esc(taxStatus()) + '</span></div>' +
+      '<p class="goals-hint">The resident scale for this financial year: each rate applies to taxable income from ' +
+      'its figure up to the next. It changes with the federal budget, so it isn’t built in. Not modelled: the ' +
+      'low income tax offset and the levy’s low-income reduction, which don’t apply at the incomes this plans for.</p>' +
+      '<table class="est-table goals-ty-table"><thead><tr><th>Taxable income from ($)</th><th>Rate (%)</th><th></th></tr></thead>' +
+      '<tbody id="goals-ty-body">' + bracketRows() + '</tbody></table>' +
+      '<div class="goals-ty-foot">' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="goals-ty-add">+ Add bracket</button>' +
+      '<label class="goals-ty-levy" for="goals-ty-levy">Medicare levy (%) <input type="number" class="text-inp" id="goals-ty-levy"' +
+      ' min="0" max="10" step="0.5" value="' + esc(tyForm.levy) + '"></label>' +
+      '<button type="button" class="btn btn-sm" id="goals-ty-save" data-write>Save tax year</button>' +
+      '</div>' +
+      '<div id="goals-ty-error" role="alert"></div>' +
+      '<p class="goals-hint goals-ty-suggest" id="goals-ty-suggest"></p>' +
+      '</section>'
+    );
+  }
+
   function markup() {
-    const value = computeTarget();
+    const r = computeTarget();
+    const value = r === null ? null : r.total;
 
     return (
       '<div class="page-head"><div><h1 class="page-title">Profit Goals</h1>' +
@@ -298,7 +446,7 @@ const GoalsView = (() => {
       '<div class="sum-label">Target Annual Revenue</div>' +
       '<div class="goals-outcome-value' + (value === null ? ' is-empty' : '') + '" id="goals-tar-value">' +
       (value === null ? '—' : fmt(value)) + '</div>' +
-      '<p class="goals-outcome-note" id="goals-tar-note">' + outcomeNote(value) + '</p>' +
+      '<p class="goals-outcome-note" id="goals-tar-note">' + outcomeNote(r) + '</p>' +
       '</div>' +
       // Spoken once typing pauses — see LSCUtil.announce().
       '<p class="sr-only" id="goals-tar-live" aria-live="polite"></p>' +
@@ -308,17 +456,34 @@ const GoalsView = (() => {
         'goals-net',
         'Desired Net Income ($ / year)',
         form.net,
-        'What you want left over in a year once overhead and tax are covered. A planning figure — nothing prices a job against it.',
+        'What you want to take home in a year, after income tax. With super and the bad-debt allowance below it sets Target Annual Revenue — and so the income floor on your rate card.',
         'min="0" step="1000"'
       ) +
       fieldMarkup(
         'goals-margin',
-        'Target Profit Margin (%)',
+        'Target Markup (%)',
         form.margin,
-        'Added on top of cost when a job’s minimum price is worked out. A percent: enter 25 for 25%, not 0.25.',
+        'Added on top of cost for a job’s minimum price and the cost floor — a markup, not a margin: 25% on cost is a 20% share of the price. Enter 25 for 25%, not 0.25.',
         'min="0" step="1"'
       ) +
       hoursMarkup() +
+      '</div>' +
+
+      '<div class="form-grid goals-grid goals-grid-2">' +
+      fieldMarkup(
+        'goals-super',
+        'Super (% of pay) — optional',
+        form.superPct,
+        'The super you want to contribute for yourself, as a share of your pay before tax — 12 matches the employer rate. A deductible personal contribution, so it isn’t taxed here. Blank is none.',
+        'min="0" max="99" step="0.5"'
+      ) +
+      fieldMarkup(
+        'goals-baddebt',
+        'Bad-debt allowance (% of revenue) — optional',
+        form.badDebtPct,
+        'The share of what you invoice that you expect never to be paid. Revenue is grossed up so what does arrive still reaches the target. Blank is none.',
+        'min="0" max="99" step="0.5"'
+      ) +
       '</div>' +
 
       /* .tax-setting verbatim, the same component the Pricing screen uses for
@@ -330,11 +495,13 @@ const GoalsView = (() => {
       '<div class="tax-setting"><div>' +
       '<div class="sum-label" style="margin-bottom:4px">Tax Reserve Target (%)</div>' +
       '<div style="color:var(--muted);font-size:11px">The same setting as the rate card’s Tax Set-Aside Rate — ' +
-      'change it here and it changes there. Provisioned against labour revenue only, before GST.</div></div>' +
+      'change it here and it changes there. Set aside from each job’s profit — its income less the overhead its hours carry — before GST.</div></div>' +
       '<input type="number" id="goals-tax-inp" min="0" max="100" step="0.5" value="' + esc(form.tax) +
       '" aria-label="Tax reserve target, percent"></div>' +
 
       '<div id="goals-error" role="alert"></div>' +
+
+      taxYearMarkup() +
 
       '<div class="pricing-save-bar" id="goals-save-bar">' +
       '<p>Saving moves the floors on your Dashboard and Rate Card, and every new estimate’s minimum job price. Estimates already saved keep the figures they were quoted at.</p>' +
@@ -386,7 +553,10 @@ const GoalsView = (() => {
      structural, and not re-rendering leaves focus on the Save button the user
      just pressed instead of dropping it to <body>. */
   function syncFields() {
-    const map = { 'goals-net': 'net', 'goals-margin': 'margin', 'goals-tax-inp': 'tax' };
+    const map = {
+      'goals-net': 'net', 'goals-margin': 'margin', 'goals-tax-inp': 'tax',
+      'goals-super': 'superPct', 'goals-baddebt': 'badDebtPct',
+    };
     Object.keys(map).forEach((id) => {
       const input = $(id);
       if (input && input.value !== form[map[id]]) input.value = form[map[id]];
@@ -418,6 +588,9 @@ const GoalsView = (() => {
         // PERCENT on the wire — target_profit_margin_pct stores a percent.
         // Do not divide this by 100.
         targetProfitMarginPct: parseFloat(form.margin),
+        // PERCENTS too; blank clears to null (0%).
+        superPct: form.superPct === '' ? null : parseFloat(form.superPct),
+        badDebtPct: form.badDebtPct === '' ? null : parseFloat(form.badDebtPct),
         // Not billableCapacityHrsPerWeek: Capacity owns hours now, and the
         // route recomputes that legacy column itself on every save.
       });
@@ -427,6 +600,8 @@ const GoalsView = (() => {
       LSCData.setGoals(reply.goals);
       saved.net = toField(reply.goals.desiredNetIncome);
       saved.margin = toField(reply.goals.targetProfitMarginPct);
+      saved.superPct = toField(reply.goals.superPct);
+      saved.badDebtPct = toField(reply.goals.badDebtPct);
     } catch (err) {
       setSaving(false);
       Toast.hide();
@@ -487,6 +662,8 @@ const GoalsView = (() => {
       'goals-net': 'net',
       'goals-margin': 'margin',
       'goals-tax-inp': 'tax',
+      'goals-super': 'superPct',
+      'goals-baddebt': 'badDebtPct',
     };
     Object.keys(fields).forEach((id) => {
       $(id).addEventListener('input', function () {
@@ -494,12 +671,12 @@ const GoalsView = (() => {
         refreshOutcome();
         // The margin field doesn't move this figure, so it announces nothing
         // new — announce() skips text that hasn't changed.
-        const value = computeTarget();
+        const r = computeTarget();
         LSCUtil.announce(
           $('goals-tar-live'),
-          value === null
+          r === null
             ? 'Target annual revenue: not set. ' + $('goals-tar-note').textContent
-            : 'Target annual revenue: ' + fmt(value) + '.'
+            : 'Target annual revenue: ' + fmt(r.total) + '.'
         );
       });
     });
@@ -512,11 +689,110 @@ const GoalsView = (() => {
        this view is ever mounted outside Finance, in which case the link does
        nothing rather than throwing. */
     root.addEventListener('click', (event) => {
+      const use = event.target.closest('#goals-use-marginal');
+      if (use) {
+        form.tax = use.dataset.rate;
+        $('goals-tax-inp').value = form.tax;
+        refreshOutcome();
+        $('goals-tax-inp').focus();
+        return;
+      }
       const link = event.target.closest('[data-go-tab]');
       if (link && handlers.onGoTab) handlers.onGoTab(link.dataset.goTab);
     });
 
     $('goals-save').addEventListener('click', save);
+    bindTaxYear();
+  }
+
+  // ── The income-tax block ──────────────────────────────────────────────────
+
+  function tyChanged() {
+    const status = $('goals-ty-status');
+    if (status) {
+      status.textContent = taxStatus();
+      status.classList.toggle('is-placeholder', tySaved === null);
+    }
+    refreshOutcome();
+  }
+
+  /* Adding or removing a bracket rebuilds only the tbody; typing never
+     re-renders, so focus stays in the field. */
+  function redrawBrackets(focusIndex) {
+    $('goals-ty-body').innerHTML = bracketRows();
+    if (focusIndex !== undefined) {
+      const inp = root.querySelector('.goals-ty-from[data-i="' + focusIndex + '"]');
+      if (inp) inp.focus();
+    }
+    tyChanged();
+  }
+
+  function bindTaxYear() {
+    $('goals-ty-body').addEventListener('input', (event) => {
+      const i = Number(event.target.dataset.i);
+      if (!tyForm.brackets[i]) return;
+      if (event.target.classList.contains('goals-ty-from')) tyForm.brackets[i].from = event.target.value;
+      if (event.target.classList.contains('goals-ty-rate')) tyForm.brackets[i].ratePct = event.target.value;
+      tyChanged();
+    });
+    $('goals-ty-body').addEventListener('click', (event) => {
+      const del = event.target.closest('.goals-ty-del');
+      if (!del) return;
+      tyForm.brackets.splice(Number(del.dataset.i), 1);
+      redrawBrackets();
+      $('goals-ty-add').focus();
+    });
+    $('goals-ty-add').addEventListener('click', () => {
+      const last = tyForm.brackets[tyForm.brackets.length - 1];
+      tyForm.brackets.push({ from: String((parseFloat(last && last.from) || 0) + 1), ratePct: '' });
+      redrawBrackets(tyForm.brackets.length - 1);
+    });
+    $('goals-ty-levy').addEventListener('input', function () {
+      tyForm.levy = this.value;
+      tyChanged();
+    });
+    $('goals-ty-save').addEventListener('click', saveTaxYear);
+  }
+
+  async function saveTaxYear() {
+    if (tySaving) return;
+    const err = $('goals-ty-error');
+    LSCUtil.clearFieldErrors(err);
+    if (!normaliseTaxYear(formTaxYear())) {
+      LSCUtil.showFieldErrors(err, [{
+        msg: 'Each bracket needs a starting income and a rate, no two brackets can start at the same income, and no rate plus the levy can reach 100%.',
+        field: $('goals-ty-body').querySelector('input'),
+      }], 'Fix this before saving:');
+      return;
+    }
+    tySaving = true;
+    $('goals-ty-save').disabled = true;
+    Toast.working('Saving tax year…');
+    try {
+      const reply = await LSCApi.put('/api/tax-years/' + encodeURIComponent(taxFy), {
+        brackets: tyForm.brackets.map((b) => ({ from: parseFloat(b.from), ratePct: parseFloat(b.ratePct) })),
+        medicareLevyPct: parseFloat(tyForm.levy),
+      });
+      LSCData.setTaxYear(reply.taxYear);
+      tySaved = tyToForm(reply.taxYear);
+      Toast.ok(fyDisplay(taxFy) + ' tax scale saved.');
+      if (!onScreen()) return;
+      tyForm = JSON.parse(JSON.stringify(tySaved));
+      redrawBrackets();
+      $('goals-ty-levy').value = tyForm.levy;
+    } catch (e) {
+      Toast.hide();
+      if (!(e instanceof LSCApi.ApiError)) throw e;
+      if (e.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      if (onScreen()) {
+        err.textContent = failureText(e, 'save the tax year');
+        err.classList.add('show');
+      }
+    } finally {
+      tySaving = false;
+      const btn = $('goals-ty-save');
+      if (btn) btn.disabled = false;
+    }
   }
 
   function mount(container, viewHandlers) {
@@ -527,8 +803,14 @@ const GoalsView = (() => {
     saved = readSaved();
     form = Object.assign({}, saved);
 
+    taxFy = currentFinancialYear();
+    const own = LSCData.taxYears().find((t) => t.fy === taxFy);
+    tySaved = own ? tyToForm(own) : null;
+    tyForm = own ? tyToForm(own) : placeholderForm();
+
     root.innerHTML = markup();
     bind();
+    refreshOutcome();
 
     LSCUnsaved.watch('goals', {
       label: 'your goals',

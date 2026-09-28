@@ -7,21 +7,21 @@
  * a section subtotals to. Those are computed here, and they must follow calc.js
  * line for line or the rows on screen will not add up to the total beneath them.
  *
- * The rule that keeps them agreeing is the lookup: calc.js prices a row only if
- * its name is still on the live rate card (`for (const section of
- * labourSections)` — a section or row deleted from the card is skipped, never
- * guessed at from the figures saved on the estimate). So `labourDef` and
- * `travelDef` here look at the live card and nowhere else, and a row they can't
- * find bills nothing and renders as “—”.
+ * The rule that keeps them agreeing is the lookup, and it is calc.js's own
+ * LSCCalc.lineDef — called, not copied. Since 2026-09-28 a saved line carries
+ * its own price snapshot and prices from that; only a line saved before then
+ * falls back to the live card (by row id, then name), and one whose service is
+ * gone from the card bills nothing and renders as “—”, as calc.js believes.
+ * The bills clamp negatives to zero for the same reason calc.js does.
  *
- * `sectionsFor` is the deliberate exception, and it is about visibility, not
- * money: an estimate saved against a category that has since been deleted still
- * shows its rows, so they can be read and removed rather than silently
- * vanishing. Those rows carry no price, which is what calc.js already believes.
+ * `sectionsFor` keeps a deleted category's rows visible, so they can be read
+ * and removed rather than silently vanishing. A snapshotted row there still
+ * prices; a legacy one doesn't.
  */
 
 const LSCRows = (() => {
   const { num } = LSCUtil;
+  const nonNeg = (v) => Math.max(0, num(v));
 
   const RESERVED_SECTION_IDS = { travel: 1, equip: 1, crew: 1, deliverables: 1 };
 
@@ -66,31 +66,29 @@ const LSCRows = (() => {
     return out;
   }
 
-  /* Null means "not on the rate card any more" — the caller renders “—” and
-     leaves it out of the subtotal, matching what calc.js counted. */
+  /* Null means "no price known" — the caller renders “—” and leaves it out of
+     the subtotal, matching what calc.js counted. */
   function labourDef(section, line) {
-    if (!section || section.archived) return null;
-    return (section.rows || []).find((r) => r.name === line.name) || null;
+    return LSCCalc.lineDef(section && !section.archived ? section.rows : [], line);
   }
 
   function travelDef(line, pricing) {
-    const defs = (pricing && pricing.travelRows) || [];
-    return defs.find((r) => r.name === line.name) || null;
+    return LSCCalc.lineDef((pricing && pricing.travelRows) || [], line);
   }
 
   function labourBill(def, line) {
     if (!def) return null;
-    const override = num(line.override);
-    return override > 0 ? override : num(line.qty) * num(def.mu);
+    const override = nonNeg(line.override);
+    return override > 0 ? override : nonNeg(line.qty) * nonNeg(def.mu);
   }
 
   function travelBill(def, line) {
     if (!def) return null;
-    return def.directCost ? num(line.qty) : num(line.qty) * num(def.mu);
+    return def.directCost ? nonNeg(line.qty) : nonNeg(line.qty) * nonNeg(def.mu);
   }
 
   function costBill(line) {
-    return num(line.days) * num(line.cost);
+    return nonNeg(line.days) * nonNeg(line.cost);
   }
 
   /* ── What a labour row's quantity counts ──────────────────────────────────

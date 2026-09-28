@@ -408,6 +408,12 @@ test('depreciation_locks is an append-only log that keeps amendments', () => {
  * NAS database takes on its next boot.
  */
 function rewindGoalsToV5(db) {
+  // v7's additive changes come off too, so migrate() can re-apply them.
+  db.exec(`
+    DROP TABLE IF EXISTS tax_years;
+    ALTER TABLE depreciation_assets DROP COLUMN expected_resale_value;
+    ALTER TABLE depreciation_assets DROP COLUMN opening_value_fy;
+  `);
   db.exec(`
     DROP TABLE goals;
     CREATE TABLE goals (
@@ -439,7 +445,7 @@ test('v6 carries every goals value across the rebuild and starts unconfirmed', (
   `).run();
 
   const result = migrate(db);
-  assert.deepEqual([result.from, result.to, result.applied], [5, 6, 1]);
+  assert.deepEqual([result.from, result.to, result.applied], [5, LATEST_VERSION, LATEST_VERSION - 5]);
 
   const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
   assert.deepEqual(
@@ -482,6 +488,41 @@ test('v6 lets income and margin be unset rather than forcing a zero', () => {
   db.close();
 });
 
-test('the schema knows it is at v6', () => {
-  assert.equal(LATEST_VERSION, 6);
+/**
+ * MIGRATION v7 — the 2026-09-28 money-math audit. Additive: a tax_years table,
+ * goals.super_pct / bad_debt_pct, and two asset columns. The one data step is
+ * the opening-value backfill: an asset already carrying an opening adjustable
+ * value gets opening_value_fy from its created_at, because the form described
+ * the value as the one "when you entered it here".
+ */
+test('v7 backfills opening_value_fy from created_at, and only where an opening value exists', () => {
+  const db = openDatabase(tempDbPath('v7-upgrade'));
+  db.exec(`
+    DROP TABLE tax_years;
+    ALTER TABLE depreciation_assets DROP COLUMN expected_resale_value;
+    ALTER TABLE depreciation_assets DROP COLUMN opening_value_fy;
+    ALTER TABLE goals DROP COLUMN super_pct;
+    ALTER TABLE goals DROP COLUMN bad_debt_pct;
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 7').run();
+  const insert = db.prepare(`
+    INSERT INTO depreciation_assets
+      (id, name, category, purchase_date, start_date, cost_inc_gst, method, effective_life_years,
+       opening_adjustable_value, created_at, updated_at)
+    VALUES (?, 'Cam', 'camera', '2023-07-01', '2023-07-01', 9000, 'diminishing_value', 3, ?, ?, ?)
+  `);
+  insert.run('da_old', 3000, '2025-10-02T01:00:00.000Z', '2025-10-02T01:00:00.000Z');
+  insert.run('da_new', null, '2025-10-02T01:00:00.000Z', '2025-10-02T01:00:00.000Z');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to], [6, 7]);
+  const byId = (id) => db.prepare('SELECT opening_value_fy FROM depreciation_assets WHERE id = ?').get(id);
+  assert.equal(byId('da_old').opening_value_fy, 'FY2025-26');
+  assert.equal(byId('da_new').opening_value_fy, null);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'tax_years'").get().n, 1);
+  db.close();
+});
+
+test('the schema knows it is at v7', () => {
+  assert.equal(LATEST_VERSION, 7);
 });

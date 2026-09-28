@@ -76,6 +76,14 @@
  * row is compared at its OWN hoursPerUnit in section 2, so a day row the user
  * lengthened to 10 hrs shows its own, higher floor there.
  *
+ * THE FLOORS ARE INCOME FLOORS (2026-09-28, the user's call after the audit)
+ * The headline floors, and every row in the comparison, are measured against
+ * the INCOME floor: Target Annual Revenue ÷ annual billable hours — running
+ * costs plus the owner's pay, its tax, super and bad debt, spread across the
+ * hours the year can sell. The old floor (overhead per hour × (1 + markup))
+ * is still shown, as the cost floor, in the capacity panel and the floors
+ * note: it is what the estimate editor's Minimum Job Price is built on.
+ *
  * NULL IS AN EM DASH AND A REASON, NEVER $0.00
  * No capacity, no cost or no margin makes the floors null. They render as an
  * em dash with a sentence naming what is missing, linked to where to fix it.
@@ -90,7 +98,6 @@ const FinanceDashboardView = (() => {
     annualBillableHours,
     hourlyFloor,
     labourFloorComparison,
-    targetAnnualRevenue,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -148,8 +155,10 @@ const FinanceDashboardView = (() => {
     const businessCost = LSCData.businessCost();
     const hours = annualBillableHours(goals);
     const rate = LSCData.overheadRate();
-    const margin = goals.targetProfitMarginPct;
-    const perHour = hourlyFloor(rate, margin);
+    const margin = goals.targetProfitMarginPct; // a MARKUP, whatever the column is called
+    const costFloor = hourlyFloor(rate, margin);
+    const revenue = LSCData.revenueTarget();
+    const perHour = LSCData.incomeFloor();
 
     const perDay = parseFloat(goals.billableHoursPerDay);
     const dayHours = Number.isFinite(perDay) && perDay > 0 && perDay <= 24 ? perDay : null;
@@ -162,13 +171,15 @@ const FinanceDashboardView = (() => {
       hours,
       rate,
       margin,
+      costFloor,
+      revenue,
       perHour,
+      taxYear: LSCData.taxYearInUse(),
       dayHours,
       halfDay: perHour === null || dayHours === null ? null : round2(perHour * (dayHours / 2)),
       fullDay: perHour === null || dayHours === null ? null : round2(perHour * dayHours),
       rows: labourFloorComparison(pricing, LSCData.settings(), perHour),
-      target: targetAnnualRevenue(businessCost, goals.desiredNetIncome, pricing.taxSetAsideRate),
-      taxRate: pricing.taxSetAsideRate,
+      target: revenue ? revenue.total : null,
     };
   }
 
@@ -178,8 +189,9 @@ const FinanceDashboardView = (() => {
     const missing = [];
     if (f.hours === null) missing.push(link('capacity', 'your capacity'));
     if (!(f.businessCost > 0)) missing.push(link('overhead', 'what the business costs to run'));
-    const m = parseFloat(f.margin);
-    if (!Number.isFinite(m) || m < 0) missing.push(link('goals', 'a target profit margin'));
+    const net = parseFloat(f.goals.desiredNetIncome);
+    if (!Number.isFinite(net) || net < 0) missing.push(link('goals', 'the income you want'));
+    if (!f.taxYear) missing.push(link('goals', 'your income tax scale'));
     return missing;
   }
 
@@ -216,9 +228,14 @@ const FinanceDashboardView = (() => {
       '</div>' +
       (blockers.length
         ? '<p class="dash-note">Set up ' + joinAnd(blockers) + ' to see your floors.</p>'
-        : '<p class="dash-note">The least each can sell for and still cover the business’s running costs and your ' +
-          esc(String(f.margin)) + '% margin. Ex-GST. Crew, hire, travel, flights and accommodation are added to a ' +
-          'job at cost on top, so they aren’t part of any floor.</p>') +
+        : '<p class="dash-note">What each has to sell for, on average across the year, to cover the business’s ' +
+          'running costs and pay you ' + fmt(num(f.goals.desiredNetIncome)) + ' after tax' +
+          (num(f.goals.superPct) > 0 ? ', plus super' : '') + '. Ex-GST. Crew, hire, travel, flights and ' +
+          'accommodation are added to a job at cost on top, so they aren’t part of any floor.' +
+          (f.costFloor === null
+            ? ''
+            : ' The cost floor — running costs and your markup, no pay — is ' + fmt(f.costFloor) + ' an hour.') +
+          '</p>') +
       '</section>'
     );
   }
@@ -260,14 +277,14 @@ const FinanceDashboardView = (() => {
       label: 'How the floor comparison works',
       title: 'The floor comparison',
       paragraphs: [
-        'Each service’s floor is your hourly floor — overhead per billable hour, plus your margin — times the ' +
-          'hours one unit of it takes.',
+        'Each service’s floor is your income floor — target annual revenue ÷ billable hours, so running costs ' +
+          'and your pay — times the hours one unit of it takes.',
         'It’s measured against <strong>what the client is charged</strong>: the Mark-Up price, ex-GST. Not your ' +
           'internal rate — the marked-up price is what actually recovers overhead.',
         'Crew, hire, travel, flights and accommodation aren’t compared. They’re passed through at cost on top of ' +
           'the labour, so they recover no overhead either way.',
-        'Below floor means that price doesn’t cover the business’s costs and your margin at your current capacity. ' +
-          'It’s a warning, not a rule — change it on the Rate Card if you agree.',
+        'Below floor means that price, sold all year, wouldn’t cover the business’s costs and your pay at your ' +
+          'current capacity. It’s a warning, not a rule — change it on the Rate Card if you agree.',
       ],
     });
   }
@@ -378,10 +395,10 @@ const FinanceDashboardView = (() => {
       '<h3 class="dash-panel-h">' + link('capacity', 'Capacity') + '</h3>' +
       line(link('capacity', 'Annual billable hours'), f.hours === null ? null : hrs(f.hours)) +
       line('Overhead cost per hour', f.rate === null ? null : fmt(f.rate)) +
-      line(link('goals', 'Target profit margin'), marginOk ? esc(String(f.margin)) + '%' : null) +
-      line('Hourly floor', f.perHour === null ? null : fmt(f.perHour), { total: true }) +
-      '<p class="dash-panel-note">Business cost ÷ billable hours is what an hour must earn to break even; ' +
-      'the margin goes on top.</p>' +
+      line(link('goals', 'Target markup'), marginOk ? esc(String(f.margin)) + '%' : null) +
+      line('Cost floor', f.costFloor === null ? null : fmt(f.costFloor), { total: true }) +
+      '<p class="dash-panel-note">Business cost ÷ billable hours is what an hour costs to open the doors for; ' +
+      'the markup goes on top. No pay in it — that is the income floor, below.</p>' +
       '</div>' +
 
       '</div></section>'
@@ -394,7 +411,8 @@ const FinanceDashboardView = (() => {
     if (!(f.businessCost > 0)) return 'Add what the business costs to run on ' + link('overhead', 'Overhead') + '.';
     const net = parseFloat(f.goals.desiredNetIncome);
     if (!Number.isFinite(net) || net < 0) return 'Set a desired net income on ' + link('goals', 'Profit Goals') + '.';
-    return 'Set a tax reserve below 100% on ' + link('goals', 'Profit Goals') + '.';
+    if (!f.taxYear) return 'Save your income tax scale on ' + link('goals', 'Profit Goals') + '.';
+    return 'Check the bad-debt allowance on ' + link('goals', 'Profit Goals') + '.';
   }
 
   function targetsMarkup(f) {
@@ -406,10 +424,18 @@ const FinanceDashboardView = (() => {
       '<div class="dash-big' + (t === null ? ' is-empty' : '') + '">' + (t === null ? '—' : fmt(t)) + '</div>' +
       (t === null
         ? '<p class="dash-panel-note">' + targetReason(f) + '</p>'
-        : line('Per month, on average', fmt(t / 12)) +
-          line('Per week, on average', fmt(t / 52)) +
-          '<p class="dash-panel-note">Business cost plus your desired net income, grossed up for the tax reserve. ' +
-          'Averages — real months won’t be even.</p>') +
+        : line(link('overhead', 'Annual business cost'), fmt(f.revenue.businessCost)) +
+          line(link('goals', 'Your pay before tax'), fmt(f.revenue.grossPay)) +
+          line('— of which income tax and Medicare', fmt(f.revenue.incomeTax)) +
+          (f.revenue.superContribution > 0 ? line(link('goals', 'Super'), fmt(f.revenue.superContribution)) : '') +
+          (f.revenue.badDebtAllowance > 0
+            ? line(link('goals', 'Bad-debt allowance'), fmt(f.revenue.badDebtAllowance))
+            : '') +
+          line('Income floor, ÷ ' + (f.hours === null ? '—' : hrs(f.hours)) + ' hrs',
+            f.perHour === null ? null : fmt(f.perHour) + '/hr', { total: true }) +
+          line('Per month, on average', fmt(t / 12)) +
+          '<p class="dash-panel-note">Tax is worked out on your pay only — running costs are deductible — with your ' +
+          esc(LSCCalc.fyDisplay(f.taxYear.fy) || '') + ' scale. Averages — real months won’t be even.</p>') +
       '</div>' +
 
       '<div class="dash-panel" id="dash-jobs">' + jobsMarkup(f, undefined) + '</div>' +

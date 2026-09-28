@@ -472,3 +472,9 @@ change to it is two identical edits. A task that edits one and not the other is 
   still needs a real VoiceOver pass by a person. Items 1–3 and 5–10 are fixed; item 3 (site-wide 16px
   phone inputs) and item 8 (Target Annual Revenue moved above Goals' fields) went ahead with the
   user's approval. The outcome of each is recorded in `DESIGN_REVIEW.md`.
+
+## Money-math audit (2026-09-28)
+
+- [x] **Fix all 15 audit findings** (money math — Opus/high). Done 2026-09-28; four needed the user's
+  design call (income floor, markup rename, ATO tax brackets, per-line price snapshots + "use rates
+  from last project"). See HANDOVER "What landed — audit fixes". Not yet deployed.

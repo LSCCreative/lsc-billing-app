@@ -17,12 +17,26 @@
  * THE MINIMUM JOB PRICE IS ADVISORY AND MUST STAY THAT WAY
  * The floor under the summary bar is a second opinion, never a price. It is
  * computed by LSCCalc.minimumJobPrice() from the current Overhead Rate/hr and
- * Target Profit Margin, it is not persisted with the estimate, and neither it
+ * Target Markup, it is not persisted with the estimate, and neither it
  * nor its toggle is allowed to move clientPriceExGst or totalIncGst by a cent
  * in either position. Everything it needs is read off the totals computeTotals
  * already returned — it never recomputes a headline figure of its own. The (?)
  * beside it opens the cost breakdown dialog, which shows the three lines that
  * make up that figure and likewise computes nothing of its own.
+ *
+ * EACH LINE CARRIES ITS OWN PRICE (2026-09-28 audit)
+ * A line added from the rate card stores a snapshot of that row's price
+ * (LSCCalc.lineSnapshot) on its DOM row, and saves it with the line. calc.js
+ * prices a saved line from its snapshot, so a quote no longer moves when the
+ * card does, and a renamed service no longer drops out of the total. A line
+ * saved before snapshots existed takes one from the live card when the editor
+ * opens it (by row id, then name) — i.e. it is priced as it always was, and
+ * frozen at that price from its next save.
+ *   - "Update to current rates" re-snapshots every line from today's card.
+ *   - "Use rates from last project" (shown once the estimate is linked to a
+ *     client with an earlier estimate that recorded its prices) swaps each
+ *     line's price for the one that client was quoted last time, matched by
+ *     category and row id, then name. Turning it off puts the prices back.
  *
  * CLIENT FIELDS
  * The estimate carries a client *snapshot* — {businessName, contactName, email,
@@ -55,7 +69,15 @@ const EstimateEditor = (() => {
      which re-mounts it on the way back. They are deliberately outside
      payload(), so they are never saved and never make the form look dirty. */
   let overheadRate = null;
-  let profitMarginPct = null;
+  let profitMarginPct = null; // a MARKUP percent — the stored column predates the rename
+  let incomeFloor = null; // LSCData.incomeFloor(), for the job's income line
+
+  /* The client's last project, for "Use rates from last project":
+     { estimate, rates: Map(key → snapshot) } once looked up, null when there is
+     none, undefined while unknown. ratesFromLast is the toggle's state. */
+  let lastProject;
+  let lastProjectFor = null; // the client id it was looked up for
+  let ratesFromLast = false;
 
   /* The cost breakdown modal. `breakdown` is the last set of figures the
      Minimum Job Price line painted — see setBreakdown() for why the modal reads
@@ -85,6 +107,37 @@ const EstimateEditor = (() => {
     const box = $('f-gstfree');
     return box ? box.checked : !!(existing && existing.gstFree);
   };
+
+  // ── Line prices ───────────────────────────────────────────────────────────
+
+  const SNAP_KEYS = ['mu', 'rowId', 'hoursPerUnit', 'dayUnit', 'rate', 'directCost', 'ownTime', 'customBill'];
+
+  /* The snapshot a row should carry: the saved line's own when it has one,
+     otherwise one taken from the definition it was built from (the live card
+     for a new or legacy line), otherwise none — a legacy line whose service
+     has left the card, which prices at nothing. */
+  function snapFor(def, line) {
+    if (line && line.mu !== undefined && line.mu !== null && line.mu !== '') {
+      const out = {};
+      SNAP_KEYS.forEach((k) => {
+        if (line[k] !== undefined) out[k] = line[k];
+      });
+      return out;
+    }
+    return def ? LSCCalc.lineSnapshot(def) : null;
+  }
+
+  const snapOf = (tr) => (tr.dataset.snap ? JSON.parse(tr.dataset.snap) : null);
+
+  /* One labour or travel row read back as a saved line: name, snapshot, and
+     what was typed. */
+  function lineFrom(tr, withOverride) {
+    const line = Object.assign({ name: tr.dataset.name }, snapOf(tr) || {}, {
+      qty: num(inputValue(tr, '.qty-inp')),
+    });
+    if (withOverride) line.override = num(inputValue(tr, '.custom-bill-inp'));
+    return line;
+  }
 
   // ── Row builders ──────────────────────────────────────────────────────────
 
@@ -116,6 +169,9 @@ const EstimateEditor = (() => {
     tr.dataset.rid = rid();
     tr.dataset.section = section.id;
     tr.dataset.name = line.name;
+    const snap = snapFor(def, line);
+    if (snap) tr.dataset.snap = JSON.stringify(snap);
+    def = snap ? Object.assign({ name: line.name }, snap) : null;
 
     const custom = def && def.customBill;
     const customCell = custom
@@ -149,6 +205,9 @@ const EstimateEditor = (() => {
     tr.className = 'gt-row expense-grid';
     tr.dataset.rid = rid();
     tr.dataset.name = line.name;
+    const snap = snapFor(def, line);
+    if (snap) tr.dataset.snap = JSON.stringify(snap);
+    def = snap ? Object.assign({ name: line.name }, snap) : null;
 
     const rateLabel = !def ? '—' : def.directCost ? 'Direct' : def.rate > 0 ? fmt(def.rate) : '—';
     const muLabel = !def ? '—' : def.directCost ? '—' : def.mu !== def.rate ? fmt(def.mu) : 'None';
@@ -359,7 +418,7 @@ const EstimateEditor = (() => {
       '<label class="mjp-toggle" for="f-include-overhead">' +
       '<input type="checkbox" id="f-include-overhead" checked ' +
       'aria-describedby="mjp-toggle-hint">' +
-      '<span>Include Overhead &amp; Profit Margin in Calculation</span></label>' +
+      '<span>Include Overhead &amp; Markup in Calculation</span></label>' +
       '<span class="mjp-toggle-hint" id="mjp-toggle-hint">Advisory only — it never changes what ' +
       'the client is billed.</span></div>'
     );
@@ -391,7 +450,8 @@ const EstimateEditor = (() => {
       '<span aria-hidden="true">?</span></button>' +
       '</span>' +
       '<span class="mjp-line-note" id="s-min-note"></span>' +
-      '</div>'
+      '</div>' +
+      '<div class="mjp-line mjp-income" id="mjp-income" hidden></div>'
     );
   }
 
@@ -416,12 +476,27 @@ const EstimateEditor = (() => {
       '<div class="sum-item"><div class="sum-label">Tax Set-Aside</div>' +
       '<div class="sum-value" id="s-tax" style="font-size:15px">$0.00</div></div>' +
       '<div class="sum-item sum-span2">' +
-      '<div class="sum-label">Est. Take-Home <span class="sum-label-note">(labour revenue ex GST, less set-aside — pass-through excluded)</span></div>' +
+      '<div class="sum-label">Est. Take-Home <span class="sum-label-note">(income ex GST, less the overhead its hours carry and the tax set-aside — pass-through excluded)</span></div>' +
       '<div class="sum-value" id="s-takehome" style="color:var(--ok)">$0.00</div></div>' +
       '</div>' +
       /* Under the bars, not inside them: a sixth .sum-item would read as one
          more headline figure, and this one is explicitly not that. */
       minimumLineMarkup()
+    );
+  }
+
+  /* Where this estimate's prices come from. The update button is always
+     there; the last-project toggle appears once the estimate is linked to a
+     client whose earlier estimate recorded its prices. */
+  function ratesBarMarkup() {
+    return (
+      '<div class="rates-bar" id="rates-bar">' +
+      '<span class="rates-bar-label">Prices</span>' +
+      '<span class="rates-bar-note" id="rates-note">Each line keeps the price it was added at.</span>' +
+      '<label class="doc-gst-free rates-last" id="rates-last-wrap" hidden>' +
+      '<input type="checkbox" id="f-rates-last"><span id="rates-last-label">Use rates from last project</span></label>' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="js-rates-current">Update to current rates</button>' +
+      '</div>'
     );
   }
 
@@ -481,7 +556,8 @@ const EstimateEditor = (() => {
           '<input type="checkbox" id="f-gstfree"' +
           (estimate && estimate.gstFree ? ' checked' : '') + '><span>GST-free job</span></label>'
         : '') +
-      '</div>';
+      '</div>' +
+      ratesBarMarkup();
 
     html += deliverablesSectionMarkup();
     sections.forEach((section) => {
@@ -523,17 +599,10 @@ const EstimateEditor = (() => {
     const activeRows = { travel: [], equip: [], crew: [], deliverables: [] };
 
     sections.forEach((section) => {
-      activeRows[section.id] = rowsIn(section.id).map((tr) => ({
-        name: tr.dataset.name,
-        qty: num(inputValue(tr, '.qty-inp')),
-        override: num(inputValue(tr, '.custom-bill-inp')),
-      }));
+      activeRows[section.id] = rowsIn(section.id).map((tr) => lineFrom(tr, true));
     });
 
-    activeRows.travel = rowsIn('travel').map((tr) => ({
-      name: tr.dataset.name,
-      qty: num(inputValue(tr, '.qty-inp')),
-    }));
+    activeRows.travel = rowsIn('travel').map((tr) => lineFrom(tr, false));
 
     activeRows.crew = rowsIn('crew').map((tr) => ({
       role: inputValue(tr, '.role-inp'),
@@ -576,11 +645,7 @@ const EstimateEditor = (() => {
     sections.forEach((section) => {
       let subtotal = 0;
       rowsIn(section.id).forEach((tr) => {
-        const line = {
-          name: tr.dataset.name,
-          qty: num(inputValue(tr, '.qty-inp')),
-          override: num(inputValue(tr, '.custom-bill-inp')),
-        };
+        const line = lineFrom(tr, true);
         subtotal += paintRow(tr, labourBill(labourDef(section, line), line));
       });
       setText('sum-' + section.id, fmt(subtotal));
@@ -588,7 +653,7 @@ const EstimateEditor = (() => {
 
     let travelSubtotal = 0;
     rowsIn('travel').forEach((tr) => {
-      const line = { name: tr.dataset.name, qty: num(inputValue(tr, '.qty-inp')) };
+      const line = lineFrom(tr, false);
       travelSubtotal += paintRow(tr, travelBill(travelDef(line, pricing), line));
     });
     setText('sum-travel', fmt(travelSubtotal));
@@ -609,6 +674,8 @@ const EstimateEditor = (() => {
     const active = collect();
     const totals = LSCCalc.computeTotals(active, pricing, LSCData.settings(), {
       gstFree: gstFreeNow(),
+      // The job's overhead share comes off before tax is set aside.
+      overheadRate,
     });
     setText('s-hours', totals.totalHours);
     setText('s-labour', fmt(totals.labourTotal));
@@ -659,14 +726,22 @@ const EstimateEditor = (() => {
 
     const on = includeOverheadNow();
     line.hidden = !on;
-    if (!on) return;
+    if (!on) {
+      // The income line is the same kind of advisory figure, under the same switch.
+      const income = $('mjp-income');
+      if (income) income.hidden = true;
+      return;
+    }
 
+    /* directJobCost, not expenseTotal: pass-throughs at cost plus what resold
+       travel cost — carrying no markup (calc.js, minimumJobPrice). */
     const floor = LSCCalc.minimumJobPrice(
-      totals.expenseTotal,
+      totals.directJobCost,
       totals.totalHours,
       overheadRate,
       profitMarginPct
     );
+    paintIncome(totals);
     setBreakdown(totals, floor, working);
 
     /* null is "cannot be computed", and it has to survive the trip to the
@@ -686,9 +761,30 @@ const EstimateEditor = (() => {
       's-min-note',
       'to cover ' + fmt(overheadRate) + '/hr of overhead across ' + totals.totalHours +
         (totals.totalHours === 1 ? ' hour' : ' hours') + (working ? ' (' + working + ')' : '') +
-        ' and a ' + profitMarginPct + '% margin'
+        ', marked up ' + profitMarginPct + '%'
     );
     line.classList.remove('mjp-unset');
+  }
+
+  /* The job's INCOME floor: its direct costs plus its hours at the income floor
+     — what the job has to bill for its hours to pay their share of your
+     income target (Dashboard, "income floor"). A second advisory line; like
+     the minimum it never moves a billed figure. */
+  function paintIncome(totals) {
+    const el = $('mjp-income');
+    if (!el) return;
+    if (incomeFloor === null || !(totals.totalHours > 0)) {
+      el.hidden = true;
+      return;
+    }
+    const need = LSCCalc.round2(totals.directJobCost + totals.totalHours * incomeFloor);
+    const short = LSCCalc.round2(need - totals.clientPriceExGst);
+    el.hidden = false;
+    el.innerHTML =
+      '<span class="mjp-line-label">Income floor</span>' +
+      '<span class="mjp-line-value">' + fmt(need) + '</span>' +
+      '<span class="mjp-line-note">its hours at your ' + fmt(incomeFloor) + '/hr income floor, plus direct costs' +
+      (short > 0 ? ' — this quote is ' + fmt(short) + ' under it' : ' — this quote clears it') + '</span>';
   }
 
   // ── The cost breakdown modal ──────────────────────────────────────────────
@@ -722,7 +818,7 @@ const EstimateEditor = (() => {
       return;
     }
 
-    const direct = LSCCalc.round2(totals.expenseTotal);
+    const direct = LSCCalc.round2(totals.directJobCost);
     const alloc = LSCCalc.round2(totals.totalHours * overheadRate);
     breakdown = {
       direct,
@@ -759,22 +855,22 @@ const EstimateEditor = (() => {
       breakdownRow(
         'Direct Job Costs',
         b.direct,
-        'Expenses as billed — travel, crew and equipment. Labour is not here: it is what the ' +
-          'floor is testing, not an input to it.'
+        'What the job costs you out of pocket — crew, equipment and travel at cost. Passed through, so ' +
+          'no markup goes on it. Labour is not here: it is what the floor is testing, not an input to it.'
       ) +
       breakdownRow(
         'Overhead Allocation',
         b.alloc,
         hours + ' × ' + fmt(b.rate) + '/hr — this job’s share of what the business costs to run.'
       ) +
-      breakdownRow('Profit Margin', b.profit, margin + '% on the two lines above.') +
+      breakdownRow('Markup', b.profit, margin + '% on the overhead allocation.') +
       '</div>' +
       '<div class="cb-total"><span class="cb-total-label">Minimum Job Price</span>' +
       '<span class="cb-total-value">' + fmt(b.floor) + '</span></div>' +
       /* The one place in the app that names the Overhead Rate as a figure of its
          own, per the IA doc's naming table — everywhere else it is just "Rate". */
       '<p class="cb-note">The Overhead Rate of ' + fmt(b.rate) + '/hr and the ' + margin +
-      '% margin come from your Overhead and Goals settings. Advisory only — nothing here ' +
+      '% markup come from your Overhead and Goals settings. Advisory only — nothing here ' +
       'changes what the client is billed.</p>' +
       '<div class="modal-actions">' +
       '<button type="button" class="btn btn-accent" id="cb-close">Close</button></div></div>'
@@ -823,6 +919,163 @@ const EstimateEditor = (() => {
 
     // The only control in the box, so it is both ends of the focus trap.
     $b('cb-close').focus();
+  }
+
+  // ── Rates: current card, or the client's last project ─────────────────────
+
+  /* Rebuilds one row with a new snapshot, keeping what was typed. */
+  function reprice(tr, snap) {
+    const section = sections.find((sec) => sec.id === tr.dataset.section);
+    const line = Object.assign({ name: tr.dataset.name }, snap, {
+      qty: inputValue(tr, '.qty-inp'),
+      override: inputValue(tr, '.custom-bill-inp'),
+    });
+    const fresh = section ? buildLabourRow(section, null, line) : buildTravelRow(null, line);
+    if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
+    tr.replaceWith(fresh);
+    return fresh;
+  }
+
+  /* Every priced row: labour rows carry data-section, travel rows don't. */
+  const priceRows = () => sections.flatMap((sec) => rowsIn(sec.id)).concat(rowsIn('travel'));
+
+  /* The live card row for a line, by row id then name, in its own category. */
+  function liveDefFor(tr) {
+    const snap = snapOf(tr) || {};
+    const pricing = LSCData.pricing();
+    const defs = tr.dataset.section
+      ? ((pricing.labourSections || []).find((sec) => sec.id === tr.dataset.section) || { rows: [] }).rows
+      : pricing.travelRows || [];
+    return (snap.rowId && defs.find((r) => r.id === snap.rowId)) || defs.find((r) => r.name === tr.dataset.name) || null;
+  }
+
+  function updateToCurrent() {
+    let changed = 0;
+    let missing = 0;
+    priceRows().forEach((tr) => {
+      const def = liveDefFor(tr);
+      if (!def) {
+        missing += 1;
+        return;
+      }
+      const next = LSCCalc.lineSnapshot(def);
+      if (JSON.stringify(next) !== JSON.stringify(snapOf(tr))) {
+        delete tr.dataset.prevSnap;
+        reprice(tr, next);
+        changed += 1;
+      }
+    });
+    // Current rates are no longer the last project's.
+    ratesFromLast = false;
+    const box = $('f-rates-last');
+    if (box) box.checked = false;
+    recalc();
+    Toast.ok(
+      (changed ? changed + ' price' + (changed === 1 ? '' : 's') + ' updated to the rate card' : 'Every price already matches the rate card') +
+        (missing ? '; ' + missing + ' line' + (missing === 1 ? ' isn’t' : 's aren’t') + ' on it any more and kept ' + (missing === 1 ? 'its' : 'their') + ' price' : '') + '.'
+    );
+  }
+
+  const rateKey = (sectionId, by) => (sectionId || 'travel') + '|' + by;
+
+  /* The client's most recent other estimate that recorded its prices, and its
+     prices keyed by category + row id and category + name. */
+  function buildLastProject(estimates, clientId) {
+    const mine = estimates
+      .filter((e) => e.clientId === clientId && (!existing || e.id !== existing.id))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    for (const e of mine) {
+      const rates = new Map();
+      Object.keys(e.activeRows || {}).forEach((key) => {
+        if (key === 'crew' || key === 'equip' || key === 'deliverables' || !Array.isArray(e.activeRows[key])) return;
+        e.activeRows[key].forEach((line) => {
+          const snap = snapFor(null, line);
+          if (!snap) return;
+          const section = key === 'travel' ? '' : key;
+          if (snap.rowId) rates.set(rateKey(section, 'id:' + snap.rowId), snap);
+          rates.set(rateKey(section, 'name:' + line.name), snap);
+        });
+      });
+      if (rates.size) return { estimate: e, rates };
+    }
+    return mine.length ? { estimate: mine[0], rates: new Map() } : null;
+  }
+
+  function lastRateFor(sectionId, rowId, name) {
+    if (!lastProject || !lastProject.rates.size) return null;
+    return (rowId && lastProject.rates.get(rateKey(sectionId, 'id:' + rowId))) ||
+      lastProject.rates.get(rateKey(sectionId, 'name:' + name)) || null;
+  }
+
+  function paintLastToggle() {
+    const wrap = $('rates-last-wrap');
+    if (!wrap) return;
+    const clientId = linkedClientId();
+    const usable = Boolean(clientId && lastProject && lastProjectFor === clientId && lastProject.rates.size);
+    wrap.hidden = !(clientId && lastProject && lastProjectFor === clientId);
+    const box = $('f-rates-last');
+    box.disabled = !usable;
+    if (lastProject && lastProjectFor === clientId) {
+      const e = lastProject.estimate;
+      $('rates-last-label').textContent = usable
+        ? 'Use rates from last project — ' + (e.name || e.upid || 'untitled') + (e.date ? ', ' + e.date : '')
+        : 'Last project (' + (e.name || e.upid || 'untitled') + ') didn’t record its prices — saved before 28 Sep 2026';
+    }
+    if (!usable && ratesFromLast) setRatesFromLast(false);
+  }
+
+  /* Looked up when the estimate is (or becomes) linked to a client. */
+  async function lookUpLastProject() {
+    const clientId = linkedClientId();
+    if (!clientId || lastProjectFor === clientId) return paintLastToggle();
+    lastProjectFor = clientId;
+    lastProject = undefined;
+    try {
+      const reply = await LSCApi.get('/api/estimates');
+      if (!onScreen() || linkedClientId() !== clientId) return;
+      lastProject = buildLastProject(reply.estimates || [], clientId);
+    } catch (err) {
+      if (err instanceof LSCApi.ApiError && err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      lastProject = null;
+    }
+    paintLastToggle();
+  }
+
+  /* On: each line takes the last project's price for it, remembering its own.
+     Off: each line gets its own back. Lines the last project didn't have keep
+     the price they have. */
+  function setRatesFromLast(on) {
+    ratesFromLast = on;
+    let swapped = 0;
+    priceRows().forEach((tr) => {
+      if (on) {
+        const snap = snapOf(tr) || {};
+        const last = lastRateFor(tr.dataset.section || '', snap.rowId, tr.dataset.name);
+        if (!last) return;
+        const mark = tr.dataset.snap || '';
+        const fresh = reprice(tr, last);
+        fresh.dataset.prevSnap = mark || 'none';
+        swapped += 1;
+      } else if (tr.dataset.prevSnap) {
+        // 'none': the line had no price of its own (a legacy line whose service
+        // has left the card) — an empty snapshot rebuilds it unpriced again.
+        const prev = tr.dataset.prevSnap === 'none' ? {} : JSON.parse(tr.dataset.prevSnap);
+        delete tr.dataset.prevSnap;
+        reprice(tr, prev);
+      }
+    });
+    const box = $('f-rates-last');
+    if (box) box.checked = on;
+    $('rates-note').textContent = on
+      ? swapped + ' line' + (swapped === 1 ? '' : 's') + ' priced as last time; anything new to this job is at today’s rates.'
+      : 'Each line keeps the price it was added at.';
+    recalc();
+  }
+
+  /* A new line while the toggle is on takes the last project's price for it. */
+  function priceForNewLine(sectionId, def) {
+    const last = ratesFromLast ? lastRateFor(sectionId, def.id, def.name) : null;
+    return last ? Object.assign({ name: def.name, qty: 0 }, last) : { name: def.name, qty: 0 };
   }
 
   // ── Saving ────────────────────────────────────────────────────────────────
@@ -884,6 +1137,7 @@ const EstimateEditor = (() => {
     $('f-address').value = client.address || '';
     link = { id: client.id, name: client.businessName };
     paintLink();
+    lookUpLastProject();
   }
 
   /* "Save to client list" for a name that isn't linked. An existing record with
@@ -1067,7 +1321,15 @@ const EstimateEditor = (() => {
 
     const business = $('f-business');
     ClientTypeahead.attach(business, { onPick: pickClient });
-    business.addEventListener('input', paintLink);
+    business.addEventListener('input', () => {
+      paintLink();
+      paintLastToggle();
+    });
+
+    $('js-rates-current').addEventListener('click', updateToCurrent);
+    $('f-rates-last').addEventListener('change', function () {
+      setRatesFromLast(this.checked);
+    });
 
     const docType = $('f-doctype');
     docType.addEventListener('change', function () {
@@ -1095,7 +1357,7 @@ const EstimateEditor = (() => {
         const select = $('sel-' + section.id);
         const def = section.rows.find((r) => r.name === (select && select.value));
         if (!def) return;
-        injectRow($('tbody-' + section.id), buildLabourRow(section, def, { name: def.name, qty: 0 }));
+        injectRow($('tbody-' + section.id), buildLabourRow(section, def, priceForNewLine(section.id, def)));
       });
     });
 
@@ -1104,7 +1366,7 @@ const EstimateEditor = (() => {
       const defs = (pricing && pricing.travelRows) || [];
       const def = defs.find((r) => r.name === (select && select.value));
       if (!def) return;
-      injectRow($('tbody-travel'), buildTravelRow(def, { name: def.name, qty: 0 }));
+      injectRow($('tbody-travel'), buildTravelRow(def, priceForNewLine('', def)));
     });
 
     $('add-crew').addEventListener('click', () => injectRow($('tbody-crew'), buildCostRow('crew', {})));
@@ -1140,6 +1402,10 @@ const EstimateEditor = (() => {
        Dashboard read, so the floor here and the rate there cannot disagree. */
     overheadRate = LSCData.overheadRate();
     profitMarginPct = LSCData.goals().targetProfitMarginPct;
+    incomeFloor = LSCData.incomeFloor();
+    lastProject = undefined;
+    lastProjectFor = null;
+    ratesFromLast = false;
     const activeRows = (estimate && estimate.activeRows) || {};
     sections = sectionsFor(activeRows, pricing, estimate && estimate.sectionLabels);
 
@@ -1148,6 +1414,7 @@ const EstimateEditor = (() => {
     bind(pricing);
     paintLink();
     recalc();
+    lookUpLastProject();
 
     baseline = snapshot();
     LSCUnsaved.watch('estimate-editor', {

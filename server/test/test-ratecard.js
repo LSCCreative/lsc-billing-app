@@ -100,7 +100,8 @@ test('an estimate saved before pricing is configured still bills labour and trav
   assert.equal(totals.expenseTotal, 1190); // 50 + 140 travel + 1000 crew
   assert.equal(totals.totalIncGst, 2590);
   assert.equal(totals.totalHours, 10);
-  // 35% of labour, which is the whole point of having found the rate card.
-  assert.equal(totals.taxSetAside, 490);
-  assert.equal(totals.estTakeHome, 910);
+  // 35% of income — labour plus the $40 markup on transport — which is the
+  // whole point of having found the rate card.
+  assert.equal(totals.taxSetAside, 504);
+  assert.equal(totals.estTakeHome, 936);
 });

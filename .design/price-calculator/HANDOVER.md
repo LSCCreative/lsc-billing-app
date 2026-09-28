@@ -96,7 +96,14 @@ service business that sells shoot days rather than units.
 - [x] **The review's should-fix list** — done 2026-09-28 except (4). See "What landed — review
       should-fixes" below. **Live** — pushed with the must-fix on 2026-09-28 with the user's go-ahead
       (Pages run 36364499560, success; web only, no NAS redeploy).
-- [ ] ← **NEXT: should-fix 4, a real VoiceOver pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
+- [x] **Money-math audit — all 15 findings fixed** (money math — Opus/high), 2026-09-28. See "What
+      landed — audit fixes" below. **Committed, NOT deployed. The NAS must be redeployed BEFORE
+      Pages is pushed**: the new web build loads `/api/tax-years` at boot, which the old server
+      404s, and that takes the whole app down. Migration v7 runs on the NAS's next boot.
+- [ ] ← **NEXT: (a) deploy — NAS first (backup, migration v7), then Pages — with the user's
+      go-ahead; (b) the user saves their FY 2026–27 tax scale on Profit Goals** (until then the
+      Dashboard's floors and the Rate Card's floor lines are em dashes, by design); **(c) should-fix
+      4, a real VoiceOver pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
       for the announcer regions inside the `aria-modal` dialogs and judging the one-second debounce.
       An agent can't do this one. Also still open: overhead-finance decision 74's estimate-editor
       half (no announcements there).
@@ -439,6 +446,52 @@ whatever the caller sent, so a bad value already sitting on a row from some earl
 can't survive forever untouched. `billableCapacityHrsPerWeek` itself is no longer a write target at
 all — it's recomputed from the four real fields on every save (`annualBillableHours ÷ 52`) — so
 sending it now does nothing; the Profit Goals task will make that explicit on screen.
+
+## What landed (2026-09-28) — audit fixes
+
+The money-math audit (`/code-review`, 15 findings) — all fixed, four of them after the user
+answered the design questions recorded as decisions 6–9 above. 216 tests pass (was 188). Verified
+in headless Chrome against `api-scratch` (now migrated to v7): Goals,
+Dashboard, Rate Card and the estimate editor at 1280, 800 and 375, no page overflow, no console
+errors, and the figures hand-checked (pay before tax solves 0.68G + 9,480 = 80,000 → $103,705.88).
+
+**Schema v7** (additive): `tax_years` (fy_label, brackets_json, medicare_levy_pct);
+`goals.super_pct`, `goals.bad_debt_pct` (percents); `depreciation_assets.expected_resale_value`,
+`opening_value_fy` (backfilled from `created_at` wherever an opening value already existed).
+**New route** `/api/tax-years` (GET, PUT `/:fy`). `PUT /api/pricing` and the estimates routes now
+validate (tax rate must be a fraction; no negative prices, quantities, days or costs).
+
+What changed in the money, and where:
+
+- **GST split adds up to the cent** (`computeTotals`): two parts rounded, the third derived.
+  ~1.1% of prices used to print Subtotal + GST ≠ Total. A test sweeps every price to $200.
+- **Negatives price as nothing** in calc, and are refused by the routes.
+- **Saved lines carry their own price** — `lineDef` / `lineSnapshot` in calc.js, used by
+  `rows.js` and the editor. Legacy lines fall back to the live card (row id, then name) and get a
+  snapshot the first time the editor opens them. Rate-card rows now carry a stable `id`
+  (assigned by the Rate Card at mount, saved on its next save).
+- **Travel now counts as income**: a resold row's markup (mu − rate), or all of a row ticked
+  **Your time** (new `ownTime` flag, whose quantity also counts as billable hours). The default
+  card's rows are not ticked; Transport & Logistics Hrs is the obvious candidate — the user's call.
+- **Tax set-aside is on profit**: income less `options.overheadRate × totalHours`. The server
+  computes the rate itself (`readOverheadRate`, ratecard.js). **Est. Take-Home now also subtracts
+  the overhead share** — a real change to that figure on every newly saved estimate.
+- **Minimum Job Price**: `directJobCost + hours × rate × (1 + markup)` — no markup on
+  pass-throughs, and direct cost is what travel *cost*, not what it bills.
+- **Revenue target** (`revenueTarget`): cost + grossForNet(net) + super, ÷ (1 − bad debt), every
+  part rounded and the total built from them. `grossForNet` inverts the brackets in closed form.
+- **Income floor** (`incomeFloorPerHour`, `LSCData.incomeFloor()`): Dashboard headline floors,
+  the comparison, the Rate Card's floor lines, and a second line under the editor's minimum.
+- **jobsNeededPerYear** no longer rounds before `ceil` (11.004 → 12 jobs, not 11).
+- **Replacement reserve** is net of expected resale.
+- **Depreciation**: car limit caps the GST-inclusive cost and the credit at limit/11; the opening
+  adjustable value applies from `opening_value_fy`; a pool below nil reports `assessableIncome`;
+  a small business pool under the write-off threshold is deducted in full; proceeds above cost
+  are a separate `capitalGain`. CSV gained two columns (Capital Gain, Pool Assessable Income);
+  divergence checks cover both new fields (older locks, which lack them, are not flagged).
+
+**After deploy, the live Dashboard's floors read "—"** until the user saves the FY 2026–27 tax
+scale on Profit Goals — deliberate: the placeholders are not the user's figures until saved.
 
 ## What landed (2026-09-28) — review should-fixes
 
@@ -1471,8 +1524,23 @@ that will get questioned by a fresh agent:
    appears as an editable Dashboard readout instead.
 
 Also settled: GST is an editable mirror of `settings.gst` (currently `registered: false`), not a
-copy; the floor compares against `mu`, not `rate`; nothing ever auto-writes the rate card; the owner's
-wage term stays out of `calc.js` (declined knowingly 2026-09-15 — do not reopen).
+copy; the floor compares against `mu`, not `rate`; nothing ever auto-writes the rate card.
+
+**Reopened and re-decided by the user on 2026-09-28, after the money-math audit** (these replace
+earlier entries — don't revert them to the old ones):
+
+6. **The rate card is measured against an INCOME floor**: Target Annual Revenue ÷ annual billable
+   hours, so it carries the owner's pay. The cost floor (overhead × (1 + markup)) is still shown
+   beside it and still drives the estimate editor's Minimum Job Price. This overturns the
+   2026-09-15 "no wage term" decision *for the floors only*; `mu` is still never written.
+7. **"Target Profit Margin" is renamed Target Markup** — labels only. It was always applied as a
+   markup; no figure changed. The DB column keeps its old name.
+8. **Income tax uses the ATO resident brackets + Medicare levy**, stored per FY in `tax_years`,
+   entered and confirmed by the user (placeholders prefilled, flagged). Tax is levied on the pay,
+   not on revenue: running costs are added untaxed. The old flat-rate-on-revenue model is gone.
+9. **Saved estimate lines keep their own price** (a snapshot on the line), with an explicit
+   "Update to current rates" button, and a "Use rates from last project" toggle for a client
+   who has been quoted before — the user's own addition to the recommended option.
 
 ## Accounting rules a fresh agent will get wrong
 

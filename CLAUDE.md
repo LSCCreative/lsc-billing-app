@@ -39,7 +39,10 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    Profit Goals' read-only capacity, the estimate editor's day-unit wording, the responsive
    pass, the accessibility pass and the decline curve chart. The review's must-fix and nine of
    its ten should-fixes are done ([`DESIGN_REVIEW.md`](.design/price-calculator/DESIGN_REVIEW.md),
-   2026-09-28, live on Pages); what remains is a real VoiceOver pass by a person. All 23
+   2026-09-28, live on Pages); what remains is a real VoiceOver pass by a person. A money-math
+   audit the same day fixed 15 findings and **re-decided four settled points with the user**
+   (income floor, markup rename, ATO tax brackets, per-line price snapshots) — see the handover's
+   decisions 6–9; that work is committed but **needs a NAS redeploy (migration v7) before Pages**. All 23
    build tasks are live (NAS + Pages, 2026-09-27/28);
    check its handover for anything
    committed since but not yet pushed or deployed.

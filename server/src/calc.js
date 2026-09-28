@@ -79,15 +79,28 @@
  *      counts working days. Decided with the user on 2026-09-15, replaced with
  *      their agreement on 2026-09-27.
  *
- *   3. TAX IS PROVISIONED AGAINST REVENUE, NOT PROFIT. targetAnnualRevenue
- *      solves (overhead + desired net) / (1 - taxRate), treating tax as a flat
- *      slice off the top. Income tax is really levied on profit, so this is not
- *      the accountant's formula — it is the one the rest of this file already
- *      uses (taxSetAside above is labour revenue × taxSetAsideRate). One
- *      internally consistent planning figure beats two models of tax in the
- *      same app disagreeing by thousands. Chosen with the user on 2026-09-15;
- *      it errs high, asking for more revenue than a profit-based calculation
- *      would.
+ *   3. TAX IS LEVIED ON PROFIT, THROUGH THE ATO BRACKETS. SUPERSEDED
+ *      2026-09-28 (money-math audit). This used to solve
+ *      (overhead + desired net) / (1 − flat rate), which taxed deductible
+ *      overhead and ignored the progressive scale — ~$14k too high on the
+ *      reference figures. Now: the pay needed before tax is solved exactly
+ *      through the user's own per-FY resident brackets plus Medicare levy
+ *      (grossForNet), super and a bad-debt allowance are added, and business
+ *      cost is added untaxed. Per job, taxSetAside is provisioned on the job's
+ *      profit — its income less the overhead its hours carry — at the user's
+ *      set-aside rate, which Profit Goals suggests from the same brackets.
+ *
+ *   1a. THE WAGE DECISION, REVISITED 2026-09-28. Decision 1 stands for
+ *      minimumJobPrice and hourlyFloor, which remain COST floors. But the user
+ *      chose, after the audit, to measure the rate card against an INCOME
+ *      floor — Target Annual Revenue ÷ annual billable hours — which carries
+ *      the owner's pay. See incomeFloorPerHour.
+ *
+ *   4. THE "MARGIN" IS A MARKUP. goals.target_profit_margin_pct has always
+ *      been applied as cost × (1 + pct/100), which is a markup: 25% on cost is
+ *      a 20% margin on price. Since 2026-09-28 the screens call it a markup;
+ *      the column keeps its old name (renaming it is a table rebuild for no
+ *      arithmetic change). Parameters here say markupPct.
  *
  * HOURS AND QUANTITY ARE NOT THE SAME THING (hoursPerUnit)
  * Added 2026-09-27 for the price calculator (.design/price-calculator/). The
@@ -117,11 +130,22 @@
  * be wrong in: the floor would read as a computed answer while quietly pricing
  * a shoot as though it took no time at all.
  *
- * UNITS — the one trap in here. `taxRate` and `taxSetAsideRate` are FRACTIONS
- * (0.35 is 35%, as the rate card stores it). `profitMarginPct` is a PERCENT (25
- * is 25%, as goals.target_profit_margin_pct stores it). The parameter names
- * carry the difference and these functions do not guess: a margin passed as
- * 0.25 is read as a quarter of one percent, not as a quarter.
+ * UNITS — the one trap in here. `taxSetAsideRate` is a FRACTION (0.35 is 35%,
+ * as the rate card stores it). `markupPct` is a PERCENT (25 is 25%, as
+ * goals.target_profit_margin_pct stores it), and so are every other goals
+ * percentage (superPct, badDebtPct) and every figure in a tax year (bracket
+ * ratePct, medicareLevyPct). The parameter names carry the difference and
+ * these functions do not guess: a markup passed as 0.25 is read as a quarter
+ * of one percent, not as a quarter.
+ *
+ * SAVED LINES CARRY THEIR OWN PRICES (2026-09-28). A labour or travel line
+ * saved on an estimate stores the price it was quoted at — mu, and for labour
+ * hoursPerUnit/dayUnit, for travel rate/directCost/ownTime — plus the rate-card
+ * row's id. computeTotals prices a line from those when present, and only
+ * falls back to the live card (by row id, then by name) for a line saved
+ * before this existed. Before, every save re-priced a quote against today's
+ * card and a renamed service silently fell out of the total while the PDF
+ * still listed it. See lineDef below.
  */
 
 /** Money is stored and compared at cent precision, never as raw float sums. */
@@ -133,6 +157,57 @@ function round2(n) {
 function num(v) {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/* A quantity, day count or price, never below zero. A typed −3 used to price
+   straight through into a negative invoice with negative GST; there is no
+   negative line on a quote or an invoice, so it reads as nothing. */
+function nonNeg(v) {
+  return Math.max(0, num(v));
+}
+
+/** activeRows keys that are not labour categories (ratecard.js has the same list). */
+const NON_LABOUR_KEYS = { travel: 1, equip: 1, crew: 1, deliverables: 1 };
+
+/* Does a saved line carry its own price? `mu` is the marker: every line saved
+   since 2026-09-28 has it, and no line saved before does. */
+const hasSnapshot = (line) => Boolean(line) && line.mu !== undefined && line.mu !== null && line.mu !== '';
+
+/**
+ * The definition a saved line prices from: its own snapshot when it has one,
+ * otherwise the live rate-card row with its id, otherwise the row with its
+ * name (lines saved before rows had ids), otherwise null — a legacy line
+ * whose service has since gone from the card, which prices at nothing, as it
+ * always did.
+ *
+ * @param {Array<object>} defs — the rate-card rows to fall back to.
+ * @param {object} line — a saved line.
+ */
+function lineDef(defs, line) {
+  if (!line) return null;
+  if (hasSnapshot(line)) return line;
+  const rows = defs || [];
+  return (line.rowId && rows.find((r) => r.id === line.rowId)) || rows.find((r) => r.name === line.name) || null;
+}
+
+/**
+ * The price fields a line stores when it is added to an estimate, from its
+ * rate-card row, plus the one flag that decides how it bills (customBill).
+ * Labour and travel rows carry different fields; whichever the row has are
+ * copied, and nothing else — not the name, which the line already has.
+ */
+function lineSnapshot(def) {
+  const d = def || {};
+  const out = { mu: nonNeg(d.mu) };
+  if (d.id) out.rowId = d.id;
+  if (d.hoursPerUnit !== undefined) out.hoursPerUnit = d.hoursPerUnit;
+  if (d.dayUnit === 'full' || d.dayUnit === 'half') out.dayUnit = d.dayUnit;
+  if (d.rate !== undefined) out.rate = nonNeg(d.rate);
+  if (d.directCost) out.directCost = true;
+  if (d.ownTime) out.ownTime = true;
+  // Not a price, but how the line bills: whether it takes a custom amount.
+  if (d.customBill) out.customBill = true;
+  return out;
 }
 
 /**
@@ -153,6 +228,22 @@ function hoursPerUnitOf(def) {
 }
 
 /**
+ * The labour sections to walk for an estimate: the card's own, plus any
+ * category the estimate has lines in that the card no longer does (a deleted
+ * category). Lines there still price from their own snapshots; before
+ * snapshots they were skipped with the category.
+ */
+function labourSectionsOf(rows, labourSections) {
+  const out = labourSections.slice();
+  const known = new Set(labourSections.map((s) => s.id));
+  Object.keys(rows || {}).forEach((id) => {
+    if (NON_LABOUR_KEYS[id] || known.has(id) || !Array.isArray(rows[id])) return;
+    out.push({ id, rows: [] });
+  });
+  return out;
+}
+
+/**
  * @param {object} activeRows  { deliverables, preprod, prod, post, travel, crew, equip }
  *   — the rows saved on the estimate. Labour rows carry { name, qty, override },
  *   travel rows { name, qty }, crew/equip rows { days, cost }.
@@ -160,7 +251,9 @@ function hoursPerUnitOf(def) {
  *   — a labour row def carries { name, mu, rate } and optionally hoursPerUnit
  *   (absent on every hourly row; see the header).
  * @param {object} settings    { gst: { registered, rate, pricesIncludeGst } }
- * @param {object} [options]   the estimate's own tax treatment: { gstFree }.
+ * @param {object} [options]   { gstFree, overheadRate } — the estimate's own
+ *   tax treatment, and the overhead rate per billable hour its tax set-aside
+ *   deducts (optional; see Take-home).
  *   Named `options` rather than `estimate` or `document` on purpose — this file
  *   is copied verbatim into the browser, where a parameter called `document`
  *   would shadow the global inside this function.
@@ -194,51 +287,78 @@ function computeTotals(activeRows, pricing, settings, options) {
   let labourTotal = 0;
   let totalHours = 0;
 
-  for (const section of labourSections) {
+  for (const section of labourSectionsOf(rows, labourSections)) {
     const saved = rows[section.id] || [];
     for (const line of saved) {
-      const def = (section.rows || []).find((r) => r.name === line.name);
-      if (!def) continue; // rate removed from the card since this was saved
-      const qty = num(line.qty);
+      const def = lineDef(section.rows, line);
+      if (!def) continue; // a pre-snapshot line whose service has left the card
+      const qty = nonNeg(line.qty);
       totalHours += qty * hoursPerUnitOf(def);
-      const override = num(line.override);
-      labourTotal += override > 0 ? override : qty * num(def.mu);
+      const override = nonNeg(line.override);
+      labourTotal += override > 0 ? override : qty * nonNeg(def.mu);
     }
   }
 
   // ── Travel ──────────────────────────────────────────────────────────────
-  // Direct-cost rows (fuel, flights, accommodation) are billed at what they
-  // cost. Everything else is billed at the marked-up rate.
+  // Three kinds of row, and they differ in what the business keeps:
+  //   directCost — fuel, flights, accommodation: the quantity IS the amount,
+  //     billed at cost, passed straight through.
+  //   ownTime — the owner's own hours billed as travel ("Transport & Logistics
+  //     Hrs"): the whole bill is income, and its hours are billable hours that
+  //     carry overhead like any labour hour.
+  //   anything else — bought in and resold (crew meals): `rate` is what it
+  //     costs, and only the markup above it is income.
+  // Until 2026-09-28 none of travel counted as income, so a marked-up travel
+  // row had no tax set aside against it and its hours carried no overhead.
   let travelTotal = 0;
   let travelPassThrough = 0;
+  let travelCost = 0;
+  let travelIncome = 0;
 
   for (const line of rows.travel || []) {
-    const def = travelDefs.find((r) => r.name === line.name);
+    const def = lineDef(travelDefs, line);
     if (!def) continue;
-    const qty = num(line.qty);
+    const qty = nonNeg(line.qty);
     if (def.directCost) {
       travelTotal += qty;
       travelPassThrough += qty;
+      continue;
+    }
+    const bill = qty * nonNeg(def.mu);
+    travelTotal += bill;
+    if (def.ownTime) {
+      travelIncome += bill;
+      totalHours += qty * hoursPerUnitOf(def);
     } else {
-      travelTotal += qty * num(def.mu);
+      const cost = qty * nonNeg(def.rate);
+      travelCost += cost;
+      travelIncome += bill - cost;
     }
   }
 
   // ── Crew and equipment ──────────────────────────────────────────────────
   // Always billed at cost: these are other people's invoices passing through.
   let crewTotal = 0;
-  for (const line of rows.crew || []) crewTotal += num(line.days) * num(line.cost);
+  for (const line of rows.crew || []) crewTotal += nonNeg(line.days) * nonNeg(line.cost);
 
   let equipTotal = 0;
-  for (const line of rows.equip || []) equipTotal += num(line.days) * num(line.cost);
+  for (const line of rows.equip || []) equipTotal += nonNeg(line.days) * nonNeg(line.cost);
 
   const expenseTotal = travelTotal + crewTotal + equipTotal;
   const passThroughCost = crewTotal + equipTotal + travelPassThrough;
+  /* What the job costs the business out of pocket: pass-throughs, plus what
+     resold travel was bought for. minimumJobPrice's direct-cost term. */
+  const directJobCost = passThroughCost + travelCost;
 
   // ── GST ─────────────────────────────────────────────────────────────────
   // `billed` is the sum of every line as entered. Whether that figure already
   // contains GST depends on how the rate card is kept, so the split runs one of
   // two ways rather than assuming.
+  //
+  // THE THREE FIGURES ADD UP TO THE CENT. Two are rounded and the third is
+  // derived from those rounded two, never rounded on its own: rounding all
+  // three independently printed $3.65 + $0.37 = $4.01 on a tax invoice, about
+  // once in every ninety prices (2026-09-28 audit).
   const billed = labourTotal + expenseTotal;
 
   let clientPriceExGst;
@@ -246,38 +366,48 @@ function computeTotals(activeRows, pricing, settings, options) {
   let totalIncGst;
 
   if (!gstRegistered) {
-    clientPriceExGst = billed;
+    clientPriceExGst = round2(billed);
     gst = 0;
-    totalIncGst = billed;
+    totalIncGst = clientPriceExGst;
   } else if (pricesIncludeGst) {
-    totalIncGst = billed;
-    clientPriceExGst = billed / (1 + gstRate);
-    gst = totalIncGst - clientPriceExGst;
+    totalIncGst = round2(billed);
+    clientPriceExGst = round2(totalIncGst / (1 + gstRate));
+    gst = round2(totalIncGst - clientPriceExGst);
   } else {
-    clientPriceExGst = billed;
-    gst = billed * gstRate;
-    totalIncGst = billed + gst;
+    clientPriceExGst = round2(billed);
+    gst = round2(clientPriceExGst * gstRate);
+    totalIncGst = round2(clientPriceExGst + gst);
   }
 
   // ── Take-home ───────────────────────────────────────────────────────────
-  // Income tax is provisioned against labour revenue only, and against the
-  // ex-GST figure — GST collected belongs to the ATO, not to the business, so
-  // it is never part of the tax-set-aside base.
-  const labourExGst = pricesIncludeGst ? labourTotal / (1 + gstRate) : labourTotal;
-  const taxSetAsideRate = num(pricing && pricing.taxSetAsideRate);
-  const taxSetAside = labourExGst * taxSetAsideRate;
-  const estTakeHome = labourExGst - taxSetAside;
+  // Income is labour plus travel income (see Travel above), ex-GST — GST
+  // collected belongs to the ATO. Tax is provisioned on PROFIT: income less
+  // the overhead this job's hours carry (options.overheadRate × totalHours),
+  // because running costs are deductible. With no overhead rate known the
+  // whole income is the base, which errs high, as the old model always did.
+  const exGst = (v) => (pricesIncludeGst ? v / (1 + gstRate) : v);
+  const incomeExGst = exGst(labourTotal + travelIncome);
+  const overheadRate = numOrNull(options && options.overheadRate);
+  const overheadShare = overheadRate !== null && overheadRate > 0 ? totalHours * overheadRate : 0;
+  const taxable = Math.max(0, incomeExGst - overheadShare);
+  const rawRate = num(pricing && pricing.taxSetAsideRate);
+  const taxSetAsideRate = rawRate > 0 && rawRate < 1 ? rawRate : 0;
+  const taxSetAside = taxable * taxSetAsideRate;
+  const estTakeHome = incomeExGst - overheadShare - taxSetAside;
 
   return {
     // What the client sees
-    clientPriceExGst: round2(clientPriceExGst),
-    gst: round2(gst),
-    totalIncGst: round2(totalIncGst),
+    clientPriceExGst,
+    gst,
+    totalIncGst,
 
     // How it breaks down
     labourTotal: round2(labourTotal),
     expenseTotal: round2(expenseTotal),
     passThroughCost: round2(passThroughCost),
+    directJobCost: round2(directJobCost),
+    incomeExGst: round2(incomeExGst),
+    overheadShare: round2(overheadShare),
     /* Billable hours, not line quantities — see the header. Overhead is
        allocated across this, so a day row contributes its whole day. */
     totalHours: round2(totalHours),
@@ -473,38 +603,45 @@ function overheadRatePerHour(annualTotal, annualBillableHrs) {
 
 /**
  * The advisory floor for one job: what it has to clear to cover its direct
- * costs, its share of overhead, and the target margin.
+ * costs, its share of overhead, and the target markup on that overhead.
  *
- *   (directJobCosts + estimatedHours × overheadRate) × (1 + profitMarginPct/100)
+ *   directJobCost + estimatedHours × overheadRate × (1 + markupPct/100)
+ *
+ * THE MARKUP IS ON THE HOURS ONLY (2026-09-28 audit). It used to multiply the
+ * direct costs too, so a job with $10,000 of crew billed at cost demanded
+ * $2,500 of markup on money the Dashboard says is passed through — an $11,200
+ * job read as under-priced against a $12,651 floor. Pass-throughs are billed
+ * at cost and carry no markup; direct cost here is directJobCost from
+ * computeTotals (pass-throughs plus what resold travel cost), not expenseTotal,
+ * which includes travel's own markup.
  *
  * Advisory only. computeTotals never reads this, and the estimate editor's
  * toggle must never move clientPriceExGst or totalIncGst in either position.
  *
  * @param {number} directJobCosts — the job's own out-of-pocket costs, i.e.
- *   expenseTotal from computeTotals.
+ *   directJobCost from computeTotals.
  * @param {number} estimatedHours — totalHours from computeTotals, which is
  *   Σ qty × hoursPerUnit and not a sum of quantities. This function is the
  *   reason that distinction exists: it is the only place the job's hours turn
  *   into money, so a day row counted as one hour under-allocates overhead here
  *   and nowhere else. See the header.
  * @param {number} overheadRate — from overheadRatePerHour().
- * @param {number} profitMarginPct — a PERCENT (25 is 25%), unlike the tax rates
- *   elsewhere in this file, which are fractions. See UNITS in the header.
+ * @param {number} markupPct — a PERCENT (25 is 25%), unlike taxSetAsideRate,
+ *   which is a fraction. See UNITS in the header.
  * @returns {number|null} null when there is no overhead rate to allocate from,
  *   so the editor shows its set-up prompt rather than a floor that silently
  *   leaves overhead out and reads as if it were the real minimum.
  */
-function minimumJobPrice(directJobCosts, estimatedHours, overheadRate, profitMarginPct) {
+function minimumJobPrice(directJobCosts, estimatedHours, overheadRate, markupPct) {
   const rate = numOrNull(overheadRate);
   if (rate === null || rate <= 0) return null;
 
-  /* A 0% margin is a real answer — "just break even on this one" — so it is
-     allowed through where a missing margin is not. */
-  const margin = numOrNull(profitMarginPct);
-  if (margin === null || margin < 0) return null;
+  /* A 0% markup is a real answer — "just break even on this one" — so it is
+     allowed through where a missing one is not. */
+  const markup = numOrNull(markupPct);
+  if (markup === null || markup < 0) return null;
 
-  const cost = num(directJobCosts) + num(estimatedHours) * rate;
-  return round2(cost * (1 + margin / 100));
+  return round2(nonNeg(directJobCosts) + nonNeg(estimatedHours) * rate * (1 + markup / 100));
 }
 
 /**
@@ -539,11 +676,11 @@ function labourHoursBreakdown(activeRows, pricing) {
   let hourlyHours = 0;
   let totalHours = 0;
 
-  for (const section of labourSections) {
+  for (const section of labourSectionsOf(rows, labourSections)) {
     for (const line of rows[section.id] || []) {
-      const def = (section.rows || []).find((r) => r.name === line.name);
+      const def = lineDef(section.rows, line);
       if (!def) continue; // same rule as computeTotals
-      const qty = num(line.qty);
+      const qty = nonNeg(line.qty);
       const perUnit = hoursPerUnitOf(def);
       totalHours += qty * perUnit;
 
@@ -564,6 +701,17 @@ function labourHoursBreakdown(activeRows, pricing) {
     .filter((g) => g.qty !== 0)
     .sort((a, b) => rank(a) - rank(b) || b.hoursPerUnit - a.hoursPerUnit)
     .map((g) => ({ ...g, qty: round2(g.qty), hours: round2(g.qty * g.hoursPerUnit) }));
+
+  /* Own-time travel hours count in computeTotals' totalHours, so they are
+     part of this total too, as hourly work — the test pins the two equal. */
+  const travelDefs = (pricing && pricing.travelRows) || [];
+  for (const line of rows.travel || []) {
+    const def = lineDef(travelDefs, line);
+    if (!def || def.directCost || !def.ownTime) continue;
+    const h = nonNeg(line.qty) * hoursPerUnitOf(def);
+    totalHours += h;
+    hourlyHours += h;
+  }
 
   return { units, hourlyHours: round2(hourlyHours), totalHours: round2(totalHours) };
 }
@@ -623,8 +771,15 @@ function businessUseShare(asset) {
 /**
  * What the business should be setting aside each year to replace its gear.
  *
- *   Σ over assets still held: (replacementCostEstimate ÷ replacementCycleYears)
- *                             × businessUseShare
+ *   Σ over assets still held:
+ *     ((replacementCostEstimate − expectedResaleValue) ÷ replacementCycleYears)
+ *     × businessUseShare
+ *
+ * NET OF RESALE (2026-09-28 audit). The old body is sold when the new one is
+ * bought, so only the difference has to be saved up. expectedResaleValue is
+ * optional — unset is 0, which is the old behaviour — and is clamped to the
+ * replacement cost, so a resale guess above it reserves nothing rather than a
+ * negative amount.
  *
  * Three decisions, none of them derivable from the arithmetic, all from the IA
  * doc:
@@ -671,7 +826,8 @@ function replacementReserveTotal(assets) {
     if (cost === null || cost <= 0) continue;
     if (years === null || years <= 0) continue;
 
-    total += (cost / years) * businessUseShare(asset);
+    const resale = Math.min(cost, nonNeg(field(asset, 'expectedResaleValue', 'expected_resale_value')));
+    total += ((cost - resale) / years) * businessUseShare(asset);
   }
 
   return round2(total);
@@ -814,36 +970,192 @@ function fyDisplay(label) {
   return `FY ${bounds.startYear}–${String((bounds.startYear + 1) % 100).padStart(2, '0')}`;
 }
 
-/**
- * The annual planning figure: the revenue needed to cover overhead and still
- * leave the desired net income after tax.
- *
- *   (annualOverheadTotal + desiredNetIncome) / (1 - taxRate)
- *
- * Tax as a flat slice of revenue, per decision 3 in the header — this is the
- * app's existing model of tax, not the accountant's. A planning target only: it
- * is never compared against a per-job or per-row number anywhere.
- *
- * @param {number} taxRate — a FRACTION (0.35 is 35%), read from
- *   pricing.taxSetAsideRate. Goals deliberately has no tax field of its own;
- *   the rate card's is the one stored truth.
- * @returns {number|null} null when there is no overhead recorded yet — the stat
- *   shows an em dash rather than a target computed against a zero overhead
- *   total, which would read as a real answer while being wrong — or when the
- *   tax rate is not a fraction below 1. At exactly 1 the division is infinite,
- *   and above it the sign flips; a negative revenue target is worse than none.
- */
-function targetAnnualRevenue(annualTotal, desiredNetIncome, taxRate) {
-  const total = numOrNull(annualTotal);
-  if (total === null || total <= 0) return null;
+/* ── Income tax, through the ATO resident scale ──────────────────────────────
+   Added 2026-09-28 (money-math audit), replacing a flat rate on revenue. A tax
+   year is the user's own record of one financial year's resident brackets and
+   Medicare levy — stored per FY, entered and confirmed by the user, never
+   built in, because both move with the federal budget:
 
+     { fy: 'FY2026-27', brackets: [{ from: 0, ratePct: 0 }, { from: 18200,
+       ratePct: 15 }, …], medicareLevyPct: 2 }
+
+   `from` is the first dollar the rate applies to (a tax table's "$18,201 –"
+   row is from: 18200); ratePct is a PERCENT. Not modelled, knowingly: the low
+   income tax offset (gone by ~$66k), the Medicare levy's low-income reduction
+   and the surcharge. At the incomes a revenue target is solved for, none of
+   them moves the answer by more than rounding. */
+
+/**
+ * A tax year checked and put in order, or null when it can't be used: no
+ * brackets, a rate or threshold that isn't a number, rates of 100% or more
+ * (combined with the levy), or thresholds out of order. Everything downstream
+ * reads null as "set up your tax year", never as a zero tax bill.
+ */
+function normaliseTaxYear(taxYear) {
+  const ty = taxYear || {};
+  const levy = numOrNull(ty.medicareLevyPct);
+  if (levy === null || levy < 0 || levy >= 100) return null;
+  if (!Array.isArray(ty.brackets) || ty.brackets.length === 0) return null;
+
+  const brackets = [];
+  for (const b of ty.brackets) {
+    const from = numOrNull(b && b.from);
+    const ratePct = numOrNull(b && b.ratePct);
+    if (from === null || from < 0 || ratePct === null || ratePct < 0 || ratePct + levy >= 100) return null;
+    brackets.push({ from, ratePct });
+  }
+  brackets.sort((a, b) => a.from - b.from);
+  for (let i = 1; i < brackets.length; i += 1) {
+    if (brackets[i].from === brackets[i - 1].from) return null;
+  }
+  // Income below the first threshold is untaxed by the brackets.
+  if (brackets[0].from > 0) brackets.unshift({ from: 0, ratePct: 0 });
+  return { fy: ty.fy || null, brackets, medicareLevyPct: levy };
+}
+
+/**
+ * Income tax plus Medicare levy on a taxable income, under one tax year.
+ * @returns {number|null} null for an unusable tax year; 0 for no income.
+ */
+function incomeTax(taxableIncome, taxYear) {
+  const ty = normaliseTaxYear(taxYear);
+  if (!ty) return null;
+  const income = nonNeg(taxableIncome);
+  let tax = 0;
+  ty.brackets.forEach((b, i) => {
+    const next = i + 1 < ty.brackets.length ? ty.brackets[i + 1].from : Infinity;
+    if (income > b.from) tax += (Math.min(income, next) - b.from) * (b.ratePct / 100);
+  });
+  return round2(tax + income * (ty.medicareLevyPct / 100));
+}
+
+/**
+ * The taxable income that leaves `net` after income tax and Medicare levy:
+ * solves G − incomeTax(G) = net exactly, bracket by bracket. Within a bracket
+ * the after-tax figure is a straight line in G, so each bracket is inverted in
+ * closed form and the one whose range contains the answer wins — no iteration.
+ *
+ * @returns {number|null} null for an unusable tax year or a negative net.
+ */
+function grossForNet(net, taxYear) {
+  const ty = normaliseTaxYear(taxYear);
+  const n = numOrNull(net);
+  if (!ty || n === null || n < 0) return null;
+  if (n === 0) return 0;
+
+  const levy = ty.medicareLevyPct / 100;
+  let taxBelow = 0; // bracket tax on income up to the current bracket's start
+  for (let i = 0; i < ty.brackets.length; i += 1) {
+    const b = ty.brackets[i];
+    const r = b.ratePct / 100;
+    const next = i + 1 < ty.brackets.length ? ty.brackets[i + 1].from : Infinity;
+    // net(G) = G − taxBelow − (G − from)·r − G·levy, for G in [from, next)
+    const g = (n + taxBelow - b.from * r) / (1 - r - levy);
+    if (g < next) return round2(Math.max(g, b.from));
+    taxBelow += (next - b.from) * r;
+  }
+  return null; // unreachable: the last bracket is open-ended
+}
+
+/**
+ * The effective and marginal rates, income tax plus levy, at a taxable income
+ * — what Profit Goals offers as the per-job tax set-aside rate. PERCENTS.
+ * @returns {{effectivePct:number, marginalPct:number}|null}
+ */
+function taxRatesAt(taxableIncome, taxYear) {
+  const ty = normaliseTaxYear(taxYear);
+  if (!ty) return null;
+  const income = nonNeg(taxableIncome);
+  let marginal = 0;
+  for (const b of ty.brackets) if (income > b.from || b.from === 0) marginal = b.ratePct;
+  const tax = incomeTax(income, ty);
+  return {
+    effectivePct: income > 0 ? round2((tax / income) * 100) : 0,
+    marginalPct: round2(marginal + ty.medicareLevyPct),
+  };
+}
+
+/**
+ * The annual revenue the business must bill, and how it is made up.
+ *
+ *   grossPay       = grossForNet(desiredNetIncome)       // pay before tax
+ *   incomeTax      = grossPay − desiredNetIncome
+ *   super          = grossPay × superPct                 // personal concessional
+ *                                                        // contribution: deductible,
+ *                                                        // so not taxed here
+ *   needed         = businessCost + grossPay + super
+ *   badDebt        = needed × badDebtPct ÷ (1 − badDebtPct)
+ *   total          = needed + badDebt                    // = needed ÷ (1 − badDebtPct)
+ *
+ * Business cost is deductible, so it is added AFTER tax, untaxed: the old flat
+ * formula grossed it up and asked for ~$14k a year too much on the reference
+ * figures. Super is treated as a deductible personal contribution; the 15%
+ * contributions tax inside the fund and the concessional cap are the fund's
+ * and the accountant's business, not a pricing input.
+ *
+ * @param {number} businessCost — annualBusinessCost().
+ * @param {number} desiredNetIncome — after tax, per year.
+ * @param {object} taxYear — see normaliseTaxYear.
+ * @param {object} [opts] — { superPct, badDebtPct }, PERCENTS; unset is 0.
+ * @returns {object|null} { businessCost, grossPay, incomeTax, superContribution,
+ *   badDebtAllowance, total }, or null when there is no business cost yet, no
+ *   income target, no usable tax year, or a bad-debt rate of 100% or more.
+ */
+function revenueTarget(businessCost, desiredNetIncome, taxYear, opts) {
+  const cost = numOrNull(businessCost);
+  if (cost === null || cost <= 0) return null;
   const net = numOrNull(desiredNetIncome);
   if (net === null || net < 0) return null;
 
-  const rate = numOrNull(taxRate);
-  if (rate === null || rate < 0 || rate >= 1) return null;
+  const gross = grossForNet(net, taxYear);
+  if (gross === null) return null;
 
-  return round2((total + net) / (1 - rate));
+  const o = opts || {};
+  const superPct = nonNeg(o.superPct);
+  const badDebtPct = nonNeg(o.badDebtPct);
+  if (badDebtPct >= 100) return null;
+
+  /* Every part rounded, and the total built from the rounded parts, so the
+     breakdown the Dashboard prints adds up to its total to the cent (the same
+     rule as computeTotals' GST split). */
+  const superContribution = round2(gross * (superPct / 100));
+  const needed = round2(round2(cost) + gross + superContribution);
+  const total = round2(needed / (1 - badDebtPct / 100));
+
+  return {
+    businessCost: round2(cost),
+    grossPay: gross,
+    incomeTax: round2(gross - net),
+    superContribution,
+    badDebtAllowance: round2(total - needed),
+    total,
+  };
+}
+
+/**
+ * The annual planning figure: revenueTarget's total. A planning target and,
+ * since 2026-09-28, the numerator of the income floor.
+ * @returns {number|null}
+ */
+function targetAnnualRevenue(businessCost, desiredNetIncome, taxYear, opts) {
+  const r = revenueTarget(businessCost, desiredNetIncome, taxYear, opts);
+  return r ? r.total : null;
+}
+
+/**
+ * The INCOME floor per billable hour: what every hour sold has to average for
+ * the year to reach Target Annual Revenue — running costs, the owner's pay and
+ * its tax, super and the bad-debt allowance. Chosen by the user on 2026-09-28
+ * as the floor the rate card is measured against, beside the cost floor
+ * (hourlyFloor), which carries running costs and markup only.
+ *
+ * @returns {number|null} null without a revenue target or a capacity.
+ */
+function incomeFloorPerHour(annualRevenueTarget, annualBillableHrs) {
+  const target = numOrNull(annualRevenueTarget);
+  const hours = numOrNull(annualBillableHrs);
+  if (target === null || target <= 0 || hours === null || hours <= 0) return null;
+  return round2(target / hours);
 }
 
 /* ── Floors, and the rate card measured against them ──────────────────────────
@@ -853,10 +1165,12 @@ function targetAnnualRevenue(annualTotal, desiredNetIncome, taxRate) {
    come to disagree about a row. */
 
 /**
- * The least an hour of work can be sold for: its share of the business's
- * running cost, plus the target margin.
+ * The COST floor for an hour of work: its share of the business's running
+ * cost, plus the target markup. The rate card is measured against the income
+ * floor (incomeFloorPerHour) since 2026-09-28; this one stays on the Dashboard
+ * beside it, and is what the estimate editor's Minimum Job Price is built on.
  *
- *   overheadRatePerHour × (1 + profitMarginPct ÷ 100)
+ *   overheadRatePerHour × (1 + markupPct ÷ 100)
  *
  * Deliberately the same arithmetic minimumJobPrice() applies to a job's hours
  * — minimumJobPrice(0, h, rate, margin) is exactly h × this — so the Dashboard's
@@ -864,18 +1178,18 @@ function targetAnnualRevenue(annualTotal, desiredNetIncome, taxRate) {
  * an hour is worth. A test pins that equivalence.
  *
  * @param {number} overheadRate — from overheadRatePerHour().
- * @param {number} profitMarginPct — a PERCENT (25 is 25%). See UNITS above.
- * @returns {number|null} null when there is no overhead rate, or no margin set.
- *   A 0% margin is a real answer (break even) and passes through; a missing one
- *   does not, because a floor that silently left the margin out would read as
- *   the real minimum.
+ * @param {number} markupPct — a PERCENT (25 is 25%). See UNITS above.
+ * @returns {number|null} null when there is no overhead rate, or no markup set.
+ *   A 0% markup is a real answer (break even) and passes through; a missing one
+ *   does not, because a floor that silently left it out would read as the real
+ *   minimum.
  */
-function hourlyFloor(overheadRate, profitMarginPct) {
+function hourlyFloor(overheadRate, markupPct) {
   const rate = numOrNull(overheadRate);
   if (rate === null || rate <= 0) return null;
-  const margin = numOrNull(profitMarginPct);
-  if (margin === null || margin < 0) return null;
-  return round2(rate * (1 + margin / 100));
+  const markup = numOrNull(markupPct);
+  if (markup === null || markup < 0) return null;
+  return round2(rate * (1 + markup / 100));
 }
 
 /**
@@ -1004,7 +1318,10 @@ function jobsNeededPerYear(annualRevenueTarget, averageJob) {
   const target = numOrNull(annualRevenueTarget);
   const avg = numOrNull(averageJob);
   if (target === null || target <= 0 || avg === null || avg <= 0) return null;
-  return Math.ceil(round2(target / avg));
+  /* Not Math.ceil(round2(…)): rounding to cents first turned 11.004 into
+     11.00 and reported the target reached a job early. The small epsilon only
+     absorbs float noise (an exact 11 computed as 11.000000000000002). */
+  return Math.ceil(target / avg - 1e-9);
 }
 
 /**
@@ -1081,6 +1398,14 @@ function postRatioReadout(capacity, shootDaysPerMonth, editDaysPerShootDay) {
 if (typeof module === 'object' && module.exports) {
   module.exports = {
     computeTotals,
+    lineDef,
+    lineSnapshot,
+    normaliseTaxYear,
+    incomeTax,
+    grossForNet,
+    taxRatesAt,
+    revenueTarget,
+    incomeFloorPerHour,
     round2,
     numOrNull,
     field,
@@ -1111,6 +1436,14 @@ if (typeof module === 'object' && module.exports) {
 } else {
   globalThis.LSCCalc = {
     computeTotals,
+    lineDef,
+    lineSnapshot,
+    normaliseTaxYear,
+    incomeTax,
+    grossForNet,
+    taxRatesAt,
+    revenueTarget,
+    incomeFloorPerHour,
     round2,
     numOrNull,
     field,

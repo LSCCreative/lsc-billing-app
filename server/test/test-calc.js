@@ -29,6 +29,12 @@ const {
   averageJobValue,
   jobsNeededPerYear,
   postRatioReadout,
+  incomeTax,
+  grossForNet,
+  revenueTarget,
+  incomeFloorPerHour,
+  taxRatesAt,
+  lineSnapshot,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
 
@@ -109,33 +115,47 @@ test('GST registered, prices inclusive: GST is backed out, and the parts still s
   assert.equal(t.clientPriceExGst + t.gst, t.totalIncGst);
 });
 
-test('tax set-aside is provisioned on labour only', () => {
+test('tax set-aside is provisioned on income: labour plus the markup on resold travel', () => {
   const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
 
-  // 2000 × 0.35 — the 1560 of expenses is not income and is not provisioned.
-  assert.equal(t.taxSetAside, 700);
+  // Transport & Logistics bills 4 × $35 but costs 4 × $25, so $40 of it is the
+  // business's income. (2000 + 40) × 0.35 = 714. The pass-throughs are not.
+  assert.equal(t.incomeExGst, 2040);
+  assert.equal(t.taxSetAside, 714);
 });
 
 test('take-home excludes pass-through, unlike the old "Gross Profit"', () => {
   const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
 
-  assert.equal(t.estTakeHome, 1300); // 2000 labour − 700 set aside
+  assert.equal(t.estTakeHome, 1326); // 2040 income − 714 set aside
 
   // What the desktop app would have shown: net − tax, counting every dollar of
   // crew, equipment and fuel as profit. This is the bug the model corrects.
-  const oldGrossProfit = 3560 - 700;
-  assert.equal(oldGrossProfit, 2860);
-  assert.equal(oldGrossProfit - t.estTakeHome, t.expenseTotal);
+  const oldGrossProfit = 3560 - 714;
+  assert.equal(round2(oldGrossProfit - t.estTakeHome), round2(t.expenseTotal - 40));
 });
 
-test('on GST-inclusive pricing, tax is set aside on the ex-GST labour figure', () => {
+test('on GST-inclusive pricing, tax is set aside on the ex-GST income figure', () => {
   const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith({
     registered: true, rate: 0.10, pricesIncludeGst: true,
   }));
 
-  // 2000 / 1.1 = 1818.18 of actual labour income; the rest belongs to the ATO.
-  assert.equal(t.taxSetAside, 636.36);
-  assert.equal(t.estTakeHome, 1181.82);
+  // 2040 / 1.1 = 1854.55 of actual income; the rest belongs to the ATO.
+  assert.equal(t.taxSetAside, 649.09);
+  assert.equal(t.estTakeHome, 1205.45);
+});
+
+test('tax is set aside on profit: the overhead the job carries comes off first', () => {
+  // 14 labour hours at $25/hr of overhead = $350 of the income is running
+  // costs, which are deductible. (2040 − 350) × 0.35 = 591.50; take-home is
+  // what is left after overhead AND tax.
+  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS, { overheadRate: 25 });
+  assert.equal(t.overheadShare, 350);
+  assert.equal(t.taxSetAside, 591.5);
+  assert.equal(t.estTakeHome, 1098.5);
+  // Never a negative set-aside when overhead exceeds income.
+  const thin = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS, { overheadRate: 500 });
+  assert.equal(thin.taxSetAside, 0);
 });
 
 /* GST-free estimates. Being registered doesn't make every job GST-bearing, so
@@ -168,11 +188,11 @@ test('GST-free means the whole labour figure is revenue, so tax is set aside on 
   const inclusive = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE));
   const free = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE), { gstFree: true });
 
-  // Normally 2000 of billed labour is 1818.18 income and 181.82 the ATO's.
-  assert.equal(inclusive.taxSetAside, 636.36);
-  // GST-free, none of it is the ATO's: 2000 × 0.35.
-  assert.equal(free.taxSetAside, 700);
-  assert.equal(free.estTakeHome, 1300);
+  // Normally 2040 of income is 1854.55 once the ATO's GST is out.
+  assert.equal(inclusive.taxSetAside, 649.09);
+  // GST-free, none of it is the ATO's: 2040 × 0.35.
+  assert.equal(free.taxSetAside, 714);
+  assert.equal(free.estTakeHome, 1326);
 });
 
 test('a GST-free estimate is priced exactly as an unregistered business would price it', () => {
@@ -295,9 +315,13 @@ test('existing hourly rows total exactly as they did before day rows existed', (
     labourTotal: 2000,
     expenseTotal: 1560,
     passThroughCost: 1420,
+    // Added 2026-09-28: pass-throughs plus what resold travel cost (4 × $25).
+    directJobCost: 1520,
+    incomeExGst: 1854.55,
+    overheadShare: 0,
     totalHours: 14,
-    taxSetAside: 636.36,
-    estTakeHome: 1181.82,
+    taxSetAside: 649.09,
+    estTakeHome: 1205.45,
   });
 });
 
@@ -713,24 +737,35 @@ test('the legacy weekly figure alone gives no capacity, and never outvotes the f
   );
 });
 
-test('minimum job price covers direct costs, overhead allocation and margin', () => {
-  // The JOB fixture above, priced against the cost basis: its own expenses
-  // ($1560) plus its 14 hours' share of overhead (14 × $25 = $350), then a 25%
-  // margin on the lot. (1560 + 350) × 1.25 = 2387.50.
+test('minimum job price covers direct costs, overhead allocation and markup', () => {
+  // The JOB fixture above, priced against the cost basis: its direct costs
+  // ($1520 — pass-throughs plus what the resold travel cost) at cost, plus its
+  // 14 hours' share of overhead (14 × $25 = $350) marked up 25%.
+  // 1520 + 350 × 1.25 = 1957.50.
   const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
-  assert.equal(minimumJobPrice(t.expenseTotal, t.totalHours, 25, 25), 2387.5);
+  assert.equal(minimumJobPrice(t.directJobCost, t.totalHours, 25, 25), 1957.5);
 });
 
-test('a 0% target margin is a real answer: break even on the job', () => {
+test('pass-through costs carry no markup in the minimum job price', () => {
+  // The audit's case: $10,000 of crew billed at cost plus 8 hours at $150.
+  // The markup used to apply to the crew too, and this well-priced job read as
+  // under its floor ($12,651.20 against $11,200).
+  const card = { labourSections: [{ id: 'a', rows: [{ name: 'x', mu: 150 }] }], travelRows: [], taxSetAsideRate: 0.35 };
+  const t = computeTotals({ a: [{ name: 'x', qty: 8 }], crew: [{ days: 1, cost: 10000 }] }, card, DEFAULT_SETTINGS);
+  const floor = minimumJobPrice(t.directJobCost, t.totalHours, 15.12, 25);
+  assert.equal(floor, 10151.2);
+  assert.ok(t.clientPriceExGst > floor);
+});
+
+test('a 0% target markup is a real answer: break even on the job', () => {
   assert.equal(minimumJobPrice(1560, 14, 25, 0), 1910);
 });
 
-test('the profit margin is a percent, not a fraction', () => {
-  // The units trap: taxRate elsewhere in calc.js is a fraction (0.35 = 35%)
-  // while profitMarginPct is a percent (25 = 25%). Passing 0.25 here must mean
-  // a quarter of one percent, not a quarter — guessing between the two would
-  // silently under-price every job by 25%.
-  assert.equal(minimumJobPrice(1560, 14, 25, 0.25), 1914.78);
+test('the markup is a percent, not a fraction', () => {
+  // The units trap: taxSetAsideRate is a fraction (0.35 = 35%) while markupPct
+  // is a percent (25 = 25%). Passing 0.25 here must mean a quarter of one
+  // percent, not a quarter.
+  assert.equal(minimumJobPrice(1560, 14, 25, 0.25), 1910.88);
 });
 
 test('no cost basis yet means no minimum job price, not a floor missing overhead', () => {
@@ -747,39 +782,175 @@ test('the minimum job price never moves what the client is billed', () => {
   // Advisory only. The editor's toggle shows and hides this line; nothing in
   // computeTotals reads it, so the quoted price cannot follow it.
   const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
-  const floor = minimumJobPrice(t.expenseTotal, t.totalHours, 25, 25);
+  const floor = minimumJobPrice(t.directJobCost, t.totalHours, 25, 25);
   const again = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
 
-  // This job quotes $3560 against a $2387.50 floor — it clears it. The point is
+  // This job quotes $3560 against a $1957.50 floor — it clears it. The point is
   // that the two numbers are independent: computing the floor left every
   // client-facing figure byte-for-byte where it was.
-  assert.equal(floor, 2387.5);
+  assert.equal(floor, 1957.5);
   assert.equal(again.clientPriceExGst, 3560);
   assert.deepEqual(again, t);
 });
 
-test('target annual revenue covers overhead and leaves the net income after tax', () => {
-  // (24000 + 70000) / (1 - 0.35) = 144615.38. Tax as a flat slice of revenue,
-  // matching the tax set-aside model the rest of this file already uses.
-  assert.equal(targetAnnualRevenue(24000, 70000, 0.35), 144615.38);
-  assert.equal(targetAnnualRevenue(24000, 70000, 0), 94000);
+/* Income tax through the user's own tax year. The fixture is the FY2026-27
+   resident scale as a user would enter it — placeholders here, not a claim
+   about the law: the app never builds these in. */
+const TAX_YEAR = {
+  fy: 'FY2026-27',
+  brackets: [
+    { from: 0, ratePct: 0 },
+    { from: 18200, ratePct: 15 },
+    { from: 45000, ratePct: 30 },
+    { from: 135000, ratePct: 37 },
+    { from: 190000, ratePct: 45 },
+  ],
+  medicareLevyPct: 2,
+};
+
+test('income tax walks the brackets and adds the levy', () => {
+  assert.equal(incomeTax(0, TAX_YEAR), 0);
+  assert.equal(incomeTax(18200, TAX_YEAR), 364); // levy only
+  // 26800 × 15% + 55000 × 30% + 100000 × 2% = 4020 + 16500 + 2000
+  assert.equal(incomeTax(100000, TAX_YEAR), 22520);
+  assert.equal(incomeTax(100000, { ...TAX_YEAR, medicareLevyPct: 0 }), 20520);
 });
 
-test('an impossible tax rate gives no revenue target', () => {
-  // At 1 the division is infinite; above it the sign flips and the "target"
-  // comes back negative, which is worse than showing nothing.
-  assert.equal(targetAnnualRevenue(24000, 70000, 1), null);
-  assert.equal(targetAnnualRevenue(24000, 70000, 1.2), null);
-  assert.equal(targetAnnualRevenue(24000, 70000, -0.1), null);
-  assert.equal(targetAnnualRevenue(24000, 70000, null), null);
+test('grossForNet inverts incomeTax exactly, in every bracket', () => {
+  for (const net of [0, 10000, 30000, 60000, 80000, 120000, 150000, 250000]) {
+    const g = grossForNet(net, TAX_YEAR);
+    assert.equal(round2(g - incomeTax(g, TAX_YEAR)), net, 'net ' + net);
+  }
 });
 
-test('no overhead recorded gives no revenue target either', () => {
-  // Computing against a zero overhead total would put a real-looking number on
-  // the Goals screen that is wrong by the entire cost of running the business.
-  assert.equal(targetAnnualRevenue(0, 70000, 0.35), null);
-  assert.equal(targetAnnualRevenue(null, 70000, 0.35), null);
-  assert.equal(targetAnnualRevenue(24000, null, 0.35), null);
+test('an unusable tax year gives no tax figure, never a zero bill', () => {
+  for (const bad of [null, {}, { brackets: [], medicareLevyPct: 2 }, { ...TAX_YEAR, medicareLevyPct: null },
+    { ...TAX_YEAR, brackets: [{ from: 0, ratePct: 99 }] }, 0.35]) {
+    assert.equal(incomeTax(50000, bad), null);
+    assert.equal(grossForNet(50000, bad), null);
+  }
+});
+
+test('target annual revenue adds business cost untaxed, and grosses up only the pay', () => {
+  const r = revenueTarget(26850, 80000, TAX_YEAR);
+  const gross = grossForNet(80000, TAX_YEAR);
+  assert.equal(r.grossPay, gross);
+  assert.equal(r.incomeTax, round2(gross - 80000));
+  assert.equal(r.total, round2(26850 + gross));
+  assert.equal(targetAnnualRevenue(26850, 80000, TAX_YEAR), r.total);
+  // Well under the old flat-rate-on-everything figure of $164,384.62.
+  assert.ok(r.total < 164384.62);
+});
+
+test('super and a bad-debt allowance are added on top', () => {
+  const base = revenueTarget(26850, 80000, TAX_YEAR);
+  const r = revenueTarget(26850, 80000, TAX_YEAR, { superPct: 12, badDebtPct: 2 });
+  assert.equal(r.superContribution, round2(base.grossPay * 0.12));
+  const needed = round2(26850 + base.grossPay + r.superContribution);
+  assert.equal(r.total, round2(needed / 0.98));
+  // The printed parts add up to the printed total, to the cent.
+  assert.equal(
+    round2(r.businessCost + r.grossPay + r.superContribution + r.badDebtAllowance),
+    r.total,
+  );
+});
+
+test('no revenue target without cost, income, a tax year, or with 100% bad debt', () => {
+  assert.equal(targetAnnualRevenue(0, 70000, TAX_YEAR), null);
+  assert.equal(targetAnnualRevenue(null, 70000, TAX_YEAR), null);
+  assert.equal(targetAnnualRevenue(24000, null, TAX_YEAR), null);
+  // The old flat-rate argument is not a tax year: no silent zero-tax answer.
+  assert.equal(targetAnnualRevenue(24000, 70000, 0.35), null);
+  assert.equal(targetAnnualRevenue(24000, 70000, TAX_YEAR, { badDebtPct: 100 }), null);
+});
+
+test('the income floor is the revenue target spread across billable hours', () => {
+  const target = targetAnnualRevenue(26850, 80000, TAX_YEAR);
+  assert.equal(incomeFloorPerHour(target, 1776), round2(target / 1776));
+  assert.equal(incomeFloorPerHour(null, 1776), null);
+  assert.equal(incomeFloorPerHour(target, 0), null);
+});
+
+test('taxRatesAt gives the effective and marginal rate, levy included', () => {
+  const r = taxRatesAt(100000, TAX_YEAR);
+  assert.equal(r.effectivePct, 22.52);
+  assert.equal(r.marginalPct, 32);
+});
+
+/* ── The 2026-09-28 audit's precision and input fixes ─────────────────────── */
+
+const ONE_ROW = (mu) => ({ labourSections: [{ id: 'a', rows: [{ id: 'r1', name: 'x', mu }] }], travelRows: [], taxSetAsideRate: 0.35 });
+
+test('ex-GST + GST always equals the total, to the cent, in both GST modes', () => {
+  for (const inc of [true, false]) {
+    const settings = settingsWith({ registered: true, rate: 0.1, pricesIncludeGst: inc });
+    for (let cents = 1; cents <= 20000; cents += 1) {
+      const t = computeTotals({ a: [{ name: 'x', qty: 1 }] }, ONE_ROW(cents / 100), settings);
+      assert.equal(Math.round((t.clientPriceExGst + t.gst) * 100), Math.round(t.totalIncGst * 100),
+        (inc ? 'inclusive ' : 'exclusive ') + cents / 100);
+    }
+  }
+  // The audit's example: $3.65 used to print $3.65 + $0.37 = $4.01.
+  const t = computeTotals({ a: [{ name: 'x', qty: 1 }] }, ONE_ROW(3.65), settingsWith(GST_EXCLUSIVE));
+  assert.deepEqual([t.clientPriceExGst, t.gst, t.totalIncGst], [3.65, 0.37, 4.02]);
+});
+
+test('negative quantities, days and costs price as nothing, never a negative invoice', () => {
+  const t = computeTotals(
+    { a: [{ name: 'x', qty: -3, override: -50 }], crew: [{ days: -1, cost: 500 }], equip: [{ days: 2, cost: -100 }] },
+    ONE_ROW(100),
+    settingsWith(GST_EXCLUSIVE),
+  );
+  assert.deepEqual([t.clientPriceExGst, t.gst, t.totalIncGst, t.totalHours, t.taxSetAside], [0, 0, 0, 0, 0]);
+});
+
+test('a saved line prices from its own snapshot, not from today\'s card', () => {
+  const saved = { a: [{ name: 'x', qty: 2, rowId: 'r1', mu: 100 }] };
+  // The card has since gone up to 150, and the row has been renamed.
+  const card = { labourSections: [{ id: 'a', rows: [{ id: 'r1', name: 'renamed', mu: 150 }] }], travelRows: [], taxSetAsideRate: 0.35 };
+  assert.equal(computeTotals(saved, card, DEFAULT_SETTINGS).labourTotal, 200);
+});
+
+test('a line without a snapshot falls back to the card by row id, then by name', () => {
+  const card = { labourSections: [{ id: 'a', rows: [{ id: 'r1', name: 'renamed', mu: 150 }] }], travelRows: [], taxSetAsideRate: 0.35 };
+  assert.equal(computeTotals({ a: [{ name: 'x', rowId: 'r1', qty: 2 }] }, card, DEFAULT_SETTINGS).labourTotal, 300);
+  assert.equal(computeTotals({ a: [{ name: 'renamed', qty: 2 }] }, card, DEFAULT_SETTINGS).labourTotal, 300);
+  // A legacy line whose service is gone still prices at nothing, as before.
+  assert.equal(computeTotals({ a: [{ name: 'gone', qty: 2 }] }, card, DEFAULT_SETTINGS).labourTotal, 0);
+});
+
+test('a snapshotted line in a deleted category still prices', () => {
+  const card = { labourSections: [], travelRows: [], taxSetAsideRate: 0.35 };
+  const t = computeTotals({ oldcat: [{ name: 'x', qty: 3, mu: 50 }] }, card, DEFAULT_SETTINGS);
+  assert.equal(t.labourTotal, 150);
+  assert.equal(t.totalHours, 3);
+});
+
+test('lineSnapshot copies a row\'s price fields and billing flag, and nothing else', () => {
+  assert.deepEqual(lineSnapshot({ id: 'r1', name: 'Full', mu: 1120, rate: 15, hoursPerUnit: 8, dayUnit: 'full', customBill: true, unit: 'x' }),
+    { mu: 1120, rowId: 'r1', hoursPerUnit: 8, dayUnit: 'full', rate: 15, customBill: true });
+  assert.deepEqual(lineSnapshot({ name: 'Fuel', mu: 1, rate: 1, directCost: true }), { mu: 1, rate: 1, directCost: true });
+});
+
+test('own-time travel is income in full and its hours carry overhead', () => {
+  const card = { labourSections: [], travelRows: [{ id: 't1', name: 'Driving', rate: 25, mu: 35, ownTime: true }], taxSetAsideRate: 0.35 };
+  const t = computeTotals({ travel: [{ name: 'Driving', qty: 4 }] }, card, DEFAULT_SETTINGS);
+  assert.equal(t.incomeExGst, 140);
+  assert.equal(t.totalHours, 4);
+  assert.equal(t.directJobCost, 0);
+  assert.equal(labourHoursBreakdown({ travel: [{ name: 'Driving', qty: 4 }] }, card).totalHours, 4);
+});
+
+test('jobs needed rounds a fraction of a job up, even a small one', () => {
+  assert.equal(jobsNeededPerYear(110040, 10000), 12);
+  assert.equal(jobsNeededPerYear(110000, 10000), 11);
+});
+
+test('the replacement reserve is net of expected resale value', () => {
+  const asset = { replacementCostEstimate: 9000, replacementCycleYears: 3, expectedResaleValue: 3000, businessUsePct: 100 };
+  assert.equal(replacementReserveTotal([asset]), 2000);
+  // A resale guess above the replacement cost reserves nothing, not a negative.
+  assert.equal(replacementReserveTotal([{ ...asset, expectedResaleValue: 12000 }]), 0);
 });
 
 /**

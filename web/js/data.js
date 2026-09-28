@@ -33,6 +33,7 @@ const LSCData = (() => {
   let overheadSnapshots = null;
   let goals = null;
   let depreciationAssets = null;
+  let taxYears = null;
 
   /* Whether each has ever been written, taken from the reply's updatedAt.
      Emptiness cannot answer this: GET /api/pricing falls back to a complete
@@ -46,7 +47,7 @@ const LSCData = (() => {
   async function load() {
     // All six are needed before an estimate can be priced, and none depends on
     // another, so the round-trips overlap.
-    const [pricingReply, settingsReply, itemsReply, snapshotsReply, goalsReply, assetsReply] =
+    const [pricingReply, settingsReply, itemsReply, snapshotsReply, goalsReply, assetsReply, taxReply] =
       await Promise.all([
         LSCApi.get('/api/pricing'),
         LSCApi.get('/api/settings'),
@@ -54,6 +55,7 @@ const LSCData = (() => {
         LSCApi.get('/api/overhead-snapshots'),
         LSCApi.get('/api/goals'),
         LSCApi.get('/api/depreciation-assets'),
+        LSCApi.get('/api/tax-years'),
       ]);
     pricing = pricingReply.pricing || {};
     settings = settingsReply.settings || {};
@@ -71,6 +73,9 @@ const LSCData = (() => {
        calc functions are what exclude sold gear from the reserve — filtering
        here would drop it from the disposal year's tax schedule too. */
     depreciationAssets = assetsReply.assets || [];
+    /* The user's own tax years (migration v7). The revenue target and the
+       income floor need one; none saved is the em-dash set-up state. */
+    taxYears = taxReply.taxYears || [];
     pricingSaved = Boolean(pricingReply.updatedAt);
     settingsSaved = Boolean(settingsReply.updatedAt);
     goalsSaved = Boolean(goalsReply.updatedAt);
@@ -84,13 +89,27 @@ const LSCData = (() => {
       overheadItems !== null &&
       overheadSnapshots !== null &&
       goals !== null &&
-      depreciationAssets !== null,
+      depreciationAssets !== null &&
+      taxYears !== null,
     pricing: () => pricing || {},
     settings: () => settings || {},
     overheadItems: () => overheadItems || [],
     overheadSnapshots: () => overheadSnapshots || [],
     goals: () => goals || {},
     depreciationAssets: () => depreciationAssets || [],
+    taxYears: () => taxYears || [],
+    /* The tax year planning figures use: the current FY's when the user has
+       saved it, otherwise the latest saved year before it — last year's scale
+       is a closer guess than none, and the screens name which year is in use.
+       null when nothing usable is saved. */
+    taxYearInUse: () => {
+      const current = LSCCalc.currentFinancialYear();
+      const start = (fy) => (LSCCalc.fyBounds(fy) || { startYear: -1 }).startYear;
+      const usable = (taxYears || [])
+        .filter((t) => start(t.fy) <= start(current))
+        .sort((a, b) => start(b.fy) - start(a.fy));
+      return usable.length ? usable[0] : null;
+    },
     /* DERIVED, NOT CACHED — the one place any screen asks what the business
        costs a year and what an hour of it costs. The Rate Card's rate column,
        the estimate editor's Minimum Job Price, the Capacity save confirm and
@@ -108,6 +127,24 @@ const LSCData = (() => {
         LSCCalc.annualBusinessCost(overheadItems || [], depreciationAssets || []),
         LSCCalc.annualBillableHours(goals || {})
       ),
+    /* The revenue target's parts (calc.js revenueTarget) and the INCOME floor
+       per billable hour — what the rate card is measured against since
+       2026-09-28. Derived here for the same reason as overheadRate: the
+       Dashboard, the Rate Card, Profit Goals and the estimate editor must not
+       disagree about them. */
+    revenueTarget: () => {
+      const g = goals || {};
+      return LSCCalc.revenueTarget(
+        LSCCalc.annualBusinessCost(overheadItems || [], depreciationAssets || []),
+        g.desiredNetIncome,
+        LSCData.taxYearInUse(),
+        { superPct: g.superPct, badDebtPct: g.badDebtPct }
+      );
+    },
+    incomeFloor: () => {
+      const r = LSCData.revenueTarget();
+      return LSCCalc.incomeFloorPerHour(r && r.total, LSCCalc.annualBillableHours(goals || {}));
+    },
     /* For the first-run setup checklist on the estimates empty state. */
     pricingConfigured: () => pricingSaved,
     settingsConfigured: () => settingsSaved,
@@ -145,6 +182,10 @@ const LSCData = (() => {
     setDepreciationAssets: (next) => {
       depreciationAssets = next || [];
     },
+    /* Profit Goals' tax-year save: replaces that FY's entry in the cache. */
+    setTaxYear: (ty) => {
+      taxYears = (taxYears || []).filter((t) => t.fy !== ty.fy).concat([ty]);
+    },
     // On sign-out, so the next sign-in reads the card fresh.
     clear: () => {
       pricing = null;
@@ -153,6 +194,7 @@ const LSCData = (() => {
       overheadSnapshots = null;
       goals = null;
       depreciationAssets = null;
+      taxYears = null;
       pricingSaved = false;
       settingsSaved = false;
       goalsSaved = false;
