@@ -238,7 +238,7 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   save: this page is out of date … Reload the page". No script errors. **Not yet:** the Dashboard and
   the estimator still read the old shape (tasks 6–7), so both are wrong on this branch until then.
 
-- [ ] **5. Service Day setting, the Show switch, and the hidden-unit notice** (money math —
+- [x] **5. Service Day setting, the Show switch, and the hidden-unit notice** (money math —
   Opus/high): Add the Service Day pair to the Rate Card's settings strip: `Full [8] hrs · Half [4]
   hrs`, with an `LSCInfo.markup` info control whose text separates it from Capacity's day. Place it
   after Tax Set-Aside. It's stored as `card.serviceDay`, in the working copy, validated like the
@@ -254,6 +254,28 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   pinned ones alone; Show → Full day flips all rows; a pinned half day below floor is flagged while
   the row shows Hourly. _Modifies: `pricing.js`, `pricing.css`. Reuses: `LSCInfo`, `.tax-setting`
   layout. Depends on: 4._
+
+  **Done 2026-09-28** (branch `service-rate-tiers`). **Choices made while building:** the Service
+  Day is a *second* `.tax-setting` block under Tax Set-Aside rather than a field squeezed into the
+  same one, so each keeps its own copy line. Editing it refreshes every row **in place**
+  (`refreshAllRows`) rather than re-rendering, so the field keeps the cursor. One announcement per
+  edit goes to the existing polite region. A Show button's pressed state is **derived**: pressed
+  while every row shows its unit, which is the IA's rule. New rows start on the last Show.
+  **The hidden-unit notice appears only when the unit on show is fine** (as the brief's component
+  table says). Otherwise a card with no Profit Goals would flag every row under its own `— · needs
+  Profit Goals` too. Option text flags only the *other* units, and the select is a fixed `7.6em`:
+  Chrome sizes a closed select to its longest option, which pushed "per [unit]" onto two lines in
+  the narrow Pre-Production column. The unit select's `change` is now delegated on the root, because
+  `refreshRow` rewrites the unit line. **Verified in a browser** (the same v9 scratch copy):
+  Show → Full day flipped every row and pressed that button, and a per-row change un-pressed all
+  three. Full 8 → 10 moved every auto full day by exactly 10/8 (1600 → 2000, 896 → 1120) and left
+  pinned ones (1120, 900) alone, while their `↺ use` moved (824 → 1030, 960 → 1200). Day rates
+  went 120.96 → 151.20 and floors $657.28 → $821.60, focus stayed in the field, and it announced
+  "Auto prices updated for 10-hour full day." A pinned $100 half day read "below floor by $228.64";
+  with the row on Hourly it showed "Half day below floor by $228.64 ▸" and the option "half day ·
+  below floor", and clicking the notice switched the row with the price focused. A blank full day,
+  7.3 hrs, and half 12 > full 10 each blocked the save with its sentence on the right field. 10 / 5
+  saved and read back from the API. The info control opens. No script errors, no overflow at 1280.
 
 - [ ] **6. Estimate editor: unit picker, unit switch on the line, rates keyed by unit** (money math
   — Opus/high): In each labour `.bb-picker`, add a unit `<select>` between the service select and

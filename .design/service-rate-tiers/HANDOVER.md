@@ -54,6 +54,9 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
       - [x] Task 4 — Rate Card rows on the new shape (2026-09-28): unit view switch, auto /
             set-by-you prices, `↺ use $X`, `LSCData.priceContext()`. Browser-verified; see its
             Done note, including the one visible change above 1100px (state lines wrap).
+      - [x] Task 5 — Service Day setting, Show switch, hidden-unit notice (2026-09-28).
+            Browser-verified; see its Done note (the notice appears only when the unit on show
+            is fine; Show's pressed state is derived).
 - [ ] Phase 7 — Design Review.
 
 Nothing deployed. **As of task 3 the branch is only coherent as a whole**: the server now
@@ -65,8 +68,9 @@ before task 10.**
 **The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
 DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
 
-**Exact next item:** TASKS.md **task 5, "Service Day setting, the Show switch, and the
-hidden-unit notice"** (money math — Opus/high).
+**Exact next item:** TASKS.md **task 6, "Estimate editor: unit picker, unit switch on the
+line, rates keyed by unit"** (money math — Opus/high). While in `rows.js`, pass the card as
+`lineDef`'s third argument (task 2's note).
 
 **Verifying UI on this branch:** another session may be running `api-scratch` / `web` on 8080 /
 5173 with a v8 server, and the scratch DB is shared. Task 4 used a *copy* of the scratch DB at

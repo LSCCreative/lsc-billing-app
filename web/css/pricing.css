@@ -143,6 +143,10 @@
   padding: 2px 4px;
   outline: none;
   cursor: pointer;
+  /* A select is as wide as its longest option, and an option can carry a
+     problem ("half day · below floor"). Fixed to fit the unit names, so the
+     closed control stays small; the open list still shows every word. */
+  width: 7.6em;
 }
 .pricing-unit-sel:focus {
   border-color: var(--accent);
@@ -190,4 +194,72 @@
    background). The Dashboard's badge carries the same colour. */
 .pricing-below {
   color: var(--accent-text);
+}
+
+/* ── Service Day, Show, and the hidden-unit notice (2026-09-28) ─────────────
+   The Service Day is a second .tax-setting block: copy left, fields right, as
+   the tax rate above it. Its two fields are an hours figure each, so narrower
+   than app.css's 90px for the tax rate. */
+.pricing-day-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.pricing-day-ctl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pricing-day-ctl label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tax-setting .pricing-day-ctl input {
+  width: 64px;
+}
+
+/* "Show: Hourly | Half day | Full day", above the first category. The pressed
+   button takes the accent edge and full-strength text, the same pair a focused
+   field uses, so the one in force reads at a glance. */
+.pricing-show {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.pricing-show-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.pricing-show-btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* "Full day below floor by $12.40 ▸": its own line under the unit switch, as
+   an inline link would read. --accent-text for the same reason as
+   .pricing-below: it names a problem. */
+.pricing-hidden-note {
+  flex-basis: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pricing-hidden-note:hover,
+.pricing-hidden-note:focus-visible {
+  color: var(--text);
 }
