@@ -92,12 +92,11 @@ service business that sells shoot days rather than units.
 - [x] **Phase 7 — Design Review.** Done 2026-09-28 → [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md), with
       26 screenshots in `screenshots/`. Its one must-fix (the Depreciation tab 407px wide on a
       375px phone, from the decline curve's screen-reader table) is **fixed and committed, not
-      pushed** — it is live on Pages until pushed.
+      pushed** — live on Pages since 2026-09-28 (run 36364499560).
 - [x] **The review's should-fix list** — done 2026-09-28 except (4). See "What landed — review
-      should-fixes" below. **Committed, not pushed** — together with the must-fix, it all reaches the live site on
-      the next push (Pages only, web-only change, no NAS redeploy).
-- [ ] ← **NEXT: (a) push to Pages, with the user's go-ahead; (b) should-fix 4, a real VoiceOver
-      pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
+      should-fixes" below. **Live** — pushed with the must-fix on 2026-09-28 with the user's go-ahead
+      (Pages run 36364499560, success; web only, no NAS redeploy).
+- [ ] ← **NEXT: should-fix 4, a real VoiceOver pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
       for the announcer regions inside the `aria-modal` dialogs and judging the one-second debounce.
       An agent can't do this one. Also still open: overhead-finance decision 74's estimate-editor
       half (no announcements there).
@@ -107,8 +106,7 @@ sections), the Rate Card's day rows, the whole Depreciation tab (register, sched
 lock, disposal), the shared info control, the GST mirror, the post-ratio readout, the double-count
 hint, Profit Goals' read-only capacity, the estimate editor's day-unit wording, the responsive
 pass, the accessibility pass and the decline curve chart. (Earlier versions of this file said "of 21"; `TASKS.md` has 23 build tasks plus the design
-review — the count was wrong, not the list.) **The design review's must-fix is committed but not
-pushed.** The decline curve, the accessibility pass, the responsive pass, Profit Goals and the
+review — the count was wrong, not the list.) **The design review's must-fix and should-fixes are live** (Pages, 2026-09-28, run 36364499560). The decline curve, the accessibility pass, the responsive pass, Profit Goals and the
 estimate editor went to Pages on 2026-09-28. Everything before them is live,
 NAS included (see the disposal deploy record below) — the info control and the GST mirror went to
 Pages on 2026-09-27 (~21:15 AEST, run 36315015715, success) with the user's go-ahead; both are
