@@ -1286,6 +1286,40 @@ function priceExGst(price, settings) {
 /** The units a labour service is priced in, in the order every screen lists them. */
 const SERVICE_UNITS = ['hour', 'half', 'full'];
 
+/* What every estimate write from a build that knows this card shape carries as
+   `pricingShape`. The estimate routes refuse a write without it
+   (pricing_shape_outdated): a build from before v9 would snapshot each new
+   labour line at $0, because lineSnapshot on a row with `prices` and no `mu`
+   reads no price. The rate card's own marker is `serviceDay`, which no old
+   build sends; an estimate has nothing like it, so it carries this. Shared
+   here so the web and the server can't spell it two ways. */
+const PRICING_SHAPE = 'service-units';
+
+/**
+ * Is a rate card in the shape from before v9? True when it has no usable
+ * `serviceDay`, or any labour row carries `mu`, `hoursPerUnit` or `dayUnit` or
+ * lacks a `prices` object. One definition for both sides: the rate card route
+ * refuses such a card (pricing_shape_outdated), and the Rate Card screen won't
+ * open one for editing — a server not yet on v9 serves this shape, and a
+ * v9 screen would read every row as all-auto and save that back over every
+ * typed price, where the v9 migration would then leave it (it skips rows that
+ * already have `prices`).
+ *
+ * @param {object} pricing — a rate card, as served or as sent.
+ * @returns {boolean}
+ */
+function cardShapeOutdated(pricing) {
+  const p = pricing || {};
+  if (!p.serviceDay || typeof p.serviceDay !== 'object') return true;
+  const sections = Array.isArray(p.labourSections) ? p.labourSections : [];
+  return sections.some((sec) =>
+    ((sec && Array.isArray(sec.rows)) ? sec.rows : []).some((r) =>
+      !r || r.mu !== undefined || r.hoursPerUnit !== undefined || r.dayUnit !== undefined ||
+      !r.prices || typeof r.prices !== 'object' || Array.isArray(r.prices)
+    )
+  );
+}
+
 /* A service day when the card does not say usably. */
 const SERVICE_DAY_FALLBACK = { full: 8, half: 4 };
 
@@ -1640,6 +1674,8 @@ if (typeof module === 'object' && module.exports) {
     suggestedPrice,
     unitDef,
     SERVICE_UNITS,
+    PRICING_SHAPE,
+    cardShapeOutdated,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -1682,6 +1718,8 @@ if (typeof module === 'object' && module.exports) {
     suggestedPrice,
     unitDef,
     SERVICE_UNITS,
+    PRICING_SHAPE,
+    cardShapeOutdated,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,

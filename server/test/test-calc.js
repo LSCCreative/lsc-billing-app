@@ -40,8 +40,10 @@ const {
   suggestedPrice,
   unitDef,
   SERVICE_UNITS,
+  cardShapeOutdated,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
+const { V8_DEFAULT_PRICING } = require('../src/migrations/v9-service-units');
 
 /**
  * The worked example. BILLING_APP_PLAN.md §1.2 defines the model but never
@@ -984,6 +986,34 @@ test('unitHours: an unusable service day falls back to 8 / 4, never to 0', () =>
     assert.equal(unitHours(card, 'half'), 4, 'half day from ' + String(bad));
   }
   assert.equal(unitHours({ serviceDay: { fullHours: 24 } }, 'full'), 24);
+});
+
+test('cardShapeOutdated: the v8 card is outdated, the v9 default is not, and one old row is enough', () => {
+  assert.equal(cardShapeOutdated(DEFAULT_PRICING), false);
+  assert.equal(cardShapeOutdated(V8_DEFAULT_PRICING), true);
+  assert.equal(cardShapeOutdated(null), true);
+
+  const withRow = (row) => {
+    const c = JSON.parse(JSON.stringify(DEFAULT_PRICING));
+    c.labourSections[0].rows[0] = row;
+    return c;
+  };
+  const prices = { hour: 140, half: null, full: null };
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', prices })), false);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', mu: 140, prices })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', hoursPerUnit: 8, prices })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', dayUnit: 'full', prices })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A' })), true);
+  assert.equal(cardShapeOutdated(withRow({ name: 'A', prices: [140, null, null] })), true);
+  assert.equal(cardShapeOutdated(withRow(null)), true);
+  // Every row in the new shape, but no service day: what a v9 screen that
+  // filled one in for itself would otherwise have been left to guess at.
+  const { serviceDay, ...noDay } = DEFAULT_PRICING;
+  assert.ok(serviceDay);
+  assert.equal(cardShapeOutdated(noDay), true);
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, serviceDay: 8 }), true);
+  // Travel rows keep `mu`: one price, no units.
+  assert.ok(DEFAULT_PRICING.travelRows.some((r) => r.mu !== undefined));
 });
 
 test('suggestedPrice: $45.05 an hour at 25% markup is $57, rounded up from $56.31', () => {

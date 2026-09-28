@@ -454,7 +454,7 @@
   color: var(--text);
 }
 /* The picker's unit select sits between the service select and Add: as wide as
-   its options ("Full day · no price yet"), not sharing the service select's
+   its options ("Full day · no price yet, needs Profit Goals"), not sharing the service select's
    flex:1. Below 768px responsive.css stacks both full width. */
 .bb-picker .unit-select {
   flex: 0 0 auto;

@@ -15,7 +15,7 @@ process.env.NODE_ENV = 'test';
 const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
-const { currentFinancialYear } = require('../src/calc');
+const { currentFinancialYear, PRICING_SHAPE } = require('../src/calc');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -52,9 +52,18 @@ test.after(() => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-function api(pathname, opts = {}) {
+/* Every estimate write here comes from a v9 client, as the web build's all do,
+   so it carries calc.js's PRICING_SHAPE. `bare: true` sends the body as given,
+   for the tests of what the route does with a write that doesn't. */
+const ESTIMATE_WRITE = /^\/api\/estimates(\/[^/]+)?$/;
+function api(pathname, { bare, ...opts } = {}) {
+  let body = opts.body;
+  if (!bare && body && ESTIMATE_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
+    body = JSON.stringify({ pricingShape: PRICING_SHAPE, ...JSON.parse(body) });
+  }
   return fetch(`${baseUrl}${pathname}`, {
     ...opts,
+    body,
     headers: { 'content-type': 'application/json', cookie, ...(opts.headers || {}) },
   });
 }
@@ -1024,6 +1033,48 @@ test('estimates: a negative line is refused; a snapshotted line keeps its price'
     method: 'POST', body: JSON.stringify({ name: 'snap', activeRows: { prod: [{ name: 'Video Capture', qty: 2, mu: 99 }] } }),
   }).then((r) => r.json());
   assert.equal(created.estimate.totals.labourTotal, 198);
+});
+
+test('estimates: a write without the v9 pricing shape is refused as outdated, whatever else is in it', async () => {
+  const count = () => api('/api/estimates').then((r) => r.json()).then((r) => r.estimates.length);
+  const write = async (pathname, method, body) => {
+    const res = await api(pathname, { method, body: JSON.stringify(body), bare: true });
+    const reply = await res.json();
+    return [res.status, reply.error, typeof reply.message];
+  };
+  const outdated = [400, 'pricing_shape_outdated', 'string'];
+
+  const created = await api('/api/estimates', {
+    method: 'POST', body: JSON.stringify({ name: 'kept', activeRows: { prod: [{ name: 'Video Capture', qty: 2, mu: 150 }] } }),
+  }).then((r) => r.json());
+  assert.equal(created.estimate.totals.labourTotal, 300);
+  const before = await count();
+
+  // Exactly what the pre-v9 editor sends for a new line on a v9 card: its
+  // lineSnapshot read `mu` from a row that has `prices` instead, and got 0.
+  const old = { name: 'old tab', activeRows: { prod: [{ name: 'Video Capture', qty: 2, mu: 0, rowId: 'x' }] } };
+  assert.deepEqual(await write('/api/estimates', 'POST', old), outdated);
+  // Its "Update to current rates", re-saving an existing estimate at $0.
+  assert.deepEqual(await write(`/api/estimates/${created.estimate.id}`, 'PUT', old), outdated);
+  // Any marker but this build's is the same.
+  assert.deepEqual(await write('/api/estimates', 'POST', { ...old, pricingShape: 'flat' }), outdated);
+  // Checked first: an old write with a negative line is still "outdated".
+  assert.deepEqual(
+    await write('/api/estimates', 'POST', { activeRows: { prod: [{ name: 'Video Capture', qty: -1 }] } }),
+    outdated
+  );
+
+  // Nothing was written by any of that.
+  assert.equal(await count(), before);
+  const reread = await api(`/api/estimates/${created.estimate.id}`).then((r) => r.json());
+  assert.deepEqual(reread.estimate, created.estimate);
+
+  // The rate card's refusal carries words too, for the old Rate Card to show.
+  const card = await api('/api/pricing', { method: 'PUT', body: JSON.stringify({ labourSections: [], travelRows: [] }) });
+  const refusal = await card.json();
+  assert.deepEqual([card.status, refusal.error, typeof refusal.message], outdated);
+
+  await api(`/api/estimates/${created.estimate.id}`, { method: 'DELETE' });
 });
 
 test('depreciation assets: an opening value is dated to its FY, and keeps it across an edit', async () => {

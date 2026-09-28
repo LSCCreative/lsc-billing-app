@@ -144,7 +144,7 @@
   outline: none;
   cursor: pointer;
   /* A select is as wide as its longest option, and an option can carry a
-     problem ("half day · below floor"). Fixed to fit the unit names, so the
+     problem ("half day · below floor by $12.40"). Fixed to fit the unit names, so the
      closed control stays small; the open list still shows every word. */
   width: 7.6em;
 }

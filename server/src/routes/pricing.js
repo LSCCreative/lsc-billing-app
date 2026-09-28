@@ -3,15 +3,7 @@
 const { nowIso } = require('../db');
 const { DEFAULT_PRICING } = require('../defaults');
 const { readPricing } = require('../ratecard');
-const { SERVICE_UNITS } = require('../calc');
-
-/**
- * Whether a labour row is in the pre-v9 shape: one `mu`, and `hoursPerUnit` /
- * `dayUnit` for a day row, where v9 has `prices: { hour, half, full }`.
- */
-const outdatedRow = (r) =>
-  !r || r.mu !== undefined || r.hoursPerUnit !== undefined || r.dayUnit !== undefined ||
-  !r.prices || typeof r.prices !== 'object' || Array.isArray(r.prices);
+const { SERVICE_UNITS, cardShapeOutdated } = require('../calc');
 
 /** A service-day length: 0.5 to 24 hours, in half hours. */
 const dayHoursOk = (v) => typeof v === 'number' && v >= 0.5 && v <= 24 && Number.isInteger(v * 2);
@@ -28,9 +20,10 @@ const dayHoursOk = (v) => typeof v === 'number' && v >= 0.5 && v <= 24 && Number
  * before v9 — a cached Pages copy, a tab left open over the deploy — would read
  * the new card, not understand it, and save the old shape back over it. Any
  * labour row carrying `mu`, `hoursPerUnit` or `dayUnit`, or lacking `prices`,
- * and any card without `serviceDay` (which no old build sends), is refused
- * with this code, checked FIRST so an old build always gets it and not some
- * other complaint. The screen tells the user to reload.
+ * and any card without `serviceDay` (which no old build sends) — calc.js
+ * cardShapeOutdated — is refused with this code, checked FIRST so an old
+ * build always gets it and not some other complaint. The screen tells the user
+ * to reload.
  * @returns {string|null} an error code, or null.
  */
 function pricingProblem(body) {
@@ -41,9 +34,7 @@ function pricingProblem(body) {
     for (const r of (sec && Array.isArray(sec.rows)) ? sec.rows : []) labourRows.push(r);
   }
 
-  if (!body.serviceDay || typeof body.serviceDay !== 'object' || labourRows.some(outdatedRow)) {
-    return 'pricing_shape_outdated';
-  }
+  if (cardShapeOutdated(body)) return 'pricing_shape_outdated';
 
   const { fullHours, halfHours } = body.serviceDay;
   if (!dayHoursOk(fullHours) || !dayHoursOk(halfHours)) return 'service_day_out_of_range';
@@ -81,6 +72,15 @@ function registerPricingRoutes(app, db) {
   // separate seed step, so a fresh database just works on first save.
   app.put('/api/pricing', (req, res) => {
     const problem = pricingProblem(req.body || {});
+    if (problem === 'pricing_shape_outdated') {
+      // In words as well: the build this refuses knows no codes from after it
+      // was built, and shows the server's message.
+      return res.status(400).json({
+        error: problem,
+        message: 'This page is out of date — the rate card has changed shape since it was opened. ' +
+          'Reload the page, then make your changes again.',
+      });
+    }
     if (problem) return res.status(400).json({ error: problem });
     const now = nowIso();
     const json = JSON.stringify(req.body || {});

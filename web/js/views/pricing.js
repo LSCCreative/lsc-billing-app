@@ -106,6 +106,8 @@
  * from the floor it compares them against, so an auto price is never badged
  * below its own floor. It follows the working copy as you type, against an
  * hourly floor and Target Markup read once at mount like the rate column.
+ * The price field is described by the same facts as one plain sentence
+ * (stateSentence, in a `hidden` span), not by the visible line.
  */
 
 const PricingView = (() => {
@@ -181,7 +183,9 @@ const PricingView = (() => {
   let perHourFloor = null;
 
   /* The income floor with Target Markup and the GST settings, for unitDef.
-     Read once per mount, with perHourFloor, and for the same reason. */
+     Read once per mount, with perHourFloor, and for the same reason — except
+     the GST settings, which the Invoice Settings modal can change over this
+     screen. Its save calls refreshPrices(), which takes the context again. */
   let priceCtx = null;
 
   /* Which unit each row is showing, by row id — see SERVICE UNITS above. Not
@@ -194,7 +198,12 @@ const PricingView = (() => {
   const UNIT_WORD = { hour: 'hour', half: 'half day', full: 'full day' };
   const UNIT_CAP = { hour: 'Hourly', half: 'Half day', full: 'Full day' };
   const UNIT_ADJ = { hour: 'Hourly', half: 'Half-day', full: 'Full-day' };
+  const UNIT_LOWADJ = { hour: 'hourly', half: 'half-day', full: 'full-day' };
   const RATE_SUFFIX = { half: '/half day', full: '/day' };
+
+  /* A row's name as its controls' labels say it. A new row starts nameless,
+     and "Hourly price for " is a label that stops mid-sentence. */
+  const nameOf = (row) => String(row.name || '').trim() || 'untitled service';
 
   /* A row's prices object with all three keys, created on first write. */
   function pricesOf(row) {
@@ -213,24 +222,36 @@ const PricingView = (() => {
      most people type); anything else to the cent. */
   const money = (n) => (Number.isInteger(n) ? '$' + n.toLocaleString('en-AU') : LSCUtil.fmt(n));
 
-  /* The one-row comparison — see EACH ROW'S STATE LINE above. */
+  /* The one-row comparison — see EACH ROW'S STATE LINE above. The settings
+     are priceCtx's, the ones resolve() prices the field with: an auto figure
+     and its own state line can't be worked out from two GST configurations. */
   function compare(row, unit) {
     const [c] = LSCCalc.serviceFloorComparison(
       { serviceDay: card.serviceDay, labourSections: [{ id: '', label: '', rows: [row] }] },
-      LSCData.settings(),
+      priceCtx.settings,
       perHourFloor,
       priceCtx
     );
     return c.units[unit];
   }
 
+  /* Between the state line's parts. The no-break space holds each dot to the
+     part before it, so a line that wraps (every set-by-you row does, in the
+     80px Mark-Up column) ends on "·" rather than starting the next one with
+     it: "below floor by $26.16 ·" / "↺ use $103", not "· ↺ use $103". */
+  const STATE_SEP = '&nbsp;· ';
+
+  /* Each control's accessible name starts with the words it shows (WCAG 2.5.3,
+     so "click use 103" works by voice), then says what it acts on, which the
+     visible words alone don't: the Dashboard badge's pattern. */
   function stateLineHtml(row, si, ri) {
     const unit = unitOf(row);
     const u = compare(row, unit);
     const part = (html) => '<span class="pricing-state-part">' + html + '</span>';
     if (u.auto && u.mu === null) {
-      return part('auto') + ' · ' + part(
-        '<button type="button" class="pricing-state-link" data-state-tab="goals">needs Profit Goals</button>'
+      return part('auto') + STATE_SEP + part(
+        '<button type="button" class="pricing-state-link" data-state-tab="goals"' +
+        ' aria-label="needs Profit Goals: open Profit Goals">needs Profit Goals</button>'
       );
     }
     const parts = [part(u.auto ? 'auto' : 'set by you')];
@@ -241,19 +262,43 @@ const PricingView = (() => {
       const label = suggestion === null ? 'auto' : money(suggestion);
       parts.push(part(
         '<button type="button" class="pricing-state-link" data-use-auto data-si="' + si + '" data-ri="' + ri + '"' +
-        ' aria-label="Use the suggested price, ' + (suggestion === null ? 'auto' : money(suggestion)) + ', for ' +
-        esc(row.name) + ' ' + UNIT_WORD[unit] + '">↺ use ' + label + '</button>'
+        ' aria-label="' + esc(suggestion === null
+          ? 'Use auto: put ' + nameOf(row) + '’s ' + UNIT_LOWADJ[unit] + ' price back to auto'
+          : 'Use ' + label + ', the suggested ' + UNIT_LOWADJ[unit] + ' price for ' + nameOf(row)) +
+        '"><span aria-hidden="true">↺&nbsp;</span>use ' + label + '</button>'
       ));
     }
-    return parts.join(' · ');
+    return parts.join(STATE_SEP);
+  }
+
+  /* The state line as one plain sentence: what the price field's
+     aria-describedby reads on focus (the brief's "set by you, suggested $451"),
+     and what typing announces. The visible line can't be the description: it
+     carries "↺ use $X", whose full accessible name would be read into it,
+     service name and all. Rendered into a `hidden` span, which a description
+     reference still reads, so browsing the page doesn't meet it a second time. */
+  function stateSentence(row, unit) {
+    const u = compare(row, unit);
+    if (u.auto && u.mu === null) return 'Auto, no price until Profit Goals is set.';
+    const parts = [u.auto ? 'Auto' : 'Set by you'];
+    if (u.belowFloor) parts.push('below floor by ' + LSCUtil.fmt(u.gap));
+    else if (u.auto) parts.push(u.floor === null ? 'no floor yet' : 'floor ' + LSCUtil.fmt(u.floor));
+    if (!u.auto) {
+      const suggestion = autoPrice(row, unit);
+      parts.push(suggestion === null ? 'no suggested price until Profit Goals is set' : 'suggested ' + money(suggestion));
+    }
+    return parts.join(', ') + '.';
   }
 
   /* What is wrong with one unit of a row, if anything: below its floor, or
      no price to quote. For the hidden-unit notice and the option text. */
   function unitProblem(row, unit) {
     const u = compare(row, unit);
-    if (u.belowFloor) return { text: 'below floor by ' + LSCUtil.fmt(u.gap), short: 'below floor' };
-    if (u.mu === null) return { text: 'has no price yet', short: 'no price yet' };
+    if (u.belowFloor) {
+      const text = 'below floor by ' + LSCUtil.fmt(u.gap);
+      return { text, option: text };
+    }
+    if (u.mu === null) return { text: 'has no price yet', option: 'no price yet, needs Profit Goals' };
     return null;
   }
 
@@ -269,16 +314,17 @@ const PricingView = (() => {
        its state line, and a flag on it would widen the closed select. */
     const opt = (value) =>
       '<option value="' + value + '"' + (unit === value ? ' selected' : '') + '>' + UNIT_WORD[value] +
-      (problem[value] && value !== unit ? ' · ' + problem[value].short : '') + '</option>';
+      (problem[value] && value !== unit ? ' · ' + problem[value].option : '') + '</option>';
     let html =
       'per <select class="pricing-unit-sel" data-si="' + si + '" data-ri="' + ri +
-      '" aria-label="Unit shown for ' + esc(row.name) + '">' + LSCCalc.SERVICE_UNITS.map(opt).join('') + '</select>' +
+      '" aria-label="Unit shown for ' + esc(nameOf(row)) + '">' + LSCCalc.SERVICE_UNITS.map(opt).join('') + '</select>' +
       (unit === 'hour' ? '' : '<span> · ' + LSCCalc.unitHours(card, unit) + ' billable hrs</span>');
     if (!problem[unit]) {
       LSCCalc.SERVICE_UNITS.filter((u) => u !== unit && problem[u]).forEach((u) => {
         html +=
           '<button type="button" class="pricing-hidden-note" data-show-unit="' + u + '" data-si="' + si +
-          '" data-ri="' + ri + '">' + UNIT_CAP[u] + ' ' + problem[u].text + ' <span aria-hidden="true">▸</span></button>';
+          '" data-ri="' + ri + '" aria-label="' + esc(UNIT_CAP[u] + ' ' + problem[u].text + ': show ' + nameOf(row) + '’s ' +
+          UNIT_LOWADJ[u] + ' price') + '">' + UNIT_CAP[u] + ' ' + problem[u].text + ' <span aria-hidden="true">▸</span></button>';
       });
     }
     return html;
@@ -288,6 +334,19 @@ const PricingView = (() => {
      line, the price field's shown value (unless it is the field being typed
      in) and auto styling, and the state line. The unit line is left alone
      while focus is inside it, so a keyboard user on the select keeps it. */
+  /* Replace an element's contents only when they would change. refreshRow
+     runs on the price field's blur, which fires as Tab moves focus from the
+     price to the "↺ use $X" right after it: rewriting the line unconditionally
+     there destroyed the button focus was landing on, and focus fell to the top
+     of the page, so ↺ was out of a keyboard user's reach (found by a real-Tab
+     walk-through, 2026-09-29). Compared through a detached element, so both
+     sides are serialised the same way (&nbsp;, quotes). */
+  const scratch = document.createElement('div');
+  function rewrite(el, html) {
+    scratch.innerHTML = html;
+    if (scratch.innerHTML !== el.innerHTML) el.innerHTML = html;
+  }
+
   function refreshRow(si, ri) {
     const row = (card.labourSections[si] || { rows: [] }).rows[ri];
     if (!row) return;
@@ -299,10 +358,33 @@ const PricingView = (() => {
       const rate = inp.closest('tr').querySelector('.pricing-rate-ro');
       if (rate) rate.value = rateDisplay(row);
       const meta = inp.closest('tr').querySelector('.pricing-row-meta');
-      if (meta && !meta.contains(document.activeElement)) meta.innerHTML = rowMetaHtml(row, si, ri);
+      if (meta && !meta.contains(document.activeElement)) rewrite(meta, rowMetaHtml(row, si, ri));
     }
     const el = root.querySelector('#pfl-' + si + '-' + ri);
-    if (el) el.innerHTML = stateLineHtml(row, si, ri);
+    if (el) rewrite(el, stateLineHtml(row, si, ri));
+    const said = root.querySelector('#pfd-' + si + '-' + ri);
+    if (said) said.textContent = stateSentence(row, unitOf(row));
+  }
+
+  /* A rename, as it is typed: every label in the row that names the service.
+     They are written at render, and a render would take the name field out
+     from under the cursor. refreshRow rewrites the unit line (focus is in the
+     name, not in it) and the state line with its "↺". */
+  function relabelRow(si, ri) {
+    const row = (card.labourSections[si] || { rows: [] }).rows[ri];
+    const nameInp = root.querySelector('input[data-type="labour"][data-si="' + si + '"][data-ri="' + ri + '"][data-field="name"]');
+    if (!row || !nameInp) return;
+    const tr = nameInp.closest('tr');
+    const n = nameOf(row);
+    const label = (sel, text) => {
+      const el = tr.querySelector(sel);
+      if (el) el.setAttribute('aria-label', text);
+    };
+    label('input[data-field="price"]', UNIT_ADJ[unitOf(row)] + ' price for ' + n);
+    label('.pricing-rate-ro', 'Internal rate for ' + n + ', calculated automatically');
+    label('input[data-field="customBill"]', 'Allow a custom bill amount for ' + n);
+    label('.del-btn', 'Delete ' + n);
+    refreshRow(si, ri);
   }
 
   function refreshAllRows() {
@@ -504,18 +586,19 @@ const PricingView = (() => {
         ' aria-readonly="true" aria-describedby="pricing-rate-note" class="pricing-rate-ro' +
         (computedRate === null ? ' pricing-rate-none' : '') + (unit === 'hour' ? '' : ' pricing-rate-day') +
         '" value="' + rateDisplay(row) +
-        '" aria-label="Internal rate for ' + esc(row.name) + ', calculated automatically"></td>' +
+        '" aria-label="Internal rate for ' + esc(nameOf(row)) + ', calculated automatically"></td>' +
         '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01"' +
         ' class="pricing-price-inp' + (d.auto ? ' pricing-auto' : '') + '" value="' + (d.mu === null ? '' : esc(String(d.mu))) +
-        '" placeholder="—" aria-label="' + UNIT_ADJ[unit] + ' price for ' + esc(row.name) + '" aria-describedby="pfl-' + si + '-' + ri +
+        '" placeholder="—" aria-label="' + UNIT_ADJ[unit] + ' price for ' + esc(nameOf(row)) + '" aria-describedby="pfd-' + si + '-' + ri +
         '" data-si="' + si + '" data-ri="' + ri + '" data-field="price" data-type="labour">' +
-        '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + stateLineHtml(row, si, ri) + '</div></td>' +
+        '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + stateLineHtml(row, si, ri) + '</div>' +
+        '<span hidden id="pfd-' + si + '-' + ri + '">' + esc(stateSentence(row, unit)) + '</span></td>' +
         '<td style="text-align:center" data-label="Custom"><input type="checkbox"' + (row.customBill ? ' checked' : '') +
         ' data-si="' + si + '" data-ri="' + ri + '" data-field="customBill" data-type="labour"' +
-        ' aria-label="Allow a custom bill amount for ' + esc(row.name) + '"' +
+        ' aria-label="Allow a custom bill amount for ' + esc(nameOf(row)) + '"' +
         ' title="Allow a custom bill amount to override hours × mark-up"></td>' +
         '<td class="pricing-act"><button type="button" class="del-btn" title="Delete this service"' +
-        ' aria-label="Delete ' + esc(row.name) + '" data-del-si="' + si + '" data-del-row="' + ri + '">×</button></td></tr>';
+        ' aria-label="Delete ' + esc(nameOf(row)) + '" data-del-si="' + si + '" data-del-row="' + ri + '">×</button></td></tr>';
     });
 
     return (
@@ -669,6 +752,20 @@ const PricingView = (() => {
     return html;
   }
 
+  /* The card the server sent is in the shape from before v9 (calc.js
+     cardShapeOutdated): this page is newer than the server. Read-only and
+     final — reloading only helps once the server has been updated. */
+  function outdatedMarkup() {
+    return (
+      '<div class="page-head"><div><h1 class="page-title">Rate Card</h1>' +
+      '<div class="page-sub">Add, rename, re-price or remove anything the estimator offers</div></div></div>' +
+      '<div class="empty-state" role="alert"><h3>The server hasn’t been updated for this Rate Card yet</h3>' +
+      '<p>This page prices each service by the hour, half day and full day, but the server still ' +
+      'stores one price per service. Editing is switched off until the server is updated, so a save ' +
+      'from here can’t overwrite your prices. Reload once it has been.</p></div>'
+    );
+  }
+
   // ── Editing ───────────────────────────────────────────────────────────────
 
   function showError(message) {
@@ -730,7 +827,10 @@ const PricingView = (() => {
             : card.travelRows[parseInt(input.dataset.ri, 10)];
         if (!target) return;
 
-        if (field === 'name') target.name = input.value;
+        if (field === 'name') {
+          target.name = input.value;
+          if (input.dataset.type === 'labour') relabelRow(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10));
+        }
         else if (field === 'price') {
           /* Typing pins the unit on show; an empty field is auto again. A
              number input reads '' for anything it can't parse, too, so a
@@ -756,16 +856,12 @@ const PricingView = (() => {
           const si = parseInt(input.dataset.si, 10);
           const ri = parseInt(input.dataset.ri, 10);
           refreshRow(si, ri);
-          /* The line is the Mark-Up's description, so it is read on focus; this
-             is for the change while typing, spoken once typing pauses. */
-          const line = root.querySelector('#pfl-' + si + '-' + ri);
-          if (line) {
-            LSCUtil.announce(
-              $('pricing-floor-live'),
-              (String(target.name).trim() || 'This service') + ', ' + UNIT_WORD[unitOf(target)] + ': ' +
-                line.textContent.replace(/↺ use/, 'suggested').replace(/floor —/, 'no floor yet') + '.'
-            );
-          }
+          /* The sentence is the Mark-Up's description, so it is read on focus;
+             this is for the change while typing, spoken once typing pauses. */
+          LSCUtil.announce(
+            $('pricing-floor-live'),
+            nameOf(target) + ', ' + UNIT_WORD[unitOf(target)] + ': ' + stateSentence(target, unitOf(target))
+          );
         }
       });
     });
@@ -814,15 +910,28 @@ const PricingView = (() => {
       render();
     });
 
+    /* The new row's name is focused and selected, as the IA's "Pricing a new
+       service" flow has it: render() rebuilds the card, so without this a
+       keyboard user was dropped at the top of the page, a whole card away from
+       the row they had just made, and typing replaces "New Service". */
     root.querySelectorAll('[data-add-row]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        card.labourSections[parseInt(btn.dataset.addRow, 10)].rows.push({
+        const si = parseInt(btn.dataset.addRow, 10);
+        const rows = card.labourSections[si].rows;
+        rows.push({
           id: newRowId(),
           name: 'New Service',
           rate: 0,
           prices: { hour: null, half: null, full: null },
         });
         render();
+        const nameInp = root.querySelector(
+          'input[data-type="labour"][data-si="' + si + '"][data-ri="' + (rows.length - 1) + '"][data-field="name"]'
+        );
+        if (nameInp) {
+          nameInp.focus();
+          nameInp.select();
+        }
       });
     });
 
@@ -1001,12 +1110,25 @@ const PricingView = (() => {
     try {
       const reply = await LSCApi.post('/api/pricing/reset');
       LSCData.setPricing(reply.pricing);
-      card = clone(reply.pricing);
-      taxRaw = toPercent(reply.pricing.taxSetAsideRate);
-      baseline = snapshot();
       Toast.ok('Defaults restored.');
       saving = false;
       if (!onScreen()) return;
+      // A server rolled back to before v9 since mount resets to its own card.
+      if (LSCCalc.cardShapeOutdated(reply.pricing)) {
+        card = null;
+        root.innerHTML = outdatedMarkup();
+        return;
+      }
+      /* Everything mount sets up for a card, again: the default rows carry no
+         ids (see ROW IDS above), and the unit view is keyed by id — without
+         them every row would share one entry, and switching one row's unit
+         would switch them all. */
+      card = clone(reply.pricing);
+      assignRowIds(card);
+      viewUnits = {};
+      showDefault = 'hour';
+      taxRaw = toPercent(reply.pricing.taxSetAsideRate);
+      baseline = snapshot();
       render();
     } catch (err) {
       setSaving(false);
@@ -1050,9 +1172,18 @@ const PricingView = (() => {
     usage = null;
 
     const pricing = LSCData.pricing();
+    /* A server not yet on v9 serves a card this screen can't read: every row
+       would show as all-auto, and one save would put that over every typed
+       price, where the v9 migration would then leave it. So it isn't opened
+       for editing at all. With no #tax-inp, onScreen() is false, and every
+       async path and refreshPrices() stands down. */
+    if (LSCCalc.cardShapeOutdated(pricing)) {
+      card = null;
+      root.innerHTML = outdatedMarkup();
+      return;
+    }
     card = clone({
-      // A card that predates v9 has none; the server's own default fills in.
-      serviceDay: pricing.serviceDay || { fullHours: 8, halfHours: 4 },
+      serviceDay: pricing.serviceDay,
       labourSections: pricing.labourSections || [],
       travelRows: pricing.travelRows || [],
     });
@@ -1146,7 +1277,7 @@ const PricingView = (() => {
       const d = resolve(row, unitOf(row));
       LSCUtil.announce(
         $('pricing-floor-live'),
-        (String(row.name).trim() || 'This service') + ', ' + UNIT_WORD[unitOf(row)] + ': back to auto' +
+        nameOf(row) + ', ' + UNIT_WORD[unitOf(row)] + ': back to auto' +
           (d.mu === null ? ', no price yet.' : ', ' + money(d.mu) + '.')
       );
     }
@@ -1176,5 +1307,19 @@ const PricingView = (() => {
     inp.scrollIntoView({ block: 'center' });
   }
 
-  return { mount };
+  return {
+    mount,
+    /* Called by SettingsView after the Invoice Settings modal saves, which can
+       happen with this screen open behind it. An auto price on a
+       GST-inclusive card carries GST inside it, so turning "prices include
+       GST" on or off moves every auto figure, its state line and its "↺ use
+       $X". The working copy is untouched: a typed price is the user's and
+       stays as typed, and nothing here makes the card dirty. */
+    refreshPrices() {
+      if (!onScreen() || !card) return;
+      priceCtx = LSCData.priceContext();
+      perHourFloor = priceCtx.floorPerHour;
+      refreshAllRows();
+    },
+  };
 })();

@@ -55,8 +55,10 @@
  *     same service at the same unit. A unit switch or a new line while it is
  *     on takes last time's price at that unit when there is one, and
  *     remembers today's card price as the line's own for turning it off.
- * A unit with no price is listed disabled ("no price yet") in both selects,
- * never offered at $0 (IA: `mu: null` means unavailable). The auto price a
+ * A unit with no price is listed disabled ("no price yet, needs Profit
+ * Goals": the brief asks a disabled option to say why, and an auto unit with
+ * no income floor is the only way to have none) in both selects, never offered
+ * at $0 (IA: `mu: null` means unavailable). The auto price a
  * line is added at is frozen into its snapshot like any other: this file never
  * resolves a price after that except on one of the actions above.
  *
@@ -94,7 +96,9 @@ const EstimateEditor = (() => {
   let profitMarginPct = null; // a MARKUP percent — the stored column predates the rename
   let incomeFloor = null; // LSCData.incomeFloor(), for the job's income line
   /* LSCData.priceContext(), for resolving a service's auto prices at a unit.
-     Resolved at mount for the same reason as the three above. */
+     Resolved at mount for the same reason as the three above — except its GST
+     settings, which the Invoice Settings modal can change over this screen:
+     refreshTotals() takes it again. */
   let priceCtx = null;
 
   /* The client's last project, for "Use rates from last project":
@@ -231,7 +235,7 @@ const EstimateEditor = (() => {
       const { snap } = unitSnap(sectionId, row, u);
       html +=
         '<option value="' + u + '"' + (snap ? '' : ' disabled') + '>' + name(u) + ' · ' +
-        (snap ? money(snap.mu) : 'no price yet') + '</option>';
+        (snap ? money(snap.mu) : 'no price yet, needs Profit Goals') + '</option>';
     });
     return html;
   }
@@ -1375,6 +1379,9 @@ const EstimateEditor = (() => {
       gstFree: gstFreeNow(),
       client,
       activeRows: collect(),
+      // Says this build prices lines from the v9 card; the server refuses an
+      // estimate write without it (calc.js PRICING_SHAPE says why).
+      pricingShape: LSCCalc.PRICING_SHAPE,
     };
   }
 
@@ -1638,11 +1645,20 @@ const EstimateEditor = (() => {
        the GST configuration leaves the summary bar showing figures from the old
        one until the next keystroke happens to recompute them.
 
+       The auto prices move with it: on a GST-inclusive card an auto price
+       carries GST inside it. So the price context is taken again and the unit
+       pickers repainted, or the next line added would be snapshotted at the
+       old configuration's figure and read under the new one. Lines already on
+       the estimate keep their snapshots, as they would for any rate-card
+       change; "Update to current rates" now re-prices them at the new figure.
+
        The guard is what makes this safe to call blind: `root` stays set after
        another view has replaced the markup inside it, so the sentinel asks
        whether the editor is actually on screen rather than whether it ever was. */
     refreshTotals() {
       if (!root || !root.querySelector('#s-gst')) return;
+      priceCtx = LSCData.priceContext();
+      paintLineUnits();
       recalc();
     },
   };

@@ -64,20 +64,65 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
       - [x] Task 7 — Dashboard: headline day floors from the Service Day, one comparison row per
             service, `labourFloorComparison` deleted (2026-09-28). Browser-verified; see its Done
             note (an auto *day* can be below floor when its typed hourly is).
+      - [x] Task 8 — responsive pass (2026-09-28). Measured at seven widths against `main` on the
+            same data. Nothing overflowed; the fixes were 44px targets (`↺`, the notice, the
+            editor line's unit select), Show as three equal thirds, the Service Day fields sharing
+            the row, and the state line's `·` held to the part before it. See its Done note. At
+            768px and up, every measurement matches the pre-change run. Screenshots are in
+            `screenshots/responsive-*`.
+      - [x] Task 9 — accessibility pass (2026-09-29). Audited, then walked the IA's flows with
+            real keys. Fixed two keyboard traps: Tab from a price to its `↺` lost focus, because
+            the blur rewrote the line; and `+ Add Service` dropped focus. Also: a plain-sentence
+            description for the price field, names that start with the visible words, labels that
+            follow a rename, and option text carrying the whole problem. Contrast was measured and
+            needed nothing. See its Done note.
+      - [ ] **Code review fixes R1–R14** (2026-09-29). A `/code-review` (xhigh) of the whole
+            branch found 14 issues. **R1–R4, the four recommended before the deploy, are done**
+            (2026-09-29). R1: GST changes from the Invoice Settings modal refresh both screens'
+            auto prices. R2: estimate writes need `pricingShape` (`calc.js` `PRICING_SHAPE`), or
+            they're refused as outdated. R3: the Rate Card won't open a pre-v9 card
+            (`calc.js` `cardShapeOutdated`). R4: a reset card gets row ids. See their Done notes.
+            R5–R14 can follow the deploy. They're listed in TASKS.md under "Code review
+            fixes". R1–R4 are recommended before the deploy: stale GST settings in auto prices;
+            the estimate routes having no shape guard, so an old tab can save $0 labour; the
+            Rate Card accepting a pre-v9 card; and reset-to-defaults leaving rows without ids.
+            R9 (PDF names) is a settled user decision, listed for completeness only.
 - [ ] Phase 7 — Design Review.
 
 Nothing deployed. **As of task 3 the branch is only coherent as a whole**: the server now
 stores and demands the new card shape, while the web build still reads and writes the old one.
 As of task 7 every screen reads the new shape (Rate Card, estimator, Dashboard), so the branch is
-coherent again end to end. What's left before merging is polish (tasks 8–9), then the deploy. **Don't merge
-before task 10.**
+coherent again end to end. Every build task is done; what's left is the deploy (task 10), then the
+review. **Don't merge before task 10.**
 
 **The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
 DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
 
-**Exact next item:** TASKS.md **task 8, "Responsive pass"** (frontend — Opus/high). Known
-already: the estimator line's unit select is 28px tall at 375 (needs 44px), and the Rate Card
-state lines wrap at 1280 (task 4's note). Then task 9 (accessibility).
+**Exact next item:** **task 10, "Deploy: NAS (v9) first, then Pages"** (deploy — Sonnet/medium).
+R1–R4 are done. R5–R14 can follow the deploy, or come first if the user prefers. **New since R2:**
+from the moment the NAS runs v9 until Pages is live, the live site can't save an estimate at all.
+Its saves lack `pricingShape` and are refused with a "reload" message. So do the Pages push
+straight after the NAS checks, and don't edit estimates in between. **Ask the user before
+starting it.** Back up the live DB first. Remove the two
+temporary `launch.json` entries (`api-v9-scratch`, `web-v9`) before merging. Then task 11 (design
+review on the live site). **For the review:** on a phone, a row showing a day reads "RATE ($/HR)
+120.96/day" (task 8's Done note).
+
+**A real VoiceOver pass is still for a person** (as in price-calculator). What to listen for:
+- Rate Card, Tab onto a set-by-you price: "Hourly price for Video Capture, 200 … Set by you,
+  suggested $103." Change the row's unit, and both the name and that sentence should change with it.
+- Tab once more: "Use $103, the suggested hourly price for Video Capture, button". Activate it:
+  focus goes back to the price, and "Video Capture, hour: back to auto, $103." is spoken once.
+- Type in a price: one announcement after you pause, not one per keystroke.
+- Edit the Service Day's Full hours: "Auto prices updated for N-hour full day." once, not once per
+  row.
+- The unit select's options: the other units read with their problem ("half day · below floor by
+  $104.64"). Does VoiceOver's rotor/list read the whole option?
+- `+ Add Service`: lands on the new name field, text selected.
+- Estimator: "Unit to add for Production"; a disabled option reads "no price yet, needs Profit
+  Goals, dimmed"; switching a line's unit speaks "…: now per half day, $412, 4 billable hrs."
+- Show buttons: VoiceOver should say "selected" / "not selected" (from `aria-pressed`). Check it
+  doesn't spell out the uppercase labels letter by letter.
 
 **Verifying UI on this branch:** another session may be running `api-scratch` / `web` on 8080 /
 5173 with a v8 server, and the scratch DB is shared. Task 4 used a *copy* of the scratch DB at

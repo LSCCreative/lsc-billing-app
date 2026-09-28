@@ -16,6 +16,7 @@ const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const { buildEstimateHtml, exportBlocker, exportFilename, resolveExecutablePath } = require('../src/pdf');
+const { PRICING_SHAPE } = require('../src/calc');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -172,7 +173,7 @@ test('POST /api/estimates/:id/pdf renders a real PDF and writes a copy to export
       method: 'POST',
       body: JSON.stringify({
         name: QUOTE.name, upid: QUOTE.upid, date: QUOTE.date,
-        client: QUOTE.client, activeRows: QUOTE.activeRows,
+        client: QUOTE.client, activeRows: QUOTE.activeRows, pricingShape: PRICING_SHAPE,
       }),
     }).then((r) => r.json());
 

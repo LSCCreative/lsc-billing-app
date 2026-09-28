@@ -399,7 +399,7 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
 
 ## Responsive & Polish
 
-- [ ] **8. Responsive pass** (frontend — Opus/high): At < 768px: the Rate Card row's unit select,
+- [x] **8. Responsive pass** (frontend — Opus/high): At < 768px: the Rate Card row's unit select,
   the `· N billable hrs` text and the hidden-unit notice sit under the service name; the state line
   stays under the price; the settings strip wraps (Tax, Service Day, Show each on their own line,
   Show buttons full-width in three equal parts). The estimator's `.bb-picker` stacks Service / Unit
@@ -411,7 +411,47 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   server's `puppeteer-core` + local Chrome. Breakpoints: 1100, 768. _Modifies: `responsive.css`,
   `pricing.css`, `estimates.css`, `finance-dashboard.css`. Depends on: 5, 6, 7._
 
-- [ ] **9. Accessibility pass** (frontend — Opus/high): Per the brief's "Accessibility
+  **Done 2026-09-28** (branch `service-rate-tiers`). **Measured first, at all seven widths, against
+  `main` on the same data** (a temporary worktree of `main` on a copy of the v8 scratch DB, ports
+  8082 / 5175, since removed). Most of the brief already held. Nothing overflowed at any width. The
+  unit line, a day's hours and the hidden-unit notice already sat under the name, because the first
+  cell is a block below 768. The picker already stacked Service / Unit / Add at full width. The
+  Dashboard cells already stacked with their labels. The gaps were target sizes, plus two layout
+  asks. **Changes**, all in `responsive.css`'s mobile band (new "Service rate tiers: the phone pass"
+  block) except the first:
+  (a) **The state line's dots stay on the line they end** (`pricing.js`, `STATE_SEP = '&nbsp;· '`).
+  At every width, a wrapped set-by-you line below floor used to read "below floor by $26.16" /
+  "· ↺ use $103". Now it reads "below floor by $26.16 ·" / "↺ use $103". Row heights are unchanged
+  (measured).
+  (b) `↺ use $X`, "needs Profit Goals" and the hidden-unit notice are **44px tall themselves**
+  (`inline-flex`, `min-height`), not given the badge's invisible overlay. The state line sits right
+  under the price field, and an overlay reaching 13px up would take taps meant for the field. A
+  set-by-you row grows ~27px on a phone, and an auto row not at all.
+  (c) **Show** is a grid: the label on its own line, then three equal thirds (110px at 375, 92 at
+  320; "HALF DAY" is 51px, so `.btn-sm`'s padding fits).
+  (d) **The Service Day fields share the row** (`flex: 1 1 0` labels, growing inputs; 92 / 90px at
+  375) instead of two 64px boxes on the left.
+  (e) **The editor line's unit select is 44px** (was 28px). `.lab-unit` becomes a centred flex row,
+  so "per [full day ▾] · 8 billable hrs" is still one line at 320.
+  (f) `.bb-picker .unit-select { flex: 1 1 100% }` is now stated. It was already full width, but only
+  because `responsive.css` loads after `estimates.css` at equal specificity.
+  (g) **Stacked Dashboard unit cells get 2px more padding each side.** Two badges in a row were 43px
+  apart, so their 44px targets overlapped by a pixel. They're now 47px apart.
+  The tablet band needed nothing. The picker fits at 768, and no Dashboard price wraps from 1099
+  down. **Desktop:** at 768 and above, every measurement matches the pre-change run (row heights
+  79–96px, the state-line heights, the day block). **Truncated service names at 1280: 8, the same as
+  `main` on the same data** (TASKS's "(3)" is the 375 figure, which is also 3 on both). With Show on
+  Full day at 1280 it's 13, because task 4's 112px day Rate column takes the width. That's a new
+  state, left as built. **Verified** in headless Chrome (puppeteer-core) at 1280 / 1100 / 1000 /
+  800 / 768 / 375 / 320, with `docOverflow` 0 and nothing past the right edge on all three screens.
+  Plus **real touch taps 18px off each enlarged target's text** at 375: `↺` returned the price to
+  auto and focused it, the notice switched the row to Half day, and a Show button's bottom-right
+  corner set every row. No script errors. 250 server tests green. Screenshots are in
+  [`screenshots/`](screenshots/) (`responsive-*`). **Left for the review:** on a phone, a row
+  showing a day reads "RATE ($/HR)  120.96/day". The label comes from the desktop column head and
+  task 4 chose it there, but stacked per row it contradicts its own value.
+
+- [x] **9. Accessibility pass** (frontend — Opus/high): Per the brief's "Accessibility
   Requirements":
   - The Rate Card unit select is named "Unit shown for {service}", and its options carry problem
     text.
@@ -433,6 +473,275 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   listen for in the handover. _Modifies: `pricing.js`, `estimate-editor.js`, `finance-dashboard.js`,
   `a11y.css`. Depends on: 5, 6, 7._
 
+  **Done 2026-09-29** (branch `service-rate-tiers`). I audited first, because tasks 4–7 had built
+  most of the list, then walked every flow with **real keys** (puppeteer `keyboard.press` /
+  `type`, i.e. CDP key events with a real `key`, unlike the browser pane) and read the Chrome
+  accessibility tree (CDP `Accessibility.getPartialAXTree`) at each step. **Already right:**
+  `aria-pressed` on Show; one polite region for the Service Day ("Auto prices updated for 10-hour
+  full day."); the picker's "Unit to add for Production"; the line switch announced in
+  `#editor-live`; the Dashboard badge's name. **Contrast is measured, not assumed**, composited over
+  each element's real background: state lines 6.15:1, below-floor and the notice 4.60:1
+  (`--accent-text` on `--bg`: the tables sit on `--bg`, not `--surface`), auto prices 6.03:1, and
+  Dashboard badges 4.60:1 and `auto` tags 6.15:1. So `a11y.css` needed nothing. **Fixed**, all in
+  `pricing.js` except (f):
+  (a) **Tab from a price to its `↺ use $X` lost focus to the page.** The price field's `blur`
+  runs `refreshRow`, which rewrote the state line, destroying the button focus was moving to. So
+  a keyboard user could never reach `↺`. Task 4's check used a dispatched click, which can't see
+  this. `refreshRow` now rewrites the state line and the unit line only when their HTML would
+  change (`rewrite()`, compared through a detached element so `&nbsp;` serialises alike).
+  (b) **`+ Add Service` dropped focus to the page** (render rebuilt the card; `main` does the
+  same). The new row's name is now focused and selected, as the IA's "Pricing a new service"
+  step 1 says, so typing replaces "New Service".
+  (c) **The price field's description is one plain sentence** (`stateSentence`, in a `hidden`
+  span `#pfd-si-ri` that `aria-describedby` points at): "Set by you, below floor by $26.16,
+  suggested $103." It was the visible line, which read `↺`'s whole accessible name into it,
+  service name and all. The typing announcement now uses the same sentence instead of a regex over
+  the line's text.
+  (d) **Names start with the visible words** (WCAG 2.5.3, so voice control finds them), then say
+  what they act on, like the Dashboard badge. `↺`: "Use $103, the suggested full-day price for
+  Video Capture" (was "Use the suggested price, $103, for Video Capture full day"; with no
+  suggestion, "Use auto: put … back to auto"); the glyph is `aria-hidden`. The notice: "Half day
+  below floor by $228.64: show Test Tier Service's half-day price". "needs Profit Goals: open
+  Profit Goals".
+  (e) **Renaming relabels the row as you type** (`relabelRow`): the unit select, price, rate,
+  Custom and delete labels were written at render only, so a new row read "Unit shown for New
+  Service" whatever you typed. An empty name reads "untitled service" rather than a label that
+  stops mid-sentence (`nameOf`).
+  (f) **Option text carries the whole problem**: the Rate Card's other units read "half day ·
+  below floor by $104.64" (was "· below floor") or "no price yet, needs Profit Goals". The
+  estimator's disabled options read "Full day · no price yet, needs Profit Goals"
+  (`estimate-editor.js`), which says why, as the brief asks. An auto unit with no income floor is
+  the only way to have no price.
+  **Verified** (v9 scratch copy): the flows "pricing a new service" (+ Add Service → type name →
+  Tab → type-ahead to Full day → Tab ×2 → type 1200 → Tab lands on `↺` → Enter returns focus to the
+  price, now auto, announced), "quoting a shoot" (service type-ahead → Tab → "Unit to add for
+  Production" → F → Tab → Enter adds; the line's "Unit for …" select, typing h, announced "…: now
+  per half day, $412, 4 billable hrs."), an untouched set-by-you price → Tab → `↺` → Enter, Show
+  by Space, the notice by Enter, and a Dashboard badge by Enter landing on "Half-day price for
+  Pre-Production Meeting with Client" / "Auto, below floor by $104.64.". Every tabbed control
+  matched `:focus-visible`. With the income floor stubbed out: the disabled option's name is
+  "Hour · no price yet, needs Profit Goals", disabled. No `title`-only information was added (the
+  `title`s on Custom / Direct / Your time and the delete buttons predate this feature, and each has
+  an `aria-label`). Layout re-measured at 1280 / 1100 / 768 / 375 / 320: identical to task 8's
+  figures. 250 server tests green. **Not done here:** a real VoiceOver pass. The handover lists
+  what to listen for.
+
+## Code review fixes (2026-09-29)
+
+From a `/code-review` (xhigh) of the whole branch, including the uncommitted task 8–9 work. There are
+14 findings, none fixed yet. They're numbered R1–R14 so tasks 10 and 11 keep their numbers. **R1–R4
+are recommended before task 10.** R2 and R3 are deploy-window hazards, and R1 and R4 give wrong
+prices or a broken screen on live data. The rest can follow the deploy. Each item names where the
+problem is, what goes wrong, and the fix direction. The fix direction is a suggestion, not a
+decision. Same gate as every task: `npm test`, both `calc.js` copies, a checked mutation for money
+math, and a browser check for anything a person looks at.
+
+### Correctness
+
+- [x] **R1. Auto prices go stale when GST settings change mid-screen** (money math — Opus/high).
+  `estimate-editor.js` mount (`priceCtx = LSCData.priceContext()`, ~l.1610) and `pricing.js` mount
+  (~l.1162) each capture `priceCtx` once. Its `settings` is a reference to the cache object, and
+  `LSCData.setSettings` replaces that object. The Invoice Settings modal opens over both screens
+  from the header. `settings.js` then calls `EstimateEditor.refreshTotals()`, which recalculates
+  totals but leaves `priceCtx` and the picker unchanged. The result: turn on "prices include GST"
+  with an estimate open, and the next auto-priced line is snapshotted at the GST-exclusive figure.
+  `computeTotals` then reads it as GST-inclusive, about 9% under the floor. On the Rate Card,
+  `resolve()` uses the stale settings while `compare()` reads `LSCData.settings()` live, so an auto
+  field disagrees with its own state line and `↺ use $X`. *Fix direction:* read settings live
+  inside `priceContext()` consumers (or re-take `priceCtx` in `refreshTotals`), and repaint the
+  pickers (`paintLineUnits`). Give the Rate Card the same refresh hook, or have its `compare()` use
+  the same context as `resolve()`.
+
+  **Done 2026-09-29** (branch `service-rate-tiers`). Fixed with a refresh hook, not by making
+  `priceCtx` live. The floor and markup still can't change on these screens, and the pickers need
+  repainting either way. Three changes:
+  - `EstimateEditor.refreshTotals()` takes `priceCtx` again and runs `paintLineUnits()`, which
+    repaints both the pickers and each line's unit options, before `recalc()`.
+  - New `PricingView.refreshPrices()` takes `priceCtx` / `perHourFloor` again and runs
+    `refreshAllRows()`. `settings.js` calls it after a save, beside the other refresh hooks. It
+    guards on `onScreen()`, so it's safe to call blind.
+  - The Rate Card's `compare()` takes its settings from `priceCtx.settings`, not
+    `LSCData.settings()`. The field (`resolve()`) and its state line / `↺ use $X` then can't read
+    two GST configurations, even if a future `setSettings` caller forgets the hook.
+
+  Lines already on an estimate keep their snapshots, as for any rate-card change. "Update to
+  current rates" re-prices them at the new figure. Browser-verified on the v9 scratch copy (floor
+  $82.16, 25% markup) by replaying the modal save's own calls: `LSCData.setSettings` plus the hooks.
+  The modal itself won't register GST without an ABN, and none was entered. Results:
+  - Rate Card: auto fields and `↺ use` went from $103 to $113. Below-floor gaps came out ex-GST
+    ($56 → $31.25 under). With the hook skipped, field and state line stayed stale but agreed.
+  - Estimator: the picker went from Hour $103 / Half $412 to $113 / $452, with the typed Full day
+    unchanged at $1,120. A line added after the change snapshotted `mu: 113`. Switching back and
+    choosing "Update to current rates" moved it to 103.
+  - Both hooks are no-ops off-screen. No console errors. `npm test`: 250 pass. `calc.js` untouched.
+
+- [x] **R2. The shape guard doesn't cover estimate saves** (money math — Opus/high).
+  `routes/pricing.js` refuses a pre-v9 card (`pricing_shape_outdated`), but `POST`/`PUT
+  /api/estimates` (`routes/estimates.js`) have no equivalent. Consider a tab loaded before the Pages
+  deploy, or a cached copy. Its old estimate editor snapshots new labour lines at `mu: 0`:
+  `lineSnapshot(row)` on a row that has `prices` and no `mu` gives `nonNeg(undefined)`. Its "Update
+  to current rates" re-prices **every** labour line to $0, with an "N prices updated" toast. The
+  server stores that, because `hasSnapshot({ mu: 0 })` is true. This contradicts task 10's "an old
+  Pages build against a v9 server can only fail safely", which holds for the Rate Card only.
+  *Fix direction:* a server-side refusal for labour lines that couldn't have come from a v9 build
+  (for example, a new line whose snapshot `mu` is 0 while the card row it names has a non-zero
+  price at that unit). Or have the web send a build/shape marker with estimate saves and refuse
+  its absence, as `serviceDay` does for the card. Test it in `test-api.js`.
+
+  **Done 2026-09-29** (branch `service-rate-tiers`). I used the marker, not a heuristic. The
+  heuristic ("mu 0 where the card has a price") would refuse a legitimate re-save of a line added
+  back when the card's price was $0.
+  - `calc.js` (both copies) exports `PRICING_SHAPE = 'service-units'`. The editor's `payload()`
+    sends it as `pricingShape`.
+  - `POST` and `PUT /api/estimates` refuse a write without exactly that value:
+    `400 pricing_shape_outdated`, checked first, as for the card. The refusal carries a `message`
+    in words, because the old build prints `payload.message` after "Couldn't save:" and knows no
+    codes from after it was built.
+  - The card route's `pricing_shape_outdated` now carries a message too, for the old Rate Card,
+    which also prints only `err.message`.
+  - Tests: the `api` helpers in `test-api.js`, `test-ratecard.js` and `test-section-labels.js`
+    add the marker to estimate writes, and `bare: true` sends a body as given. `test-pdf.js`
+    sends it inline. The new test "a write without the v9 pricing shape is refused as outdated"
+    covers the old editor's `POST` and its "Update to current rates" `PUT`, a wrong marker, the
+    check order, and that nothing was written. 5 mutations, 5 caught (no POST check, no PUT
+    check, `!pricingShape`, negative checked first, no message).
+  - Browser: a real save from the editor was `201`. The same estimate re-sent without the marker
+    was `400`, left unchanged, with `ApiError.message` carrying the words.
+  - **Deploy consequence (task 10):** from the NAS deploy until Pages is live, the live site (the
+    old build) can't save an estimate at all. That's the safe failure, but keep that window
+    short, and don't edit estimates during it.
+
+- [x] **R3. The Rate Card accepts a pre-v9 card, and one save wipes every typed price** (money math
+  — Opus/high). `pricing.js` mount (~l.1146) fills in `serviceDay` when the server's card has none,
+  then renders every row as all-auto. `payload()` sends `prices: {hour: null, half: null, full:
+  null}` without `mu`, and a v8 route accepts it. When v9 runs later, `reshapeCard` skips rows that
+  already have `prices`. Every hand-typed price is gone, and the estimate editor quotes auto prices
+  instead of typed ones meanwhile. Task 10's order (NAS first) prevents it, but only by process: a
+  failed or rolled-back migration reaches the same state. *Fix direction:* when the loaded card has
+  no `serviceDay`, or any labour row has `mu` and no `prices`, don't render the editable card. Show
+  "the server hasn't been updated yet" and disable Save. The estimate editor's picker could refuse
+  the same way.
+
+  **Done 2026-09-29** (branch `service-rate-tiers`).
+  - New `cardShapeOutdated(pricing)` in `calc.js` (both copies): no usable `serviceDay`, or any
+    labour row with `mu` / `hoursPerUnit` / `dayUnit` or without a `prices` object. The card
+    route's `pricingProblem` now calls it in place of its own `outdatedRow`, so there's one
+    definition. Unit test in `test-calc.js`: the frozen v8 default is outdated, the v9 default
+    isn't, plus each single old field. 3 mutations, all caught by both that test and the route
+    test.
+  - The Rate Card's mount checks it first. An outdated card renders only the page head and an
+    `empty-state` notice ("The server hasn't been updated for this Rate Card yet…"). There are no
+    fields, no Save and no Reset, and it isn't watched for unsaved changes. With no `#tax-inp`,
+    `onScreen()` is false, so every async path and `refreshPrices()` stands down. `reset()`
+    checks the same thing, in case the server is rolled back mid-session. The
+    `serviceDay || { 8, 4 }` fill-in at mount is gone.
+  - **The estimate editor is left working, on purpose.** Checked in the browser with a v8-shaped
+    card loaded into `LSCData`: rows without `prices` take the existing path (`cardSnap` →
+    `lineSnapshot(row)`), so each line snapshots the v8 row's own `mu`. That's the typed price,
+    not an auto one. The auto-price problem the review describes only happened after a v9 Rate
+    Card save had written all-auto rows, which this fix prevents. On a v8 card the picker's unit
+    select reads a disabled "Hour" even for an old day row. That's cosmetic, and only on a
+    server that failed its migration.
+  - Not done: the Dashboard's comparison would show auto prices for a v8 card. It's read-only,
+    and it's the same failed-migration case.
+
+- [x] **R4. "Reset to defaults" leaves rows without ids, so the unit view collides** (money math —
+  Opus/high; the screen renders computed prices). `reset()` (`pricing.js` ~l.1095) sets `card =
+  clone(reply.pricing)` from `DEFAULT_PRICING`, whose rows have no `id`, and never calls
+  `assignRowIds`. `viewUnits` is keyed by `row.id`, so every row shares `viewUnits[undefined]`.
+  Switching one row to Full day then switches every row, and the same goes for `focusRow` and the
+  hidden-unit notice. A save straight after the reset also stores rows with no ids (the ROW IDS rule
+  in the file header). *Fix direction:* call `assignRowIds(card)` and reset `viewUnits` /
+  `showDefault` after a reset, as mount does. Consider giving `DEFAULT_PRICING` stable ids
+  server-side, so a reset card matches estimates by id.
+
+  **Done 2026-09-29** (branch `service-rate-tiers`). After a reset, `reset()` now does what mount
+  does: `assignRowIds(card)`, `viewUnits = {}`, `showDefault = 'hour'`, then the baseline.
+  - **`DEFAULT_PRICING` still has no ids, deliberately.** A fresh install already serves id-less
+    default rows, and every screen matches those by name. Estimates saved before a reset carry
+    the old random ids, which no default could match anyway. The ids reach the server with the
+    next Rate Card save, as for any card from before row ids.
+  - Browser, on the v9 scratch copy: Reset Defaults, then change row 2's unit to Full day. Only
+    that row changed; 18 stayed on Hour. With the `assignRowIds` line removed, the same step
+    switched 19 of 19 rows, so the check does catch the bug. Save straight after the reset stored
+    24 rows with 24 distinct ids.
+  - The scratch card was then restored exactly (`updated_at` 2026-09-28T08:36:12.270Z) from the
+    server's pre-write backup taken before the test.
+
+- [ ] **R5. Turning "Use rates from last project" off can leave a line unpriced and unit-less**
+  (money math — Opus/high). `markOwn` (`estimate-editor.js` ~l.210) stores `prevSnap = 'none'`
+  when a line takes last time's price for a unit that has no price on today's card. Turning the
+  toggle off runs `reprice(tr, {})`, which drops `mu`, `dayUnit` and `hoursPerUnit`. The line shows
+  `—` and saves at $0. Once a floor exists, "Update to current rates" reads `unitKey({})` as
+  `hour`, so a qty that meant full days is priced as hours. `'none'` was meant for legacy lines
+  whose service has left the card, not new ones. *Fix direction:* when today's price is null, keep
+  last time's snapshot on toggle-off, or remove the line and announce why. At minimum, keep the
+  unit.
+
+- [ ] **R6. "Update to current rates" counts unchanged hourly lines as updated** (money math —
+  Opus/high). `unitDef` always sets `hoursPerUnit`, so `cardSnap` for an hour carries
+  `hoursPerUnit: 1`. Pre-v9 snapshots, and every line the v9 migration snapshotted, don't have the
+  key. The `JSON.stringify` comparison (~l.1146) therefore rebuilds every such line and reports
+  "N prices updated" even when no price moved. *Fix direction:* compare `mu`, the unit (`unitKey`)
+  and hours, or normalise both snapshots through the same function before comparing.
+
+- [ ] **R7. "needs Profit Goals" is wrong when Capacity is the blocker** (frontend — Opus/high).
+  An auto unit with no price is always "no price yet, needs Profit Goals": in the estimator's
+  options (`estimate-editor.js` ~l.236), `unitProblem` (`pricing.js` ~l.297), `stateSentence`, and
+  the Rate Card link that opens Goals. The income floor is also null when Capacity has no billable
+  hours. That blocker is on Capacity, not Goals, and the Dashboard's `floorBlockers` already tells
+  the two apart. The wording is right for the tax scale and the income goal, which are both on
+  Goals. *Fix direction:* one shared "what's blocking the floor" helper (lift `floorBlockers`'s
+  logic) that names the right screen and links there. This changes IA copy, so note it as a
+  deviation.
+
+- [ ] **R8. Select-on-focus may not survive a mouse click** (frontend — Opus/high; **verify
+  first**). Auto price fields call `input.select()` in their focus handler (`pricing.js` ~l.859) so
+  that typing replaces the suggestion. In WebKit/Blink, the mouseup after a click-to-focus can clear
+  the selection. Typing "150" into "140" could then become "140150", pinned as a typed price.
+  Keyboard focus is unaffected. Not verified. Check with a real click in Safari and Chrome before
+  changing anything. *Fix direction if confirmed:* suppress the first `mouseup` after focus, or
+  select in a `requestAnimationFrame`.
+
+- [ ] **R9. The PDF prints a service twice with no unit** (**settled: the user's call**, see the
+  handover's "The PDF keeps service name only"). `server/src/pdf.js` ~l.58 prints only `line.name`,
+  so "Video Capture" at Full day and at Hour read as two identical lines. It's listed because the
+  review flagged it. Change it only if the user reopens that decision.
+
+### Cleanup
+
+- [ ] **R10. `dayHoursOk` is duplicated on the server and the web** (money math — Opus/high;
+  touches `calc.js`). It's defined word for word in `routes/pricing.js` ~l.17 and `pricing.js`
+  ~l.398, while the shared `calc.js` has `unitHours` with a looser rule (>0 and ≤24, any
+  fraction). That makes three definitions of a valid service day. *Fix direction:* export one
+  `serviceDayOk` from `calc.js` (both copies) and use it on both sides.
+
+- [ ] **R11. `money()` is duplicated** (frontend — Opus/high). The same whole-dollar-or-cents
+  formatter is in `pricing.js` ~l.221 and `estimate-editor.js` ~l.165. The estimator's "Full day ·
+  $1,120" and the Rate Card's `↺ use $1,120` depend on two copies. *Fix direction:* move it into
+  `LSCUtil` beside `fmt`.
+
+- [ ] **R12. `compare()` runs about 5× per row refresh** (money math — Opus/high; renders computed
+  prices). `stateLineHtml`, `stateSentence` and `rowMetaHtml` (via `unitProblem` ×3) each run the
+  one-row `serviceFloorComparison`, which computes all three units and keeps one, plus `autoPrice`
+  twice. That's about 15 `unitDef` calls per row per keystroke, times the row count on each Service
+  Day keystroke. *Fix direction:* compute the row's comparison once in `refreshRow`/render and pass
+  the `units` object to all three. That also removes the duplicated branching between
+  `stateLineHtml` and `stateSentence`.
+
+- [ ] **R13. The blur handler does more than it needs; `rewrite()` papers over it** (frontend —
+  Opus/high; a11y). The price field's blur (`pricing.js` ~l.857) runs the whole `refreshRow`, and
+  `rewrite()` string-compares `innerHTML` so that it doesn't destroy the `↺` that Tab is moving
+  focus to. Blur only needs to restore the field's auto figure, because the state line is already
+  current from the input handler. Any future state-line change that differs at blur brings back
+  the task 9 focus trap. *Fix direction:* on blur, update `inp.value` and the `pricing-auto` class
+  only. Keep `rewrite()` only if another caller still needs it. Re-walk task 9's Tab path
+  afterwards.
+
+- [ ] **R14. The temporary `launch.json` entries are still there** (any). `api-v9-scratch` and
+  `web-v9` (`.claude/launch.json` ~l.47) point at a `/tmp` DB and are marked TEMPORARY for task 4.
+  The handover already says to remove them before the merge. Listed here so it isn't missed.
+
 ## Ship
 
 - [ ] **10. Deploy: NAS (v9) first, then Pages** (deploy — Sonnet/medium; **ask the user before
@@ -446,10 +755,12 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   4. Check the live DB: integrity ok, v9, goals and overhead untouched, card has `serviceDay`, and
      no labour row has `mu`.
   5. **Then** push `main` (Pages) and confirm the Pages run succeeded, the live `calc.js` carries
-     `suggestedPrice`, and the site boots with no script errors.
+     `suggestedPrice`, and the site boots with no script errors. **Do this straight after step 4**
+     (R2): until Pages is live, the old site's estimate saves are refused as outdated.
 
   The order is load-bearing: an old Pages build against a v9 server can only fail safely
-  (`pricing_shape_outdated`); a new Pages build against a v8 server cannot. Afterwards, tell the
+  (`pricing_shape_outdated`); a new Pages build against a v8 server cannot. (The first half holds
+  for the Rate Card only. An old estimate editor can still save $0 labour lines; see R2.) Afterwards, tell the
   user the two things only they can do: save the FY 2026–27 tax scale on Profit Goals (until then
   every auto hourly price, and every auto day on one, reads `—`), and fold the old "— Full Day" / "— Half Day" rows into their services
   by hand. Record the deploy in the handover, in the price-calculator handover's "Deployed" style.
