@@ -547,6 +547,20 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 9,
+    name: 'rate card: each service priced per hour, half day and full day',
+    up(db) {
+      // .design/service-rate-tiers/ (2026-09-28). No table changes: this
+      // rewrites the JSON in pricing.data_json and estimates.active_rows_json.
+      // Snapshot every legacy estimate line against the OLD card first, then
+      // reshape the card (labour rows' mu / hoursPerUnit / dayUnit become
+      // prices: { hour, half, full }, and the card gains serviceDay), then log
+      // every row whose unit of work changed length. The steps, and why that
+      // order, are in migrations/v9-service-units.js.
+      require('./migrations/v9-service-units').migrateV9(db);
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

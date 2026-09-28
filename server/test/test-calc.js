@@ -1746,40 +1746,47 @@ test('post ratio: no capacity, or a missing or negative input, is null', () => {
 /**
  * THE SEEDED DAY ROWS (Rate Card task, 2026-09-27).
  */
-test('the default card seeds a full day and an independently priced half day', () => {
+test('the default card prices Video Capture at all three units, the half day its own figure', () => {
+  assert.deepEqual(DEFAULT_PRICING.serviceDay, { fullHours: 8, halfHours: 4 });
   const prod = DEFAULT_PRICING.labourSections.find((s) => s.id === 'prod');
-  const full = prod.rows.find((r) => r.dayUnit === 'full');
-  const half = prod.rows.find((r) => r.dayUnit === 'half');
-  assert.ok(full && half, 'both day rows exist and are marked by dayUnit, not by name');
-  assert.equal(full.hoursPerUnit, 8);
-  assert.equal(half.hoursPerUnit, 4);
-  // No 0.5 multiplier: a half day carries its own price.
-  assert.notEqual(half.mu, full.mu / 2);
-  assert.ok(prod.rows.some((r) => r.name === 'Overtime — per hour' && r.hoursPerUnit === undefined));
+  const vc = prod.rows.find((r) => r.name === 'Video Capture');
+  assert.deepEqual(vc.prices, { hour: 140, half: 640, full: 1120 });
+  // No 0.5 multiplier: a typed half day carries its own price.
+  assert.notEqual(vc.prices.half, vc.prices.full / 2);
+  // The old separate day rows folded into it.
+  assert.ok(!prod.rows.some((r) => /Full Day|Half Day/.test(r.name)));
 });
 
-test('every row that was on the card before day rows is still hourly', () => {
-  // The hourly Video Capture row was deliberately not renamed to "— Hourly":
-  // saved estimates find rows by name.
-  const before = [
-    'Pre-Production Meeting with Client', 'Video Capture', 'Photo Capture', 'Drone Aerial Capture',
-    'Video Editor — Socials', 'Photo Editor',
-  ];
+test('every default service is in the new shape, its old price kept as the hourly one', () => {
+  // The v8 defaults' hourly prices, by name. Names are unchanged: saved
+  // estimates found rows by name.
+  const before = {
+    'Pre-Production Meeting with Client': 56, 'Video Capture': 140, 'Photo Capture': 112,
+    'Drone Aerial Capture': 84, 'Overtime — per hour': 210, 'Video Editor — Socials': 126,
+    'Raw Footage Handover [on HDD]': 98, 'Photo Editor': 154,
+  };
   const rows = DEFAULT_PRICING.labourSections.flatMap((s) => s.rows);
-  for (const name of before) {
+  for (const row of rows) {
+    for (const old of ['mu', 'hoursPerUnit', 'dayUnit']) assert.equal(row[old], undefined, `${row.name} has ${old}`);
+    assert.deepEqual(Object.keys(row.prices), SERVICE_UNITS, row.name);
+    assert.equal(typeof row.prices.hour, 'number', row.name);
+    if (row.name !== 'Video Capture') assert.deepEqual([row.prices.half, row.prices.full], [null, null], row.name);
+  }
+  for (const [name, hour] of Object.entries(before)) {
     const row = rows.find((r) => r.name === name);
     assert.ok(row, name + ' is still on the default card');
-    assert.equal(row.hoursPerUnit, undefined, name + ' gained hours per unit');
-    assert.equal(row.dayUnit, undefined);
+    assert.equal(row.prices.hour, hour, name);
   }
+  assert.equal(rows.find((r) => r.name === 'Raw Footage Handover [on HDD]').customBill, true);
 });
 
 test('two seeded full days carry sixteen hours into Minimum Job Price', () => {
-  const t = computeTotals(
-    { prod: [{ name: 'Video Capture — Full Day', qty: 2 }] },
-    DEFAULT_PRICING,
-    settingsWith({ registered: false }),
-  );
-  assert.equal(t.totalHours, 16);
-  assert.equal(t.labourTotal, 2240);
+  const vc = DEFAULT_PRICING.labourSections.find((s) => s.id === 'prod').rows.find((r) => r.name === 'Video Capture');
+  const added = { name: 'Video Capture', qty: 2, ...lineSnapshot(unitDef(vc, 'full', DEFAULT_PRICING)) };
+  // As the estimator will add it (a snapshot), and as the fallback prices a bare line.
+  for (const line of [added, { name: 'Video Capture', qty: 2, dayUnit: 'full' }]) {
+    const t = computeTotals({ prod: [line] }, DEFAULT_PRICING, settingsWith({ registered: false }));
+    assert.equal(t.totalHours, 16);
+    assert.equal(t.labourTotal, 2240);
+  }
 });

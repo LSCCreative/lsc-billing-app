@@ -59,7 +59,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    hourly / half-day / full-day prices on one Rate Card row (a `per [unit ▾]` view switch), each
    auto-filled as income floor × unit hours × (1 + Target Markup), rounded up to the dollar, until the
    user types over it; a card-level Service Day (8 / 4 billable hrs, **not** Capacity's figure); and
-   service → unit → Add in the estimate editor. **Brief, IA and tasks written 2026-09-28. Building on branch `service-rate-tiers` (not `main`): tasks 1–2 (calc.js unit pricing, per-service floor comparison) done; next is TASKS.md task 3 (schema v9 migration).**
+   service → unit → Add in the estimate editor. **Brief, IA and tasks written 2026-09-28. Building on branch `service-rate-tiers` (not `main`): tasks 1–3 done (calc.js unit pricing, per-service floor comparison, schema v9 + `pricing_shape_outdated` guard); next is TASKS.md task 4 (Rate Card UI). From task 3 the branch's server and web are out of step until tasks 4–7 land — don't merge before task 10.**
    It knowingly overturns price-calculator's "nothing auto-writes the rate card" — see its brief's
    Resolved Decisions. Read its `HANDOVER.md` first. Build bucket: Opus, effort high (money math).
 

@@ -3,6 +3,18 @@
 const { nowIso } = require('../db');
 const { DEFAULT_PRICING } = require('../defaults');
 const { readPricing } = require('../ratecard');
+const { SERVICE_UNITS } = require('../calc');
+
+/**
+ * Whether a labour row is in the pre-v9 shape: one `mu`, and `hoursPerUnit` /
+ * `dayUnit` for a day row, where v9 has `prices: { hour, half, full }`.
+ */
+const outdatedRow = (r) =>
+  !r || r.mu !== undefined || r.hoursPerUnit !== undefined || r.dayUnit !== undefined ||
+  !r.prices || typeof r.prices !== 'object' || Array.isArray(r.prices);
+
+/** A service-day length: 0.5 to 24 hours, in half hours. */
+const dayHoursOk = (v) => typeof v === 'number' && v >= 0.5 && v <= 24 && Number.isInteger(v * 2);
 
 /**
  * The money-bearing fields of a rate card, checked before it is stored
@@ -10,22 +22,47 @@ const { readPricing } = require('../ratecard');
  * the same things; this is the rule, the screen the courtesy. The trap it
  * matters most for is units: taxSetAsideRate is a FRACTION, and a 35 stored
  * here would set aside 35× every job's income.
+ *
+ * pricing_shape_outdated (v9, .design/service-rate-tiers/). This route writes
+ * the card as one whole document, so a browser still running the web build from
+ * before v9 — a cached Pages copy, a tab left open over the deploy — would read
+ * the new card, not understand it, and save the old shape back over it. Any
+ * labour row carrying `mu`, `hoursPerUnit` or `dayUnit`, or lacking `prices`,
+ * and any card without `serviceDay` (which no old build sends), is refused
+ * with this code, checked FIRST so an old build always gets it and not some
+ * other complaint. The screen tells the user to reload.
  * @returns {string|null} an error code, or null.
  */
 function pricingProblem(body) {
   const nonNeg = (v) => v === undefined || v === null || v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0);
+  const sections = Array.isArray(body.labourSections) ? body.labourSections : [];
+  const labourRows = [];
+  for (const sec of sections) {
+    for (const r of (sec && Array.isArray(sec.rows)) ? sec.rows : []) labourRows.push(r);
+  }
+
+  if (!body.serviceDay || typeof body.serviceDay !== 'object' || labourRows.some(outdatedRow)) {
+    return 'pricing_shape_outdated';
+  }
+
+  const { fullHours, halfHours } = body.serviceDay;
+  if (!dayHoursOk(fullHours) || !dayHoursOk(halfHours)) return 'service_day_out_of_range';
+  if (halfHours > fullHours) return 'service_day_half_over_full';
+
   if (body.taxSetAsideRate !== undefined) {
     const t = Number(body.taxSetAsideRate);
     if (!Number.isFinite(t) || t < 0 || t >= 1) return 'tax_set_aside_rate_not_a_fraction';
   }
-  for (const sec of Array.isArray(body.labourSections) ? body.labourSections : []) {
-    for (const r of (sec && Array.isArray(sec.rows)) ? sec.rows : []) {
-      if (!nonNeg(r.mu) || !nonNeg(r.rate)) return 'labour_price_negative';
-      if (r.hoursPerUnit !== undefined) {
-        const h = Number(r.hoursPerUnit);
-        if (!Number.isFinite(h) || h <= 0 || h > 24) return 'hours_per_unit_out_of_range';
-      }
+  for (const r of labourRows) {
+    for (const unit of SERVICE_UNITS) {
+      if (!(unit in r.prices)) return 'labour_prices_incomplete';
+      const p = r.prices[unit];
+      // A number set by the user, or null for auto. A typed $0 is a price.
+      if (p === null) continue;
+      if (typeof p !== 'number' || !Number.isFinite(p)) return 'labour_price_not_a_number';
+      if (p < 0) return 'labour_price_negative';
     }
+    if (!nonNeg(r.rate)) return 'labour_price_negative';
   }
   for (const r of Array.isArray(body.travelRows) ? body.travelRows : []) {
     if (!nonNeg(r.mu) || !nonNeg(r.rate)) return 'travel_price_negative';
@@ -65,4 +102,4 @@ function registerPricingRoutes(app, db) {
   });
 }
 
-module.exports = { registerPricingRoutes };
+module.exports = { registerPricingRoutes, pricingProblem };

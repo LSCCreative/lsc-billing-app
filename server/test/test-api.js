@@ -97,7 +97,7 @@ test('clients: create, search, get, update, upsert, delete', async () => {
 test('pricing: save actually persists (the fake "Save Rates" bug)', async () => {
   const put = await api('/api/pricing', {
     method: 'PUT',
-    body: JSON.stringify({ labourSections: [], travelRows: [], taxSetAsideRate: 0.4 }),
+    body: JSON.stringify({ serviceDay: { fullHours: 8, halfHours: 4 }, labourSections: [], travelRows: [], taxSetAsideRate: 0.4 }),
   }).then((r) => r.json());
   assert.equal(put.pricing.taxSetAsideRate, 0.4);
 
@@ -341,33 +341,105 @@ test('goals: a Capacity save onto a row that does not exist leaves income and ma
   assert.equal(put.goals.billableCapacityHrsPerWeek, 31.63);
 });
 
-test('pricing: a day row keeps hoursPerUnit and dayUnit through a save, and the server prices by them', async () => {
+test('pricing: a service\'s three prices and the service day round-trip, and the server prices by them', async () => {
   // Its own card rather than whatever an earlier test in this file left saved.
   const card = await api('/api/pricing').then((r) => r.json());
   const body = {
+    serviceDay: { fullHours: 9, halfHours: 4.5 },
     labourSections: [
-      { id: 'prod', label: 'Production', rows: [{ name: 'Test Day', rate: 0, mu: 900, hoursPerUnit: 9, dayUnit: 'full' }] },
+      { id: 'prod', label: 'Production', rows: [{ name: 'Test Day', rate: 0, prices: { hour: null, half: 0, full: 900 } }] },
     ],
     travelRows: [],
     taxSetAsideRate: 0.35,
   };
-  const saved = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) }).then((r) => r.json());
-  const row = saved.pricing.labourSections[0].rows.find((r) => r.name === 'Test Day');
-  assert.equal(row.hoursPerUnit, 9);
-  assert.equal(row.dayUnit, 'full');
+  const saved = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) });
+  assert.equal(saved.status, 200);
+  const reread = await api('/api/pricing').then((r) => r.json());
+  // Stored exactly as sent: null stays null (auto), a typed 0 stays 0.
+  assert.deepEqual(reread.pricing, body);
 
   // The stored estimate's totals are computed server-side from the saved card:
-  // 2 days is 18 hours for the overhead allocation, and 2 × $900 billed.
-  const sectionId = body.labourSections[0].id;
+  // a line with no snapshot at the full-day unit is 2 × 9 hours for the
+  // overhead allocation, and 2 × $900 billed.
   const est = await api('/api/estimates', {
     method: 'POST',
-    body: JSON.stringify({ name: 'Day test', activeRows: { [sectionId]: [{ name: 'Test Day', qty: 2 }] } }),
+    body: JSON.stringify({ name: 'Day test', activeRows: { prod: [{ name: 'Test Day', qty: 2, dayUnit: 'full' }] } }),
   }).then((r) => r.json());
   assert.equal(est.estimate.totals.totalHours, 18);
   assert.equal(est.estimate.totals.labourTotal, 1800);
 
   await api('/api/estimates/' + est.estimate.id, { method: 'DELETE' });
-  await api('/api/pricing', { method: 'PUT', body: JSON.stringify(card.pricing) });
+  assert.equal((await api('/api/pricing', { method: 'PUT', body: JSON.stringify(card.pricing) })).status, 200);
+});
+
+test('pricing: a card in the pre-v9 shape is refused as outdated, whatever else is in it', async () => {
+  // From the defaults, not whatever card an earlier test left saved.
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const put = async (body) => {
+    const res = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) });
+    return [res.status, (await res.json()).error];
+  };
+  const withRow = (row) => {
+    const c = JSON.parse(JSON.stringify(card));
+    c.labourSections[0].rows[0] = row;
+    return c;
+  };
+  const outdated = [400, 'pricing_shape_outdated'];
+  const prices = { hour: 140, half: null, full: null };
+
+  // Exactly what the old Rate Card sends: no serviceDay, rows with mu.
+  assert.deepEqual(await put({
+    labourSections: [{ id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] }],
+    travelRows: [], taxSetAsideRate: 0.35,
+  }), outdated);
+  // Any one old field on any one row is enough.
+  assert.deepEqual(await put(withRow({ name: 'A', mu: 140, prices })), outdated);
+  assert.deepEqual(await put(withRow({ name: 'A', hoursPerUnit: 8, prices })), outdated);
+  assert.deepEqual(await put(withRow({ name: 'A', dayUnit: 'full', prices })), outdated);
+  assert.deepEqual(await put(withRow({ name: 'A' })), outdated);
+  assert.deepEqual(await put(withRow({ name: 'A', prices: [140, null, null] })), outdated);
+  // No service day, even with every row in the new shape.
+  const { serviceDay, ...noDay } = card;
+  assert.ok(serviceDay);
+  assert.deepEqual(await put(noDay), outdated);
+  // Checked first: an old card with a percent tax rate is still "outdated".
+  assert.deepEqual(await put({ ...withRow({ name: 'A', mu: 1 }), taxSetAsideRate: 35, serviceDay: undefined }), outdated);
+
+  // Nothing was written by any of that.
+  assert.deepEqual((await api('/api/pricing').then((r) => r.json())).pricing, card);
+});
+
+test('pricing: the service day and each price are checked', async () => {
+  // From the defaults, not whatever card an earlier test left saved.
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const put = async (body) => {
+    const res = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) });
+    return [res.status, (await res.json()).error];
+  };
+  const day = (fullHours, halfHours) => ({ ...card, serviceDay: { fullHours, halfHours } });
+  for (const [full, half] of [[0, 4], [8, 0], [24.5, 4], [8, 0.25], [7.3, 4], ['8', 4], [null, 4], [8, undefined]]) {
+    assert.deepEqual(await put(day(full, half)), [400, 'service_day_out_of_range'], `${full} / ${half}`);
+  }
+  assert.deepEqual(await put(day(4, 5)), [400, 'service_day_half_over_full']);
+  // The edges are allowed, and so is a half day as long as the full.
+  for (const [full, half] of [[24, 0.5], [0.5, 0.5], [7.5, 3.5], [10, 10]]) {
+    assert.equal((await put(day(full, half)))[0], 200, `${full} / ${half}`);
+  }
+
+  const withPrices = (prices) => {
+    const c = JSON.parse(JSON.stringify(card));
+    c.labourSections[0].rows[0].prices = prices;
+    return c;
+  };
+  assert.deepEqual(await put(withPrices({ hour: -1, half: null, full: null })), [400, 'labour_price_negative']);
+  assert.deepEqual(await put(withPrices({ hour: 140, half: null })), [400, 'labour_prices_incomplete']);
+  assert.deepEqual(await put(withPrices({ hour: '140', half: null, full: null })), [400, 'labour_price_not_a_number']);
+  assert.deepEqual(await put(withPrices({ hour: '', half: null, full: null })), [400, 'labour_price_not_a_number']);
+  // null is auto and 0 is a price: both are fine.
+  assert.equal((await put(withPrices({ hour: 0, half: null, full: null })))[0], 200);
+  assert.equal((await put(card))[0], 200);
 });
 
 function depreciationAssetPayload(overrides = {}) {
@@ -679,14 +751,16 @@ test('estimates: create, list, get, update, duplicate, delete — with computed 
     method: 'PUT',
     body: JSON.stringify({ gst: { registered: false, rate: 0.1, pricesIncludeGst: false } }),
   });
-  await api('/api/pricing', {
+  const cardSave = await api('/api/pricing', {
     method: 'PUT',
     body: JSON.stringify({
-      labourSections: [{ id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] }],
+      serviceDay: { fullHours: 8, halfHours: 4 },
+      labourSections: [{ id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } }] }],
       travelRows: [],
       taxSetAsideRate: 0.35,
     }),
   });
+  assert.equal(cardSave.status, 200);
 
   const created = await api('/api/estimates', {
     method: 'POST',
@@ -732,14 +806,16 @@ test('estimates: a GST-free estimate survives the round trip and prices without 
     method: 'PUT',
     body: JSON.stringify({ gst: { registered: true, rate: 0.1, pricesIncludeGst: false } }),
   });
-  await api('/api/pricing', {
+  const cardSave = await api('/api/pricing', {
     method: 'PUT',
     body: JSON.stringify({
-      labourSections: [{ id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] }],
+      serviceDay: { fullHours: 8, halfHours: 4 },
+      labourSections: [{ id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } }] }],
       travelRows: [],
       taxSetAsideRate: 0.35,
     }),
   });
+  assert.equal(cardSave.status, 200);
   const rows = { prod: [{ name: 'Video Capture', qty: 2 }] };
 
   const bearing = await api('/api/estimates', {
@@ -919,14 +995,19 @@ test('goals: super and bad debt are stored as percents and kept across other wri
 });
 
 test('pricing: a tax rate stored as a percent, or a negative price, is refused', async () => {
+  // From the defaults, not whatever card an earlier test left saved.
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
   const card = (await api('/api/pricing').then((r) => r.json())).pricing;
   const put = (body) => api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) });
   assert.equal((await put({ ...card, taxSetAsideRate: 35 })).status, 400);
   const neg = JSON.parse(JSON.stringify(card));
-  neg.labourSections[0].rows[0].mu = -1;
+  neg.labourSections[0].rows[0].prices.hour = -1;
   assert.equal((await put(neg)).status, 400);
+  const negTravel = JSON.parse(JSON.stringify(card));
+  negTravel.travelRows[0].mu = -1;
+  assert.equal((await put(negTravel)).status, 400);
   const badHours = JSON.parse(JSON.stringify(card));
-  badHours.labourSections[0].rows[0].hoursPerUnit = 0;
+  badHours.serviceDay.fullHours = 0;
   assert.equal((await put(badHours)).status, 400);
   assert.equal((await put(card)).status, 200);
 });

@@ -42,15 +42,23 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
             (2026-09-28). See its Done note: auto units are priced from the comparison's own floor
             (only `ctx.markupPct` is read), and `lineDef` takes an optional `pricing` third
             argument that `rows.js` should start passing in task 6.
+      - [x] Task 3 — schema v9, reshaped `DEFAULT_PRICING`, and the `pricing_shape_outdated`
+            guard (2026-09-28). The migration is `server/src/migrations/v9-service-units.js`. See
+            its Done note for the six decisions, especially the frozen v8 default card.
 - [ ] Phase 7 — Design Review.
 
-Nothing deployed. Tasks 1–2 are additive: nothing calls the new functions yet, and `lineDef`'s
-new path only fires for a row carrying `prices`, which no card has until v9. So the live site is
-unaffected even if this branch were merged. **From task 3 onward it is not**: merge only after
-task 10.
+Nothing deployed. **As of task 3 the branch is only coherent as a whole**: the server now
+stores and demands the new card shape, while the web build still reads and writes the old one.
+Against this branch's server, the current Rate Card's save gets `pricing_shape_outdated`, and the
+estimator and Dashboard read rows with no `mu`. That's expected until tasks 4–7 land. **Don't merge
+before task 10.**
 
-**Exact next item:** TASKS.md **task 3, "Schema v9, new defaults, and the shape guard on
-`PUT /api/pricing`"** (money math — Opus/high).
+**The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
+DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
+
+**Exact next item:** TASKS.md **task 4, "Rate Card rows on the new shape: unit dropdown, auto and
+set-by-you prices"** (money math — Opus/high). It's the first browser-verified task: use the scratch
+API (`api-scratch`, login `dev`).
 
 ## Things a fresh agent will want to argue with (settled)
 

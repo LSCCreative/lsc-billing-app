@@ -111,7 +111,7 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   fallback ignoring `dayUnit`; the fallback ignoring the card's service day; the fallback returning
   the raw `prices` row; `computeTotals` and `labourHoursBreakdown` not passing the card.
 
-- [ ] **3. Schema v9, new defaults, and the shape guard on `PUT /api/pricing`** (money math —
+- [x] **3. Schema v9, new defaults, and the shape guard on `PUT /api/pricing`** (money math —
   Opus/high): This is a data migration of stored prices, so it sits in this bucket and not the
   backend one. One `MIGRATIONS` entry in `server/src/db.js`, in this order (IA "Migration and
   deploy"):
@@ -135,6 +135,46 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   line whose service has left the card); migration on a fresh DB is a no-op; running `migrate` twice
   changes nothing; the log line appears for a 6-hour day row; the PUT refusals; a full new-shape
   round-trip. _Modifies: `db.js`, `defaults.js`, `routes/pricing.js`, tests. Depends on: 1, 2._
+
+  **Done 2026-09-28** (branch `service-rate-tiers`). The migration's steps live in
+  `server/src/migrations/v9-service-units.js` (`snapshotLegacyLines`, `reshapeCard`, `migrateV9`),
+  so each can be tested; `db.js`'s v9 entry just calls `migrateV9`. **Decisions made while building:**
+  (a) **A database that never saved a card** priced its estimates from the old `DEFAULT_PRICING`,
+  which `defaults.js` no longer holds. So the module carries a frozen `V8_DEFAULT_PRICING` to
+  snapshot against, and no card is written (it reads the new defaults from then on).
+  (b) **A row with no `mu`** (it priced at $0) gets `null` in its slot, which is auto. It's logged.
+  A negative `mu` becomes 0, also logged.
+  (c) **Neither step touches `updated_at`**, on estimates or on the card. The card's `updatedAt` is
+  what `data.js` reads as "ever saved".
+  (d) **The guard:** a missing `serviceDay` is also `pricing_shape_outdated`, since no old build sends
+  one, and the shape check runs before every other check, so an old build always gets that code.
+  The other new codes are `service_day_out_of_range`, `service_day_half_over_full`,
+  `labour_prices_incomplete`, `labour_price_not_a_number` (a string `"140"` is refused, not
+  coerced) and `labour_price_negative`. `pricingProblem` is now exported, and a test checks that the
+  migrated card passes it.
+  (e) Log lines read `[db] v9: Production › Drone Day: was 6 hrs a unit, now a full day of 8 hrs.
+  Price kept ($900).`, plus one `[db] v9: snapshotted N line(s) on M estimate(s)` summary.
+  (f) A snapshot carries a labour row's `rate` too. That's `lineSnapshot`'s existing behaviour,
+  unchanged.
+  **Tests:** 252 total, all green. New in `test-db.js`: recomputed totals identical before and after
+  v9 (legacy lines by id and by name, day rows, a 6-hour day, an unpriced row, custom bill with an
+  override, all three kinds of travel, crew and equipment, already-snapshotted lines, a service gone
+  from the card, a deleted category, GST-inclusive, a GST-free estimate); slot placement; the log
+  lines; the no-card database; fresh-DB no-op; running v9 twice over its own output. New in
+  `test-api.js`: the outdated-shape refusals (and nothing written), the service-day and price
+  checks, a full new-shape round-trip that the server prices from. Old-shape fixtures in
+  `test-api.js`, `test-pdf.js` and `test-section-labels.js` are converted, and their card saves now
+  assert 200. Several used to get a silent 400 under the new guard and would have kept passing
+  against a stale card. The three pricing-refusal API tests reset to the defaults first rather than
+  inheriting an earlier test's empty card. **Mutations checked (all caught but one, which is
+  equivalent):** reshaping before snapshotting; the no-card case snapshotting against the new
+  defaults; `dayUnit` ignored; an 8-hour row left hourly; `mu` kept on the row; a negative kept; no
+  price read as $0; travel not snapshotted; lookup across every category instead of the line's own;
+  an existing snapshot overwritten; `updated_at` touched; no hours-change log; no `serviceDay`;
+  reshape not idempotent; the shape check after the tax check; `mu`, `dayUnit` or a missing
+  `serviceDay` tolerated; any fraction of an hour; no 24 h cap; half over full; a string price; a
+  missing key; a negative price. The equivalent one: reshaping when no card was saved, which
+  changes nothing because the `UPDATE … WHERE id = 1` has no row to hit.
 
 ## Core UI
 

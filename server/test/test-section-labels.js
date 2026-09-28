@@ -32,9 +32,10 @@ const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
 
 const CARD = {
+  serviceDay: { fullHours: 8, halfHours: 4 },
   labourSections: [
-    { id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] },
-    { id: 'post', label: 'Post-Production', rows: [{ name: 'Photo Editor', rate: 110, mu: 154 }] },
+    { id: 'prod', label: 'Production', rows: [{ name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } }] },
+    { id: 'post', label: 'Post-Production', rows: [{ name: 'Photo Editor', rate: 110, prices: { hour: 154, half: null, full: null } }] },
   ],
   travelRows: [],
   taxSetAsideRate: 0.35,
@@ -79,7 +80,13 @@ function api(pathname, opts = {}) {
   });
 }
 
-const saveCard = (card) => api('/api/pricing', { method: 'PUT', body: JSON.stringify(card) });
+/* Checked, so a card the route refuses fails here rather than leaving an
+   earlier test's card in place for the assertions that follow. */
+const saveCard = async (card) => {
+  const res = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(card) });
+  assert.equal(res.status, 200, 'the card was refused: ' + (await res.clone().text()));
+  return res;
+};
 
 function newEstimate(name, activeRows) {
   return api('/api/estimates', {
@@ -119,7 +126,7 @@ test('renaming a category does not re-head an estimate already saved under the o
   await saveCard({
     ...CARD,
     labourSections: [
-      { id: 'prod', label: 'Filming', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] },
+      { id: 'prod', label: 'Filming', rows: [{ name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } }] },
       CARD.labourSections[1],
     ],
   });
@@ -154,7 +161,7 @@ test('re-saving an estimate adopts the rate card as it stands now', async () => 
   await saveCard({
     ...CARD,
     labourSections: [
-      { id: 'prod', label: 'Filming', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] },
+      { id: 'prod', label: 'Filming', rows: [{ name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } }] },
     ],
   });
 
@@ -190,7 +197,7 @@ test('a duplicate inherits the original document’s headings', async () => {
   await saveCard({
     ...CARD,
     labourSections: [
-      { id: 'prod', label: 'Filming', rows: [{ name: 'Video Capture', rate: 100, mu: 140 }] },
+      { id: 'prod', label: 'Filming', rows: [{ name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } }] },
     ],
   });
 
