@@ -57,20 +57,24 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
       - [x] Task 5 — Service Day setting, Show switch, hidden-unit notice (2026-09-28).
             Browser-verified; see its Done note (the notice appears only when the unit on show
             is fine; Show's pressed state is derived).
+      - [x] Task 6 — estimate editor unit picker, unit switch on the line, rates keyed by unit
+            (2026-09-28). Browser-verified; see its Done note (a line's current option is just the
+            unit's name; one `unitSnap` decides every price shown or added; a last-project line
+            remembers today's price *at its unit*; the editor gained a live region).
 - [ ] Phase 7 — Design Review.
 
 Nothing deployed. **As of task 3 the branch is only coherent as a whole**: the server now
 stores and demands the new card shape, while the web build still reads and writes the old one.
-Against this branch's server, the current Rate Card's save gets `pricing_shape_outdated`, and the
-estimator and Dashboard read rows with no `mu`. That's expected until tasks 4–7 land. **Don't merge
+The Rate Card (tasks 4–5) and the estimator (task 6) now read the new shape; the Dashboard still
+reads rows with no `mu` until task 7. **Don't merge
 before task 10.**
 
 **The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
 DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
 
-**Exact next item:** TASKS.md **task 6, "Estimate editor: unit picker, unit switch on the
-line, rates keyed by unit"** (money math — Opus/high). While in `rows.js`, pass the card as
-`lineDef`'s third argument (task 2's note).
+**Exact next item:** TASKS.md **task 7, "Dashboard: day floors from Service Day, one comparison
+row per service"** (money math — Opus/high). After it, `grep` for `labourFloorComparison` and
+delete it from both calc.js copies with its tests.
 
 **Verifying UI on this branch:** another session may be running `api-scratch` / `web` on 8080 /
 5173 with a v8 server, and the scratch DB is shared. Task 4 used a *copy* of the scratch DB at

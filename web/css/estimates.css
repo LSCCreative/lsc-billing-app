@@ -410,8 +410,8 @@
   grid-template-columns: 3fr 90px 90px 110px 32px;
 }
 
-/* What a labour row's quantity counts, under its name — only in a category
-   whose card has a day row (see buildLabourRow). The Rate Card's own
+/* What a labour line's quantity counts, under its name — on every priced line
+   since service units (see buildLabourRow). The Rate Card's own
    .pricing-row-meta size and colour, so the same words look the same on both
    screens. app.css makes every .gt-row cell a centred flex row, which would
    set the line beside the name; this stacks it underneath instead. Below 768px
@@ -424,6 +424,44 @@
 .lab-unit {
   margin-top: 3px;
   font-size: 10.5px;
+  color: var(--muted);
+}
+/* The line's unit, switchable (estimate-editor.js switchUnit): the Rate Card's
+   .pricing-unit-sel chrome, so "per [full day ▾]" looks the same on both
+   screens. Fixed width for the same reason as there: a closed select is as
+   wide as its longest option, and the other options carry a price or "no
+   price yet", while the one on show is only a unit's name. */
+.lab-unit-sel {
+  background: #1a1c20;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 10.5px;
+  padding: 2px 4px;
+  outline: none;
+  cursor: pointer;
+  width: 7.6em;
+}
+.lab-unit-sel:focus {
+  border-color: var(--accent);
+}
+.lab-unit-sel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.lab-unit-sel option {
+  background: #1e2228;
+  color: var(--text);
+}
+/* The picker's unit select sits between the service select and Add: as wide as
+   its options ("Full day · no price yet"), not sharing the service select's
+   flex:1. Below 768px responsive.css stacks both full width. */
+.bb-picker .unit-select {
+  flex: 0 0 auto;
+  max-width: none;
+}
+.bb-picker .unit-select:disabled {
+  cursor: default;
   color: var(--muted);
 }
 

@@ -277,7 +277,7 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   7.3 hrs, and half 12 > full 10 each blocked the save with its sentence on the right field. 10 / 5
   saved and read back from the API. The info control opens. No script errors, no overflow at 1280.
 
-- [ ] **6. Estimate editor: unit picker, unit switch on the line, rates keyed by unit** (money math
+- [x] **6. Estimate editor: unit picker, unit switch on the line, rates keyed by unit** (money math
   — Opus/high): In each labour `.bb-picker`, add a unit `<select>` between the service select and
   `+ Add Service`. It repopulates on service change, **always starting on Hour** (decision 11), with
   options like "Hour · $140" / "Half day · $640" / "Full day · no price yet" (the last disabled).
@@ -297,6 +297,57 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   Minimum Job Price hours follow the unit. _Modifies: `estimate-editor.js`, `rows.js`,
   `estimate-detail.js`, `estimates.css`. Reuses: `.svc-select` styling, `lineSnapshot`, the rates
   bar. Depends on: 4._
+
+  **Done 2026-09-28** (branch `service-rate-tiers`). `rows.js`'s `labourDef` takes the card as a
+  third argument and passes it to `lineDef` (task 2's note); `sectionHasUnits` is gone, and both
+  estimate screens head every labour category "Qty" and spell each line's unit. **Choices made while
+  building:**
+  (a) **The line's current option is just the unit's name** ("per [half day ▾] · 4 billable hrs");
+  the *other* options carry what switching would price the line at, or "no price yet" (disabled).
+  The line's own price is already in the Mark-Up column beside it, and a price in the closed select
+  would read twice. The select is a fixed `7.6em`, as on the Rate Card.
+  (b) **One function decides what a unit would cost** (`unitSnap`): the client's last-project
+  price for that service at that unit while the toggle is on and one exists, otherwise today's card
+  (`cardSnap` → `unitDef` with `priceContext()` resolved at mount). The picker's options, a line's
+  options, Add and a switch all read it, so an option's price is always what you get.
+  (c) **A line priced from the last project remembers today's card price as its own** — for a
+  switched line that's the price *at the new unit*, and now also for a line added while the toggle is
+  on (before, such a line kept last time's price when the toggle went off). Turning the toggle off
+  therefore never reverts a unit switch.
+  (d) **The picker starts on Hour** when a service is chosen (decision 11), unless the hour has no
+  price, when it starts on the first unit that has one. No priceable unit: every option disabled
+  and `+ Add Service` disabled. It keeps the last unit after an Add (only a *service* change resets
+  it).
+  (e) The unit select appears only while the line's service is still on the card; a line in an
+  archived category or whose service was deleted shows plain text ("per full day · 8 billable hrs").
+  A legacy line in no unit the card sells (hours ≠ 1, no `dayUnit`) shows a selected "unit" option
+  and can be switched *to* hour / half / full, never back. Its rate key is `unit` + its hours, so it
+  matches nothing.
+  (f) **The editor had no live region**, despite the brief's wording, so it gains one
+  (`#editor-live`, sr-only, polite, via `LSCUtil.announce`): "Video Capture: now per half day,
+  $800, 4 billable hrs." (plus ", as on the last project." when it came from there). "Update to
+  current rates" also resets the rates note, which it used to leave saying "N lines priced as last
+  time".
+  **Verified in a browser** (the v9 scratch copy on `127.0.0.1:8081` / `:5174`; Video Capture was
+  $200 hourly typed, days auto): the picker read Hour · $200 / Half day · $800 / Full day · $1,600
+  and started on Hour. Added a full day: Total Hours 8, bill $1,600, MJP note "(1 full day of 8
+  hrs)". Switched it to half day: $800, 4 hrs, qty kept, focus stayed on the select, announced.
+  Added the same service by the hour (qty 2): 6 hrs, $1,200; saved; the detail view read "1 half
+  day" / "2 hours" and the server's totals agreed. Raised the card's hourly to $250: the reopened
+  quote still read $800 / $200 until "Update to current rates", which moved them to $1,000 / $250
+  (each at its own unit). With the income floor stubbed out: a service whose hour is auto listed
+  Hour and Half day as "no price yet" (disabled) and started on Full day; a line at an auto hour
+  kept its $103 on update, and the toast said "1 line at a unit with no price on it yet kept its
+  price". An all-auto service disabled every unit and Add. Last project (card hourly then $300,
+  last quote $250 hourly / $1,000 half day): with the toggle on, Hour added at $250 and Full day at
+  the card's $2,400 (not on the last quote); switching the hour line to half day took $1,000 "as on
+  the last project"; toggling off gave $1,200, still at half day. A deleted service and an archived
+  category showed plain unit text. No script errors; no overflow at 1280 or 375. The test estimate
+  was deleted and the card put back to $200 afterwards.
+  **Not mutation-checked:** this task changed no `calc.js` and no server code, and the editor has no
+  automated tests (`npm test` doesn't load the web views); every branch above was exercised in the
+  browser instead. 253 server tests still green. **Left for task 8/9:** the line's unit select is
+  28px tall at 375 (under the 44px target), and a11y wording is task 9's.
 
 - [ ] **7. Dashboard: day floors from Service Day, one comparison row per service** (money math —
   Opus/high): In `finance-dashboard.js` `figures()`, headline `halfDay` / `fullDay` become
