@@ -283,11 +283,12 @@ function lineSnapshot(def) {
  *
  * Self-contained rather than reusing numOrNull() below, because the answer here
  * is never null: an unusable value resolves to 1, for the reasons in "Hours and
- * quantity are not the same thing" in the header. Exported so the Rate Card's
- * day-rate prefill and the Dashboard's full-day floor use this same fallback
- * instead of each re-deciding what a blank cell means.
+ * quantity are not the same thing" in the header. Exported so the estimate
+ * screens and the v9 migration read a line's (or an old row's) hours with this
+ * same fallback instead of each re-deciding what a blank cell means. A service
+ * on today's card has no hoursPerUnit of its own: unitHours() gives its units'.
  *
- * @param {object} def — a rate-card labour row, which may predate hoursPerUnit.
+ * @param {object} def — a line snapshot, or a pre-v9 rate-card labour row.
  * @returns {number} a positive number of hours; 1 when the row does not say.
  */
 function hoursPerUnitOf(def) {
@@ -1402,62 +1403,21 @@ function unitDef(row, unit, pricing, ctx) {
 }
 
 /**
- * Every labour row on the rate card beside the floor for one unit of it.
- *
- * A row's floor is hourlyFloor × hoursPerUnitOf(row): an hourly row's floor is
- * the hourly floor, a day row's is that many hours of it. Compared against the
- * row's `mu` — what the client is charged — with GST taken out, never against
- * `rate`, which feeds no billing arithmetic anywhere (see computeTotals).
- *
- * LABOUR ROWS ONLY. Travel rows are excluded entirely, marked-up or not: crew,
- * hire, travel, flights and accommodation are added to a job at cost on top of
- * the labour, and are not what carries the overhead. That is the brief's
- * decision 6, and the Dashboard copy says so.
- *
- * @returns {Array<object>} one entry per labour row, in rate-card order:
- *   { sectionId, sectionLabel, name, mu, muExGst, hoursPerUnit, floor, gap,
- *     belowFloor }. When there is no hourly floor, floor/gap/belowFloor are
- *   null — "can't tell yet", which is not the same as "fine".
- */
-function labourFloorComparison(pricing, settings, floorPerHour) {
-  const perHour = numOrNull(floorPerHour);
-  const sections = (pricing && pricing.labourSections) || [];
-  const out = [];
-
-  for (const section of sections) {
-    for (const def of section.rows || []) {
-      const hoursPerUnit = hoursPerUnitOf(def);
-      const muExGst = priceExGst(def.mu, settings);
-      const floor = perHour === null || perHour <= 0 ? null : round2(perHour * hoursPerUnit);
-      /* Compared in cents after rounding both, so a row priced exactly at its
-         floor is not badged by float noise. */
-      const belowFloor = floor === null ? null : muExGst < floor;
-      out.push({
-        sectionId: section.id,
-        sectionLabel: section.label,
-        name: def.name,
-        mu: num(def.mu),
-        muExGst,
-        hoursPerUnit,
-        floor,
-        gap: belowFloor ? round2(floor - muExGst) : belowFloor === null ? null : 0,
-        belowFloor,
-      });
-    }
-  }
-  return out;
-}
-
-/**
  * Every labour service on the rate card, each of its three units beside the
- * floor for that unit. What labourFloorComparison does per row, done per
- * service × unit; it replaces that function once the Dashboard moves over.
+ * floor for that unit — the Dashboard's "Rate card against its floors". It
+ * replaced the one-row-per-row labourFloorComparison on 2026-09-28, when the
+ * Dashboard moved to one row per service (service rate tiers, task 7).
  *
  * A unit's floor is floorPerHour × unitHours. It is compared against the
  * unit's price as unitDef resolves it — the typed one, or the auto one — with
- * GST taken out (priceExGst), never against `rate`. Exactly at the floor is not
- * below it. Labour only; travel is excluded for the reasons given on
- * labourFloorComparison.
+ * GST taken out (priceExGst), never against `rate`, which feeds no billing
+ * arithmetic anywhere (see computeTotals). Exactly at the floor is not below
+ * it.
+ *
+ * LABOUR SERVICES ONLY. Travel rows are excluded entirely, marked-up or not:
+ * crew, hire, travel, flights and accommodation are added to a job at cost on
+ * top of the labour, and are not what carries the overhead. That is
+ * price-calculator's brief decision 6, and the Dashboard copy says so.
  *
  * An auto unit is priced from THIS function's floorPerHour and settings; only
  * ctx.markupPct is read from ctx. So an auto price and the floor it is set
@@ -1589,9 +1549,10 @@ function jobsNeededPerYear(annualRevenueTarget, averageJob) {
  * exists to show.
  *
  * A DAY IS CAPACITY'S DAY. Shoot days and edit days are each
- * billableHoursPerDay long — the same standard day the Dashboard's headline
- * floors use — not a Full Day row's hoursPerUnit: a card can have several day
- * rows at different lengths, and an edit day has no row at all. A month is
+ * billableHoursPerDay long — a yearly planning average — not the card's
+ * Service Day, which is what a day sold on a job is and which the Dashboard's
+ * headline floors use (SERVICE UNITS in the header). An edit day is not sold
+ * at all; it is capacity the shoot uses up. A month is
  * annual billable hours ÷ 12, an average, as the targets panel labels it.
  *
  * @param {object} capacity — the goals payload (the four Capacity fields).
@@ -1674,7 +1635,6 @@ if (typeof module === 'object' && module.exports) {
     targetAnnualRevenue,
     hourlyFloor,
     priceExGst,
-    labourFloorComparison,
     serviceFloorComparison,
     unitHours,
     suggestedPrice,
@@ -1717,7 +1677,6 @@ if (typeof module === 'object' && module.exports) {
     targetAnnualRevenue,
     hourlyFloor,
     priceExGst,
-    labourFloorComparison,
     serviceFloorComparison,
     unitHours,
     suggestedPrice,

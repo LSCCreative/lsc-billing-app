@@ -349,7 +349,7 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   browser instead. 253 server tests still green. **Left for task 8/9:** the line's unit select is
   28px tall at 375 (under the 44px target), and a11y wording is task 9's.
 
-- [ ] **7. Dashboard: day floors from Service Day, one comparison row per service** (money math —
+- [x] **7. Dashboard: day floors from Service Day, one comparison row per service** (money math —
   Opus/high): In `finance-dashboard.js` `figures()`, headline `halfDay` / `fullDay` become
   `perHour × unitHours(pricing, 'half' | 'full')`. The tiles' "at N hrs" reads Service Day, and
   `dayHours` from Capacity is no longer used there (brief decision 4). **`postMarkup` /
@@ -364,6 +364,38 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   button lands on that row, set to Full day, with the price focused; an all-auto service shows three
   `auto` tags. _Modifies: `finance-dashboard.js`, `finance-dashboard.css`, `finance.js`, both
   `calc.js`. Depends on: 2, 4._
+
+  **Done 2026-09-28** (branch `service-rate-tiers`). Headline half / full floors are `perHour ×
+  unitHours(card, 'half' | 'full')`; each tile reads "at N hrs" from the Service Day, and the old
+  "set your full-day hours on Capacity" prompt is gone (`unitHours` is never null). The comparison
+  is `serviceFloorComparison(card, settings, perHour, priceContext())`: Service | Section | Hourly |
+  Half day | Full day, each cell the unit's price **ex-GST** over a `Below by $X` badge or an `auto`
+  tag, `—` for no price. Section stays as its own column (that's how "grouped as today" was done),
+  still hidden at 768–1099. A service counts as below floor (row class, the "N of M below floor"
+  count, the phone view's opening rows) if **any** of its units is. Badges carry
+  `data-focus-unit`, and the router passes `focusRow: { sectionId, index, unit }`; `index` is now
+  the comparison's own `rowIndex` rather than a counter in the view. `labourFloorComparison` is
+  deleted from both calc.js copies with its three tests (253 → 250 tests); the only check they had
+  that `serviceFloorComparison`'s tests lacked ("the internal `rate` plays no part") moved onto its
+  $1-gap test. The dashboard header's old "headline day floors use Capacity's day" note is
+  rewritten, and two stale calc.js comments are fixed (`hoursPerUnitOf`, `postRatioReadout`).
+  **One thing found while verifying:** an **auto** day *can* be below floor when the service's
+  hourly price is typed below it (decision 13 carries it over; e.g. $56/hr typed → a $224 auto half
+  day against a $328.64 floor). Such a cell shows the badge, not the tag. The info control and the
+  header say so. My first draft of both said auto prices can't be below; that's only true of an
+  auto *hourly*.
+  **Verified in a browser** (the v9 scratch copy): at an $82.16 floor the tiles read $82.16 /
+  $328.64 at 4 hrs / $657.28 at 8 hrs. With the Service Day set to 10 / 5 in memory (Capacity's day
+  stayed 8), they read $410.80 at 5 hrs / $821.60 at 10 hrs, while the post-ratio readout still said
+  "8 hrs, your Capacity day". A service made all-auto in memory showed three `auto` tags. Test Tier
+  Service's typed $100 half day badged "Below by $228.64". Its button opened the Rate Card on that
+  row, dropdown on Half day, with the $100 price field focused (accessible name "Half-day price for
+  Test Tier Service"). 1280: fits; 800: Section hidden, no price wraps; 375: cards stacked, opens on
+  the 7 below-floor services, price over badge on each line, no page overflow. No script errors.
+  **Checks instead of mutations:** the task changes no pricing arithmetic; `calc.js` only loses a
+  function. What could go wrong in the view is reading the wrong day or row, and the checks above
+  used inputs that tell those apart (Service Day ≠ Capacity's day; the badge landing on the right
+  row *and* unit).
 
 ## Responsive & Polish
 

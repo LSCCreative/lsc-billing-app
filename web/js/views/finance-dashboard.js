@@ -65,16 +65,27 @@
  * GST-exclusive: the comparison is the only GST-aware part (priceExGst backs
  * GST out of a GST-inclusive card), so that section alone is redrawn on save.
  *
- * THE HEADLINE DAY FLOORS USE CAPACITY'S FULL-DAY HOURS
- * The IA doc writes fullDayFloor = hourlyFloor × (Full Day row's hoursPerUnit).
- * Day rows are now marked (`dayUnit: 'full' | 'half'`, set by the Rate Card's
- * unit select), but there is no single "Full Day row": a card can have a video
- * full day and a photo full day at different lengths, and an old card has
- * none. So the headline half/full-day floors stay hourlyFloor × Capacity's
- * billable hours per day (and half that) — a standard day, the figure every
- * new day row is prefilled from — and each tile says "at N hrs". Every actual
- * row is compared at its OWN hoursPerUnit in section 2, so a day row the user
- * lengthened to 10 hrs shows its own, higher floor there.
+ * THE HEADLINE DAY FLOORS USE THE CARD'S SERVICE DAY (2026-09-28)
+ * This reverses the old decision here, which took them from Capacity's
+ * billable hours per day because a card could have day rows of different
+ * lengths. Since service rate tiers (.design/service-rate-tiers/, brief
+ * decision 4) there is one service day for the whole card, full and half, set
+ * on the Rate Card, and every service's day is priced at it. So the headline
+ * half / full-day floors are the hourly floor × LSCCalc.unitHours(card, 'half'
+ * | 'full'), and each tile says "at N hrs". Capacity's day is a yearly
+ * planning average, not what a day on a job is; it is still what the
+ * post-ratio readout (section 6) uses, and deliberately so.
+ *
+ * THE COMPARISON IS ONE ROW PER SERVICE (brief decision 10)
+ * Hourly / Half day / Full day cells, each the unit's price ex-GST plus a
+ * "Below by $X" button to that row and unit on the Rate Card, or an "auto"
+ * tag, or an em dash when the unit has no price. From
+ * LSCCalc.serviceFloorComparison, which prices auto units from the same floor
+ * it compares them with. So an auto HOURLY price is never below its floor, but
+ * an auto half or full day can be: it is the service's hourly price × the
+ * Service Day hours (brief decision 13), and a typed hourly price under the
+ * floor carries its days under with it. Such a cell shows the badge, not the
+ * tag — being below is what needs seeing.
  *
  * THE FLOORS ARE INCOME FLOORS (2026-09-28, the user's call after the audit)
  * The headline floors, and every row in the comparison, are measured against
@@ -97,7 +108,8 @@ const FinanceDashboardView = (() => {
     replacementReserveTotal,
     annualBillableHours,
     hourlyFloor,
-    labourFloorComparison,
+    serviceFloorComparison,
+    unitHours,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -160,8 +172,9 @@ const FinanceDashboardView = (() => {
     const revenue = LSCData.revenueTarget();
     const perHour = LSCData.incomeFloor();
 
-    const perDay = parseFloat(goals.billableHoursPerDay);
-    const dayHours = Number.isFinite(perDay) && perDay > 0 && perDay <= 24 ? perDay : null;
+    // The card's service day — not Capacity's hours per day (see the header).
+    const fullHours = unitHours(pricing, 'full');
+    const halfHours = unitHours(pricing, 'half');
 
     return {
       goals,
@@ -175,10 +188,11 @@ const FinanceDashboardView = (() => {
       revenue,
       perHour,
       taxYear: LSCData.taxYearInUse(),
-      dayHours,
-      halfDay: perHour === null || dayHours === null ? null : round2(perHour * (dayHours / 2)),
-      fullDay: perHour === null || dayHours === null ? null : round2(perHour * dayHours),
-      rows: labourFloorComparison(pricing, LSCData.settings(), perHour),
+      fullHours,
+      halfHours,
+      halfDay: perHour === null ? null : round2(perHour * halfHours),
+      fullDay: perHour === null ? null : round2(perHour * fullHours),
+      rows: serviceFloorComparison(pricing, LSCData.settings(), perHour, LSCData.priceContext()),
       target: revenue ? revenue.total : null,
     };
   }
@@ -212,10 +226,7 @@ const FinanceDashboardView = (() => {
   }
 
   function floorsMarkup(f) {
-    const dayNote = (n) =>
-      f.dayHours === null
-        ? 'set your full-day hours on ' + link('capacity', 'Capacity')
-        : 'at ' + hrs(n) + ' hrs';
+    const dayNote = (n) => 'at ' + hrs(n) + ' hrs';
     const blockers = floorBlockers(f);
 
     return (
@@ -223,8 +234,8 @@ const FinanceDashboardView = (() => {
       '<h2 class="dash-h" id="dash-floors-h">Your floors</h2>' +
       '<div class="dash-floors">' +
       floorTile('Hourly', f.perHour, 'per billable hour') +
-      floorTile('Half day', f.halfDay, dayNote(f.dayHours === null ? 0 : f.dayHours / 2)) +
-      floorTile('Full day', f.fullDay, dayNote(f.dayHours)) +
+      floorTile('Half day', f.halfDay, dayNote(f.halfHours)) +
+      floorTile('Full day', f.fullDay, dayNote(f.fullHours)) +
       '</div>' +
       (blockers.length
         ? '<p class="dash-note">Set up ' + joinAnd(blockers) + ' to see your floors.</p>'
@@ -242,30 +253,43 @@ const FinanceDashboardView = (() => {
 
   // ── 2. The rate card against its floors ───────────────────────────────────
 
-  /* A below-floor gap is a button to that row's Mark-Up on the Rate Card — the
-     IA's "Checking a day rate" flow. The row is keyed by section id and its
-     index within the section, never by name: names are the user's to change,
-     and two rows may share one. ri is counted here rather than carried by
-     labourFloorComparison, which walks the same sections in the same order.
-     The accessible name starts with the visible text (WCAG 2.5.3) and says
-     where the button goes, which the text alone doesn't. */
-  function statusCell(row, ri) {
-    if (row.belowFloor === null) return '<td class="right muted-td" data-label="Against floor">—</td>';
-    if (row.belowFloor) {
-      const gap = fmt(row.gap);
-      return (
-        '<td class="right" data-label="Against floor"><button type="button" class="dash-badge"' +
-        ' data-go-tab="pricing" data-focus-sec="' + esc(String(row.sectionId)) + '" data-focus-row="' + ri + '"' +
-        ' aria-label="Below by ' + gap + ': change ' + esc(row.name || 'Untitled') + '’s Mark-Up on the Rate Card">' +
-        'Below by ' + gap + '</button></td>'
-      );
+  const UNIT_COLS = [
+    ['hour', 'Hourly', 'hourly'],
+    ['half', 'Half day', 'half-day'],
+    ['full', 'Full day', 'full-day'],
+  ];
+
+  /* One unit of one service: its price ex-GST, and under it either a "Below by
+     $X" button to that row's price on the Rate Card, set to that unit — the
+     IA's "Checking a day rate" flow — or an "auto" tag. A set-by-you price that
+     clears its floor needs neither. No price (an auto unit with no floor yet)
+     is an em dash, never $0.00. A below-floor auto day (its typed hourly is
+     under the floor) shows the badge, not the tag. The row is keyed by section id and its index
+     within the section, never by name: names are the user's to change, and two
+     rows may share one. The badge's accessible name starts with its visible
+     text (WCAG 2.5.3) and says where it goes, which the text alone doesn't. */
+  function unitCell(row, unit, label, adj) {
+    const u = row.units[unit];
+    if (u.mu === null) return '<td class="right muted-td" data-label="' + label + '">—</td>';
+    let note = '';
+    if (u.belowFloor) {
+      const gap = fmt(u.gap);
+      note =
+        '<button type="button" class="dash-badge"' +
+        ' data-go-tab="pricing" data-focus-sec="' + esc(String(row.sectionId)) + '" data-focus-row="' + row.rowIndex + '"' +
+        ' data-focus-unit="' + unit + '"' +
+        ' aria-label="Below by ' + gap + ': change ' + esc(row.name || 'Untitled') + '’s ' + adj +
+        ' price on the Rate Card">Below by ' + gap + '</button>';
+    } else if (u.auto) {
+      note = '<span class="dash-auto">auto</span>';
     }
     return (
-      '<td class="right muted-td" data-label="Against floor">' +
-      (row.muExGst === row.floor ? 'At floor' : fmt(round2(row.muExGst - row.floor)) + ' over') +
-      '</td>'
+      '<td class="right dash-unit" data-label="' + label + '"><span class="dash-unit-val">' +
+      '<span class="dash-price">' + fmt(u.muExGst) + '</span>' + note + '</span></td>'
     );
   }
+
+  const serviceBelow = (r) => UNIT_COLS.some(([unit]) => r.units[unit].belowFloor);
 
   /* Brief decision 7 and the "rate falls below its floor" state: the floor is
      measured against the marked-up price because that is what recovers
@@ -278,9 +302,13 @@ const FinanceDashboardView = (() => {
       title: 'The floor comparison',
       paragraphs: [
         'Each service’s floor is your income floor — target annual revenue ÷ billable hours, so running costs ' +
-          'and your pay — times the hours one unit of it takes.',
+          'and your pay — times the hours one unit of it takes: one for an hour, and your Service Day’s hours for ' +
+          'a half or full day.',
         'It’s measured against <strong>what the client is charged</strong>: the Mark-Up price, ex-GST. Not your ' +
           'internal rate — the marked-up price is what actually recovers overhead.',
+        'A price marked <strong>auto</strong> follows your numbers. An auto hourly price is your floor plus your ' +
+          'Target Markup, so it can’t fall below it. An auto half or full day is the service’s hourly price × your ' +
+          'Service Day hours, so it’s below only when you’ve typed an hourly price that is.',
         'Crew, hire, travel, flights and accommodation aren’t compared. They’re passed through at cost on top of ' +
           'the labour, so they recover no overhead either way.',
         'Below floor means that price, sold all year, wouldn’t cover the business’s costs and your pay at your ' +
@@ -291,8 +319,8 @@ const FinanceDashboardView = (() => {
 
   function comparisonMarkup(f) {
     const rows = f.rows;
-    const below = rows.filter((r) => r.belowFloor).length;
-    const known = rows.length && rows[0].floor !== null;
+    const below = rows.filter(serviceBelow).length;
+    const known = rows.length && rows[0].units.hour.floor !== null;
     const summary = !rows.length
       ? 'No services'
       : !known
@@ -302,22 +330,15 @@ const FinanceDashboardView = (() => {
           : 'All ' + rows.length + ' clear their floor';
 
     const clear = rows.length - below;
-    const seen = {}; // rows so far per section id — each row's index within its section
     const body = rows
-      .map((r) => {
-        const ri = seen[r.sectionId] || 0;
-        seen[r.sectionId] = ri + 1;
-        return (
-          '<tr class="' + (r.belowFloor ? 'dash-below' : 'dash-clear') + '">' +
+      .map(
+        (r) =>
+          '<tr class="' + (serviceBelow(r) ? 'dash-below' : 'dash-clear') + '">' +
           '<td data-label="Service">' + esc(r.name || 'Untitled') + '</td>' +
           '<td class="muted-td dash-sec-col" data-label="Section">' + esc(r.sectionLabel || '') + '</td>' +
-          '<td class="right muted-td" data-label="Hours per unit">' + hrs(r.hoursPerUnit) + '</td>' +
-          '<td class="right" data-label="You charge (ex-GST)">' + fmt(r.muExGst) + '</td>' +
-          '<td class="right" data-label="Floor">' + (r.floor === null ? '—' : fmt(r.floor)) + '</td>' +
-          statusCell(r, ri) +
+          UNIT_COLS.map(([unit, label, adj]) => unitCell(r, unit, label, adj)).join('') +
           '</tr>'
-        );
-      })
+      )
       .join('');
 
     return (
@@ -332,8 +353,8 @@ const FinanceDashboardView = (() => {
       (rows.length
         ? '<table class="est-table dash-table' + (showAllRows ? ' dash-table-all' : '') +
           '" id="dash-compare-table"><thead><tr><th>Service</th><th class="dash-sec-col">Section</th>' +
-          '<th class="right">Hrs / unit</th><th class="right">You charge (ex-GST)</th>' +
-          '<th class="right">Floor</th><th class="right">Against floor</th></tr></thead><tbody>' +
+          UNIT_COLS.map(([, label]) => '<th class="right">' + label + '</th>').join('') +
+          '</tr></thead><tbody>' +
           body + '</tbody></table>' +
           (clear
             ? '<div class="dash-show-all-row"><button type="button" class="btn btn-ghost btn-sm dash-show-all" ' +
@@ -668,7 +689,7 @@ const FinanceDashboardView = (() => {
     box.innerHTML = gstInnerMarkup();
   }
 
-  /* The one GST-aware part of sections 1–5: labourFloorComparison takes GST
+  /* The one GST-aware part of sections 1–5: serviceFloorComparison takes GST
      out of a GST-inclusive card's `mu` (priceExGst). Redrawn in place from the
      updated cache so it can't disagree with the setting shown below it. */
   function redrawComparison() {
@@ -873,7 +894,13 @@ const FinanceDashboardView = (() => {
       const opts = inner
         ? { inner }
         : focusSec !== null
-          ? { focusRow: { sectionId: focusSec, index: Number(btn.getAttribute('data-focus-row')) } }
+          ? {
+              focusRow: {
+                sectionId: focusSec,
+                index: Number(btn.getAttribute('data-focus-row')),
+                unit: btn.getAttribute('data-focus-unit') || undefined,
+              },
+            }
           : undefined;
       handlers.onGoTab(btn.getAttribute('data-go-tab'), opts);
     });

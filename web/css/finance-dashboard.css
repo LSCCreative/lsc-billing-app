@@ -122,6 +122,19 @@
   border-bottom-width: 2px;
   padding-bottom: 0;
 }
+/* One unit's cell (finance-dashboard.js, unitCell): the price, and under it
+   the badge or the "auto" tag, both right-aligned. One wrapper, so the phone
+   layout's label/value row (responsive.css, .est-table td) sees one value. */
+.dash-unit-val {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.dash-auto {
+  font-size: 10.5px;
+  color: var(--muted);
+}
 .dash-table td:first-child {
   color: var(--text);
 }

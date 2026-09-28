@@ -61,20 +61,23 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
             (2026-09-28). Browser-verified; see its Done note (a line's current option is just the
             unit's name; one `unitSnap` decides every price shown or added; a last-project line
             remembers today's price *at its unit*; the editor gained a live region).
+      - [x] Task 7 — Dashboard: headline day floors from the Service Day, one comparison row per
+            service, `labourFloorComparison` deleted (2026-09-28). Browser-verified; see its Done
+            note (an auto *day* can be below floor when its typed hourly is).
 - [ ] Phase 7 — Design Review.
 
 Nothing deployed. **As of task 3 the branch is only coherent as a whole**: the server now
 stores and demands the new card shape, while the web build still reads and writes the old one.
-The Rate Card (tasks 4–5) and the estimator (task 6) now read the new shape; the Dashboard still
-reads rows with no `mu` until task 7. **Don't merge
+As of task 7 every screen reads the new shape (Rate Card, estimator, Dashboard), so the branch is
+coherent again end to end. What's left before merging is polish (tasks 8–9), then the deploy. **Don't merge
 before task 10.**
 
 **The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
 DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
 
-**Exact next item:** TASKS.md **task 7, "Dashboard: day floors from Service Day, one comparison
-row per service"** (money math — Opus/high). After it, `grep` for `labourFloorComparison` and
-delete it from both calc.js copies with its tests.
+**Exact next item:** TASKS.md **task 8, "Responsive pass"** (frontend — Opus/high). Known
+already: the estimator line's unit select is 28px tall at 375 (needs 44px), and the Rate Card
+state lines wrap at 1280 (task 4's note). Then task 9 (accessibility).
 
 **Verifying UI on this branch:** another session may be running `api-scratch` / `web` on 8080 /
 5173 with a v8 server, and the scratch DB is shared. Task 4 used a *copy* of the scratch DB at
@@ -90,6 +93,9 @@ delete it from both calc.js copies with its tests.
   snapshot.
 - **Service Day hours are not Capacity's billable hours per day.** Capacity's figure is a yearly
   average. A service day on a job is 8 / 4. Don't "helpfully" link them back together.
+- **An auto day can be below floor.** An auto *hourly* never is, but an auto day follows the
+  hourly, typed or not, so a typed hourly under the floor takes its auto days under too. The
+  Dashboard badges such a cell, not tags it. That's decision 13 working as intended, not a bug.
 - **An auto day is the hourly price × the day's hours** (brief decision 13, the user's call on
   2026-09-28, made after task 3). Type $140 an hour and the full day reads $1,120 at 8 hrs. This
   reverses "each unit rounded on its own", so an auto full day *is* 8 × the rounded hourly. It

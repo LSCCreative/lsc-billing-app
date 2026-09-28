@@ -25,7 +25,6 @@ const {
   fyDisplay,
   hourlyFloor,
   priceExGst,
-  labourFloorComparison,
   serviceFloorComparison,
   lineDef,
   averageJobValue,
@@ -1202,13 +1201,14 @@ test('serviceFloorComparison: each unit is set against floorPerHour × its own h
 test('serviceFloorComparison: a set-by-you unit $1 under its floor badges a $1 gap', () => {
   // Full-day floor at $45.05 × 8 = $360.40. Typed $359.40 is $1 under; $360.40 is at it.
   const card = { serviceDay: { fullHours: 8, halfHours: 4 }, labourSections: [{ id: 'p', label: 'P', rows: [
-    { id: 'a', name: 'Under', prices: { hour: 44.95, half: null, full: 359.4 } },
+    { id: 'a', name: 'Under', rate: 999, prices: { hour: 44.95, half: null, full: 359.4 } },
     { id: 'b', name: 'At', prices: { hour: 45.05, half: null, full: 360.4 } },
     { id: 'c', name: 'Free', prices: { hour: 0, half: null, full: null } },
   ] }] };
   const [under, at, free] = serviceFloorComparison(card, SU_NO_GST, 45.05, { markupPct: 25 });
   assert.equal(under.units.full.belowFloor, true);
   assert.equal(under.units.full.gap, 1);
+  // `rate` plays no part: Under's internal rate of $999 doesn't rescue it.
   // A gap is money, in cents: 45.05 − 44.95 is 0.0999… in floating point.
   assert.equal(under.units.hour.gap, 0.1);
   // Exactly at the floor is not below it.
@@ -1637,69 +1637,6 @@ test('a GST-inclusive rate card is compared ex-GST', () => {
   assert.equal(priceExGst(110, unregistered), 110);
   assert.equal(priceExGst(110, exclusive), 110);
   assert.equal(priceExGst(110, inclusive), 100);
-});
-
-const FLOOR_CARD = {
-  labourSections: [
-    {
-      id: 'prod',
-      label: 'Production',
-      rows: [
-        { name: 'Hourly', rate: 1, mu: 40 },
-        { name: 'At the floor', rate: 1, mu: 31.25 },
-        { name: 'Full day', rate: 1, mu: 280, hoursPerUnit: 8 },
-        { name: 'Cheap day', rate: 999, mu: 200, hoursPerUnit: 8 },
-      ],
-    },
-  ],
-  travelRows: [{ name: 'Transport & Logistics Hrs', rate: 25, mu: 1 }],
-  taxSetAsideRate: 0.35,
-};
-const NO_GST = { gst: { registered: false } };
-
-test('each labour row is compared at its own hours per unit, against mu', () => {
-  const rows = labourFloorComparison(FLOOR_CARD, NO_GST, 31.25);
-  const by = Object.fromEntries(rows.map((r) => [r.name, r]));
-
-  assert.equal(by['Hourly'].floor, 31.25);
-  assert.equal(by['Hourly'].belowFloor, false);
-  assert.equal(by['Hourly'].gap, 0);
-
-  // Exactly at the floor is not below it.
-  assert.equal(by['At the floor'].belowFloor, false);
-
-  // A day row's floor is eight hours of floor.
-  assert.equal(by['Full day'].floor, 250);
-  assert.equal(by['Full day'].belowFloor, false);
-  assert.equal(by['Cheap day'].belowFloor, true);
-  assert.equal(by['Cheap day'].gap, 50);
-  // `rate` plays no part: Cheap day's internal rate of 999 doesn't rescue it.
-
-  // Labour rows only — the $1 travel row would be badged if it were included.
-  assert.equal(rows.length, 4);
-  assert.ok(!rows.some((r) => r.name === 'Transport & Logistics Hrs'));
-  assert.equal(by['Hourly'].sectionLabel, 'Production');
-});
-
-test('a GST-inclusive price is below its floor when its ex-GST share is', () => {
-  const card = { labourSections: [{ id: 'x', label: 'X', rows: [{ name: 'Row', mu: 33 }] }] };
-  const inclusive = { gst: { registered: true, rate: 0.1, pricesIncludeGst: true } };
-  // $33 inc GST is $30 ex — under a $31.25 floor by $1.25. Read raw it would pass.
-  const [row] = labourFloorComparison(card, inclusive, 31.25);
-  assert.equal(row.muExGst, 30);
-  assert.equal(row.belowFloor, true);
-  assert.equal(row.gap, 1.25);
-  assert.equal(labourFloorComparison(card, NO_GST, 31.25)[0].belowFloor, false);
-});
-
-test('with no floor to compare against, a row is "can\'t tell", not "fine"', () => {
-  const rows = labourFloorComparison(FLOOR_CARD, NO_GST, null);
-  assert.equal(rows.length, 4);
-  for (const r of rows) {
-    assert.equal(r.floor, null);
-    assert.equal(r.belowFloor, null);
-    assert.equal(r.gap, null);
-  }
 });
 
 test('average job value counts won work from the last twelve months only', () => {
