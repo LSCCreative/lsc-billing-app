@@ -57,11 +57,12 @@
   color: var(--text);
   cursor: default;
 }
-/* A day row's rate reads "15.12/hr" (pricing.js, rateDisplay): wider so the
-   unit isn't clipped. Right-aligned like the rest, so the extra width goes
-   left and the figures still line up down the column. */
+/* A row showing a day reads "108.08/day" or "54.04/half day" (pricing.js,
+   rateDisplay): wider so the unit isn't clipped. Only while a day is on show,
+   so an all-hourly card keeps today's column. Right-aligned like the rest, so
+   the extra width goes left and the figures still line up down the column. */
 .pricing-table input.pricing-rate-ro.pricing-rate-day {
-  width: 90px;
+  width: 112px;
 }
 /* The "no Overhead or Goals data yet" em dash. Muted because it is an absence,
    where the figure above is an answer — and never $0.00, which would read as a
@@ -115,13 +116,13 @@
   color: var(--accent);
 }
 
-/* ── Day rows and each row's floor (2026-09-27) ─────────────────────────────
-   Two second lines rather than two new columns: the service name is already
-   the column that gives way when the table is tight, and a Unit column plus a
-   Floor column would have cut most names to their first word. Under the name,
-   "per [unit]" and, for a day row, its billable hours; under the Mark-Up, the
-   row's floor. 10.5px muted, the rate card's own hint size, so the table still
-   reads as prices first. */
+/* ── Service units and each row's state line (2026-09-27, reshaped 2026-09-28)
+   Two second lines rather than new columns: the service name is already the
+   column that gives way when the table is tight, and a Unit column plus a
+   state column would have cut most names to their first word. Under the name,
+   "per [unit ▾]" (a view switch) and, for a day, its billable hours; under the
+   Mark-Up, the unit's state line. 10.5px muted, the rate card's own hint size,
+   so the table still reads as prices first. */
 .pricing-row-meta {
   margin-top: 4px;
   font-size: 10.5px;
@@ -150,18 +151,40 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-/* Beats app.css's `.pricing-table input[type=number]{width:72px}`: an hours
-   figure is two or three characters. */
-.pricing-table input.pricing-hpu-inp {
-  width: 46px;
-  padding: 2px 6px;
-  font-size: 10.5px;
-}
+/* The state line may carry three parts ("set by you · below floor by $12.40
+   · ↺ use $57"), more than the Mark-Up column is wide, so it wraps — but
+   between parts, never inside one, so a figure is never split from its words. */
 .pricing-floor {
   margin-top: 4px;
   font-size: 10.5px;
   color: var(--muted);
+  line-height: 1.6;
+}
+.pricing-state-part {
   white-space: nowrap;
+}
+/* An auto price is a real price, and the estimator quotes it, but it isn't one
+   you typed: muted, like the rest of what this screen works out for you, until
+   you type over it. The state line says "auto" in words; this is the glance. */
+.pricing-table input.pricing-price-inp.pricing-auto {
+  color: var(--muted);
+}
+/* "↺ use $57" and "needs Profit Goals": buttons that read as inline links,
+   the same rest/hover pair as .pricing-rate-note-link above, and --text for
+   the same contrast reason. */
+.pricing-state-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.pricing-state-link:hover,
+.pricing-state-link:focus-visible {
+  color: var(--accent);
 }
 /* --accent-text, never raw --accent, for text (a11y.css: 3.71:1 on this
    background). The Dashboard's badge carries the same colour. */

@@ -51,6 +51,9 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
       - [x] Task 3 — schema v9, reshaped `DEFAULT_PRICING`, and the `pricing_shape_outdated`
             guard (2026-09-28). The migration is `server/src/migrations/v9-service-units.js`. See
             its Done note for the six decisions, especially the frozen v8 default card.
+      - [x] Task 4 — Rate Card rows on the new shape (2026-09-28): unit view switch, auto /
+            set-by-you prices, `↺ use $X`, `LSCData.priceContext()`. Browser-verified; see its
+            Done note, including the one visible change above 1100px (state lines wrap).
 - [ ] Phase 7 — Design Review.
 
 Nothing deployed. **As of task 3 the branch is only coherent as a whole**: the server now
@@ -62,9 +65,15 @@ before task 10.**
 **The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
 DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
 
-**Exact next item:** TASKS.md **task 4, "Rate Card rows on the new shape: unit dropdown, auto and
-set-by-you prices"** (money math — Opus/high). It's the first browser-verified task: use the scratch
-API (`api-scratch`, login `dev`).
+**Exact next item:** TASKS.md **task 5, "Service Day setting, the Show switch, and the
+hidden-unit notice"** (money math — Opus/high).
+
+**Verifying UI on this branch:** another session may be running `api-scratch` / `web` on 8080 /
+5173 with a v8 server, and the scratch DB is shared. Task 4 used a *copy* of the scratch DB at
+`/tmp/lsc-billing-v9` (already migrated to v9, login `dev`) with two temporary, uncommitted
+`launch.json` entries: `api-v9-scratch` (8081) and `web-v9` (`127.0.0.1:5174`, which serves a
+`config.js` pointing at 8081, and runs on `127.0.0.1` so its cookie doesn't clash with
+`localhost`'s). Remove those two entries from `.claude/launch.json` before the final merge.
 
 ## Things a fresh agent will want to argue with (settled)
 

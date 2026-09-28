@@ -191,7 +191,7 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
 
 ## Core UI
 
-- [ ] **4. Rate Card rows on the new shape: unit dropdown, auto and set-by-you prices** (money
+- [x] **4. Rate Card rows on the new shape: unit dropdown, auto and set-by-you prices** (money
   math — Opus/high): This is the first visible slice, and it sets the look. The aesthetic is the
   existing dark editorial system, extended rather than restyled (brief "Aesthetic Direction"), so the
   new states are siblings of today's `floor $X` line. Add `LSCData.priceContext()` to `data.js` (`{
@@ -213,6 +213,30 @@ Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, using the
   returns it to auto; a floor-unset scratch DB shows `—` / "needs Profit Goals"; and a 400
   `pricing_shape_outdated` surfaces as a readable error. _Modifies: `pricing.js`, `pricing.css`,
   `data.js`. Reuses: `.pricing-floor`, `.pricing-unit-sel`, `LSCUtil.fmt`. Depends on: 1, 2, 3._
+
+  **Done 2026-09-28** (branch `service-rate-tiers`). Built as specified, plus brief decision 13 (an
+  auto day follows the hourly). **Choices made while building:** the unit view state is keyed by
+  row id (`viewUnits`), not index, so it survives adding and deleting rows. The auto price is shown
+  *in* the field, muted (`.pricing-auto`); focusing an auto field selects it so typing replaces the
+  suggestion, and leaving an emptied field shows the auto figure again. The state line wraps
+  between its parts (`.pricing-state-part` is `nowrap`), so a set-by-you row below the floor reads
+  on two or three lines at 1280. That's the one visible change above 1100px, and it's worth a look
+  in task 8 or the review. The Rate cell stays bare for an hour, matching the "Rate ($/hr)" head,
+  and reads `120.96/day` / `60.48/half day` for a day (112px wide only while a day is shown). With no
+  auto figure available, `↺` reads "use auto". The state line's buttons are delegated on the root,
+  because the line is rewritten as you type. Save refusals map the route's codes to sentences
+  (`SAVE_REFUSALS`). **Verified in a browser** against a v9 copy of the scratch DB on its own ports
+  (`127.0.0.1:8081` / `:5174`, because another session held 8080 / 5173 with the v8 server). The
+  migration there snapshotted 3 legacy lines, and all 5 scratch estimates recomputed identically.
+  Checks: a new service reads $103 / $412 / $824 (floor $82.16 × 1.25, rounded up; × 4; × 8),
+  with Rate 15.12 / 60.48 / 120.96 and floors $82.16 / $328.64 / $657.28. Typing $120 hourly moved
+  the auto half day to $480. A pinned $900 full day survived save + reload, stored as `{ hour: 120,
+  half: null, full: 900 }`, with no `mu` on any row. `↺ use $960` returned it to auto, refocused the
+  price and announced it. Unit switches alone never triggered the unsaved-changes prompt, and the
+  dropdown was back on Hourly on remount. With no income floor, auto prices showed `—` and "auto ·
+  needs Profit Goals", which links to Profit Goals. A forced `pricing_shape_outdated` showed "Couldn't
+  save: this page is out of date … Reload the page". No script errors. **Not yet:** the Dashboard and
+  the estimator still read the old shape (tasks 6–7), so both are wrong on this branch until then.
 
 - [ ] **5. Service Day setting, the Show switch, and the hidden-unit notice** (money math —
   Opus/high): Add the Service Day pair to the Rate Card's settings strip: `Full [8] hrs · Half [4]

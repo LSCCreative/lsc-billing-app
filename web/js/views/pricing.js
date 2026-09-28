@@ -48,26 +48,29 @@
  * the computed figure either way), and impossible in the empty state, where
  * there is no number to write at all. The stored value is simply inert.
  *
- * DAY ROWS AND hoursPerUnit (2026-09-27, .design/price-calculator/)
- * Under each labour row's name: "per hour / half day / full day". A day row
- * stores `dayUnit: 'full' | 'half'` — the marker, since names are the user's to
- * change — and `hoursPerUnit`, the billable hours one unit consumes, which
- * computeTotals multiplies quantity by for totalHours and so for the estimate
- * editor's Minimum Job Price (calc.js, "Hours and quantity are not the same
- * thing"). Choosing a day unit PREFILLS the hours from Capacity's billable
- * hours per day (half that for a half day), and the hours stay editable: a
- * shoot day genuinely runs longer than an average working day, and forcing
- * them equal would distort one number to fix the other. A half day has its
- * own Mark-Up like any row — there is no 0.5 multiplier anywhere.
+ * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/)
+ * A labour row is a service with three prices, `prices: { hour, half, full }`:
+ * a number is a price set by the user, null is auto. The card's `serviceDay`
+ * says how many billable hours a half and a full day are (8 / 4 by default,
+ * not Capacity's figure). calc.js's unitDef resolves any of them, and this
+ * screen never works a price out for itself.
  *
- * payload() USED TO DROP BOTH FIELDS. It rebuilt each row from name, rate, mu,
- * customBill and unit only, so a day row would have silently become an hourly
- * one on the next save of any unrelated edit — its hours falling out of every
- * Minimum Job Price with no visible change on the card. Both are carried now,
- * and a blank or out-of-range hours field blocks the save rather than being
- * read as 1.
+ *   - `per [unit ▾]` under the name is a VIEW SWITCH, not a property of the
+ *     row: it picks which of the three prices the Rate and Mark-Up cells show.
+ *     It lives in viewUnits, outside the working copy, so it never makes the
+ *     card "unsaved", and it is back to Hourly on every mount. (Until
+ *     2026-09-28 it changed what the row was, and switching asked first when
+ *     estimates used it. There is nothing to ask about now.)
+ *   - An auto price is shown in the field, muted, and follows the income floor
+ *     and Target Markup — an auto day follows the hourly price × its hours.
+ *     Typing a number pins that unit (set by you); emptying the field or
+ *     "↺ use $X" puts it back to null. A typed 0 is a price. payload() sends
+ *     prices exactly as the working copy holds them, so an auto figure is never
+ *     written to the card: it is only ever unitDef's return value.
+ *   - The Rate cell is the overhead rate × the unit's hours, so a full day
+ *     reads "108.08/day"; still read-only, still never written.
  *
- * ROW IDS (2026-09-28 audit)
+  * ROW IDS (2026-09-28 audit)
  * Every row carries a stable `id`, assigned at mount to any row that lacks one
  * (every row saved before this) and carried by payload(). Saved estimate lines
  * record it with their own price snapshot, so a renamed service still matches
@@ -81,12 +84,14 @@
  * counts as billable hours. Otherwise a non-direct row is bought in and
  * resold, and only its markup above Rate is income (calc.js, Travel).
  *
- * EACH ROW'S FLOOR, UNDER ITS MARK-UP
- * The least one unit of the row can sell for, or "below floor by $X". Computed
- * by LSCCalc.labourFloorComparison — the exact function the Dashboard's
- * comparison table uses — so the two screens cannot disagree about a row. It
- * follows the working copy as you type (Mark-Up and hours), against an hourly
- * floor read once at mount like the rate column above.
+ * EACH ROW'S STATE LINE, UNDER ITS MARK-UP
+ * For the unit on show: "auto · floor $X", "set by you · ↺ use $X", with
+ * "below floor by $X" in place of the floor when it is, or "auto · needs
+ * Profit Goals" when there is no price to show. Computed by
+ * LSCCalc.serviceFloorComparison on a one-row card, which prices auto units
+ * from the floor it compares them against, so an auto price is never badged
+ * below its own floor. It follows the working copy as you type, against an
+ * hourly floor and Target Markup read once at mount like the rate column.
  */
 
 const PricingView = (() => {
@@ -161,47 +166,87 @@ const PricingView = (() => {
      for the same reason computedRate is. */
   let perHourFloor = null;
 
-  /* What a new day row's hours prefill from: Capacity's billable hours per day,
-     or the reference 8 when Capacity has no usable figure. Visible and editable
-     on the row either way, so the fallback is never silent. */
-  function dayHours(unit) {
-    const perDay = parseFloat(LSCData.goals().billableHoursPerDay);
-    const full = Number.isFinite(perDay) && perDay > 0 && perDay <= 24 ? perDay : 8;
-    return unit === 'half' ? full / 2 : full;
+  /* The income floor with Target Markup and the GST settings, for unitDef.
+     Read once per mount, with perHourFloor, and for the same reason. */
+  let priceCtx = null;
+
+  /* Which unit each row is showing, by row id — see SERVICE UNITS above. Not
+     part of the working copy. Rows lacking an id get one at mount, so every
+     row has a key. */
+  let viewUnits = {};
+  const unitOf = (row) => viewUnits[row.id] || 'hour';
+  const UNIT_WORD = { hour: 'hour', half: 'half day', full: 'full day' };
+  const UNIT_ADJ = { hour: 'Hourly', half: 'Half-day', full: 'Full-day' };
+  const RATE_SUFFIX = { half: '/half day', full: '/day' };
+
+  /* A row's prices object with all three keys, created on first write. */
+  function pricesOf(row) {
+    row.prices = Object.assign({ hour: null, half: null, full: null }, row.prices || {});
+    return row.prices;
   }
 
-  /* A row shows its hours field when it is a day row, or when it already
-     carries hours of its own (set some other way) — never hide a number that
-     changes the arithmetic. */
-  const showsHours = (row) =>
-    row.dayUnit === 'full' || row.dayUnit === 'half' ||
-    (row.hoursPerUnit !== undefined && row.hoursPerUnit !== 1);
+  /* One service at one unit, as the estimator will quote it. */
+  const resolve = (row, unit) => LSCCalc.unitDef(row, unit, card, priceCtx);
 
-  /* The floor line under a row's Mark-Up. Through labourFloorComparison with a
-     one-row card, so the arithmetic — hoursPerUnitOf's fallback, GST taken out
-     of an inclusive price, exactly-at-floor not counting as below — is the
-     Dashboard's to the cent. */
-  function floorLineHtml(row) {
-    const [c] = LSCCalc.labourFloorComparison(
-      { labourSections: [{ id: '', label: '', rows: [row] }] },
+  /* What the unit would be on auto: the "↺ use $X" figure. */
+  const autoPrice = (row, unit) =>
+    resolve(Object.assign({}, row, { prices: Object.assign({}, row.prices, { [unit]: null }) }), unit).mu;
+
+  /* A whole-dollar price without the cents (every auto hourly price, and what
+     most people type); anything else to the cent. */
+  const money = (n) => (Number.isInteger(n) ? '$' + n.toLocaleString('en-AU') : LSCUtil.fmt(n));
+
+  /* The one-row comparison — see EACH ROW'S STATE LINE above. */
+  function compare(row, unit) {
+    const [c] = LSCCalc.serviceFloorComparison(
+      { serviceDay: card.serviceDay, labourSections: [{ id: '', label: '', rows: [row] }] },
       LSCData.settings(),
-      perHourFloor
+      perHourFloor,
+      priceCtx
     );
-    if (!c || c.floor === null) return 'floor —';
-    if (c.belowFloor) return '<span class="pricing-below">below floor by ' + LSCUtil.fmt(c.gap) + '</span>';
-    return 'floor ' + LSCUtil.fmt(c.floor);
+    return c.units[unit];
   }
 
-  function refreshFloorLine(si, ri) {
-    const el = root.querySelector('#pfl-' + si + '-' + ri);
+  function stateLineHtml(row, si, ri) {
+    const unit = unitOf(row);
+    const u = compare(row, unit);
+    const part = (html) => '<span class="pricing-state-part">' + html + '</span>';
+    if (u.auto && u.mu === null) {
+      return part('auto') + ' · ' + part(
+        '<button type="button" class="pricing-state-link" data-state-tab="goals">needs Profit Goals</button>'
+      );
+    }
+    const parts = [part(u.auto ? 'auto' : 'set by you')];
+    if (u.belowFloor) parts.push(part('<span class="pricing-below">below floor by ' + LSCUtil.fmt(u.gap) + '</span>'));
+    else if (u.auto) parts.push(part(u.floor === null ? 'floor —' : 'floor ' + LSCUtil.fmt(u.floor)));
+    if (!u.auto) {
+      const suggestion = autoPrice(row, unit);
+      const label = suggestion === null ? 'auto' : money(suggestion);
+      parts.push(part(
+        '<button type="button" class="pricing-state-link" data-use-auto data-si="' + si + '" data-ri="' + ri + '"' +
+        ' aria-label="Use the suggested price, ' + (suggestion === null ? 'auto' : money(suggestion)) + ', for ' +
+        esc(row.name) + ' ' + UNIT_WORD[unit] + '">↺ use ' + label + '</button>'
+      ));
+    }
+    return parts.join(' · ');
+  }
+
+  /* After an edit that doesn't restructure the row: the price field's shown
+     value (unless it is the field being typed in), its auto styling, and the
+     state line. */
+  function refreshRow(si, ri) {
     const row = (card.labourSections[si] || { rows: [] }).rows[ri];
-    if (el && row) el.innerHTML = floorLineHtml(row);
+    if (!row) return;
+    const d = resolve(row, unitOf(row));
+    const inp = root.querySelector('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="price"]');
+    if (inp) {
+      if (document.activeElement !== inp) inp.value = d.mu === null ? '' : String(d.mu);
+      inp.classList.toggle('pricing-auto', d.auto);
+    }
+    const el = root.querySelector('#pfl-' + si + '-' + ri);
+    if (el) el.innerHTML = stateLineHtml(row, si, ri);
   }
 
-  /* A day row's Mark-Up is per half or full day while this column is per
-     hour, so on those rows alone the figure carries its unit: "15.12/hr"
-     beside "1120" no longer reads as two prices for the same thing (design
-     review, should-fix 7). Hourly rows match their column head and stay bare. */
   /* A stable row id — see ROW IDS above. Random rather than derived from the
      name, which is the thing it has to survive a change of. */
   const newRowId = () => 'r_' + Math.random().toString(36).slice(2, 10);
@@ -218,10 +263,14 @@ const PricingView = (() => {
     return changed;
   }
 
-  const rateDisplay = (row) =>
-    computedRate === null
-      ? '—'
-      : computedRate.toFixed(2) + (row && (row.dayUnit === 'full' || row.dayUnit === 'half') ? '/hr' : '');
+  /* The cost of the unit on show: the overhead rate × its hours. An hour
+     matches the column head and stays bare; a day carries its unit, so
+     "108.08/day" beside "1120" reads as the same unit of work. */
+  const rateDisplay = (row) => {
+    if (computedRate === null) return '—';
+    const unit = unitOf(row);
+    return (computedRate * LSCCalc.unitHours(card, unit)).toFixed(2) + (RATE_SUFFIX[unit] || '');
+  };
 
   function newSectionId(taken) {
     let n = 1;
@@ -309,19 +358,16 @@ const PricingView = (() => {
       });
     });
 
-    /* Hours per unit: a day row needs a real figure. Blank would fall back to
-       1 inside calc.js, so a full day would carry one hour of overhead into
-       Minimum Job Price — the expensive direction, and invisible. 24 because a
-       unit of work can't consume more hours than a day has, and anything a
-       person types above it is a slip (a day rate typed into the hours box). */
+    /* A negative price. The field's min="0" doesn't stop one being typed,
+       and the server refuses it; saying so here names the field. */
     card.labourSections.forEach((sec, si) => {
       sec.rows.forEach((r, ri) => {
-        if (!showsHours(r)) return;
-        const h = parseFloat(r.hoursPerUnit);
-        if (!Number.isFinite(h) || h <= 0 || h > 24) {
+        const bad = LSCCalc.SERVICE_UNITS.filter((u) => r.prices && typeof r.prices[u] === 'number' && r.prices[u] < 0);
+        if (bad.length) {
           add(
-            'Billable hours per unit must be more than 0 and no more than 24.',
-            q('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="hoursPerUnit"]')
+            'A price can’t be negative (' + (String(r.name).trim() || 'a service') + ', ' +
+              bad.map((u) => UNIT_WORD[u]).join(', ') + ').',
+            q('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="price"]')
           );
         }
       });
@@ -365,34 +411,31 @@ const PricingView = (() => {
       rows = '<tr><td colspan="5" class="pricing-empty-td">No services yet — add one below.</td></tr>';
     }
     sec.rows.forEach((row, ri) => {
-      const unit = row.dayUnit === 'full' || row.dayUnit === 'half' ? row.dayUnit : '';
-      const opt = (value, label) =>
-        '<option value="' + value + '"' + (unit === value ? ' selected' : '') + '>' + label + '</option>';
+      const unit = unitOf(row);
+      const d = resolve(row, unit);
+      const opt = (value) =>
+        '<option value="' + value + '"' + (unit === value ? ' selected' : '') + '>' + UNIT_WORD[value] + '</option>';
       rows +=
         '<tr><td data-label="Service"><input class="pricing-name-inp" type="text" value="' + esc(row.name) +
         '" placeholder="Service name" aria-label="Service name" data-si="' + si + '" data-ri="' + ri +
         '" data-field="name" data-type="labour">' +
-        /* The unit line. A select for the three units the business sells in,
-           and — for a day row — its billable hours, prefilled and editable. */
+        /* The unit line: which of the three prices this row is showing, and
+           for a day, the card's hours in one. */
         '<div class="pricing-row-meta">per <select class="pricing-unit-sel" data-si="' + si + '" data-ri="' + ri +
-        '" aria-label="Unit ' + esc(row.name) + ' is sold in">' +
-        opt('', 'hour') + opt('half', 'half day') + opt('full', 'full day') + '</select>' +
-        (showsHours(row)
-          ? ' <input type="number" class="pricing-hpu-inp" min="0.5" max="24" step="0.5" value="' +
-            esc(row.hoursPerUnit === undefined ? '' : String(row.hoursPerUnit)) +
-            '" aria-label="Billable hours in one unit of ' + esc(row.name) + '" data-si="' + si + '" data-ri="' + ri +
-            '" data-field="hoursPerUnit" data-type="labour"> billable hrs'
-          : '') +
+        '" aria-label="Unit shown for ' + esc(row.name) + '">' +
+        LSCCalc.SERVICE_UNITS.map(opt).join('') + '</select>' +
+        (unit === 'hour' ? '' : ' · ' + LSCCalc.unitHours(card, unit) + ' billable hrs') +
         '</div></td>' +
         '<td style="text-align:right" data-label="Rate ($/hr)"><input type="text" readonly' +
         ' aria-readonly="true" aria-describedby="pricing-rate-note" class="pricing-rate-ro' +
-        (computedRate === null ? ' pricing-rate-none' : '') + (unit ? ' pricing-rate-day' : '') +
+        (computedRate === null ? ' pricing-rate-none' : '') + (unit === 'hour' ? '' : ' pricing-rate-day') +
         '" value="' + rateDisplay(row) +
         '" aria-label="Internal rate for ' + esc(row.name) + ', calculated automatically"></td>' +
-        '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01" value="' + num(row.mu) +
-        '" aria-label="Client rate for ' + esc(row.name) + '" aria-describedby="pfl-' + si + '-' + ri +
-        '" data-si="' + si + '" data-ri="' + ri + '" data-field="mu" data-type="labour">' +
-        '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + floorLineHtml(row) + '</div></td>' +
+        '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01"' +
+        ' class="pricing-price-inp' + (d.auto ? ' pricing-auto' : '') + '" value="' + (d.mu === null ? '' : esc(String(d.mu))) +
+        '" placeholder="—" aria-label="' + UNIT_ADJ[unit] + ' price for ' + esc(row.name) + '" aria-describedby="pfl-' + si + '-' + ri +
+        '" data-si="' + si + '" data-ri="' + ri + '" data-field="price" data-type="labour">' +
+        '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + stateLineHtml(row, si, ri) + '</div></td>' +
         '<td style="text-align:center" data-label="Custom"><input type="checkbox"' + (row.customBill ? ' checked' : '') +
         ' data-si="' + si + '" data-ri="' + ri + '" data-field="customBill" data-type="labour"' +
         ' aria-label="Allow a custom bill amount for ' + esc(row.name) + '"' +
@@ -577,10 +620,12 @@ const PricingView = (() => {
         if (!target) return;
 
         if (field === 'name') target.name = input.value;
-        else if (field === 'hoursPerUnit') {
-          /* Held as '' when blank, not num('') = 0: validation has to be able to
-             tell "no hours" from a number, and 0 would fall back to 1 silently. */
-          target.hoursPerUnit = input.value === '' ? '' : num(input.value);
+        else if (field === 'price') {
+          /* Typing pins the unit on show; an empty field is auto again. A
+             number input reads '' for anything it can't parse, too, so a
+             half-typed "1e" is auto for that moment, not $0. */
+          const n = input.value === '' ? NaN : parseFloat(input.value);
+          pricesOf(target)[unitOf(target)] = Number.isFinite(n) ? n : null;
         } else if (field === 'customBill' || field === 'directCost' || field === 'ownTime') {
           // Absent rather than false, matching the shape defaults.js ships.
           if (input.checked) target[field] = true;
@@ -596,67 +641,45 @@ const PricingView = (() => {
           }
         } else target[field] = num(input.value);
 
-        if (input.dataset.type === 'labour' && (field === 'mu' || field === 'hoursPerUnit')) {
+        if (input.dataset.type === 'labour' && field === 'price') {
           const si = parseInt(input.dataset.si, 10);
           const ri = parseInt(input.dataset.ri, 10);
-          refreshFloorLine(si, ri);
+          refreshRow(si, ri);
           /* The line is the Mark-Up's description, so it is read on focus; this
              is for the change while typing, spoken once typing pauses. */
           const line = root.querySelector('#pfl-' + si + '-' + ri);
           if (line) {
             LSCUtil.announce(
               $('pricing-floor-live'),
-              (String(target.name).trim() || 'This service') + ': ' + line.textContent.replace(/^floor —$/, 'no floor yet') + '.'
+              (String(target.name).trim() || 'This service') + ', ' + UNIT_WORD[unitOf(target)] + ': ' +
+                line.textContent.replace(/↺ use/, 'suggested').replace(/floor —/, 'no floor yet') + '.'
             );
           }
         }
       });
     });
 
-    /* The unit select. Changing it is structural — the hours field appears or
-       goes — so it re-renders, and puts focus back on the select it came from.
+    /* An auto price field: once left, show the auto figure again (emptying it
+       returned the unit to auto, and an empty box would read as no price).
+       On focus, select it, so typing replaces the suggestion rather than
+       appending to it. */
+    root.querySelectorAll('input[data-field="price"]').forEach((input) => {
+      input.addEventListener('change', () => refreshRow(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10)));
+      input.addEventListener('blur', () => refreshRow(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10)));
+      input.addEventListener('focus', () => {
+        if (input.classList.contains('pricing-auto')) input.select();
+      });
+    });
 
-       Switching an existing row between hourly and day units changes what its
-       QUANTITY means on every estimate edited from then on (8 on an estimate
-       stops meaning eight hours and starts meaning eight days). The bill is
-       still qty × Mark-Up, so saved figures don't move, but the next edit of
-       such an estimate would read differently — so when saved estimates use
-       the row, it asks first. */
+    /* The unit view switch. Re-renders the row's cells for the unit, and puts
+       focus back on the select it came from. View state only: not the card. */
     root.querySelectorAll('.pricing-unit-sel').forEach((sel) => {
       sel.addEventListener('change', () => {
         const si = parseInt(sel.dataset.si, 10);
         const ri = parseInt(sel.dataset.ri, 10);
-        const sec = card.labourSections[si];
-        const row = sec && sec.rows[ri];
+        const row = (card.labourSections[si] || { rows: [] }).rows[ri];
         if (!row) return;
-        const next = sel.value;
-        const wasDay = row.dayUnit === 'full' || row.dayUnit === 'half';
-        const isDay = next === 'full' || next === 'half';
-
-        if (wasDay !== isDay) {
-          const count = countUsingRow(sec.id, row.name);
-          if (count) {
-            const ok = window.confirm(
-              (count === 1 ? '1 saved estimate uses' : count + ' saved estimates use') + ' “' + row.name + '”.\n\n' +
-                'If ' + (count === 1 ? 'it is' : 'they are') + ' edited after this, the quantity on ' +
-                (count === 1 ? 'it' : 'them') + ' will count as ' + (isDay ? 'days' : 'hours') + ', not ' +
-                (isDay ? 'hours' : 'days') + '. What ' + (count === 1 ? 'it was' : 'they were') +
-                ' quoted at doesn’t change.\n\nChange the unit?'
-            );
-            if (!ok) {
-              sel.value = row.dayUnit || '';
-              return;
-            }
-          }
-        }
-
-        if (isDay) {
-          row.dayUnit = next;
-          row.hoursPerUnit = dayHours(next);
-        } else {
-          delete row.dayUnit;
-          delete row.hoursPerUnit;
-        }
+        viewUnits[row.id] = sel.value;
         render();
         const again = root.querySelector('.pricing-unit-sel[data-si="' + si + '"][data-ri="' + ri + '"]');
         if (again) again.focus();
@@ -673,7 +696,7 @@ const PricingView = (() => {
       card.labourSections.push({
         id: newSectionId(takenSectionIds()),
         label: 'New Category',
-        rows: [{ id: newRowId(), name: 'New Service', rate: 0, mu: 0 }],
+        rows: [{ id: newRowId(), name: 'New Service', rate: 0, prices: { hour: null, half: null, full: null } }],
       });
       render();
     });
@@ -684,7 +707,7 @@ const PricingView = (() => {
           id: newRowId(),
           name: 'New Service',
           rate: 0,
-          mu: 0,
+          prices: { hour: null, half: null, full: null },
         });
         render();
       });
@@ -755,20 +778,26 @@ const PricingView = (() => {
   /* Trim on the way out only. Trimming as the user types would eat the space
      between two words the moment it was pressed. */
   function payload() {
+    /* A typed price as the number it is; anything else is auto (null). Never
+       the resolved auto figure: see SERVICE UNITS above. */
+    const price = (row, unit) => {
+      const v = row.prices ? row.prices[unit] : null;
+      return typeof v === 'number' && Number.isFinite(v) ? v : null;
+    };
     return {
+      serviceDay: { fullHours: card.serviceDay.fullHours, halfHours: card.serviceDay.halfHours },
       labourSections: card.labourSections.map((sec) => ({
         id: sec.id,
         label: String(sec.label).trim(),
         rows: sec.rows.map((row) => {
-          const out = { id: row.id, name: String(row.name).trim(), rate: num(row.rate), mu: num(row.mu) };
+          const out = {
+            id: row.id,
+            name: String(row.name).trim(),
+            rate: num(row.rate),
+            prices: { hour: price(row, 'hour'), half: price(row, 'half'), full: price(row, 'full') },
+          };
           if (row.customBill) out.customBill = true;
           if (row.unit) out.unit = row.unit;
-          // Carried through — see "payload() USED TO DROP BOTH FIELDS" above.
-          // An hours value of 1 is the default and is left off, like every
-          // hourly row already on the card.
-          if (row.dayUnit === 'full' || row.dayUnit === 'half') out.dayUnit = row.dayUnit;
-          const hours = parseFloat(row.hoursPerUnit);
-          if (Number.isFinite(hours) && hours > 0 && hours !== 1) out.hoursPerUnit = hours;
           return out;
         }),
       })),
@@ -822,10 +851,26 @@ const PricingView = (() => {
       showError(
         err.kind === 'network'
           ? 'Couldn’t save — the server is unreachable. Your changes are still here; try again once it’s back.'
-          : 'Couldn’t save: ' + (err.message || 'the server refused the request.')
+          : 'Couldn’t save: ' + (SAVE_REFUSALS[err.code] || err.message || 'the server refused the request.')
       );
     }
   }
+
+  /* The route's refusal codes (server/src/routes/pricing.js) in words. The
+     first is the one a user can actually meet: a tab open across a deploy
+     sends a card in the shape it loaded, and the server refuses it rather than
+     letting it overwrite the new one. */
+  const SAVE_REFUSALS = {
+    pricing_shape_outdated:
+      'this page is out of date — the rate card has changed shape since it was opened. ' +
+      'Reload the page, then make your changes again.',
+    service_day_out_of_range: 'a service day must be between 0.5 and 24 hours, in half hours.',
+    service_day_half_over_full: 'a half day can’t be longer than a full day.',
+    labour_prices_incomplete: 'a service is missing one of its three prices. Reload the page and try again.',
+    labour_price_not_a_number: 'a price isn’t a number.',
+    labour_price_negative: 'a price can’t be negative.',
+    tax_set_aside_rate_not_a_fraction: 'the tax set-aside rate must be between 0 and 100.',
+  };
 
   async function reset() {
     if (saving) return;
@@ -893,9 +938,12 @@ const PricingView = (() => {
 
     const pricing = LSCData.pricing();
     card = clone({
+      // A card that predates v9 has none; the server's own default fills in.
+      serviceDay: pricing.serviceDay || { fullHours: 8, halfHours: 4 },
       labourSections: pricing.labourSections || [],
       travelRows: pricing.travelRows || [],
     });
+    viewUnits = {};
     taxRaw = toPercent(pricing.taxSetAsideRate);
     assignRowIds(card);
     /* Deliberately outside the working copy and outside snapshot(): this is
@@ -906,7 +954,8 @@ const PricingView = (() => {
        this column, the estimate editor's floor, the Capacity confirm and the
        Dashboard all use one computation. See data.js. */
     computedRate = LSCData.overheadRate();
-    perHourFloor = LSCData.incomeFloor();
+    priceCtx = LSCData.priceContext();
+    perHourFloor = priceCtx.floorPerHour;
     baseline = snapshot();
 
     render();
@@ -920,23 +969,58 @@ const PricingView = (() => {
       onScreen,
       dirty: () => snapshot() !== baseline,
     });
+    /* The state line's buttons, delegated: the line is rewritten as you type,
+       so a listener bound to one button would be lost with it. */
+    root.addEventListener('click', onStateLineClick);
     loadUsage();
     focusRow(handlers && handlers.focusRow);
   }
 
-  /* The Dashboard's "Below by $X" lands here with { sectionId, index } — the
-     row's section id and its position in that section, since names are
-     editable and needn't be unique. Focuses that row's Mark-Up, the one field
-     the gap is about, and centres it: a Mark-Up in the last category would
-     otherwise sit at the bottom edge. A row that has gone (the card changed in
-     between) just leaves the screen at the top, as a rail click would. */
+  function onStateLineClick(event) {
+    const btn = event.target.closest('.pricing-floor button');
+    if (!btn || !root.contains(btn)) return;
+    if (btn.dataset.stateTab) {
+      if (handlers.onGoTab) handlers.onGoTab(btn.dataset.stateTab);
+      return;
+    }
+    if (btn.hasAttribute('data-use-auto')) {
+      const si = parseInt(btn.dataset.si, 10);
+      const ri = parseInt(btn.dataset.ri, 10);
+      const row = (card.labourSections[si] || { rows: [] }).rows[ri];
+      if (!row) return;
+      pricesOf(row)[unitOf(row)] = null;
+      const inp = root.querySelector('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="price"]');
+      if (inp) inp.blur(); // so refreshRow rewrites its value
+      refreshRow(si, ri);
+      if (inp) inp.focus();
+      const d = resolve(row, unitOf(row));
+      LSCUtil.announce(
+        $('pricing-floor-live'),
+        (String(row.name).trim() || 'This service') + ', ' + UNIT_WORD[unitOf(row)] + ': back to auto' +
+          (d.mu === null ? ', no price yet.' : ', ' + money(d.mu) + '.')
+      );
+    }
+  }
+
+  /* The Dashboard's "Below by $X" lands here with { sectionId, index, unit }:
+     the row's section id and its position in that section, since names are
+     editable and needn't be unique, and the unit the gap is on (hour when
+     absent). Shows that unit, focuses the price — the one field the gap is
+     about — and centres it: a price in the last category would otherwise sit
+     at the bottom edge. A row that has gone (the card changed in between) just
+     leaves the screen at the top, as a rail click would. */
   function focusRow(target) {
     if (!target || typeof target !== 'object') return;
     const si = card.labourSections.findIndex((sec) => String(sec.id) === String(target.sectionId));
     if (si < 0) return;
-    const inp = root.querySelector(
-      'input[data-si="' + si + '"][data-ri="' + Number(target.index) + '"][data-field="mu"]'
-    );
+    const ri = Number(target.index);
+    const row = card.labourSections[si].rows[ri];
+    if (!row) return;
+    if (LSCCalc.SERVICE_UNITS.indexOf(target.unit) !== -1 && unitOf(row) !== target.unit) {
+      viewUnits[row.id] = target.unit;
+      render();
+    }
+    const inp = root.querySelector('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="price"]');
     if (!inp) return;
     inp.focus({ preventScroll: true });
     inp.scrollIntoView({ block: 'center' });
