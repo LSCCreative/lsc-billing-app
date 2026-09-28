@@ -464,6 +464,14 @@ slices, shares sum to 100.0, no errors.
 **Deploy order: NAS before Pages** — a Pages build offering the new categories to the old server
 would have its saves refused by the old CHECK.
 
+**Deployed 2026-09-28 (~14:40 AEST), NAS first, with the user's go-ahead.** Build files
+md5-identical (cached layers). Backup `/volume4/lsc-billing/data/backups/pre-v8-20260928-1438.db`,
+integrity ok (v7, 9 overhead items: 3 hosting, 5 other, 1 software). Same `tar` copy; compose and
+`.env` unchanged. Boot log `migrated to v8`, container `healthy`; live DB integrity ok, v8, all 9
+items in their categories, and the live table's CHECK lists the four new values (read from its
+schema, no test row written). Public `/health` 200. Then Pages run 36378735057, success; live
+`overhead.js` and `overhead-charts.js` carry the change.
+
 ## What landed (2026-09-28) — audit fixes
 
 The money-math audit (`/code-review`, 15 findings) — all fixed, four of them after the user
