@@ -146,6 +146,48 @@
  * before this existed. Before, every save re-priced a quote against today's
  * card and a renamed service silently fell out of the total while the PDF
  * still listed it. See lineDef below.
+ *
+ * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/). A labour service
+ * carries three prices — `prices: { hour, half, full }` — instead of one `mu`,
+ * and a card-level `serviceDay: { fullHours, halfHours }` (8 / 4) says how many
+ * billable hours a day on a job is. That is deliberately NOT Capacity's
+ * billable hours per day, which is a yearly planning average. Three decisions:
+ *
+ *   1. AUTO IS DERIVED ON READ, NEVER STORED. A price the user has not typed is
+ *      `null` on the card, and unitDef computes it each time from the income
+ *      floor and Target Markup (suggestedPrice). Storing it would freeze it at
+ *      whatever the goals were on the day it was written, and "follows the
+ *      numbers until you type over it" would need a second flag to remember
+ *      which numbers were typed. This overturns price-calculator's "nothing
+ *      auto-writes the rate card" knowingly. Quotes are still safe: a line
+ *      added to an estimate snapshots the resolved price (lineSnapshot), so a
+ *      goals change moves the card, never a saved quote.
+ *
+ *   2. `mu: null` MEANS "NO PRICE YET", NEVER $0. An auto unit with no income
+ *      floor (tax scale unsaved, no capacity) or no markup cannot be priced.
+ *      Reading that as 0 would put a free line on a quote and badge nothing,
+ *      because $0 is below every floor only once there is a floor. Callers
+ *      disable the unit or show "—". A typed 0, by contrast, is a real price.
+ *
+ *   3. UP TO THE WHOLE DOLLAR, AND NEVER BELOW THE TARGET. An auto price is the
+ *      smallest whole dollar whose GST-exclusive part reaches floor × hours ×
+ *      (1 + markup), cent-rounded. Up, because rounding down would sell the
+ *      unit under the figure it was derived from; whole dollars, because that
+ *      is how the card is priced by hand. Each unit is rounded on its own, so a
+ *      full day is never 8 × a rounded hour. The brief's literal recipe —
+ *      multiply in GST, cent-round, ceil — lands 1¢ under the floor on some
+ *      GST-inclusive cards at 0% markup (half-cent edges; a sweep found ~130),
+ *      so the search is done against priceExGst, the same function the floor
+ *      comparison takes GST out with. Where the two differ it is by +$1.
+ *
+ *   4. THE SERVER NEVER RESOLVES AN AUTO PRICE. It has no income floor to hand
+ *      (that needs goals, overhead and capacity together), so lineDef's
+ *      fallback for a line with no snapshot prices only a unit the user typed,
+ *      and treats an auto one as a service gone from the card. That path is
+ *      near-dead: migration v9 snapshots every legacy line before it reshapes
+ *      the card. serviceFloorComparison, by contrast, runs in the browser and
+ *      prices auto units from the same floor it compares them against, so an
+ *      auto unit can never be badged below the floor it was derived from.
  */
 
 /** Money is stored and compared at cent precision, never as raw float sums. */
@@ -180,14 +222,25 @@ const hasSnapshot = (line) => Boolean(line) && line.mu !== undefined && line.mu 
  * whose service has since gone from the card, which prices at nothing, as it
  * always did.
  *
+ * A row that carries `prices` (a service with hour / half / full prices) is
+ * resolved at the line's unit — `line.dayUnit`, or an hour — through unitDef.
+ *
  * @param {Array<object>} defs — the rate-card rows to fall back to.
  * @param {object} line — a saved line.
+ * @param {object} [pricing] — the whole card, for its serviceDay; without it a
+ *   day unit falls back to 8 / 4 hours (unitHours).
  */
-function lineDef(defs, line) {
+function lineDef(defs, line, pricing) {
   if (!line) return null;
   if (hasSnapshot(line)) return line;
   const rows = defs || [];
-  return (line.rowId && rows.find((r) => r.id === line.rowId)) || rows.find((r) => r.name === line.name) || null;
+  const row = (line.rowId && rows.find((r) => r.id === line.rowId)) || rows.find((r) => r.name === line.name) || null;
+  if (!row || !row.prices) return row;
+  /* A service with three prices: the one for the line's own unit, if the
+     user typed it. An auto unit has no price here (decision 4 under SERVICE
+     UNITS), and prices at nothing, as a missing row does. */
+  const def = unitDef(row, line.dayUnit === 'full' || line.dayUnit === 'half' ? line.dayUnit : 'hour', pricing);
+  return def && def.mu !== null ? def : null;
 }
 
 /**
@@ -290,7 +343,7 @@ function computeTotals(activeRows, pricing, settings, options) {
   for (const section of labourSectionsOf(rows, labourSections)) {
     const saved = rows[section.id] || [];
     for (const line of saved) {
-      const def = lineDef(section.rows, line);
+      const def = lineDef(section.rows, line, pricing);
       if (!def) continue; // a pre-snapshot line whose service has left the card
       const qty = nonNeg(line.qty);
       totalHours += qty * hoursPerUnitOf(def);
@@ -678,7 +731,7 @@ function labourHoursBreakdown(activeRows, pricing) {
 
   for (const section of labourSectionsOf(rows, labourSections)) {
     for (const line of rows[section.id] || []) {
-      const def = lineDef(section.rows, line);
+      const def = lineDef(section.rows, line, pricing);
       if (!def) continue; // same rule as computeTotals
       const qty = nonNeg(line.qty);
       const perUnit = hoursPerUnitOf(def);
@@ -1210,6 +1263,117 @@ function priceExGst(price, settings) {
   return round2(p);
 }
 
+/* ── Service units: one service, three prices ─────────────────────────────────
+   Added 2026-09-28 for service rate tiers. The why is SERVICE UNITS in the
+   header. Nothing here reads Capacity: a service day is the card's own. */
+
+/** The units a labour service is priced in, in the order every screen lists them. */
+const SERVICE_UNITS = ['hour', 'half', 'full'];
+
+/* A service day when the card does not say usably. */
+const SERVICE_DAY_FALLBACK = { full: 8, half: 4 };
+
+/**
+ * Billable hours in one unit of a service.
+ *
+ * `hour` is 1 by definition. `half` and `full` come from the card's
+ * serviceDay; a missing, zero, negative, above-24 or non-numeric value falls
+ * back to 4 / 8. Never null, for the same reason as hoursPerUnitOf: an hours
+ * figure that read as nothing would drop a shoot out of the overhead
+ * allocation. The Rate Card refuses to save such a value, so the fallback only
+ * covers a hand-edited or half-migrated card. Anything that is not `half` or
+ * `full` is an hour.
+ *
+ * @param {object} pricing — the rate card; only serviceDay is read.
+ * @param {string} unit — 'hour' | 'half' | 'full'.
+ * @returns {number} a positive number of hours.
+ */
+function unitHours(pricing, unit) {
+  if (unit !== 'half' && unit !== 'full') return 1;
+  const day = (pricing && pricing.serviceDay) || {};
+  const h = numOrNull(unit === 'full' ? day.fullHours : day.halfHours);
+  return h !== null && h > 0 && h <= 24 ? h : SERVICE_DAY_FALLBACK[unit];
+}
+
+/**
+ * The auto price for a unit of work: the income floor for its hours plus the
+ * target markup, as the smallest whole dollar that covers it.
+ *
+ *   target = round2(floorPerHour × hours × (1 + markupPct ÷ 100))
+ *   price  = the least whole dollar p with priceExGst(p, settings) ≥ target
+ *
+ * which is ceil(target) on a GST-exclusive card, and about ceil(target × (1 +
+ * gst.rate)) on a GST-inclusive one — see decision 3 under SERVICE UNITS for
+ * why it is a search rather than that multiplication.
+ *
+ * @param {number|null} floorPerHour — incomeFloorPerHour(), GST-exclusive.
+ * @param {number} hours — unitHours() for the unit.
+ * @param {number|null} markupPct — a PERCENT (25 is 25%). See UNITS above.
+ * @param {object} settings — { gst: { registered, rate, pricesIncludeGst } }.
+ * @returns {number|null} whole dollars; null when there is no floor, no usable
+ *   hours, or no markup set. A 0% markup is a real answer (the floor, rounded
+ *   up); a missing or negative one is not, because a price that silently left
+ *   it out would read as the real one.
+ */
+function suggestedPrice(floorPerHour, hours, markupPct, settings) {
+  const floor = numOrNull(floorPerHour);
+  if (floor === null || floor <= 0) return null;
+  const h = numOrNull(hours);
+  if (h === null || h <= 0) return null;
+  const markup = numOrNull(markupPct);
+  if (markup === null || markup < 0) return null;
+
+  const target = round2(floor * h * (1 + markup / 100));
+  const gstCfg = (settings && settings.gst) || {};
+  if (gstCfg.registered !== true || gstCfg.pricesIncludeGst !== true) return Math.ceil(target);
+
+  const rate = num(gstCfg.rate);
+  if (rate < 0) return null;
+  /* Start at or just under the answer; priceExGst is non-decreasing in the
+     price, so this steps up at most twice. */
+  let price = Math.floor(target * (1 + rate));
+  while (priceExGst(price, settings) < target) price += 1;
+  return price;
+}
+
+/**
+ * One service at one unit, as the flat row every existing caller already
+ * prices from: { id, name, mu, auto, rate, customBill, hoursPerUnit, dayUnit }.
+ * lineSnapshot, lineDef's snapshot path and computeTotals take it unchanged —
+ * which is the point: none of them had to learn about `prices`.
+ *
+ * A number in row.prices[unit] is set by the user and comes back exactly as
+ * stored, unrounded. null / missing / blank is auto, priced by suggestedPrice
+ * from ctx; `mu: null` then means no price is available, never $0 (decision 2
+ * under SERVICE UNITS). `dayUnit` is present only for half and full, as on the
+ * old day rows; rate and customBill only when the row has them.
+ *
+ * @param {object} row — a labour row carrying `prices`.
+ * @param {string} unit — 'hour' | 'half' | 'full'.
+ * @param {object} pricing — the rate card, for serviceDay.
+ * @param {object} [ctx] — { floorPerHour, markupPct, settings }; the browser
+ *   builds it with LSCData.priceContext(). Without it every auto unit is null.
+ * @returns {object|null} null for no row or a unit off the list.
+ */
+function unitDef(row, unit, pricing, ctx) {
+  if (!row || SERVICE_UNITS.indexOf(unit) === -1) return null;
+  const hours = unitHours(pricing, unit);
+  const stored = row.prices ? numOrNull(row.prices[unit]) : null;
+  const auto = stored === null;
+  const c = ctx || {};
+  const def = {
+    id: row.id,
+    name: row.name,
+    mu: auto ? suggestedPrice(c.floorPerHour, hours, c.markupPct, c.settings) : stored,
+    auto,
+  };
+  if (row.rate !== undefined) def.rate = row.rate;
+  if (row.customBill) def.customBill = true;
+  def.hoursPerUnit = hours;
+  if (unit !== 'hour') def.dayUnit = unit;
+  return def;
+}
+
 /**
  * Every labour row on the rate card beside the floor for one unit of it.
  *
@@ -1253,6 +1417,66 @@ function labourFloorComparison(pricing, settings, floorPerHour) {
         belowFloor,
       });
     }
+  }
+  return out;
+}
+
+/**
+ * Every labour service on the rate card, each of its three units beside the
+ * floor for that unit. What labourFloorComparison does per row, done per
+ * service × unit; it replaces that function once the Dashboard moves over.
+ *
+ * A unit's floor is floorPerHour × unitHours. It is compared against the
+ * unit's price as unitDef resolves it — the typed one, or the auto one — with
+ * GST taken out (priceExGst), never against `rate`. Exactly at the floor is not
+ * below it. Labour only; travel is excluded for the reasons given on
+ * labourFloorComparison.
+ *
+ * An auto unit is priced from THIS function's floorPerHour and settings; only
+ * ctx.markupPct is read from ctx. So an auto price and the floor it is set
+ * against can never come from two different floors, and by construction (see
+ * suggestedPrice) an auto unit is never below its floor. Without ctx, or with
+ * no markup, every auto unit has no price.
+ *
+ * @param {object} pricing — a rate card whose labour rows carry `prices`.
+ * @param {object} settings — { gst: { registered, rate, pricesIncludeGst } }.
+ * @param {number|null} floorPerHour — incomeFloorPerHour(), GST-exclusive.
+ * @param {object} [ctx] — { markupPct }; LSCData.priceContext() in the browser.
+ * @returns {Array<object>} one entry per labour service, in rate-card order:
+ *   { sectionId, sectionLabel, rowIndex, name, units: { hour, half, full } },
+ *   each unit { mu, muExGst, auto, hoursPerUnit, floor, gap, belowFloor }.
+ *   When there is no floor, or the unit has no price (mu null), floor-derived
+ *   answers are null — "can't tell", which is neither "fine" nor "below".
+ */
+function serviceFloorComparison(pricing, settings, floorPerHour, ctx) {
+  const perHour = numOrNull(floorPerHour);
+  const hasFloor = perHour !== null && perHour > 0;
+  const priceCtx = { floorPerHour: perHour, markupPct: ctx ? ctx.markupPct : null, settings };
+  const sections = (pricing && pricing.labourSections) || [];
+  const out = [];
+
+  for (const section of sections) {
+    (section.rows || []).forEach((row, rowIndex) => {
+      const units = {};
+      for (const unit of SERVICE_UNITS) {
+        const def = unitDef(row, unit, pricing, priceCtx);
+        const muExGst = def.mu === null ? null : priceExGst(def.mu, settings);
+        const floor = hasFloor ? round2(perHour * def.hoursPerUnit) : null;
+        /* Both sides in cents, so a unit priced exactly at its floor is not
+           badged by float noise. */
+        const belowFloor = floor === null || muExGst === null ? null : muExGst < floor;
+        units[unit] = {
+          mu: def.mu,
+          muExGst,
+          auto: def.auto,
+          hoursPerUnit: def.hoursPerUnit,
+          floor,
+          gap: belowFloor ? round2(floor - muExGst) : belowFloor === null ? null : 0,
+          belowFloor,
+        };
+      }
+      out.push({ sectionId: section.id, sectionLabel: section.label, rowIndex, name: row.name, units });
+    });
   }
   return out;
 }
@@ -1424,6 +1648,11 @@ if (typeof module === 'object' && module.exports) {
     hourlyFloor,
     priceExGst,
     labourFloorComparison,
+    serviceFloorComparison,
+    unitHours,
+    suggestedPrice,
+    unitDef,
+    SERVICE_UNITS,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -1462,6 +1691,11 @@ if (typeof module === 'object' && module.exports) {
     hourlyFloor,
     priceExGst,
     labourFloorComparison,
+    serviceFloorComparison,
+    unitHours,
+    suggestedPrice,
+    unitDef,
+    SERVICE_UNITS,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
