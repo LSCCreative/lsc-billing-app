@@ -209,3 +209,11 @@ console errors. The NAS-to-Pages gap was about a minute.
 **Only the user can do:** save the FY 2026–27 tax scale on Profit Goals (until then every auto
 hourly, and any auto day on one, reads `—`), and fold the old "— Full Day" / "— Half Day" rows into
 their services by hand.
+
+## Deployed again 2026-09-29 (~13:00 AEST): D1–D4 and R5–R7, R10–R14
+
+Committed `29ad237`. `npm test` 253 pass; both `calc.js` copies identical. Backup
+`/volume4/lsc-billing/data/backups/pre-d1r5-<timestamp>.db` (integrity ok). NAS: same tar redeploy,
+`docker compose up -d --build`, healthy, `/health` 200, container's `calc.js` carries `serviceDayOk`,
+DB integrity ok. Pages run 36515420045 succeeded; live `calc.js` carries `serviceDayOk`. No schema
+change. Still open: R8 (needs a person in Safari) and the VoiceOver pass.
