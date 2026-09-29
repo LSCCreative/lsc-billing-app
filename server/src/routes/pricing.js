@@ -3,10 +3,7 @@
 const { nowIso } = require('../db');
 const { DEFAULT_PRICING } = require('../defaults');
 const { readPricing } = require('../ratecard');
-const { SERVICE_UNITS, cardShapeOutdated } = require('../calc');
-
-/** A service-day length: 0.5 to 24 hours, in half hours. */
-const dayHoursOk = (v) => typeof v === 'number' && v >= 0.5 && v <= 24 && Number.isInteger(v * 2);
+const { SERVICE_UNITS, cardShapeOutdated, serviceDayOk } = require('../calc');
 
 /**
  * The money-bearing fields of a rate card, checked before it is stored
@@ -37,7 +34,7 @@ function pricingProblem(body) {
   if (cardShapeOutdated(body)) return 'pricing_shape_outdated';
 
   const { fullHours, halfHours } = body.serviceDay;
-  if (!dayHoursOk(fullHours) || !dayHoursOk(halfHours)) return 'service_day_out_of_range';
+  if (!serviceDayOk(fullHours) || !serviceDayOk(halfHours)) return 'service_day_out_of_range';
   if (halfHours > fullHours) return 'service_day_half_over_full';
 
   if (body.taxSetAsideRate !== undefined) {

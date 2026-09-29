@@ -1320,6 +1320,24 @@ function cardShapeOutdated(pricing) {
   );
 }
 
+/**
+ * Whether an hours figure is a service-day length a card can be saved with:
+ * 0.5 to 24, in half hours. The one definition: PUT /api/pricing refuses a
+ * card on it (service_day_out_of_range) and the Rate Card refuses a save on
+ * it, so the two can't disagree about what a valid day is.
+ *
+ * unitHours() below is deliberately looser (any figure above 0 and up to 24).
+ * It prices what is on screen while a figure is still being typed ("7.3"
+ * reads as 7.3 hours until the save refuses it), and a stored card has always
+ * passed this check, so the two only differ on a working copy.
+ *
+ * @param {*} v — the figure as held: a number, or anything else for "not one".
+ * @returns {boolean}
+ */
+function serviceDayOk(v) {
+  return typeof v === 'number' && v >= 0.5 && v <= 24 && Number.isInteger(v * 2);
+}
+
 /* A service day when the card does not say usably. */
 const SERVICE_DAY_FALLBACK = { full: 8, half: 4 };
 
@@ -1671,6 +1689,7 @@ if (typeof module === 'object' && module.exports) {
     priceExGst,
     serviceFloorComparison,
     unitHours,
+    serviceDayOk,
     suggestedPrice,
     unitDef,
     SERVICE_UNITS,
@@ -1715,6 +1734,7 @@ if (typeof module === 'object' && module.exports) {
     priceExGst,
     serviceFloorComparison,
     unitHours,
+    serviceDayOk,
     suggestedPrice,
     unitDef,
     SERVICE_UNITS,

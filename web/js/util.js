@@ -9,6 +9,14 @@ const LSCUtil = (() => {
     return '$' + (parseFloat(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
 
+  /* A price in a sentence or an option: whole dollars without the cents
+     ("$1,120": every auto hourly price, and most typed ones), anything else to
+     the cent, as fmt. The Rate Card's "↺ use $1,120" and the estimator's
+     "Full day · $1,120" both read it, so they can't format one price two ways. */
+  function money(n) {
+    return Number.isInteger(n) ? '$' + n.toLocaleString('en-AU') : fmt(n);
+  }
+
   /* The desktop version left `'` alone, which was safe only because every
      attribute it built was double-quoted. Escaping it too costs nothing and
      removes the need to remember that. */
@@ -157,5 +165,5 @@ const LSCUtil = (() => {
     );
   }
 
-  return { fmt, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce };
+  return { fmt, money, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce };
 })();

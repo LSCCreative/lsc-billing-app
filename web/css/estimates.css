@@ -453,11 +453,18 @@
   background: #1e2228;
   color: var(--text);
 }
-/* The picker's unit select sits between the service select and Add: as wide as
-   its options ("Full day · no price yet, needs Profit Goals"), not sharing the service select's
-   flex:1. Below 768px responsive.css stacks both full width. */
+/* The picker's unit select sits between the service select and Add, at one
+   fixed width rather than the service select's flex:1. It used to be as wide
+   as its longest option, so Add sat 6px further right in Production than in
+   the other blocks, and 259px out for a service with a "no price yet, needs
+   Profit Goals" option (design review D4). The closed select only needs
+   "Full day · $1,600"; a longer option is clipped there and shown whole in
+   the open list. min-width:0 lets it clip rather than grow to that option.
+   Below 768px responsive.css stacks both full width. */
 .bb-picker .unit-select {
-  flex: 0 0 auto;
+  flex: 0 0 10.5em;
+  width: 10.5em;
+  min-width: 0;
   max-width: none;
 }
 .bb-picker .unit-select:disabled {

@@ -16,6 +16,7 @@ const {
   labourHoursBreakdown,
   targetAnnualRevenue,
   hoursPerUnitOf,
+  serviceDayOk,
   annualBillableHours,
   replacementReserveTotal,
   annualBusinessCost,
@@ -986,6 +987,15 @@ test('unitHours: an unusable service day falls back to 8 / 4, never to 0', () =>
     assert.equal(unitHours(card, 'half'), 4, 'half day from ' + String(bad));
   }
   assert.equal(unitHours({ serviceDay: { fullHours: 24 } }, 'full'), 24);
+});
+
+test('serviceDayOk: 0.5 to 24 hours in half hours, a number only; unitHours stays looser', () => {
+  for (const ok of [0.5, 1, 4, 7.5, 8, 23.5, 24]) assert.equal(serviceDayOk(ok), true, String(ok));
+  for (const bad of [0, 0.25, 7.3, 24.5, -4, '8', '', null, undefined, NaN, Infinity]) {
+    assert.equal(serviceDayOk(bad), false, String(bad));
+  }
+  // A figure mid-typing prices as typed; only saving it is refused.
+  assert.equal(unitHours({ serviceDay: { fullHours: 7.3 } }, 'full'), 7.3);
 });
 
 test('cardShapeOutdated: the v8 card is outdated, the v9 default is not, and one old row is enough', () => {

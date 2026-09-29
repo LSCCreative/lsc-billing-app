@@ -668,7 +668,7 @@ math, and a browser check for anything a person looks at.
   - The scratch card was then restored exactly (`updated_at` 2026-09-28T08:36:12.270Z) from the
     server's pre-write backup taken before the test.
 
-- [ ] **R5. Turning "Use rates from last project" off can leave a line unpriced and unit-less**
+- [x] **R5. Turning "Use rates from last project" off can leave a line unpriced and unit-less**
   (money math — Opus/high). `markOwn` (`estimate-editor.js` ~l.210) stores `prevSnap = 'none'`
   when a line takes last time's price for a unit that has no price on today's card. Turning the
   toggle off runs `reprice(tr, {})`, which drops `mu`, `dayUnit` and `hoursPerUnit`. The line shows
@@ -678,14 +678,36 @@ math, and a browser check for anything a person looks at.
   last time's snapshot on toggle-off, or remove the line and announce why. At minimum, keep the
   unit.
 
-- [ ] **R6. "Update to current rates" counts unchanged hourly lines as updated** (money math —
+  **Done 2026-09-29** (on `main`, uncommitted). `markOwn` no longer marks such a line `'none'`.
+  When today's card has no price at the unit, it clears `prevSnap` and marks the line `lastOnly`.
+  Toggle-off then leaves it on last time's snapshot, with its unit, hours and price. The rates note
+  adds "N line(s) kept last project's price: today's rate card has no price at its unit yet."
+  `reprice` carries `lastOnly` alongside `prevSnap`. `'none'` is still used for the case it was
+  meant for, a legacy line with no snapshot. **Verified, before and after** (headless Chrome, the
+  scratch API, a synthetic last project injected into `/api/estimates` in the page, and the income
+  floor removed in memory; nothing saved). Toggle on, then add "Video Capture — Full Day" per hour
+  at last time's $950 (today's hourly is auto with no floor). Toggle off. HEAD: the line lost its
+  snapshot and showed `——`. Now: $950 per hour, the note says why, and "Update to current rates"
+  reports it as "1 line at a unit with no price on it yet kept its price." The other line (today
+  $200, last time $180) still goes back to $200.
+
+- [x] **R6. "Update to current rates" counts unchanged hourly lines as updated** (money math —
   Opus/high). `unitDef` always sets `hoursPerUnit`, so `cardSnap` for an hour carries
   `hoursPerUnit: 1`. Pre-v9 snapshots, and every line the v9 migration snapshotted, don't have the
   key. The `JSON.stringify` comparison (~l.1146) therefore rebuilds every such line and reports
   "N prices updated" even when no price moved. *Fix direction:* compare `mu`, the unit (`unitKey`)
   and hours, or normalise both snapshots through the same function before comparing.
 
-- [ ] **R7. "needs Profit Goals" is wrong when Capacity is the blocker** (frontend — Opus/high).
+  **Done 2026-09-29.** New `samePrice(a, b, travel)` in `estimate-editor.js` compares `mu`,
+  `unitKey`, `hoursPerUnitOf`, `directCost` / `ownTime` / `customBill`, and a travel line's `rate`.
+  It leaves out `rowId` (how the line was found) and a labour line's inert `rate`. A line with no
+  snapshot is always re-priced, as before. **Verified, HEAD vs now**, on scratch estimate
+  `est_8dca1cee` (Video Capture, $200 hourly, pre-v9 snapshot without `hoursPerUnit`, card at
+  $200). HEAD said "1 price updated to the rate card." and left the estimate with unsaved
+  changes. Now it says "Every price already matches the rate card." and nothing is unsaved.
+  `est_2e29df61` ($140 against the card's $200) still reads "1 price updated" in both.
+
+- [x] **R7. "needs Profit Goals" is wrong when Capacity is the blocker** (frontend — Opus/high).
   An auto unit with no price is always "no price yet, needs Profit Goals": in the estimator's
   options (`estimate-editor.js` ~l.236), `unitProblem` (`pricing.js` ~l.297), `stateSentence`, and
   the Rate Card link that opens Goals. The income floor is also null when Capacity has no billable
@@ -695,6 +717,22 @@ math, and a browser check for anything a person looks at.
   logic) that names the right screen and links there. This changes IA copy, so note it as a
   deviation.
 
+  **Done 2026-09-29.** `LSCData.floorBlockers()` in `data.js` is the Dashboard's old list
+  (Capacity's hours, Overhead's running costs, the income goal, the tax scale), each as `{ tab,
+  screen, what }`. The Dashboard now maps it to its links. `LSCData.autoPriceBlocker()` returns
+  the first blocker, else Profit Goals, which also holds Target Markup. The Rate Card reads it with
+  `priceCtx` (at mount and in `refreshPrices`). Its state line reads "needs Capacity" and links to
+  that tab, and the same goes for its sentence, option text and hidden-unit notice. The estimator's
+  disabled options read "no price yet, needs Capacity". **Deviation from the IA copy, as the item
+  asked to note:** the screen named is whichever is actually in the way, and the sentence now reads
+  "until Capacity is set up." ("… is set." before). One more difference: the Dashboard's check
+  for Capacity is now "hours > 0", not "hours isn't null". So zero billable hours, which gives no
+  floor either, is now named as a blocker instead of leaving the floors at "—" with no note.
+  **Verified:** with billable hours at 0 in memory, the Rate Card reads "needs Capacity" (aria
+  "needs Capacity: open Capacity"), the link opens Capacity, the Dashboard reads "Set up your
+  capacity to see your floors.", and the estimator reads "Hour · no price yet, needs Capacity
+  (disabled)". With the income goal unset, everything still says Profit Goals.
+
 - [ ] **R8. Select-on-focus may not survive a mouse click** (frontend — Opus/high; **verify
   first**). Auto price fields call `input.select()` in their focus handler (`pricing.js` ~l.859) so
   that typing replaces the suggestion. In WebKit/Blink, the mouseup after a click-to-focus can clear
@@ -703,25 +741,48 @@ math, and a browser check for anything a person looks at.
   changing anything. *Fix direction if confirmed:* suppress the first `mouseup` after focus, or
   select in a `requestAnimationFrame`.
 
-- [ ] **R9. The PDF prints a service twice with no unit** (**settled: the user's call**, see the
+  **Checked in Chrome 2026-09-29, not reproduced there; Safari not checked, so nothing changed.**
+  A real mouse click (CDP `Input.dispatchMouseEvent`, puppeteer `mouse.click`) on an auto
+  field reading 103, then typing "150", left **150**. The selection survived the mouseup. Safari
+  couldn't be driven: `safaridriver` refuses a session until "Allow remote automation" is on in
+  Safari's Developer settings, which is the user's to switch on, not an agent's. **Still open:
+  a person clicks an auto price in Safari and types.** If it reads "103150", apply the fix
+  direction above.
+
+- [x] **R9. The PDF prints a service twice with no unit** (**settled: the user's call**, see the
   handover's "The PDF keeps service name only"). `server/src/pdf.js` ~l.58 prints only `line.name`,
   so "Video Capture" at Full day and at Hour read as two identical lines. It's listed because the
   review flagged it. Change it only if the user reopens that decision.
 
+  **Closed 2026-09-29, no change**: the user's settled decision (service name only on the PDF).
+
 ### Cleanup
 
-- [ ] **R10. `dayHoursOk` is duplicated on the server and the web** (money math — Opus/high;
+- [x] **R10. `dayHoursOk` is duplicated on the server and the web** (money math — Opus/high;
   touches `calc.js`). It's defined word for word in `routes/pricing.js` ~l.17 and `pricing.js`
   ~l.398, while the shared `calc.js` has `unitHours` with a looser rule (>0 and ≤24, any
   fraction). That makes three definitions of a valid service day. *Fix direction:* export one
   `serviceDayOk` from `calc.js` (both copies) and use it on both sides.
 
-- [ ] **R11. `money()` is duplicated** (frontend — Opus/high). The same whole-dollar-or-cents
+  **Done 2026-09-29.** `serviceDayOk(v)` is in `calc.js` (both copies, both export shapes).
+  `routes/pricing.js` uses it for `service_day_out_of_range`, and the Rate Card uses it for its
+  save check and its "Auto prices updated" announcement (`dayHoursOk = LSCCalc.serviceDayOk`).
+  `unitHours` **keeps its looser rule on purpose**: it prices what's on screen while a figure is
+  still being typed ("7.3" reads as 7.3 hours until the save refuses it), and a stored card
+  always passes `serviceDayOk`, so the two only differ on a working copy. calc.js's docblock says
+  so. New test in `test-calc.js` (253 total). **Mutations checked, all caught (2 failures each,
+  the calc test and the route test):** no half-hour step, a 25 h cap, and no number check (a
+  string "8" accepted).
+
+- [x] **R11. `money()` is duplicated** (frontend — Opus/high). The same whole-dollar-or-cents
   formatter is in `pricing.js` ~l.221 and `estimate-editor.js` ~l.165. The estimator's "Full day ·
   $1,120" and the Rate Card's `↺ use $1,120` depend on two copies. *Fix direction:* move it into
   `LSCUtil` beside `fmt`.
 
-- [ ] **R12. `compare()` runs about 5× per row refresh** (money math — Opus/high; renders computed
+  **Done 2026-09-29.** `LSCUtil.money` in `util.js`, beside `fmt`. Both views bind
+  `const money = LSCUtil.money`.
+
+- [x] **R12. `compare()` runs about 5× per row refresh** (money math — Opus/high; renders computed
   prices). `stateLineHtml`, `stateSentence` and `rowMetaHtml` (via `unitProblem` ×3) each run the
   one-row `serviceFloorComparison`, which computes all three units and keeps one, plus `autoPrice`
   twice. That's about 15 `unitDef` calls per row per keystroke, times the row count on each Service
@@ -729,7 +790,19 @@ math, and a browser check for anything a person looks at.
   the `units` object to all three. That also removes the duplicated branching between
   `stateLineHtml` and `stateSentence`.
 
-- [ ] **R13. The blur handler does more than it needs; `rewrite()` papers over it** (frontend —
+  **Done 2026-09-29.** `unitsOf(row)` runs the one-row comparison once per paint of a row.
+  `unitState(row, unit, units)` turns the unit on show into `{ kind: unpriced | auto | set, gap,
+  floor, suggestion }`, and `stateLineHtml`, `stateSentence` and `rowMetaHtml` / `unitProblem`
+  all read that. The branching lives in one place, and `stateSentence` takes just the state.
+  `refreshRow` returns the sentence for the typing announcement. **Measured with the committed
+  (HEAD) `pricing.js` swapped in on disk:** comparisons per keystroke went from 6 to 1, and per
+  Service Day keystroke on the 21-row scratch card from 110 to 21. **Output unchanged:** every
+  labour row's field value, auto class, labels, unit line, option text, button names, state line,
+  sentence and rate were dumped over 7 states (load, typed 60, emptied, Full day 10 hrs, Show →
+  Half day, typed 100, blurred), each with a floor, with no income goal and with no billable
+  hours. Against HEAD there were 0 differences other than R7's intended wording.
+
+- [x] **R13. The blur handler does more than it needs; `rewrite()` papers over it** (frontend —
   Opus/high; a11y). The price field's blur (`pricing.js` ~l.857) runs the whole `refreshRow`, and
   `rewrite()` string-compares `innerHTML` so that it doesn't destroy the `↺` that Tab is moving
   focus to. Blur only needs to restore the field's auto figure, because the state line is already
@@ -738,9 +811,20 @@ math, and a browser check for anything a person looks at.
   only. Keep `rewrite()` only if another caller still needs it. Re-walk task 9's Tab path
   afterwards.
 
-- [ ] **R14. The temporary `launch.json` entries are still there** (any). `api-v9-scratch` and
+  **Done 2026-09-29.** The price field's `blur` now only runs `paintPrice` (value and
+  `pricing-auto` class). Its `change` handler is gone, because every edit already ran `refreshRow`
+  from `input`. `rewrite()` is gone too, since no caller still needed it: every other
+  `refreshRow` caller has focus outside the state line, and the unit line keeps its "focus inside"
+  guard. **Re-walked with real keys:** type 60 in a set price, Tab lands on "Use $103, the
+  suggested hourly price for Video Capture" with `:focus-visible`, and Enter puts the price back
+  to auto ($103, "auto · floor $82.16"). Emptying a set price and tabbing away also works.
+
+- [x] **R14. The temporary `launch.json` entries are still there** (any). `api-v9-scratch` and
   `web-v9` (`.claude/launch.json` ~l.47) point at a `/tmp` DB and are marked TEMPORARY for task 4.
   The handover already says to remove them before the merge. Listed here so it isn't missed.
+
+  **Done at the deploy (2026-09-29, task 10's note).** Re-checked: `.claude/launch.json` has no
+  `api-v9-scratch` / `web-v9`.
 
 ## Ship
 
@@ -768,6 +852,66 @@ math, and a browser check for anything a person looks at.
 
 ## Review
 
-- [ ] **11. Design review**: Run `/design-review` against the brief and IA, on the live site after
+- [x] **11. Design review**: Run `/design-review` against the brief and IA, on the live site after
   task 10. Write `DESIGN_REVIEW.md` in this folder. Fix must-fixes before closing the track.
   _Depends on: 10._
+
+  **Done 2026-09-29** → [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md). **No must-fixes**, four should-fixes
+  (D1–D4 below) and five could-improves. The live site needs a real login, so the review ran the
+  local `web/` build against the scratch API after confirming the eight relevant deployed files are
+  byte-identical to `web/` on `main`. 23 screenshots in `screenshots/review-*`.
+
+### Design review fixes (2026-09-29)
+
+All frontend, `Opus/high` per the bucket list (Sonnet/high would do for D3 and D4, which are CSS
+only). None touches money math. Details, screenshots and the suggested fix for each are in
+`DESIGN_REVIEW.md`; these are the checklist.
+
+- [x] **D1. The Service Day error shows a page away from the field.** Add an inline `role="alert"`
+  reason inside the Service Day block and point the two fields' `aria-describedby` at it. Keep the
+  save-bar message. _Modifies: `pricing.js`, `pricing.css`._
+- [x] **D2. The state line wraps into dangling `·` separators at ≥1100px.** Stack the parts and hide
+  the separators in that band. Check 1100, 1280 and that 768 and phones are unchanged.
+  _Modifies: `pricing.js` (wrap the separators), `pricing.css`._
+- [x] **D3. The Show switch's selected state is border hue only.** Fill the pressed button with
+  `var(--surface)`. _Modifies: `pricing.css`._
+- [x] **D4. The estimator's unit select is sized by its longest option**, so Add doesn't line up
+  between categories. One fixed width above 768px. _Modifies: `estimates.css`._
+
+  **D1–D4 done 2026-09-29** (on `main`, uncommitted and not deployed). Two deviations from the
+  review's suggested fixes, both measured:
+  - **D1: the inline reason is not `role="alert"`.** `#pricing-error` already announces the
+    sentence, and focus lands on the field the reason describes. A second live region would read it
+    a third time. The reason is `#svc-day-error` (`.pricing-day-error`, `--accent-text`, 11px) under
+    the block's description. `save()` now calls `showProblems(found)`, which puts every sentence in
+    the save bar as before, and puts the Service Day's sentences in the inline line too. The two day
+    fields are flagged from there (`aria-invalid`, `aria-describedby="svc-day-error-0"`), so each
+    field is described once. Other fields are still flagged from the save bar. Focus still goes to
+    a Service Day field first. `serviceDayProblems()` is split out of `problems()`. Typing a valid
+    Service Day clears the inline line straight away; the save-bar copy stays until the next save,
+    as for any field.
+  - **D2: the band is ≥768px, not ≥1100px.** The review said the line fits at 768. It doesn't: its
+    own `review-rate-card-show-full-day-tablet-768.png` shows "auto ·" / "floor $657.28". Measured
+    with the fix switched off: the state line is 72–105px wide at every width from 768 to 1440, and
+    no two-part line fits on one line anywhere in that range (21 of 21 wrap). So the parts stack
+    one to a line wherever the rows are a table, and below 768 (stacked rows) the line keeps its
+    dots and reads as one sentence, as before. `STATE_SEP` is now a `.pricing-state-sep` span, still
+    holding its no-break space. Row heights are identical with and without the rule at 1280 / 900 /
+    768, because every line already wrapped.
+  - D3 as suggested: the pressed button reads `rgb(44,47,53)` fill, accent border, `--text`.
+  - D4: `flex: 0 0 10.5em; width: 10.5em; min-width: 0`, so 126px at 12px. Add now sits at the
+    same x in all three blocks at every width from 768 up (717 at 1280, 627 at 1100, 601 at 800 and
+    768; it was 587 / 587 / 593). Selecting the longest possible option ("Full day · no price yet,
+    needs Profit Goals") leaves it at 126px, clipped in the closed select. The longest priced
+    option in the scratch data measures 78px against 104px of room. The phone band's `flex: 1 1
+    100%` still stacks it full width (313px at 375).
+  **Verified** in headless Chrome (puppeteer-core) against the scratch API (v9): a Service Day
+  refused for half 12 > full 8 shows its reason 29px under the field at 1280 (it used to be about
+  2,300px away) and at 375. Full 0 shows the range sentence on the full field. Refusing a Service
+  Day problem together with a blank tax rate flags each field from its own box, with focus on the
+  day field. The D2 walk at 1440 / 1280 / 1100 / 1099 / 768 / 375 found no line ending in a stray dot,
+  and no page overflow. **Real keys:** Tab from a typed price still lands on its `↺` (the task 9
+  path, since `rewrite()` compares this HTML), with `:focus-visible`, and Enter returns the price to
+  auto. Nothing was saved (5 estimates, card unchanged). The only console errors were the expected
+  pre-login 401 and the known `favicon.ico` 404. `npm test` 252 pass. Screenshots are
+  `screenshots/fix-d1-*`, `fix-d2-*`, `fix-d3-*`, `fix-d4-*`.

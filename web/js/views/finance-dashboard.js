@@ -198,15 +198,10 @@ const FinanceDashboardView = (() => {
   }
 
   /* What is stopping the floors, in the order the arithmetic needs them, each
-     linked to the screen that sets it. */
-  function floorBlockers(f) {
-    const missing = [];
-    if (f.hours === null) missing.push(link('capacity', 'your capacity'));
-    if (!(f.businessCost > 0)) missing.push(link('overhead', 'what the business costs to run'));
-    const net = parseFloat(f.goals.desiredNetIncome);
-    if (!Number.isFinite(net) || net < 0) missing.push(link('goals', 'the income you want'));
-    if (!f.taxYear) missing.push(link('goals', 'your income tax scale'));
-    return missing;
+     linked to the screen that sets it. The list is data.js's, shared with the
+     Rate Card and the estimator's "needs …" (service-rate-tiers R7). */
+  function floorBlockers() {
+    return LSCData.floorBlockers().map((b) => link(b.tab, b.what));
   }
 
   const joinAnd = (parts) =>
@@ -227,7 +222,7 @@ const FinanceDashboardView = (() => {
 
   function floorsMarkup(f) {
     const dayNote = (n) => 'at ' + hrs(n) + ' hrs';
-    const blockers = floorBlockers(f);
+    const blockers = floorBlockers();
 
     return (
       '<section class="dash-section" aria-labelledby="dash-floors-h">' +

@@ -101,8 +101,11 @@
  * EACH ROW'S STATE LINE, UNDER ITS MARK-UP
  * For the unit on show: "auto · floor $X", "set by you · ↺ use $X", with
  * "below floor by $X" in place of the floor when it is, or "auto · needs
- * Profit Goals" when there is no price to show. Computed by
- * LSCCalc.serviceFloorComparison on a one-row card, which prices auto units
+ * Profit Goals" when there is no price to show — or "needs Capacity" / "needs
+ * Overhead", whichever screen is actually in the way (LSCData
+ * .autoPriceBlocker, shared with the Dashboard and the estimator). Computed by
+ * LSCCalc.serviceFloorComparison on a one-row card, once per paint of the row
+ * (unitsOf), which prices auto units
  * from the floor it compares them against, so an auto price is never badged
  * below its own floor. It follows the working copy as you type, against an
  * hourly floor and Target Markup read once at mount like the rate column.
@@ -188,6 +191,12 @@ const PricingView = (() => {
      screen. Its save calls refreshPrices(), which takes the context again. */
   let priceCtx = null;
 
+  /* The screen an auto price with no figure needs set up (LSCData
+     .autoPriceBlocker: Capacity, Overhead or Profit Goals). Read with
+     priceCtx, from the same data, so "needs …" names the screen actually in
+     the way (code review R7). */
+  let blocker = { tab: 'goals', screen: 'Profit Goals' };
+
   /* Which unit each row is showing, by row id — see SERVICE UNITS above. Not
      part of the working copy. Rows lacking an id get one at mount, so every
      row has a key. */
@@ -218,51 +227,71 @@ const PricingView = (() => {
   const autoPrice = (row, unit) =>
     resolve(Object.assign({}, row, { prices: Object.assign({}, row.prices, { [unit]: null }) }), unit).mu;
 
-  /* A whole-dollar price without the cents (every auto hourly price, and what
-     most people type); anything else to the cent. */
-  const money = (n) => (Number.isInteger(n) ? '$' + n.toLocaleString('en-AU') : LSCUtil.fmt(n));
+  /* Whole dollars without the cents, anything else to the cent (util.js). */
+  const money = LSCUtil.money;
 
-  /* The one-row comparison — see EACH ROW'S STATE LINE above. The settings
-     are priceCtx's, the ones resolve() prices the field with: an auto figure
-     and its own state line can't be worked out from two GST configurations. */
-  function compare(row, unit) {
+  /* A row's three units against their floors — see EACH ROW'S STATE LINE
+     above. One one-row serviceFloorComparison per paint of a row, handed to
+     everything that describes it: the state line, its sentence and the unit
+     line (code review R12; each used to run its own, about five a row per
+     keystroke). The settings are priceCtx's, the ones resolve() prices the
+     field with: an auto figure and its own state line can't be worked out
+     from two GST configurations. */
+  function unitsOf(row) {
     const [c] = LSCCalc.serviceFloorComparison(
       { serviceDay: card.serviceDay, labourSections: [{ id: '', label: '', rows: [row] }] },
       priceCtx.settings,
       perHourFloor,
       priceCtx
     );
-    return c.units[unit];
+    return c.units;
+  }
+
+  /* The unit on show, in the terms both the line and the sentence use:
+     `unpriced` (auto, with no figure until `blocker` is set up), `auto` or
+     `set`; `gap` when it is below its floor; for a set price, the auto figure
+     `↺` would put back (`suggestion`, null when there is none). */
+  function unitState(row, unit, units) {
+    const u = units[unit];
+    if (u.auto && u.mu === null) return { kind: 'unpriced' };
+    return {
+      kind: u.auto ? 'auto' : 'set',
+      gap: u.belowFloor ? u.gap : null,
+      floor: u.floor,
+      suggestion: u.auto ? null : autoPrice(row, unit),
+    };
   }
 
   /* Between the state line's parts. The no-break space holds each dot to the
      part before it, so a line that wraps (every set-by-you row does, in the
      80px Mark-Up column) ends on "·" rather than starting the next one with
-     it: "below floor by $26.16 ·" / "↺ use $103", not "· ↺ use $103". */
-  const STATE_SEP = '&nbsp;· ';
+     it: "below floor by $26.16 ·" / "↺ use $103", not "· ↺ use $103".
+     Its own span, because at 1100px and up, where the Mark-Up column is
+     narrowest, pricing.css stacks the parts one to a line and hides it: a
+     dot at the end of every line only reads as a stray (design review D2). */
+  const STATE_SEP = '<span class="pricing-state-sep">&nbsp;· </span>';
 
   /* Each control's accessible name starts with the words it shows (WCAG 2.5.3,
      so "click use 103" works by voice), then says what it acts on, which the
      visible words alone don't: the Dashboard badge's pattern. */
-  function stateLineHtml(row, si, ri) {
+  function stateLineHtml(row, si, ri, st) {
     const unit = unitOf(row);
-    const u = compare(row, unit);
     const part = (html) => '<span class="pricing-state-part">' + html + '</span>';
-    if (u.auto && u.mu === null) {
+    if (st.kind === 'unpriced') {
+      const needs = 'needs ' + blocker.screen;
       return part('auto') + STATE_SEP + part(
-        '<button type="button" class="pricing-state-link" data-state-tab="goals"' +
-        ' aria-label="needs Profit Goals: open Profit Goals">needs Profit Goals</button>'
+        '<button type="button" class="pricing-state-link" data-state-tab="' + blocker.tab + '"' +
+        ' aria-label="' + esc(needs + ': open ' + blocker.screen) + '">' + esc(needs) + '</button>'
       );
     }
-    const parts = [part(u.auto ? 'auto' : 'set by you')];
-    if (u.belowFloor) parts.push(part('<span class="pricing-below">below floor by ' + LSCUtil.fmt(u.gap) + '</span>'));
-    else if (u.auto) parts.push(part(u.floor === null ? 'floor —' : 'floor ' + LSCUtil.fmt(u.floor)));
-    if (!u.auto) {
-      const suggestion = autoPrice(row, unit);
-      const label = suggestion === null ? 'auto' : money(suggestion);
+    const parts = [part(st.kind === 'auto' ? 'auto' : 'set by you')];
+    if (st.gap !== null) parts.push(part('<span class="pricing-below">below floor by ' + LSCUtil.fmt(st.gap) + '</span>'));
+    else if (st.kind === 'auto') parts.push(part(st.floor === null ? 'floor —' : 'floor ' + LSCUtil.fmt(st.floor)));
+    if (st.kind === 'set') {
+      const label = st.suggestion === null ? 'auto' : money(st.suggestion);
       parts.push(part(
         '<button type="button" class="pricing-state-link" data-use-auto data-si="' + si + '" data-ri="' + ri + '"' +
-        ' aria-label="' + esc(suggestion === null
+        ' aria-label="' + esc(st.suggestion === null
           ? 'Use auto: put ' + nameOf(row) + '’s ' + UNIT_LOWADJ[unit] + ' price back to auto'
           : 'Use ' + label + ', the suggested ' + UNIT_LOWADJ[unit] + ' price for ' + nameOf(row)) +
         '"><span aria-hidden="true">↺&nbsp;</span>use ' + label + '</button>'
@@ -277,38 +306,37 @@ const PricingView = (() => {
      carries "↺ use $X", whose full accessible name would be read into it,
      service name and all. Rendered into a `hidden` span, which a description
      reference still reads, so browsing the page doesn't meet it a second time. */
-  function stateSentence(row, unit) {
-    const u = compare(row, unit);
-    if (u.auto && u.mu === null) return 'Auto, no price until Profit Goals is set.';
-    const parts = [u.auto ? 'Auto' : 'Set by you'];
-    if (u.belowFloor) parts.push('below floor by ' + LSCUtil.fmt(u.gap));
-    else if (u.auto) parts.push(u.floor === null ? 'no floor yet' : 'floor ' + LSCUtil.fmt(u.floor));
-    if (!u.auto) {
-      const suggestion = autoPrice(row, unit);
-      parts.push(suggestion === null ? 'no suggested price until Profit Goals is set' : 'suggested ' + money(suggestion));
+  function stateSentence(st) {
+    if (st.kind === 'unpriced') return 'Auto, no price until ' + blocker.screen + ' is set up.';
+    const parts = [st.kind === 'auto' ? 'Auto' : 'Set by you'];
+    if (st.gap !== null) parts.push('below floor by ' + LSCUtil.fmt(st.gap));
+    else if (st.kind === 'auto') parts.push(st.floor === null ? 'no floor yet' : 'floor ' + LSCUtil.fmt(st.floor));
+    if (st.kind === 'set') {
+      parts.push(st.suggestion === null
+        ? 'no suggested price until ' + blocker.screen + ' is set up'
+        : 'suggested ' + money(st.suggestion));
     }
     return parts.join(', ') + '.';
   }
 
-  /* What is wrong with one unit of a row, if anything: below its floor, or
-     no price to quote. For the hidden-unit notice and the option text. */
-  function unitProblem(row, unit) {
-    const u = compare(row, unit);
+  /* What is wrong with one unit, if anything: below its floor, or no price
+     to quote. For the hidden-unit notice and the option text. */
+  function unitProblem(u) {
     if (u.belowFloor) {
       const text = 'below floor by ' + LSCUtil.fmt(u.gap);
       return { text, option: text };
     }
-    if (u.mu === null) return { text: 'has no price yet', option: 'no price yet, needs Profit Goals' };
+    if (u.mu === null) return { text: 'has no price yet', option: 'no price yet, needs ' + blocker.screen };
     return null;
   }
 
   /* The line under a service's name: the unit switch, a day's hours, and any
      hidden-unit notice — see SERVICE UNITS above. */
-  function rowMetaHtml(row, si, ri) {
+  function rowMetaHtml(row, si, ri, units) {
     const unit = unitOf(row);
     const problem = {};
     LSCCalc.SERVICE_UNITS.forEach((u) => {
-      problem[u] = unitProblem(row, u);
+      problem[u] = unitProblem(units[u]);
     });
     /* The flag goes on the other units' options only: the one on show has
        its state line, and a flag on it would widen the closed select. */
@@ -330,40 +358,43 @@ const PricingView = (() => {
     return html;
   }
 
+  /* The price field's shown figure and auto styling. What its blur does, and
+     all it does: the state line is already current from the input handler.
+     Blur used to run the whole refreshRow, which rewrote the state line under
+     a Tab heading for its "↺ use $X" and dropped focus to the top of the page
+     (code review R13; the task 9 trap). */
+  function paintPrice(inp, d) {
+    inp.value = d.mu === null ? '' : String(d.mu);
+    inp.classList.toggle('pricing-auto', d.auto);
+  }
+
   /* After an edit that doesn't restructure the row: its day rate, its unit
      line, the price field's shown value (unless it is the field being typed
      in) and auto styling, and the state line. The unit line is left alone
-     while focus is inside it, so a keyboard user on the select keeps it. */
-  /* Replace an element's contents only when they would change. refreshRow
-     runs on the price field's blur, which fires as Tab moves focus from the
-     price to the "↺ use $X" right after it: rewriting the line unconditionally
-     there destroyed the button focus was landing on, and focus fell to the top
-     of the page, so ↺ was out of a keyboard user's reach (found by a real-Tab
-     walk-through, 2026-09-29). Compared through a detached element, so both
-     sides are serialised the same way (&nbsp;, quotes). */
-  const scratch = document.createElement('div');
-  function rewrite(el, html) {
-    scratch.innerHTML = html;
-    if (scratch.innerHTML !== el.innerHTML) el.innerHTML = html;
-  }
-
+     while focus is inside it, so a keyboard user on the select keeps it.
+     Returns the state sentence, for the caller that announces it. */
   function refreshRow(si, ri) {
     const row = (card.labourSections[si] || { rows: [] }).rows[ri];
-    if (!row) return;
-    const d = resolve(row, unitOf(row));
+    if (!row) return '';
+    const unit = unitOf(row);
+    const units = unitsOf(row);
+    const st = unitState(row, unit, units);
+    const sentence = stateSentence(st);
     const inp = root.querySelector('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="price"]');
     if (inp) {
-      if (document.activeElement !== inp) inp.value = d.mu === null ? '' : String(d.mu);
-      inp.classList.toggle('pricing-auto', d.auto);
+      const d = resolve(row, unit);
+      if (document.activeElement !== inp) paintPrice(inp, d);
+      else inp.classList.toggle('pricing-auto', d.auto);
       const rate = inp.closest('tr').querySelector('.pricing-rate-ro');
       if (rate) rate.value = rateDisplay(row);
       const meta = inp.closest('tr').querySelector('.pricing-row-meta');
-      if (meta && !meta.contains(document.activeElement)) rewrite(meta, rowMetaHtml(row, si, ri));
+      if (meta && !meta.contains(document.activeElement)) meta.innerHTML = rowMetaHtml(row, si, ri, units);
     }
     const el = root.querySelector('#pfl-' + si + '-' + ri);
-    if (el) rewrite(el, stateLineHtml(row, si, ri));
+    if (el) el.innerHTML = stateLineHtml(row, si, ri, st);
     const said = root.querySelector('#pfd-' + si + '-' + ri);
-    if (said) said.textContent = stateSentence(row, unitOf(row));
+    if (said) said.textContent = sentence;
+    return sentence;
   }
 
   /* A rename, as it is typed: every label in the row that names the service.
@@ -398,8 +429,9 @@ const PricingView = (() => {
     return rows.length ? rows.every((row) => unitOf(row) === unit) : showDefault === unit;
   }
 
-  /* A service-day length as the server accepts it: 0.5 to 24, in half hours. */
-  const dayHoursOk = (v) => typeof v === 'number' && v >= 0.5 && v <= 24 && Number.isInteger(v * 2);
+  /* A service-day length as the server accepts it: 0.5 to 24, in half hours
+     (calc.js serviceDayOk, the one definition the route checks too). */
+  const dayHoursOk = LSCCalc.serviceDayOk;
 
   /* A stable row id — see ROW IDS above. Random rather than derived from the
      name, which is the thing it has to survive a change of. */
@@ -476,17 +508,20 @@ const PricingView = (() => {
      the card, so a blank or duplicated name makes a service impossible to price.
      Ported from catalogueProblems, plus the tax rate, which the desktop app
      never validated. */
-  function problems() {
-    const found = [];
-    // One sentence per problem, however many inputs share it; every one of
-    // those inputs is still flagged.
-    const add = (msg, field) => {
-      const hit = found.find((p) => p.msg === msg);
-      if (hit) hit.fields.push(field);
-      else found.push({ msg, fields: [field] });
-    };
-    const q = (selector) => root.querySelector(selector);
+  // One sentence per problem, however many inputs share it; every one of
+  // those inputs is still flagged.
+  const collector = (found) => (msg, field) => {
+    const hit = found.find((p) => p.msg === msg);
+    if (hit) hit.fields.push(field);
+    else found.push({ msg, fields: [field] });
+  };
 
+  /* The Service Day's own problems, apart from the rest: their reason is also
+     shown inside the Service Day block (showProblems), and a fixed field
+     clears it there as you type. */
+  function serviceDayProblems() {
+    const found = [];
+    const add = collector(found);
     const full = card.serviceDay.fullHours;
     const half = card.serviceDay.halfHours;
     if (!dayHoursOk(full)) add('A service day must be between 0.5 and 24 hours, in half hours.', $('svc-full-inp'));
@@ -494,6 +529,13 @@ const PricingView = (() => {
     if (dayHoursOk(full) && dayHoursOk(half) && half > full) {
       add('A half day can’t be longer than a full day.', $('svc-half-inp'));
     }
+    return found;
+  }
+
+  function problems() {
+    const found = serviceDayProblems();
+    const add = collector(found);
+    const q = (selector) => root.querySelector(selector);
 
     const percent = parseFloat(taxRaw);
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
@@ -575,13 +617,15 @@ const PricingView = (() => {
     sec.rows.forEach((row, ri) => {
       const unit = unitOf(row);
       const d = resolve(row, unit);
+      const units = unitsOf(row);
+      const st = unitState(row, unit, units);
       rows +=
         '<tr><td data-label="Service"><input class="pricing-name-inp" type="text" value="' + esc(row.name) +
         '" placeholder="Service name" aria-label="Service name" data-si="' + si + '" data-ri="' + ri +
         '" data-field="name" data-type="labour">' +
         /* The unit line: which of the three prices this row is showing, and
            for a day, the card's hours in one. */
-        '<div class="pricing-row-meta">' + rowMetaHtml(row, si, ri) + '</div></td>' +
+        '<div class="pricing-row-meta">' + rowMetaHtml(row, si, ri, units) + '</div></td>' +
         '<td style="text-align:right" data-label="Rate ($/hr)"><input type="text" readonly' +
         ' aria-readonly="true" aria-describedby="pricing-rate-note" class="pricing-rate-ro' +
         (computedRate === null ? ' pricing-rate-none' : '') + (unit === 'hour' ? '' : ' pricing-rate-day') +
@@ -591,8 +635,8 @@ const PricingView = (() => {
         ' class="pricing-price-inp' + (d.auto ? ' pricing-auto' : '') + '" value="' + (d.mu === null ? '' : esc(String(d.mu))) +
         '" placeholder="—" aria-label="' + UNIT_ADJ[unit] + ' price for ' + esc(nameOf(row)) + '" aria-describedby="pfd-' + si + '-' + ri +
         '" data-si="' + si + '" data-ri="' + ri + '" data-field="price" data-type="labour">' +
-        '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + stateLineHtml(row, si, ri) + '</div>' +
-        '<span hidden id="pfd-' + si + '-' + ri + '">' + esc(stateSentence(row, unit)) + '</span></td>' +
+        '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + stateLineHtml(row, si, ri, st) + '</div>' +
+        '<span hidden id="pfd-' + si + '-' + ri + '">' + esc(stateSentence(st)) + '</span></td>' +
         '<td style="text-align:center" data-label="Custom"><input type="checkbox"' + (row.customBill ? ' checked' : '') +
         ' data-si="' + si + '" data-ri="' + ri + '" data-field="customBill" data-type="labour"' +
         ' aria-label="Allow a custom bill amount for ' + esc(nameOf(row)) + '"' +
@@ -696,7 +740,12 @@ const PricingView = (() => {
       '<div class="tax-setting pricing-day-setting"><div>' +
       '<div class="sum-label pricing-day-title">Service Day (billable hrs)' + serviceDayInfo() + '</div>' +
       '<div style="color:var(--muted);font-size:11px">The hours in a half and a full day of a service on a job. ' +
-      'An auto day price is the service’s hourly price × these hours.</div></div>' +
+      'An auto day price is the service’s hourly price × these hours.</div>' +
+      /* Why a save was refused, beside the fields it names — the save bar's
+         copy of it is a page away (design review D1). Not role="alert":
+         #pricing-error already speaks it, and focus lands on the field this
+         describes, so a second live region would read it a third time. */
+      '<p class="pricing-day-error" id="svc-day-error"></p></div>' +
       '<div class="pricing-day-ctl">' +
       '<label>Full <input type="number" id="svc-full-inp" min="0.5" max="24" step="0.5" value="' +
       esc(String(card.serviceDay.fullHours)) + '" data-day="fullHours" aria-label="Billable hours in a full service day"> hrs</label>' +
@@ -776,7 +825,25 @@ const PricingView = (() => {
   }
 
   function clearError() {
+    LSCUtil.clearFieldErrors($('svc-day-error'));
     LSCUtil.clearFieldErrors($('pricing-error'));
+  }
+
+  /* A refused save: every sentence in the save bar, as on every screen, and
+     the Service Day's again inside its own block. Its two fields are
+     flagged from there (aria-invalid, and aria-describedby pointing at the
+     reason beside them) rather than from the save bar, so each field is
+     described once; showFieldErrors focuses them last, so a Service Day
+     problem still takes focus first, as it did. */
+  function showProblems(found) {
+    const day = serviceDayProblems().map((p) => p.msg);
+    LSCUtil.showFieldErrors(
+      $('pricing-error'),
+      found.map((p) => (day.indexOf(p.msg) === -1 ? p : { msg: p.msg, fields: [] })),
+      'Fix this before saving:'
+    );
+    const dayFound = found.filter((p) => day.indexOf(p.msg) !== -1);
+    if (dayFound.length) LSCUtil.showFieldErrors($('svc-day-error'), dayFound);
   }
 
   function setSaving(next) {
@@ -855,24 +922,25 @@ const PricingView = (() => {
         if (input.dataset.type === 'labour' && field === 'price') {
           const si = parseInt(input.dataset.si, 10);
           const ri = parseInt(input.dataset.ri, 10);
-          refreshRow(si, ri);
+          const sentence = refreshRow(si, ri);
           /* The sentence is the Mark-Up's description, so it is read on focus;
              this is for the change while typing, spoken once typing pauses. */
-          LSCUtil.announce(
-            $('pricing-floor-live'),
-            nameOf(target) + ', ' + UNIT_WORD[unitOf(target)] + ': ' + stateSentence(target, unitOf(target))
-          );
+          LSCUtil.announce($('pricing-floor-live'), nameOf(target) + ', ' + UNIT_WORD[unitOf(target)] + ': ' + sentence);
         }
       });
     });
 
     /* An auto price field: once left, show the auto figure again (emptying it
-       returned the unit to auto, and an empty box would read as no price).
+       returned the unit to auto, and an empty box would read as no price) —
+       paintPrice only, never the state line (see paintPrice). No `change`
+       handler either: every edit already ran refreshRow as it was typed.
        On focus, select it, so typing replaces the suggestion rather than
        appending to it. */
     root.querySelectorAll('input[data-field="price"]').forEach((input) => {
-      input.addEventListener('change', () => refreshRow(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10)));
-      input.addEventListener('blur', () => refreshRow(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10)));
+      input.addEventListener('blur', () => {
+        const row = (card.labourSections[parseInt(input.dataset.si, 10)] || { rows: [] }).rows[parseInt(input.dataset.ri, 10)];
+        if (row) paintPrice(input, resolve(row, unitOf(row)));
+      });
       input.addEventListener('focus', () => {
         if (input.classList.contains('pricing-auto')) input.select();
       });
@@ -886,6 +954,11 @@ const PricingView = (() => {
         const v = input.value === '' ? NaN : parseFloat(input.value);
         card.serviceDay[input.dataset.day] = Number.isFinite(v) ? v : '';
         refreshAllRows();
+        // A refused save's reason beside the fields goes once they're fixed
+        // (the save bar's copy stays until the next save, as for any field).
+        if ($('svc-day-error').classList.contains('show') && !serviceDayProblems().length) {
+          LSCUtil.clearFieldErrors($('svc-day-error'));
+        }
         if (dayHoursOk(v)) {
           LSCUtil.announce(
             $('pricing-floor-live'),
@@ -1042,7 +1115,7 @@ const PricingView = (() => {
     if (found.length) {
       // The desktop app used alert() here. A blocking dialog hides the very
       // fields the message is describing.
-      LSCUtil.showFieldErrors($('pricing-error'), found, 'Fix this before saving:');
+      showProblems(found);
       return;
     }
 
@@ -1201,6 +1274,7 @@ const PricingView = (() => {
     computedRate = LSCData.overheadRate();
     priceCtx = LSCData.priceContext();
     perHourFloor = priceCtx.floorPerHour;
+    blocker = LSCData.autoPriceBlocker();
     baseline = snapshot();
 
     render();
@@ -1271,7 +1345,6 @@ const PricingView = (() => {
       if (!row) return;
       pricesOf(row)[unitOf(row)] = null;
       const inp = root.querySelector('input[data-si="' + si + '"][data-ri="' + ri + '"][data-field="price"]');
-      if (inp) inp.blur(); // so refreshRow rewrites its value
       refreshRow(si, ri);
       if (inp) inp.focus();
       const d = resolve(row, unitOf(row));
@@ -1319,6 +1392,7 @@ const PricingView = (() => {
       if (!onScreen() || !card) return;
       priceCtx = LSCData.priceContext();
       perHourFloor = priceCtx.floorPerHour;
+      blocker = LSCData.autoPriceBlocker();
       refreshAllRows();
     },
   };

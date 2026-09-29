@@ -167,6 +167,21 @@
 .pricing-state-part {
   white-space: nowrap;
 }
+/* Wherever the rows are a table (768px and up) the line is 72–105px wide:
+   too narrow for any line with two parts, so every one wrapped, and each
+   wrapped line ended in a stray "·" ("auto ·" / "floor $657.28"). There,
+   the parts stack one to a line, with no dots (design review D2, which
+   named ≥1100 only; measured, no two-part line fits at any width from 768
+   up, 2026-09-29). Below 768 the row stacks, the line has the card's width
+   and reads as one sentence, dots and all. */
+@media (min-width: 768px) {
+  .pricing-floor .pricing-state-part {
+    display: block;
+  }
+  .pricing-state-sep {
+    display: none;
+  }
+}
 /* An auto price is a real price, and the estimator quotes it, but it isn't one
    you typed: muted, like the rest of what this screen works out for you, until
    you type over it. The state line says "auto" in words; this is the glance. */
@@ -222,10 +237,24 @@
 .tax-setting .pricing-day-ctl input {
   width: 64px;
 }
+/* Why a save was refused, under the block's own description, beside the
+   fields it names (design review D1). --accent-text, the screen's colour for
+   a problem in words (4.60:1 on --bg, which this block sits on). */
+.pricing-day-error {
+  display: none;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent-text);
+}
+.pricing-day-error.show {
+  display: block;
+}
 
 /* "Show: Hourly | Half day | Full day", above the first category. The pressed
    button takes the accent edge and full-strength text, the same pair a focused
-   field uses, so the one in force reads at a glance. */
+   field uses, and a --surface fill: the edge alone was a red-versus-slate hue
+   difference, hard to find at a glance and invisible to anyone who can't tell
+   the two apart (design review D3). The fill is a lightness change. */
 .pricing-show {
   display: flex;
   align-items: center;
@@ -241,6 +270,7 @@
 }
 .pricing-show-btn[aria-pressed='true'] {
   border-color: var(--accent);
+  background: var(--surface);
   color: var(--text);
 }
 

@@ -87,7 +87,20 @@ per-row day hours. The estimate editor picks service → unit → Add, and a lin
             the estimate routes having no shape guard, so an old tab can save $0 labour; the
             Rate Card accepting a pre-v9 card; and reset-to-defaults leaving rows without ids.
             R9 (PDF names) is a settled user decision, listed for completeness only.
-- [ ] Phase 7 — Design Review.
+- [x] **Phase 7 — Design Review** (2026-09-29) → [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md). No
+      must-fixes. Four should-fixes, checklisted in TASKS.md as **D1–D4** (inline Service Day error,
+      dangling `·` in the state line at ≥1100px, Show switch's selected state, estimator unit-select
+      width), plus five could-improves. Reviewed against the local build after checking it is
+      byte-identical to the deployed one; the live login was not used.
+      - [x] **D1–D4 done 2026-09-29**, on `main`, **uncommitted and not deployed** (pushing `main`
+            deploys Pages; frontend only, so no NAS step). Two deviations from the review's
+            suggestions, both measured: D1's inline reason isn't `role="alert"` (the save bar
+            already announces it), and D2's band is ≥768px, not ≥1100 (no two-part state line fits
+            at any table width). See the Done note under "Design review fixes" in TASKS.md.
+      - [x] **R5–R7, R10–R14 done 2026-09-29** (uncommitted). Every money-math one was checked
+            against the committed build on the same inputs, with that file swapped in. R8
+            doesn't reproduce in Chrome; Safari wasn't checked (remote automation is off), so it's
+            left open for a person. R9 is closed, no change. See the Done notes in TASKS.md.
 
 Nothing deployed. **As of task 3 the branch is only coherent as a whole**: the server now
 stores and demands the new card shape, while the web build still reads and writes the old one.
@@ -98,7 +111,7 @@ review. **Don't merge before task 10.**
 **The scratch API migrates too.** Starting `api-scratch` from this branch takes the `/tmp` scratch
 DB to v9, and a `main` checkout then refuses it ("newer database"). Re-seed it if you switch back.
 
-**DEPLOYED 2026-09-29 (see "Deployed" below). Exact next item is now task 11 (design review on the live site), then R5–R14.** _Old text:_ task 10, "Deploy: NAS (v9) first, then Pages"** (deploy — Sonnet/medium).
+**DEPLOYED 2026-09-29 (see "Deployed" below), design-reviewed the same day. D1–D4 and R5–R7, R10–R14 are done, on `main`, uncommitted and not deployed. R9 was closed without change (the user's decision). The one open item is R8, which needs a person in Safari (see its note in TASKS.md). Next: commit, then deploy when the user says so.** Deploy note: the only server change is `calc.js` `serviceDayOk` plus the route using it. There's no schema change and no new route, and the web has its own `calc.js` copy, so the order doesn't matter this time. Deploy both anyway, so the two copies stay identical on the NAS and on Pages. _Superseded:_ "Exact next item is R5" _Old text:_ task 10, "Deploy: NAS (v9) first, then Pages"** (deploy — Sonnet/medium).
 R1–R4 are done. R5–R14 can follow the deploy, or come first if the user prefers. **New since R2:**
 from the moment the NAS runs v9 until Pages is live, the live site can't save an estimate at all.
 Its saves lack `pricingShape` and are refused with a "reload" message. So do the Pages push

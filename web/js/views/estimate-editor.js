@@ -162,9 +162,8 @@ const EstimateEditor = (() => {
 
   const UNIT_NAMES = { hour: 'Hour', half: 'Half day', full: 'Full day' };
 
-  /* The Rate Card's own money format for a price in a sentence: whole dollars
-     without cents ("$1,120"), anything else to the cent. */
-  const money = (n) => (Number.isInteger(n) ? '$' + n.toLocaleString('en-AU') : fmt(n));
+  /* The Rate Card's own money format for a price in a sentence (util.js). */
+  const money = LSCUtil.money;
 
   /* Which unit a line (or snapshot) is sold in, as the rate-matching key: 'hour',
      'half' or 'full', or — for a line saved before service units with some other
@@ -207,10 +206,21 @@ const EstimateEditor = (() => {
   }
 
   /* Marks a row priced from the last project with the price it would otherwise
-     have, for setRatesFromLast(false) to put back; clears the mark otherwise. */
+     have, for setRatesFromLast(false) to put back; clears the mark otherwise.
+     When today's card has no price for it (an auto unit with no income floor
+     yet) there is nothing to put back: the line keeps last time's price, unit
+     and hours when the toggle goes off, marked `lastOnly` so the rates note
+     can say so (code review R5). It used to be marked 'none', the mark for a
+     legacy line whose service has left the card, and so went back to no
+     price and no unit, and saved at $0. */
   function markOwn(tr, picked) {
-    if (picked.snap && picked.snap !== picked.own) tr.dataset.prevSnap = picked.own ? JSON.stringify(picked.own) : 'none';
-    else delete tr.dataset.prevSnap;
+    delete tr.dataset.lastOnly;
+    if (!picked.snap || picked.snap === picked.own) delete tr.dataset.prevSnap;
+    else if (picked.own) tr.dataset.prevSnap = JSON.stringify(picked.own);
+    else {
+      delete tr.dataset.prevSnap;
+      tr.dataset.lastOnly = '1';
+    }
   }
 
   /* The options of a unit select. `current` is the unit a line is already in:
@@ -222,6 +232,8 @@ const EstimateEditor = (() => {
      day"), rather than the picker's ("Half day · $640"). */
   function unitOptions(sectionId, row, current, lower) {
     const name = (u) => (lower ? UNIT_NAMES[u].toLowerCase() : UNIT_NAMES[u]);
+    // The screen actually in the way: Capacity, Overhead or Profit Goals (R7).
+    const needs = LSCData.autoPriceBlocker().screen;
     let html = '';
     if (current && LSCCalc.SERVICE_UNITS.indexOf(current) === -1) {
       // A legacy line in no unit the card sells: shown as it is, not switchable back to.
@@ -235,7 +247,7 @@ const EstimateEditor = (() => {
       const { snap } = unitSnap(sectionId, row, u);
       html +=
         '<option value="' + u + '"' + (snap ? '' : ' disabled') + '>' + name(u) + ' · ' +
-        (snap ? money(snap.mu) : 'no price yet, needs Profit Goals') + '</option>';
+        (snap ? money(snap.mu) : 'no price yet, needs ' + needs) + '</option>';
     });
     return html;
   }
@@ -1124,12 +1136,36 @@ const EstimateEditor = (() => {
     });
     const fresh = section ? buildLabourRow(section, null, line) : buildTravelRow(null, line);
     if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
+    if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
     tr.replaceWith(fresh);
     return fresh;
   }
 
   /* Every priced row: labour rows carry data-section, travel rows don't. */
   const priceRows = () => sections.flatMap((sec) => rowsIn(sec.id)).concat(rowsIn('travel'));
+
+  /* Whether two snapshots price a line the same: its price, its unit and that
+     unit's hours, and how it bills. Not `rowId`, which is how the line was
+     found rather than what it costs; not a labour line's `rate`, which prices
+     nothing (see "No Rate column" below); and hours read through
+     hoursPerUnitOf, because every snapshot from before v9, and every one the
+     v9 migration took, leaves an hour's `hoursPerUnit: 1` unwritten where
+     today's card writes it. Compared whole, every such line "changed", and
+     "Update to current rates" reported N prices updated when none had moved
+     (code review R6). A travel line's `rate` does price it, so there it
+     counts. */
+  function samePrice(a, b, travel) {
+    const key = (x) => [
+      Number(x.mu) || 0,
+      unitKey(x),
+      LSCCalc.hoursPerUnitOf(x),
+      Boolean(x.directCost),
+      Boolean(x.ownTime),
+      Boolean(x.customBill),
+      travel ? Number(x.rate) || 0 : '',
+    ].join('|');
+    return key(a) === key(b);
+  }
 
   /* Each line at its own unit. A line whose service has left the card, or whose
      unit has no price on it yet, keeps the snapshot it has — re-pricing it at
@@ -1150,7 +1186,8 @@ const EstimateEditor = (() => {
         unpriced += 1;
         return;
       }
-      if (JSON.stringify(next) !== JSON.stringify(snapOf(tr))) {
+      const current = snapOf(tr);
+      if (!current || !samePrice(next, current, !tr.dataset.section)) {
         delete tr.dataset.prevSnap;
         reprice(tr, next);
         changed += 1;
@@ -1246,6 +1283,7 @@ const EstimateEditor = (() => {
   function setRatesFromLast(on) {
     ratesFromLast = on;
     let swapped = 0;
+    let keptLast = 0;
     priceRows().forEach((tr) => {
       if (on) {
         const snap = snapOf(tr) || {};
@@ -1260,14 +1298,26 @@ const EstimateEditor = (() => {
         // has left the card) — an empty snapshot rebuilds it unpriced again.
         const prev = tr.dataset.prevSnap === 'none' ? {} : JSON.parse(tr.dataset.prevSnap);
         delete tr.dataset.prevSnap;
-        reprice(tr, prev);
+        const fresh = reprice(tr, prev);
+        if (fresh.dataset.lastOnly) {
+          delete fresh.dataset.lastOnly;
+          keptLast += 1;
+        }
+      } else if (tr.dataset.lastOnly) {
+        // Today's card has no price at its unit: it keeps last time's (markOwn).
+        delete tr.dataset.lastOnly;
+        keptLast += 1;
       }
     });
     const box = $('f-rates-last');
     if (box) box.checked = on;
     $('rates-note').textContent = on
       ? swapped + ' line' + (swapped === 1 ? '' : 's') + ' priced as last time; anything new to this job is at today’s rates.'
-      : 'Each line keeps the price it was added at.';
+      : 'Each line keeps the price it was added at.' +
+        (keptLast
+          ? ' ' + keptLast + ' line' + (keptLast === 1 ? '' : 's') + ' kept last project’s price: today’s rate card has ' +
+            'no price at ' + (keptLast === 1 ? 'its unit' : 'their units') + ' yet.'
+          : '');
     paintLineUnits();
     recalc();
   }

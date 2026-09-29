@@ -145,6 +145,31 @@ const LSCData = (() => {
       const r = LSCData.revenueTarget();
       return LSCCalc.incomeFloorPerHour(r && r.total, LSCCalc.annualBillableHours(goals || {}));
     },
+    /* What stops the income floor — and so every auto price — in the order
+       the arithmetic needs it, each with the Finance & Price tab that sets it
+       (`tab` for FinanceView's selectTab, `screen` to name it, `what` for a
+       sentence). Empty when there is a floor. One list, so the Dashboard's
+       "Set up … to see your floors" and every auto price's "needs …" name the
+       same screen: missing billable hours are Capacity's, not Profit Goals'
+       (service-rate-tiers R7, 2026-09-29). */
+    floorBlockers: () => {
+      const g = goals || {};
+      const out = [];
+      if (!(LSCCalc.annualBillableHours(g) > 0)) {
+        out.push({ tab: 'capacity', screen: 'Capacity', what: 'your capacity' });
+      }
+      if (!(LSCData.businessCost() > 0)) {
+        out.push({ tab: 'overhead', screen: 'Overhead', what: 'what the business costs to run' });
+      }
+      const net = parseFloat(g.desiredNetIncome);
+      if (!Number.isFinite(net) || net < 0) out.push({ tab: 'goals', screen: 'Profit Goals', what: 'the income you want' });
+      if (!LSCData.taxYearInUse()) out.push({ tab: 'goals', screen: 'Profit Goals', what: 'your income tax scale' });
+      return out;
+    },
+    /* The one screen an auto price with no figure sends you to: the first
+       floor blocker, else Profit Goals, which holds Target Markup (the other
+       thing an auto price needs) and the rest of the floor's inputs. */
+    autoPriceBlocker: () => LSCData.floorBlockers()[0] || { tab: 'goals', screen: 'Profit Goals', what: 'your Profit Goals' },
     /* What an auto price on the rate card is worked out from (calc.js unitDef,
        .design/service-rate-tiers/): the income floor, Target Markup — a
        PERCENT, stored in a column that predates the rename — and the GST

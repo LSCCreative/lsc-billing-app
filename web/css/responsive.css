@@ -1077,7 +1077,7 @@
   /* The estimator. The picker's unit select is also a .svc-select, so the
      stacking rule above already gave it the full width — but only because
      this file loads after estimates.css, whose `.bb-picker .unit-select`
-     (flex: 0 0 auto) has the same specificity. Stated here so the stack
+     (flex: 0 0 10.5em) has the same specificity. Stated here so the stack
      doesn't hang on load order. */
   .bb-picker .unit-select {
     flex: 1 1 100%;
