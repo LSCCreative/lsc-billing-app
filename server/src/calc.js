@@ -375,9 +375,13 @@ function labourSectionsOf(rows, labourSections) {
  *   — a labour row def carries { name, mu, rate } and optionally hoursPerUnit
  *   (absent on every hourly row; see the header).
  * @param {object} settings    { gst: { registered, rate, pricesIncludeGst } }
- * @param {object} [options]   { gstFree, overheadRate } — the estimate's own
- *   tax treatment, and the overhead rate per billable hour its tax set-aside
- *   deducts (optional; see Take-home).
+ * @param {object} [options]   { gstFree, overheadRate, days, surcharges,
+ *   shortNotice } — the estimate's own tax treatment, the overhead rate per
+ *   billable hour its tax set-aside deducts (optional; see Take-home), and its
+ *   booked days with their surcharge snapshot (surchargeSnapshot) and the
+ *   short-notice tick. A `prod` line whose `dayId` is one of `days` is priced
+ *   through the surcharge maths; every other line, and every line of an
+ *   estimate with no days, prices exactly as before (production-booking task 2).
  *   Named `options` rather than `estimate` or `document` on purpose — this file
  *   is copied verbatim into the browser, where a parameter called `document`
  *   would shadow the global inside this function.
@@ -413,6 +417,11 @@ function computeTotals(activeRows, pricing, settings, options) {
   // overhead allocation in minimumJobPrice rather than the client's price.
   let labourTotal = 0;
   let totalHours = 0;
+  /* What surcharges added to production lines. Income like the rest of
+     labour: it is in labourTotal, it is taxed, and it adds no hours — a
+     weekend day is the same day of work (D2's settled rules). */
+  let surchargeTotal = 0;
+  const dayCtx = surchargeContext(options);
 
   for (const section of labourSectionsOf(rows, labourSections)) {
     const saved = rows[section.id] || [];
@@ -422,7 +431,12 @@ function computeTotals(activeRows, pricing, settings, options) {
       const qty = nonNeg(line.qty);
       totalHours += qty * hoursPerUnitOf(def);
       const override = nonNeg(line.override);
-      labourTotal += override > 0 ? override : qty * nonNeg(def.mu);
+      const base = override > 0 ? override : qty * nonNeg(def.mu);
+      /* Only the section with id `prod` is on set (D24), whatever it is
+         called; a dayId anywhere else prices nothing extra. */
+      const price = section.id === 'prod' ? surchargedPriceOf(base, line, dayCtx) : base;
+      labourTotal += price;
+      surchargeTotal += price - base;
     }
   }
 
@@ -547,6 +561,9 @@ function computeTotals(activeRows, pricing, settings, options) {
 
     // How it breaks down
     labourTotal: round2(labourTotal),
+    /* Owner-only, like everything below the client figures: the client's
+       copy never says "surcharge" (D8, D12). Never on a public route. */
+    surchargeTotal: round2(surchargeTotal),
     expenseTotal: round2(expenseTotal),
     passThroughCost: round2(passThroughCost),
     directJobCost: round2(directJobCost),
@@ -1380,8 +1397,12 @@ const SERVICE_UNITS = ['hour', 'half', 'full'];
    card field by field and drops it, so both of its writes are refused.
 
    'travel-km' since task 6b: a 'travel-auto' build's Rate Card would drop a
-   km row's `perKm` flag and save it as a resold row at a typed $0. */
-const PRICING_SHAPE = 'travel-km';
+   km row's `perKm` flag and save it as a resold row at a typed $0.
+
+   'production-days' since production-booking task 2 (v11): a 'travel-km'
+   build's editor knows nothing of booked days, and its Rate Card rebuilds the
+   card field by field and would drop `surcharges`. */
+const PRICING_SHAPE = 'production-days';
 
 /**
  * Is a rate card in a shape this build can't write? True when it doesn't carry
@@ -1715,8 +1736,9 @@ function travelFloorComparison(pricing, settings, floorPerHour) {
 /* ── Surcharges: weekend / public holiday, after hours, short notice ──────────
    Added 2026-10-02 (.design/production-booking/, task 1; the brief's Key
    Interactions 1 is the spec and its worked examples are pinned in
-   test-calc.js). Pure functions only: computeTotals does not call any of this
-   yet, so nothing that is already saved can price differently.
+   test-calc.js). Since task 2, computeTotals prices a `prod` line through
+   them when the line's `dayId` names one of the estimate's days; a line on no
+   day, and every estimate saved before v11, prices exactly as it did.
 
    What is settled, not derived:
 
@@ -2012,6 +2034,111 @@ function surchargeAttribution(base, day, card, shortNotice, holidays) {
   return { base: b, price, surcharge, factor, kind, rows: out };
 }
 
+/**
+ * What an estimate stores as its surcharge snapshot (`surcharges_json`): the
+ * settings it was priced under and each dated day's kind, so a later Rate Card
+ * or holiday-list change moves only new estimates (brief, Key Interactions 1).
+ *
+ * Re-saving keeps what was snapshotted: the prior settings, and a day's kind
+ * as long as that day (same id) still has the same date. A new day, or one
+ * whose date moved, is read fresh against the holiday list. With no prior
+ * snapshot — a new estimate, one saved before v11, or the caller asking for
+ * current rates — the card's settings are taken live.
+ *
+ * One definition for both sides: the server stores it, and the editor builds
+ * the same one to price live, so the two agree to the cent.
+ *
+ * @param {Array<object>} days — the estimate's days as about to be saved:
+ *   { id, date } (others ignored).
+ * @param {object} card — the live rate card.
+ * @param {Array} holidays — the live holiday list (see dayKind).
+ * @param {object|null} prior — { surcharges, days }: the stored snapshot and
+ *   the stored days; null for none.
+ * @returns {{settings:object, days:Object<string,string>}}
+ */
+function surchargeSnapshot(days, card, holidays, prior) {
+  const p = prior || {};
+  const snap = p.surcharges && typeof p.surcharges === 'object' ? p.surcharges : {};
+  const keep = Boolean(snap.settings && typeof snap.settings === 'object');
+  const settings = keep ? normaliseSurcharges(snap.settings) : surchargeSettings(card);
+  const priorKinds = keep && snap.days && typeof snap.days === 'object' ? snap.days : {};
+  const priorDates = {};
+  (Array.isArray(p.days) ? p.days : []).forEach((d) => {
+    if (d && d.id) priorDates[d.id] = d.date || null;
+  });
+
+  const kinds = {};
+  (Array.isArray(days) ? days : []).forEach((d) => {
+    if (!d || !d.id) return;
+    const fresh = dayKind(d.date, settings, holidays);
+    if (fresh === null) return; // Date TBC: nothing to snapshot
+    const held = priorKinds[d.id];
+    kinds[d.id] = held && priorDates[d.id] === d.date ? held : fresh;
+  });
+  return { settings, days: kinds };
+}
+
+/* The surcharge context computeTotals prices `prod` lines through: each day by
+   id, with its snapshotted kind, and the snapshot's settings as a card. null
+   when the estimate has no days, so nothing about it is surcharged. */
+function surchargeContext(options) {
+  const o = options || {};
+  if (!Array.isArray(o.days) || !o.days.length) return null;
+  const snap = o.surcharges && typeof o.surcharges === 'object' ? o.surcharges : {};
+  const kinds = snap.days && typeof snap.days === 'object' ? snap.days : {};
+  const byId = new Map();
+  o.days.forEach((d) => {
+    if (d && d.id) byId.set(String(d.id), Object.assign({}, d, { kind: kinds[d.id] }));
+  });
+  return { byId, card: { surcharges: snap.settings }, shortNotice: o.shortNotice === true };
+}
+
+/* A production line's price after surcharges, or `base` itself — untouched,
+   not even rounded — when the line has no day this estimate knows. */
+function surchargedPriceOf(base, line, ctx) {
+  const day = ctx && line && line.dayId ? ctx.byId.get(String(line.dayId)) : null;
+  if (!day) return base;
+  return surchargedLinePrice(base, surchargeFactor(day, ctx.card, ctx.shortNotice));
+}
+
+/**
+ * The estimate's lines as they are stored: every `prod` line on a day carries
+ * the `surchargedPrice` computeTotals priced it at (D20's whole dollars), and
+ * no other line carries one. The server writes this on every save, so a stored
+ * line can never claim a price its totals don't contain; the PDF and the
+ * detail read it rather than re-pricing.
+ *
+ * @param {object} activeRows — as computeTotals takes them.
+ * @param {object} pricing — the rate card.
+ * @param {object} options — computeTotals' options (days, surcharges, shortNotice).
+ * @returns {object} a new activeRows; the input is not modified.
+ */
+function stampSurchargedPrices(activeRows, pricing, options) {
+  const rows = activeRows || {};
+  const ctx = surchargeContext(options);
+  const prodRows = ((pricing && pricing.labourSections) || []).find((s) => s && s.id === 'prod');
+  const out = {};
+  Object.keys(rows).forEach((key) => {
+    if (!Array.isArray(rows[key])) {
+      out[key] = rows[key];
+      return;
+    }
+    out[key] = rows[key].map((line) => {
+      if (!line || typeof line !== 'object') return line;
+      const copy = Object.assign({}, line);
+      delete copy.surchargedPrice;
+      if (key !== 'prod' || !ctx || !copy.dayId || !ctx.byId.has(String(copy.dayId))) return copy;
+      const def = lineDef(prodRows ? prodRows.rows : [], copy, pricing);
+      if (!def) return copy;
+      const override = nonNeg(copy.override);
+      const base = override > 0 ? override : nonNeg(copy.qty) * nonNeg(def.mu);
+      copy.surchargedPrice = surchargedPriceOf(base, copy, ctx);
+      return copy;
+    });
+  });
+  return out;
+}
+
 /** Statuses that mean the work was won. Draft and sent are still quotes. */
 const WON_STATUSES = ['approved', 'invoiced', 'paid'];
 
@@ -2196,6 +2323,8 @@ if (typeof module === 'object' && module.exports) {
     surchargeFactor,
     surchargedLinePrice,
     surchargeAttribution,
+    surchargeSnapshot,
+    stampSurchargedPrices,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -2250,6 +2379,8 @@ if (typeof module === 'object' && module.exports) {
     surchargeFactor,
     surchargedLinePrice,
     surchargeAttribution,
+    surchargeSnapshot,
+    stampSurchargedPrices,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,

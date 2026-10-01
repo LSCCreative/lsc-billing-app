@@ -88,9 +88,10 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    IA written 2026-10-02 (D58–D66: "Projects" replaces "Estimates" in the nav, hash routes, unique
    UPIDs, Settings becomes a screen, the data model across migrations v11–v13).
    `TASKS.md` written 2026-10-02 (33 tasks: A+B 1–10, C 11–13, D 14–23, E 24–32, review 33).
-   Task 1 (surcharge maths, pure `calc.js` functions) done 2026-10-02 on branch
-   `production-booking` (from estimate-accuracy at `e83533a`), uncommitted.** Next is task 2
-   (schema v11, days and holidays on the server, Opus/high). Client pages are light, in the
+   On branch `production-booking` (from estimate-accuracy at `e83533a`): task 1 (surcharge
+   maths) committed 2026-10-02; task 2 (schema v11: production days, holidays table, surcharged
+   `computeTotals`, clash lock, `GET /api/calendar`, `PRICING_SHAPE` `'production-days'`) done
+   the same day, uncommitted and not deployed.** Next is task 3 (public holidays, Sonnet/high). Client pages are light, in the
    colours of the user's site **lsccreative.studio** (formerly creativelsc.com). Read its `HANDOVER.md` first. Build bucket: Opus, effort high.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes

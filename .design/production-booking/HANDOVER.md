@@ -66,18 +66,36 @@ times.
 - [ ] **Build A → E.** In progress on branch `production-booking`. It was branched 2026-10-02 from
       `estimate-accuracy` at `e83533a`, where that track's work through v10 is committed but **not
       deployed**. v10 deploys before v11.
-      - [x] **Task 1, the surcharge maths**: done 2026-10-02, **uncommitted**.
+      - [x] **Task 1, the surcharge maths**: done and committed 2026-10-02 (`86edf25`).
         - Pure functions in both `calc.js` copies.
-        - Every worked example is pinned, and all ten mutations are caught.
         - The settings, day and attribution shapes it chose are in TASKS.md task 1's Done note.
-          Tasks 2, 4 and 8 build on them, so read that note before starting any of them.
-        - `computeTotals` is untouched, so nothing saved can price differently yet.
+      - [x] **Task 2, schema v11 with days on the server**: done 2026-10-02, **uncommitted**.
+        - **What exists now:** migration v11, surcharged `computeTotals`, the estimate routes
+          taking `days`, the clash lock, and `GET /api/calendar`. `PRICING_SHAPE` is
+          `'production-days'`.
+        - **Not deployed.** Ship it with the rest of A+B (task 10): NAS before Pages, and v10
+          first.
+        - **Read task 2's Done note before tasks 6, 7 and 15.** It lists the write rules, error
+          codes and snapshot behaviour they build on.
 
-**Exact next item: TASKS.md task 2, schema v11 with days and holidays on the server** (money math,
-**Opus/high**). Commit task 1 first if the user agrees. Task 2 wires `surchargeFactor` into
-`computeTotals` for `prod` lines that carry a `dayId`. It snapshots each day's `kind` and the
-card's `surcharges` into `surcharges_json`; `surchargeFactor` already honours a day's `kind` over
-the holiday list.
+**Exact next item: TASKS.md task 3, public holidays (fetch and edit)** (backend,
+**Sonnet/high**: switch models first). Commit task 2 first if the user agrees.
+
+**Seams task 2 left for later tasks:**
+- **Holidays (task 3):** the `holidays` table exists, and the estimate routes already read it. Task
+  3 adds the routes. Its `GET` also has to give the editor the list, so task 7's live pricing builds
+  the same snapshot as the server.
+- **Editor (tasks 6 and 7):** `collect()` must send `days` and `shortNotice`, and day ids are made
+  in the browser.
+  - For live pricing, build `surchargeSnapshot(days, card, holidays, { surcharges:
+    estimate.surcharges, days: estimate.days })`, or `null` for a new estimate. Pass `{ days,
+    surcharges, shortNotice }` to `computeTotals`, and the totals then match the server to the
+    cent.
+  - "Update to current rates" should also send `refreshSurcharges: true`.
+  - Handle the 409 `date_locked` and its message.
+- **Status migration (task 15):** turn foreign keys off for the `estimates` rebuild, or the cascade
+  deletes every production day. Also exclude declined estimates in `lockedDay` (`days.js`) and in
+  `routes/calendar.js`.
 
 **For review at task 8 (Cost Breakdown):** how attribution splits money between surcharges is an
 implementation choice, not a user decision. For example, under "multiply", after hours is charged

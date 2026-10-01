@@ -1231,3 +1231,228 @@ test('estimates: a km line is billed at cost and a bare one on the server prices
   assert.equal(bare.totals.expenseTotal, 0);
   for (const e of [snapped, bare]) await api(`/api/estimates/${e.id}`, { method: 'DELETE' });
 });
+
+/* ── Production days (production-booking task 2) ───────────────────────────
+   Dates: Fri 2 Oct, Sat 3 Oct, Mon 5 Oct (NSW Labour Day) 2026. Each test
+   cleans up its estimates, so their days leave the calendar with them. */
+const capture = (dayId, extra) => ({ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8, ...(dayId ? { dayId } : {}), ...(extra || {}) });
+const pbDay = (id, date, status, extra) => ({ id, date, status, startTime: null, endTime: null, overrideNote: '', ...(extra || {}) });
+async function saveEstimate(body, id) {
+  const res = await api(id ? `/api/estimates/${id}` : '/api/estimates', {
+    method: id ? 'PUT' : 'POST',
+    body: JSON.stringify({ name: 'Booked', upid: 'UP-' + Math.random().toString(36).slice(2, 6), ...body }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+const dropEstimates = (...ids) => Promise.all(ids.map((id) => api(`/api/estimates/${id}`, { method: 'DELETE' })));
+
+test('estimates: one saved before v11 reads no days, and totals exactly as it did', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const rows = { prod: [capture(null)], post: [capture(null, { name: 'Edit', mu: 900 })] };
+  const before = await saveEstimate({ activeRows: rows });
+  assert.equal(before.status, 201);
+  // As v11 leaves an older row: no days, nothing ticked, an empty snapshot,
+  // and totals stored before surchargeTotal existed.
+  const { surchargeTotal, ...oldTotals } = before.body.estimate.totals;
+  assert.equal(surchargeTotal, 0);
+  db.prepare("UPDATE estimates SET short_notice = 0, surcharges_json = '{}', totals_json = ? WHERE id = ?")
+    .run(JSON.stringify(oldTotals), before.body.estimate.id);
+  const read = (await api(`/api/estimates/${before.body.estimate.id}`).then((r) => r.json())).estimate;
+  assert.deepEqual([read.days, read.shortNotice, read.surcharges], [[], false, {}]);
+  assert.deepEqual(read.totals, oldTotals);
+  // Re-saved by a v11 build, with and without a days list: every figure as it
+  // was, plus a zero surchargeTotal.
+  for (const extra of [{ days: [] }, {}]) {
+    const again = await saveEstimate({ activeRows: rows, ...extra }, read.id);
+    assert.deepEqual(again.body.estimate.totals, { ...oldTotals, surchargeTotal: 0 });
+    assert.deepEqual(again.body.estimate.activeRows, rows);
+  }
+  await dropEstimates(read.id);
+});
+
+test('estimates: the worked examples price on the server as in calc.js, and each line carries its price', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const days = [
+    pbDay('d_sat', '2026-10-03', 'confirmed', { startTime: '13:00', endTime: '21:00' }),
+    pbDay('d_fri', '2026-10-02', 'pencilled', { startTime: '09:00', endTime: '19:00' }),
+    pbDay('d_tbc', null, 'proposed'),
+  ];
+  const activeRows = { prod: [capture('d_sat'), capture('d_fri'), capture('d_tbc')] };
+  const { status, body } = await saveEstimate({ activeRows, days });
+  assert.equal(status, 201);
+  const e = body.estimate;
+  assert.deepEqual(e.activeRows.prod.map((l) => l.surchargedPrice), [1680, 1176, 1120]);
+  assert.deepEqual([e.totals.surchargeTotal, e.totals.totalIncGst], [616, 3976]);
+  assert.deepEqual(e.days.map((d) => d.id), ['d_sat', 'd_fri', 'd_tbc']);
+  assert.deepEqual(e.surcharges.days, { d_sat: 'weekend', d_fri: 'weekday' });
+
+  // Short notice ticked: Saturday 1–9pm is the brief's $3,360 in the default mode.
+  const sn = await saveEstimate({ activeRows, days, shortNotice: true }, e.id);
+  assert.deepEqual(sn.body.estimate.activeRows.prod.map((l) => l.surchargedPrice), [3360, 2352, 2240]);
+  assert.equal(sn.body.estimate.shortNotice, true);
+  // A PUT that doesn't mention days or short notice keeps both.
+  const kept = await saveEstimate({ activeRows }, e.id);
+  assert.equal(kept.body.estimate.days.length, 3);
+  assert.equal(kept.body.estimate.totals.totalIncGst, sn.body.estimate.totals.totalIncGst);
+  // An empty list removes them; the lines then name no day, which is refused…
+  assert.equal((await saveEstimate({ activeRows, days: [] }, e.id)).body.error, 'line_day_unknown');
+  // …until they come off their days too.
+  const cleared = await saveEstimate({ activeRows: { prod: [capture(null)] }, days: [], shortNotice: false }, e.id);
+  assert.deepEqual([cleared.body.estimate.days, cleared.body.estimate.surcharges, cleared.body.estimate.totals.surchargeTotal], [[], {}, 0]);
+  await dropEstimates(e.id);
+});
+
+test('estimates: a saved estimate keeps the multipliers it was priced at until asked to refresh', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const days = [pbDay('d_s1', '2026-10-03', 'confirmed')];
+  const activeRows = { prod: [capture('d_s1')] };
+  const first = await saveEstimate({ activeRows, days });
+  assert.equal(first.body.estimate.totals.surchargeTotal, 560);
+
+  assert.equal((await api('/api/pricing', { method: 'PUT', body: JSON.stringify({ ...card, surcharges: { weekend: 2 } }) })).status, 200);
+  const resaved = await saveEstimate({ activeRows, days }, first.body.estimate.id);
+  assert.equal(resaved.body.estimate.totals.surchargeTotal, 560);
+  const fresh = await saveEstimate({ activeRows, days, refreshSurcharges: true }, first.body.estimate.id);
+  assert.equal(fresh.body.estimate.totals.surchargeTotal, 1120);
+  // A new estimate takes the card as it is now.
+  const other = await saveEstimate({ activeRows: { prod: [capture('d_s2')] }, days: [pbDay('d_s2', '2026-10-04', 'proposed')] });
+  assert.equal(other.body.estimate.totals.surchargeTotal, 1120);
+
+  // A holiday added later moves only days saved after it.
+  db.prepare("INSERT INTO holidays (date, name, source) VALUES ('2026-10-05', 'Labour Day', 'added')").run();
+  const mon = await saveEstimate({ activeRows: { prod: [capture('d_m')] }, days: [pbDay('d_m', '2026-10-05', 'proposed')] });
+  assert.equal(mon.body.estimate.totals.surchargeTotal, 1120);
+  db.prepare("UPDATE holidays SET hidden = 1 WHERE date = '2026-10-05'").run();
+  const monAgain = await saveEstimate({ activeRows: { prod: [capture('d_m')] }, days: [pbDay('d_m', '2026-10-05', 'proposed')] }, mon.body.estimate.id);
+  assert.equal(monAgain.body.estimate.totals.surchargeTotal, 1120);
+  db.prepare('DELETE FROM holidays').run();
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  await dropEstimates(first.body.estimate.id, other.body.estimate.id, mon.body.estimate.id);
+});
+
+test('estimates: a date another estimate confirmed is locked, unless the day carries a note', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const a = await saveEstimate({ upid: 'UPID-042', days: [pbDay('a1', '2026-10-03', 'confirmed'), pbDay('a2', '2026-10-10', 'pencilled')] });
+  assert.equal(a.status, 201);
+
+  // A second "tab": a raw write of another estimate onto A's confirmed date.
+  const locked = await saveEstimate({ days: [pbDay('b1', '2026-10-03', 'proposed')] });
+  assert.equal(locked.status, 409);
+  assert.deepEqual([locked.body.error, locked.body.date, locked.body.upid, locked.body.estimateId],
+    ['date_locked', '2026-10-03', 'UPID-042', a.body.estimate.id]);
+  assert.match(locked.body.message, /UPID-042/);
+
+  // With a specification note it goes through, and the note is kept.
+  const b = await saveEstimate({ days: [pbDay('b1', '2026-10-03', 'confirmed', { overrideNote: '  Subcontractor shooting ' })] });
+  assert.equal(b.status, 201);
+  assert.equal(b.body.estimate.days[0].overrideNote, 'Subcontractor shooting');
+
+  // A pencilled date never refuses, whatever the new day's status.
+  const c = await saveEstimate({ days: [pbDay('c1', '2026-10-10', 'confirmed')] });
+  assert.equal(c.status, 201);
+  // …but now A's pencilled 10 Oct can't turn confirmed without a note,
+  const promote = await saveEstimate({ upid: 'UPID-042', days: [pbDay('a1', '2026-10-03', 'confirmed'), pbDay('a2', '2026-10-10', 'confirmed')] }, a.body.estimate.id);
+  assert.equal(promote.status, 409);
+  // while re-saving it as it stands is still allowed.
+  const same = await saveEstimate({ upid: 'UPID-042', days: [pbDay('a1', '2026-10-03', 'confirmed'), pbDay('a2', '2026-10-10', 'pencilled')] }, a.body.estimate.id);
+  assert.equal(same.status, 200);
+  // Moving a day onto a locked date is checked like a new one.
+  const move = await saveEstimate({ days: [pbDay('c1', '2026-10-03', 'confirmed')] }, c.body.estimate.id);
+  assert.equal(move.status, 409);
+  // The refused writes changed nothing.
+  assert.deepEqual((await api(`/api/estimates/${c.body.estimate.id}`).then((r) => r.json())).estimate.days.map((d) => d.date), ['2026-10-10']);
+  await dropEstimates(a.body.estimate.id, b.body.estimate.id, c.body.estimate.id);
+});
+
+test('estimates: days and the lines on them are checked before anything is stored', async () => {
+  const bad = async (body) => (await saveEstimate(body)).body.error;
+  assert.equal(await bad({ days: 'Saturday' }), 'days_not_a_list');
+  assert.equal(await bad({ days: [pbDay('x', '2026-02-30', 'confirmed')] }), 'day_date_invalid');
+  assert.equal(await bad({ days: [pbDay('x', '2026-10-03', 'booked')] }), 'day_status_invalid');
+  assert.equal(await bad({ days: [pbDay('x', '2026-10-03', 'proposed', { startTime: '9am' })] }), 'day_time_invalid');
+  assert.equal(await bad({ days: [pbDay('x y', '2026-10-03', 'proposed')] }), 'day_id_invalid');
+  assert.equal(await bad({ days: [pbDay('x', null, 'proposed'), pbDay('x', null, 'proposed')] }), 'day_id_duplicate');
+  assert.equal(await bad({ days: [pbDay('x', null, 'proposed')], activeRows: { prod: [capture('y')] } }), 'line_day_unknown');
+  assert.equal(await bad({ days: [pbDay('x', null, 'proposed')], activeRows: { post: [capture('x')] } }), 'day_on_non_production_line');
+
+  const owner = await saveEstimate({ days: [pbDay('d_owned', null, 'proposed')] });
+  assert.equal(await bad({ days: [pbDay('d_owned', null, 'proposed')] }), 'day_id_taken');
+  await dropEstimates(owner.body.estimate.id);
+});
+
+test('calendar: only days dated in the range, with what a tile shows, and none once the estimate goes', async () => {
+  const e = await saveEstimate({
+    upid: 'UPID-077', name: 'Launch film', client: { businessName: 'Acme Pty Ltd' },
+    activeRows: { prod: [capture('k1'), capture('k1', { name: 'Drone' }), capture('k2')] },
+    days: [
+      pbDay('k1', '2026-10-03', 'confirmed', { startTime: '20:00', endTime: '02:00' }),
+      pbDay('k2', '2026-11-01', 'pencilled'),
+      pbDay('k3', null, 'proposed'),
+    ],
+  });
+  assert.equal(e.status, 201);
+  const cal = (q) => api('/api/calendar' + q).then(async (r) => [r.status, await r.json()]);
+
+  let [status, body] = await cal('?from=2026-10-01&to=2026-10-31');
+  assert.equal(status, 200);
+  assert.deepEqual(body.days, [{
+    id: 'k1', estimateId: e.body.estimate.id, date: '2026-10-03', status: 'confirmed',
+    startTime: '20:00', endTime: '02:00', overrideNote: '', upid: 'UPID-077', projectName: 'Launch film',
+    client: 'Acme Pty Ltd', items: ['Video Capture', 'Drone'],
+  }]);
+  // Overnight into the 4th still belongs to the 3rd; both ends inclusive.
+  assert.deepEqual((await cal('?from=2026-10-04&to=2026-10-31'))[1].days, []);
+  assert.deepEqual((await cal('?from=2026-10-03&to=2026-11-01'))[1].days.map((d) => d.id), ['k1', 'k2']);
+
+  assert.equal((await cal('?from=2026-10-31&to=2026-10-01'))[0], 400);
+  assert.equal((await cal('?from=2026-10-01'))[0], 400);
+  assert.equal((await cal('?from=2026-01-01&to=2027-12-31'))[0], 400);
+
+  await dropEstimates(e.body.estimate.id);
+  [status, body] = await cal('?from=2026-10-01&to=2026-11-30');
+  assert.deepEqual(body.days, []);
+});
+
+test('estimates: a duplicate takes no days, and its lines price at base', async () => {
+  const e = await saveEstimate({
+    activeRows: { prod: [capture('dd1')] }, shortNotice: true,
+    days: [pbDay('dd1', '2026-10-03', 'confirmed')],
+  });
+  assert.equal(e.body.estimate.totals.totalIncGst, 3360);
+  const copy = (await api(`/api/estimates/${e.body.estimate.id}/duplicate`, { method: 'POST' }).then((r) => r.json())).estimate;
+  assert.deepEqual([copy.days, copy.shortNotice, copy.surcharges], [[], false, {}]);
+  assert.deepEqual(copy.activeRows.prod, [capture(null)]);
+  assert.deepEqual([copy.totals.totalIncGst, copy.totals.surchargeTotal], [1120, 0]);
+  await dropEstimates(e.body.estimate.id, copy.id);
+});
+
+test('estimates and pricing: a write from a build before v11 is refused as outdated', async () => {
+  const est = await api('/api/estimates', { method: 'POST', bare: true, body: JSON.stringify({ pricingShape: 'travel-km', name: 'old tab' }) });
+  assert.equal(est.status, 400);
+  assert.equal((await est.json()).error, 'pricing_shape_outdated');
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const { surcharges, ...dropped } = card; // what that build's Rate Card sends
+  const old = await api('/api/pricing', { method: 'PUT', bare: true, body: JSON.stringify({ ...dropped, pricingShape: 'travel-km' }) });
+  assert.equal(old.status, 400);
+  assert.equal((await old.json()).error, 'pricing_shape_outdated');
+});
+
+test('pricing: surcharge settings are checked when a card carries them', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const put = async (surcharges) => {
+    const res = await api('/api/pricing', { method: 'PUT', body: JSON.stringify({ ...card, surcharges }) });
+    return (await res.json()).error;
+  };
+  assert.equal(await put({ shortNotice: 2, weekend: 1.5, afterHours: 1.25, officeStart: '07:00', officeEnd: '17:00', workingWeekdays: [1, 2, 3, 4, 5], mode: 'higher', shortNoticeHintDays: 7 }), undefined);
+  assert.equal(await put({ weekend: 0.8 }), 'surcharge_multiplier_out_of_range');
+  assert.equal(await put({ afterHours: '1.25' }), 'surcharge_multiplier_out_of_range');
+  assert.equal(await put({ officeStart: '17:00', officeEnd: '07:00' }), 'surcharge_office_hours_invalid');
+  assert.equal(await put({ officeStart: '07:00' }), 'surcharge_office_hours_invalid');
+  assert.equal(await put({ workingWeekdays: [] }), 'surcharge_weekdays_invalid');
+  assert.equal(await put({ workingWeekdays: [1, 7] }), 'surcharge_weekdays_invalid');
+  assert.equal(await put({ mode: 'add' }), 'surcharge_mode_invalid');
+  assert.equal(await put({ shortNoticeHintDays: -1 }), 'surcharge_hint_days_out_of_range');
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+});

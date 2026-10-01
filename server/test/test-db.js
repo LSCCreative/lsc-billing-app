@@ -23,8 +23,8 @@ test('creates a fresh database with every table the app needs', () => {
 
   for (const expected of
     ['account', 'clients', 'depreciation_assets', 'depreciation_locks', 'estimates', 'goals',
-      'overhead_items', 'overhead_snapshots', 'pricing', 'schema_version', 'sessions',
-      'settings']) {
+      'holidays', 'overhead_items', 'overhead_snapshots', 'pricing', 'production_days',
+      'schema_version', 'sessions', 'settings']) {
     assert.ok(tables.includes(expected), `missing table: ${expected}`);
   }
 
@@ -816,8 +816,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v10', () => {
-  assert.equal(LATEST_VERSION, 10);
+test('the schema knows it is at v11', () => {
+  assert.equal(LATEST_VERSION, 11);
 });
 
 /**
@@ -838,14 +838,71 @@ test('v10 adds the per-km cost as unset and touches nothing else on goals', () =
   db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
 
   const result = migrate(db);
-  assert.deepEqual([result.from, result.to], [9, 10]);
+  assert.deepEqual([result.from, result.to], [9, LATEST_VERSION]);
   const after = db.prepare('SELECT * FROM goals WHERE id = 1').get();
   assert.deepEqual(after, before);
   assert.equal(after.vehicle_cost_per_km, null);
 
   // Rewound again with the column still there: v10 runs, and nothing moves.
   db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db).applied, LATEST_VERSION - 9);
   assert.deepEqual(db.prepare('SELECT * FROM goals WHERE id = 1').get(), before);
+  db.close();
+});
+
+/**
+ * MIGRATION v11 — production days, holidays, and the surcharge snapshot
+ * (production-booking task 2). Additive: every estimate keeps every value and
+ * reads no days, no short notice and an empty snapshot; running it again
+ * changes nothing; and deleting an estimate takes its days with it (D22).
+ */
+test('v11 leaves every estimate as it was, with no days and nothing surcharged', () => {
+  const db = openDatabase(tempDbPath('v11-upgrade'));
+  const now = nowIso();
+  db.prepare(`
+    INSERT INTO estimates (id, upid, name, active_rows_json, totals_json, created_at, updated_at)
+    VALUES ('est_old', 'UP-1', 'Old job', ?, ?, ?, ?)
+  `).run(JSON.stringify({ prod: [{ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full' }] }),
+    JSON.stringify({ totalIncGst: 1120 }), now, now);
+  const before = db.prepare('SELECT * FROM estimates').get();
+
+  // Back to v10: the two columns and two tables gone, then migrate.
+  db.exec(`
+    DROP TABLE production_days; DROP TABLE holidays;
+    ALTER TABLE estimates DROP COLUMN short_notice;
+    ALTER TABLE estimates DROP COLUMN surcharges_json;
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [10, 11, 1]);
+
+  const after = db.prepare('SELECT * FROM estimates').get();
+  assert.deepEqual(after, { ...before, short_notice: 0, surcharges_json: '{}' });
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_days').get().n, 0);
+
+  // Again, with everything already there: it runs, and nothing moves.
+  db.prepare("INSERT INTO holidays (date, name, source) VALUES ('2026-10-05', 'Labour Day', 'fetched')").run();
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(db.prepare('SELECT * FROM estimates').get(), after);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM holidays').get().n, 1);
+  db.close();
+});
+
+test('v11: a day belongs to one estimate, has a known status, and goes when its estimate does', () => {
+  const db = openDatabase(tempDbPath('v11-days'));
+  const now = nowIso();
+  db.prepare("INSERT INTO estimates (id, created_at, updated_at) VALUES ('est_a', ?, ?)").run(now, now);
+  const day = db.prepare(`
+    INSERT INTO production_days (id, estimate_id, date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  day.run('day_1', 'est_a', '2026-10-03', 'confirmed', now, now);
+  day.run('day_2', 'est_a', null, 'proposed', now, now); // Date TBC
+  assert.throws(() => day.run('day_3', 'est_a', '2026-10-03', 'booked', now, now), /CHECK/);
+  assert.throws(() => day.run('day_4', 'est_missing', '2026-10-03', 'confirmed', now, now), /FOREIGN KEY/);
+  assert.throws(() => db.prepare("INSERT INTO holidays (date, source) VALUES ('2026-12-25', 'guessed')").run(), /CHECK/);
+
+  db.prepare("DELETE FROM estimates WHERE id = 'est_a'").run();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_days').get().n, 0);
   db.close();
 });

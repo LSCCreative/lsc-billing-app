@@ -346,6 +346,9 @@ test('existing hourly rows total exactly as they did before day rows existed', (
     gst: 323.64,
     totalIncGst: 3560,
     labourTotal: 2000,
+    // Added 2026-10-02 (production-booking task 2): nothing here is on a
+    // booked day, so nothing is surcharged. A key, not a change of figure.
+    surchargeTotal: 0,
     expenseTotal: 1560,
     // Ex-GST since 2026-09-30 (estimate-accuracy task 3): this card is
     // GST-inclusive, so the 1420 of pass-throughs typed in is 1420 / 1.1.
@@ -2100,9 +2103,11 @@ test('travelFloorComparison: no floor yet is "can\'t tell", not fine and not bel
 });
 
 test('a card without this build\'s shape marker is outdated', () => {
-  assert.equal(PRICING_SHAPE, 'travel-km');
+  assert.equal(PRICING_SHAPE, 'production-days');
   // 6a's build, which would save a km row as a resold $0 row (task 6b).
   assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'travel-auto' }), true);
+  // 6b's build, whose Rate Card would drop the surcharge settings (production-booking task 2).
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'travel-km' }), true);
   assert.equal(cardShapeOutdated(DEFAULT_PRICING), false);
   const { pricingShape, ...unmarked } = DEFAULT_PRICING;
   assert.equal(pricingShape, PRICING_SHAPE);
@@ -2431,4 +2436,116 @@ test('attribution: rows add up to price − base to the cent across a sweep', ()
     }
   }
   assert.ok(checked > 1000);
+});
+
+/* ── Surcharges in computeTotals (production-booking task 2) ───────────────
+   A `prod` line whose dayId names one of the estimate's days is priced
+   through task 1's maths; nothing else moves. Lines here carry their own
+   snapshot (mu), as every line saved since 2026-09-28 does. */
+const { surchargeSnapshot, stampSurchargedPrices } = require('../src/calc');
+
+const DAY_CARD_PB = {
+  labourSections: [{ id: 'prod', label: 'Production', rows: [] }, { id: 'post', label: 'Post', rows: [] }],
+  travelRows: [],
+  taxSetAsideRate: 0.3,
+};
+const capture = (extra) => ({ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8, ...extra });
+const SAT_DAY = { id: 'd_sat', date: SAT, status: 'confirmed', startTime: '13:00', endTime: '21:00' };
+const FRI_DAY = { id: 'd_fri', date: FRI, status: 'pencilled', startTime: '09:00', endTime: '19:00' };
+const TBC_DAY = { id: 'd_tbc', date: null, status: 'proposed', startTime: null, endTime: null };
+const booked = (days, opts) => {
+  const surcharges = surchargeSnapshot(days, DAY_CARD_PB, [], null);
+  return { days, surcharges, ...(opts || {}) };
+};
+
+test('a production line on a Saturday is priced at $1,680; the $560 is income with no extra hours', () => {
+  const rows = { prod: [capture({ dayId: 'd_sat' })] };
+  const plain = computeTotals({ prod: [capture()] }, DAY_CARD_PB, UNREG);
+  const t = computeTotals(rows, DAY_CARD_PB, UNREG, booked([{ ...SAT_DAY, startTime: null, endTime: null }]));
+  assert.deepEqual([t.labourTotal, t.surchargeTotal, t.clientPriceExGst], [1680, 560, 1680]);
+  assert.equal(t.totalHours, plain.totalHours);
+  assert.equal(t.incomeExGst, 1680);
+  assert.equal(t.taxSetAside, 504); // 30% of all of it: the surcharge is taxed
+});
+
+test('the worked examples price the same through computeTotals as in task 1', () => {
+  const rows = { prod: [capture({ dayId: 'd_sat' }), capture({ dayId: 'd_fri' }), capture({ dayId: 'd_tbc' })] };
+  const days = [SAT_DAY, FRI_DAY, TBC_DAY];
+  // Saturday 1–9pm $1,680; Friday 9–7 $1,176; TBC at base.
+  let t = computeTotals(rows, DAY_CARD_PB, UNREG, booked(days));
+  assert.deepEqual([t.labourTotal, t.surchargeTotal], [1680 + 1176 + 1120, 560 + 56]);
+  // Short notice: Saturday $3,360, Friday 2 × $1,176 = $2,352, TBC 2 × $1,120.
+  t = computeTotals(rows, DAY_CARD_PB, UNREG, booked(days, { shortNotice: true }));
+  assert.equal(t.labourTotal, 3360 + 2352 + 2240);
+  // The mode comes from the snapshot, not the live card.
+  const snap = booked(days, { shortNotice: true });
+  snap.surcharges.settings.mode = 'multiply';
+  assert.equal(computeTotals({ prod: [capture({ dayId: 'd_sat' })] }, DAY_CARD_PB, UNREG, snap).labourTotal, 3780);
+});
+
+test('a line on no day, a dayId outside Production, and an estimate with no days all price as before', () => {
+  const before = computeTotals({ prod: [capture()], post: [capture({ name: 'Edit' })] }, DAY_CARD_PB, UNREG);
+  const opts = booked([SAT_DAY]);
+  const noDay = computeTotals({ prod: [capture()], post: [capture({ name: 'Edit' })] }, DAY_CARD_PB, UNREG, opts);
+  assert.deepEqual(noDay, before);
+  const postOnDay = computeTotals({ prod: [capture()], post: [capture({ name: 'Edit', dayId: 'd_sat' })] }, DAY_CARD_PB, UNREG, opts);
+  assert.deepEqual(postOnDay, before);
+  // A dayId the estimate has no day for (and options with no days at all).
+  assert.deepEqual(computeTotals({ prod: [capture({ dayId: 'd_gone' })], post: [capture({ name: 'Edit' })] }, DAY_CARD_PB, UNREG, opts), before);
+  assert.deepEqual(computeTotals({ prod: [capture({ dayId: 'd_sat' })], post: [capture({ name: 'Edit' })] }, DAY_CARD_PB, UNREG), before);
+  assert.equal(before.surchargeTotal, 0);
+});
+
+test('a custom-bill production line on a Saturday is surcharged on its custom amount', () => {
+  const t = computeTotals({ prod: [capture({ dayId: 'd_sat', override: 500 })] }, DAY_CARD_PB, UNREG,
+    booked([{ ...SAT_DAY, startTime: null, endTime: null }]));
+  assert.deepEqual([t.labourTotal, t.surchargeTotal], [750, 250]);
+});
+
+test('on a GST-inclusive card the surcharge folds into the GST-inclusive price', () => {
+  const t = computeTotals({ prod: [capture({ dayId: 'd_sat' })] }, DAY_CARD_PB, settingsWith(GST_INCLUSIVE),
+    booked([{ ...SAT_DAY, startTime: null, endTime: null }]));
+  assert.deepEqual([t.totalIncGst, t.clientPriceExGst, t.gst], [1680, 1527.27, 152.73]);
+});
+
+test('surchargeSnapshot: a new estimate takes the live card and today\'s holiday list', () => {
+  const card = { ...DAY_CARD_PB, surcharges: { weekend: 1.75 } };
+  const snap = surchargeSnapshot([SAT_DAY, TBC_DAY, { id: 'd_ld', date: LABOUR_DAY }], card, [LABOUR_DAY], null);
+  assert.equal(snap.settings.weekend, 1.75);
+  assert.deepEqual(snap.days, { d_sat: 'weekend', d_ld: 'holiday' }); // TBC has nothing to snapshot
+});
+
+test('surchargeSnapshot: a re-save keeps the old settings and each unmoved day\'s kind', () => {
+  const prior = {
+    surcharges: { settings: { ...SURCHARGE_DEFAULTS, weekend: 1.5 }, days: { d_ld: 'weekday', d_sat: 'weekend' } },
+    days: [{ id: 'd_ld', date: LABOUR_DAY }, { id: 'd_sat', date: SAT }],
+  };
+  const liveCard = { ...DAY_CARD_PB, surcharges: { weekend: 3 } };
+  const moved = { id: 'd_sat', date: FRI }; // a Saturday moved to a Friday
+  const snap = surchargeSnapshot([{ id: 'd_ld', date: LABOUR_DAY }, moved, { id: 'd_new', date: LABOUR_DAY }],
+    liveCard, [LABOUR_DAY], prior);
+  assert.equal(snap.settings.weekend, 1.5);
+  // Saved before Labour Day was on the list: still a weekday. A new day on it reads the list.
+  // The moved day is read again (now a weekday), not kept as a weekend.
+  assert.deepEqual(snap.days, { d_ld: 'weekday', d_sat: 'weekday', d_new: 'holiday' });
+  // No prior settings (an estimate saved with no days) is a fresh snapshot.
+  assert.equal(surchargeSnapshot([SAT_DAY], liveCard, [], { surcharges: {}, days: [] }).settings.weekend, 3);
+});
+
+test('stampSurchargedPrices: each production line on a day carries its price, and nothing else carries one', () => {
+  const rows = {
+    prod: [capture({ dayId: 'd_sat' }), capture({ surchargedPrice: 9999 })],
+    post: [capture({ name: 'Edit', surchargedPrice: 1 })],
+    crew: [{ name: 'Gaffer', days: 1, cost: 500 }],
+  };
+  const opts = booked([SAT_DAY], { shortNotice: true });
+  const stamped = stampSurchargedPrices(rows, DAY_CARD_PB, opts);
+  assert.equal(stamped.prod[0].surchargedPrice, 3360);
+  assert.equal('surchargedPrice' in stamped.prod[1], false);
+  assert.equal('surchargedPrice' in stamped.post[0], false);
+  assert.deepEqual(stamped.crew, rows.crew);
+  assert.equal(rows.prod[1].surchargedPrice, 9999); // the input is not modified
+  // What is stamped is what is totalled.
+  const t = computeTotals(stamped, DAY_CARD_PB, UNREG, opts);
+  assert.equal(t.labourTotal, 3360 + 1120 + 1120);
 });

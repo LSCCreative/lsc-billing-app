@@ -579,6 +579,68 @@ const MIGRATIONS = [
       if (!has) db.exec('ALTER TABLE goals ADD COLUMN vehicle_cost_per_km REAL;');
     },
   },
+  {
+    version: 11,
+    name: 'production days, public holidays, and the surcharge snapshot',
+    up(db) {
+      // .design/production-booking/ task 2 (2026-10-02; IA "Data Model",
+      // Stage A + B). All additive, and safe to run twice (the upgrade tests
+      // rewind schema_version past it).
+      //
+      // 1. production_days — a TABLE, not estimate JSON, because the calendar
+      //    is a range query across every estimate. date NULL is a Date TBC day
+      //    (D9). Times are 'HH:MM'; an end before the start is overnight and
+      //    belongs to the start date (D21). override_note is the specification
+      //    note that lets a day onto a date another estimate has confirmed
+      //    (D16). A production line points at its day with `dayId` inside
+      //    active_rows_json. ON DELETE CASCADE: deleting an estimate removes
+      //    its days (D22).
+      //
+      //    TRAP FOR v12: rebuilding `estimates` (its status CHECK) by
+      //    DROP TABLE with foreign_keys = ON would cascade-delete every
+      //    production day. Turn foreign keys off for that rebuild, or copy
+      //    the days out and back.
+      //
+      // 2. holidays — national + NSW public holidays (D6, D7). `hidden` is a
+      //    fetched date the owner removed, kept so a re-fetch never brings it
+      //    back.
+      //
+      // 3. estimates.short_notice (the tick, D19) and estimates.surcharges_json
+      //    (calc.js surchargeSnapshot: the settings it was priced under and
+      //    each dated day's kind). '{}' on every existing row, which prices
+      //    exactly as before: an estimate with no days has nothing surcharged.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS production_days (
+          id            TEXT PRIMARY KEY,
+          estimate_id   TEXT NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+          date          TEXT,
+          status        TEXT NOT NULL CHECK (status IN ('confirmed', 'pencilled', 'proposed')),
+          start_time    TEXT,
+          end_time      TEXT,
+          override_note TEXT NOT NULL DEFAULT '',
+          sort          INTEGER NOT NULL DEFAULT 0,
+          created_at    TEXT NOT NULL,
+          updated_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_production_days_date ON production_days (date);
+        CREATE INDEX IF NOT EXISTS idx_production_days_estimate ON production_days (estimate_id);
+
+        CREATE TABLE IF NOT EXISTS holidays (
+          date   TEXT PRIMARY KEY,
+          name   TEXT NOT NULL DEFAULT '',
+          source TEXT NOT NULL CHECK (source IN ('fetched', 'added')),
+          hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1))
+        );
+      `);
+      const cols = db.prepare('PRAGMA table_info(estimates)').all().map((c) => c.name);
+      if (!cols.includes('short_notice')) {
+        db.exec('ALTER TABLE estimates ADD COLUMN short_notice INTEGER NOT NULL DEFAULT 0;');
+      }
+      if (!cols.includes('surcharges_json')) {
+        db.exec("ALTER TABLE estimates ADD COLUMN surcharges_json TEXT NOT NULL DEFAULT '{}';");
+      }
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

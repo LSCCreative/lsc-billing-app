@@ -108,7 +108,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
     - Each row carries `share`, the fraction of booked hours it covered. Task 8 can turn that into
       hours.
 
-- [ ] **2. Schema v11, days and holidays on the server** (money math — Opus/high, since the server
+- [x] **2. Schema v11, days and holidays on the server** (money math — Opus/high, since the server
   re-prices). _Depends on: 1._
   - **Migration v11:**
     - `production_days` (IA Data Model): `id`, `estimate_id`, `date` NULL, `status`,
@@ -137,6 +137,55 @@ State the bucket out loud and pause for the user to switch before starting a tas
 
   _Modifies: `db.js`, `calc.js` (×2), `routes/estimates.js`, `ratecard.js`; new
   `routes/calendar.js`._
+
+  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is 327/327. New files are
+  `days.js` and `routes/calendar.js`; `estimate.js`, `routes/pricing.js` and `app.js` also changed.
+  `ratecard.js` needed nothing.
+  - **Migration v11** is as specified and safe to re-run. `production_days.estimate_id` cascades on
+    delete (D22). **Trap for task 15:** rebuilding `estimates` with `DROP TABLE` while foreign keys
+    are on would delete every day. The migration's comment says so too.
+  - **`calc.js`:**
+    - `computeTotals` options gain `days`, `surcharges` and `shortNotice`. Only a `prod` line
+      whose `dayId` is one of `days` is surcharged; anything else prices as before.
+    - `totals.surchargeTotal` is always present (0 when nothing applies). The one whole-totals
+      test gained that key, and nothing else in it changed.
+    - `surchargeSnapshot(days, card, holidays, prior)` sets what an estimate pins.
+    - `stampSurchargedPrices` writes `surchargedPrice` onto each `prod` line that is on a day,
+      and strips it from every other line.
+  - **`PRICING_SHAPE`** is now `'production-days'`. A `'travel-km'` build's estimate writes and
+    card saves are both refused.
+  - **Estimate writes:**
+    - `days` replaces the estimate's days whole. A PUT **without** `days` or `shortNotice` keeps
+      them, because losing booked days is the expensive direction.
+    - **The snapshot is pinned on save.** It keeps the prior settings and each unmoved day's kind.
+      `refreshSurcharges: true` re-reads the live card and holidays. An estimate with no days stores
+      `'{}'`, so its first day takes today's settings.
+    - **Refusals:**
+      - 400: `days_not_a_list`, `day_id_invalid`, `day_id_duplicate`, `day_date_invalid`,
+        `day_status_invalid`, `day_time_invalid`, `day_note_too_long`, `too_many_days`,
+        `line_day_unknown`, `day_on_non_production_line`, `day_id_taken`.
+      - 409: `date_locked`, carrying `{ date, upid, estimateId, message }`.
+    - **When the lock is checked:** only for a day that is new, has moved date, or has just become
+      confirmed. An unchanged day can always be re-saved, so an estimate that pencilled a date first
+      is never stuck once another confirms it.
+  - **Duplicate** gets no days and no short notice. Its lines come off their days, and it is
+    re-totalled at base price when anything was stripped (this is D60 early).
+  - **`GET /api/calendar?from&to`** is inclusive at both ends and capped at 400 days, and it skips
+    TBC days. Each day carries `{ id, estimateId, date, status, startTime, endTime, overrideNote,
+    upid, projectName, client, items }`.
+  - **Beyond the spec:** `PUT /api/pricing` checks `surcharges` when present (multipliers 1–10,
+    office hours, weekdays, mode and hint days). Task 4's screen should mirror those codes.
+  - **Decided here; flag to the user at task 7:** a custom-bill (override) production line on a
+    surcharged day is surcharged on its custom amount.
+  - **Mutations:** 18 checked across the whole suite, and all caught:
+    - **calc.js:** any section surcharged; base not surcharged; surcharge adds hours; prior settings
+      ignored; a moved day's kind kept; short notice ignored; stale stamp kept.
+    - **days.js:** override note ignored; unchanged days re-checked; promotion to confirmed not
+      checked; pencilled locks; unknown line day allowed.
+    - **Routes:** PUT without days wipes them; refresh ignored; lines not stamped; duplicate copies
+      totals; calendar end exclusive; multiplier < 1 accepted.
+  - **In the browser** (`api-scratch` migrated to v11): an existing estimate re-saved at the same
+    total with `days: []`, and the Rate Card round-tripped as current.
 
 - [ ] **3. Public holidays: fetch and edit** (backend — Sonnet/high). _Depends on: 2._
   - `POST /api/holidays/fetch` pulls this year and next from a free, keyless Australian holiday

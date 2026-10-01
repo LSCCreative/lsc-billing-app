@@ -14,6 +14,7 @@ const { registerOverheadRoutes } = require('./routes/overhead');
 const { registerGoalsRoutes } = require('./routes/goals');
 const { registerDepreciationRoutes } = require('./routes/depreciation');
 const { registerTaxYearRoutes } = require('./routes/tax-years');
+const { registerCalendarRoutes } = require('./routes/calendar');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -89,6 +90,7 @@ function createApp(db) {
   registerGoalsRoutes(app, db);
   registerDepreciationRoutes(app, db);
   registerTaxYearRoutes(app, db);
+  registerCalendarRoutes(app, db);
 
   // ── Static app shell. Empty until the UI is ported off the Electron build.
   app.use(express.static(PUBLIC_DIR, { index: 'index.html', extensions: ['html'] }));

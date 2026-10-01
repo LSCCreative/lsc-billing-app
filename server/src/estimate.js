@@ -13,8 +13,12 @@
  * The PDF needs fewer fields than the API does, but carrying a couple of spare
  * ones costs nothing and is worth not having a second definition of what an
  * estimate is.
+ *
+ * `days` are its production days (days.js readDays), which live in their own
+ * table; a caller that has none to pass gets `days: []`, which is also what
+ * every estimate saved before v11 reads.
  */
-function loadEstimate(row) {
+function loadEstimate(row, days) {
   return {
     id: row.id,
     upid: row.upid,
@@ -36,6 +40,12 @@ function loadEstimate(row) {
     // treatment of a sent document must not move — see calc.js's header.
     gstFree: row.gst_free === 1,
     totals: JSON.parse(row.totals_json || '{}'),
+    // Production booking (v11). The tick, the snapshot it was priced under
+    // (calc.js surchargeSnapshot; owner-only, never on a public route), and
+    // the booked days.
+    shortNotice: row.short_notice === 1,
+    surcharges: JSON.parse(row.surcharges_json || '{}'),
+    days: Array.isArray(days) ? days : [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

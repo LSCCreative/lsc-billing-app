@@ -1,9 +1,12 @@
 'use strict';
 
 const { newId, nowIso } = require('../db');
-const { computeTotals, PRICING_SHAPE } = require('../calc');
+const { computeTotals, surchargeSnapshot, stampSurchargedPrices, PRICING_SHAPE } = require('../calc');
 const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeLineField } = require('../ratecard');
-const { loadEstimate: loadJson } = require('../estimate');
+const { loadEstimate } = require('../estimate');
+const {
+  readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, dayIdTakenElsewhere, lockedDay, replaceDays,
+} = require('../days');
 
 /**
  * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
@@ -28,10 +31,87 @@ const OUTDATED = {
 };
 const outdated = (body) => body.pricingShape !== PRICING_SHAPE;
 
+/**
+ * Everything an estimate write stores that the server works out rather than
+ * taking from the body: the days (checked), the surcharge snapshot, the lines
+ * with their surchargedPrice stamped, and the totals — priced here, never
+ * trusted from the browser.
+ *
+ * DAYS. `days` replaces the estimate's days whole. A PUT without `days`
+ * keeps the ones it has, and one without `shortNotice` keeps the tick: unlike
+ * every other field here, losing booked days is the expensive direction, and
+ * the only screen that saves an estimate sends both.
+ *
+ * SURCHARGES (production-booking task 2). An estimate with days stores the
+ * snapshot it was priced under (calc.js surchargeSnapshot): a re-save keeps
+ * the multipliers and each unmoved day's weekend/holiday kind, so a later Rate
+ * Card or holiday-list change moves only new estimates. `refreshSurcharges:
+ * true` re-snapshots from the live card and holiday list — the surcharge
+ * half of "Update to current rates". An estimate with no days stores '{}':
+ * nothing was surcharged, so nothing is pinned, and its first day takes
+ * today's settings.
+ *
+ * @returns {{status:number, body:object}|{fields:object}} a refusal, or the fields.
+ */
+function prepareWrite(db, body, existing) {
+  if (outdated(body)) return { status: 400, body: OUTDATED };
+  const negative = negativeLineField(body.activeRows);
+  if (negative) return { status: 400, body: { error: 'negative_line_value', field: negative } };
+
+  const estimateId = existing ? existing.id : null;
+  const storedDays = existing ? readDays(db, existing.id) : [];
+  let days = storedDays;
+  if (body.days !== undefined || !existing) {
+    const parsed = parseDays(body.days === undefined ? [] : body.days);
+    if (parsed.error) return { status: 400, body: { error: parsed.error } };
+    days = parsed.days;
+  }
+  const lineProblem = lineDayProblem(body.activeRows, days);
+  if (lineProblem) return { status: 400, body: { error: lineProblem } };
+  const taken = dayIdTakenElsewhere(db, estimateId, days);
+  if (taken) return { status: 400, body: { error: 'day_id_taken', dayId: taken } };
+  const lock = lockedDay(db, estimateId, days, storedDays);
+  if (lock) {
+    return {
+      status: 409,
+      body: {
+        error: 'date_locked',
+        date: lock.date,
+        upid: lock.upid,
+        estimateId: lock.estimateId,
+        message: `${lock.date} is confirmed for ${lock.upid || lock.name || 'another project'}. ` +
+          'Add a specification note to book it anyway.',
+      },
+    };
+  }
+
+  const pricing = readPricing(db);
+  const gstFree = body.gstFree === true;
+  const shortNotice = body.shortNotice === undefined && existing
+    ? existing.short_notice === 1
+    : body.shortNotice === true;
+  const prior = existing && body.refreshSurcharges !== true
+    ? { surcharges: JSON.parse(existing.surcharges_json || '{}'), days: storedDays }
+    : null;
+  const surcharges = days.length ? surchargeSnapshot(days, pricing, readHolidays(db), prior) : {};
+  const options = { gstFree, overheadRate: readOverheadRate(db), days, surcharges, shortNotice };
+  const activeRows = stampSurchargedPrices(body.activeRows || {}, pricing, options);
+  const totals = computeTotals(activeRows, pricing, readSettings(db), options);
+  const sectionLabels = sectionLabelsFor(
+    activeRows,
+    pricing,
+    existing ? JSON.parse(existing.section_labels_json || '{}') : null
+  );
+  return { fields: { days, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } };
+}
+
 function registerEstimateRoutes(app, db) {
+  const loadJson = (row) => loadEstimate(row, readDays(db, row.id));
+
   app.get('/api/estimates', (_req, res) => {
     const rows = db.prepare('SELECT * FROM estimates ORDER BY updated_at DESC').all();
-    res.json({ ok: true, estimates: rows.map(loadJson) });
+    const days = readDaysByEstimate(db);
+    res.json({ ok: true, estimates: rows.map((row) => loadEstimate(row, days.get(row.id))) });
   });
 
   app.get('/api/estimates/:id', (req, res) => {
@@ -44,30 +124,26 @@ function registerEstimateRoutes(app, db) {
     const body = req.body || {};
     const id = newId('est');
     const now = nowIso();
-    const pricing = readPricing(db);
-    const gstFree = body.gstFree === true;
-    if (outdated(body)) return res.status(400).json(OUTDATED);
-    const negative = negativeLineField(body.activeRows);
-    if (negative) return res.status(400).json({ error: 'negative_line_value', field: negative });
-    const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), {
-      gstFree,
-      overheadRate: readOverheadRate(db),
-    });
-    const sectionLabels = sectionLabelsFor(body.activeRows, pricing, null);
+    const prepared = prepareWrite(db, body, null);
+    if (!prepared.fields) return res.status(prepared.status).json(prepared.body);
+    const { days, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
 
-    db.prepare(`
-      INSERT INTO estimates
-        (id, upid, name, date, status, doc_type, invoice_number, client_id,
-         client_json, notes, active_rows_json, section_labels_json, gst_free,
-         totals_json, created_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(
-      id, body.upid || '', body.name || '', body.date || '',
-      body.status || 'draft', body.docType || 'estimate', body.invoiceNumber || '',
-      body.clientId || null, JSON.stringify(body.client || {}), body.notes || '',
-      JSON.stringify(body.activeRows || {}), JSON.stringify(sectionLabels),
-      gstFree ? 1 : 0, JSON.stringify(totals), now, now
-    );
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO estimates
+          (id, upid, name, date, status, doc_type, invoice_number, client_id,
+           client_json, notes, active_rows_json, section_labels_json, gst_free,
+           short_notice, surcharges_json, totals_json, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        id, body.upid || '', body.name || '', body.date || '',
+        body.status || 'draft', body.docType || 'estimate', body.invoiceNumber || '',
+        body.clientId || null, JSON.stringify(body.client || {}), body.notes || '',
+        JSON.stringify(activeRows), JSON.stringify(sectionLabels),
+        gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges), JSON.stringify(totals), now, now
+      );
+      replaceDays(db, id, days, now);
+    })();
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(id);
     res.status(201).json({ ok: true, estimate: loadJson(row) });
@@ -79,37 +155,32 @@ function registerEstimateRoutes(app, db) {
 
     const body = req.body || {};
     const now = nowIso();
-    const pricing = readPricing(db);
-    // Absent means false, matching every other field here: a PUT that omits it
-    // is a save from a screen that decided the estimate is GST-bearing.
-    const gstFree = body.gstFree === true;
-    if (outdated(body)) return res.status(400).json(OUTDATED);
-    const negative = negativeLineField(body.activeRows);
-    if (negative) return res.status(400).json({ error: 'negative_line_value', field: negative });
-    const totals = computeTotals(body.activeRows || {}, pricing, readSettings(db), {
-      gstFree,
-      overheadRate: readOverheadRate(db),
-    });
-    const sectionLabels = sectionLabelsFor(
-      body.activeRows,
-      pricing,
-      JSON.parse(existing.section_labels_json || '{}')
-    );
+    // gstFree: absent means false, matching every other field here (days and
+    // shortNotice excepted — see prepareWrite): a PUT that omits it is a save
+    // from a screen that decided the estimate is GST-bearing.
+    const prepared = prepareWrite(db, body, existing);
+    if (!prepared.fields) return res.status(prepared.status).json(prepared.body);
+    const { days, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
 
-    db.prepare(`
-      UPDATE estimates SET
-        upid = ?, name = ?, date = ?, status = ?, doc_type = ?, invoice_number = ?,
-        client_id = ?, client_json = ?, notes = ?, active_rows_json = ?,
-        section_labels_json = ?, gst_free = ?, totals_json = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      body.upid || '', body.name || '', body.date || '', body.status || 'draft',
-      body.docType || 'estimate', body.invoiceNumber || '', body.clientId || null,
-      JSON.stringify(body.client || {}), body.notes || '',
-      JSON.stringify(body.activeRows || {}), JSON.stringify(sectionLabels),
-      gstFree ? 1 : 0, JSON.stringify(totals), now,
-      req.params.id
-    );
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE estimates SET
+          upid = ?, name = ?, date = ?, status = ?, doc_type = ?, invoice_number = ?,
+          client_id = ?, client_json = ?, notes = ?, active_rows_json = ?,
+          section_labels_json = ?, gst_free = ?, short_notice = ?, surcharges_json = ?,
+          totals_json = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        body.upid || '', body.name || '', body.date || '', body.status || 'draft',
+        body.docType || 'estimate', body.invoiceNumber || '', body.clientId || null,
+        JSON.stringify(body.client || {}), body.notes || '',
+        JSON.stringify(activeRows), JSON.stringify(sectionLabels),
+        gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges),
+        JSON.stringify(totals), now,
+        req.params.id
+      );
+      replaceDays(db, req.params.id, days, now);
+    })();
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
     res.json({ ok: true, estimate: loadJson(row) });
@@ -132,6 +203,32 @@ function registerEstimateRoutes(app, db) {
     // re-deriving them from a rate card or a settings row that may have moved on
     // since. Its totals are copied for the same reason. Saving the copy
     // re-snapshots all of it, like any other edit.
+    //
+    // EXCEPT ITS DAYS (production-booking task 2). Booked days are a claim on
+    // the calendar, and a copy that re-claimed them would double-book every
+    // date — a confirmed one past its own lock. So the copy gets none
+    // (D60 agrees: a duplicate is a new project, with no days), its production
+    // lines come off their days, and short notice and the surcharge snapshot
+    // go with them. Those lines then price at their base price, so a copy
+    // whose original had days is re-totalled rather than copied: copied totals
+    // would still hold surcharges its lines no longer carry.
+    const rows = JSON.parse(existing.active_rows_json || '{}');
+    let unbooked = false;
+    Object.keys(rows).forEach((key) => {
+      if (!Array.isArray(rows[key])) return;
+      rows[key] = rows[key].map((line) => {
+        if (!line || typeof line !== 'object' || (line.dayId === undefined && line.surchargedPrice === undefined)) return line;
+        unbooked = true;
+        const { dayId, surchargedPrice, ...rest } = line;
+        return rest;
+      });
+    });
+    const totalsJson = unbooked
+      ? JSON.stringify(computeTotals(rows, readPricing(db), readSettings(db), {
+        gstFree: existing.gst_free === 1,
+        overheadRate: readOverheadRate(db),
+      }))
+      : existing.totals_json;
     db.prepare(`
       INSERT INTO estimates
         (id, upid, name, date, status, doc_type, invoice_number, client_id,
@@ -141,8 +238,8 @@ function registerEstimateRoutes(app, db) {
     `).run(
       id, existing.upid, `${existing.name} (copy)`, existing.date, 'draft',
       existing.doc_type, '', existing.client_id, existing.client_json,
-      existing.notes, existing.active_rows_json, existing.section_labels_json,
-      existing.gst_free, existing.totals_json, now, now
+      existing.notes, unbooked ? JSON.stringify(rows) : existing.active_rows_json,
+      existing.section_labels_json, existing.gst_free, totalsJson, now, now
     );
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(id);

@@ -66,6 +66,46 @@ function pricingProblem(body) {
     const blank = r.mu === undefined || r.mu === null || r.mu === '';
     if (blank && !(r.ownTime === true || r.directCost === true || r.perKm === true)) return 'travel_price_missing';
   }
+  if (body.surcharges !== undefined) {
+    const problem = surchargesProblem(body.surcharges);
+    if (problem) return problem;
+  }
+  return null;
+}
+
+/**
+ * The card's surcharge settings (production-booking task 2). A card without
+ * them is fine — calc.js surchargeSettings reads the defaults — but one that
+ * has them must say something calc.js won't have to guess at: a multiplier
+ * below ×1 would be a discount (calc.js reads it as ×1, which would quietly
+ * not be what was typed), and office hours that end before they start have no
+ * "after". A field left out takes its default.
+ * @returns {string|null}
+ */
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+function surchargesProblem(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return 'surcharges_invalid';
+  for (const f of ['shortNotice', 'weekend', 'afterHours']) {
+    if (s[f] === undefined) continue;
+    if (typeof s[f] !== 'number' || !Number.isFinite(s[f]) || s[f] < 1 || s[f] > 10) return 'surcharge_multiplier_out_of_range';
+  }
+  if (s.shortNoticeHintDays !== undefined &&
+      !(Number.isInteger(s.shortNoticeHintDays) && s.shortNoticeHintDays >= 0 && s.shortNoticeHintDays <= 365)) {
+    return 'surcharge_hint_days_out_of_range';
+  }
+  if (s.officeStart !== undefined || s.officeEnd !== undefined) {
+    if (!CLOCK.test(String(s.officeStart)) || !CLOCK.test(String(s.officeEnd)) || s.officeEnd <= s.officeStart) {
+      return 'surcharge_office_hours_invalid';
+    }
+  }
+  if (s.workingWeekdays !== undefined) {
+    const d = s.workingWeekdays;
+    if (!Array.isArray(d) || !d.length || d.some((n) => !Number.isInteger(n) || n < 0 || n > 6) ||
+        new Set(d).size !== d.length) {
+      return 'surcharge_weekdays_invalid';
+    }
+  }
+  if (s.mode !== undefined && ['higher', 'multiply', 'highest'].indexOf(s.mode) === -1) return 'surcharge_mode_invalid';
   return null;
 }
 
