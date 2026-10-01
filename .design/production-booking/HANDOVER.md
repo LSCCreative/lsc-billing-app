@@ -63,13 +63,26 @@ times.
       - D: 14–23 (migration v12);
       - E: 24–32 (migration v13);
       - review: 33.
-- [ ] **Build A → E.** Nothing built yet.
+- [ ] **Build A → E.** In progress on branch `production-booking`. It was branched 2026-10-02 from
+      `estimate-accuracy` at `e83533a`, where that track's work through v10 is committed but **not
+      deployed**. v10 deploys before v11.
+      - [x] **Task 1, the surcharge maths**: done 2026-10-02, **uncommitted**.
+        - Pure functions in both `calc.js` copies.
+        - Every worked example is pinned, and all ten mutations are caught.
+        - The settings, day and attribution shapes it chose are in TASKS.md task 1's Done note.
+          Tasks 2, 4 and 8 build on them, so read that note before starting any of them.
+        - `computeTotals` is untouched, so nothing saved can price differently yet.
 
-**Exact next item: TASKS.md task 1, the surcharge maths** (money math, **Opus/high**). It comes
-with a prerequisite: `estimate-accuracy`'s uncommitted work (through migration v10) must be
-committed first, and this track branched from it as `production-booking`. **Ask the user to commit
-that work, or for the go-ahead to commit it.** Task 1 is pure `calc.js` functions with
-worked-example tests and no UI, and every A+B task after it depends on it.
+**Exact next item: TASKS.md task 2, schema v11 with days and holidays on the server** (money math,
+**Opus/high**). Commit task 1 first if the user agrees. Task 2 wires `surchargeFactor` into
+`computeTotals` for `prod` lines that carry a `dayId`. It snapshots each day's `kind` and the
+card's `surcharges` into `surcharges_json`; `surchargeFactor` already honours a day's `kind` over
+the holiday list.
+
+**For review at task 8 (Cost Breakdown):** how attribution splits money between surcharges is an
+implementation choice, not a user decision. For example, under "multiply", after hours is charged
+on the weekend price. The totals are fixed by the brief; only the row labels depend on it. Show the
+user one Cost Breakdown before calling it done.
 
 ## Things a fresh agent will want to argue with
 

@@ -1712,6 +1712,306 @@ function travelFloorComparison(pricing, settings, floorPerHour) {
   return out;
 }
 
+/* ── Surcharges: weekend / public holiday, after hours, short notice ──────────
+   Added 2026-10-02 (.design/production-booking/, task 1; the brief's Key
+   Interactions 1 is the spec and its worked examples are pinned in
+   test-calc.js). Pure functions only: computeTotals does not call any of this
+   yet, so nothing that is already saved can price differently.
+
+   What is settled, not derived:
+
+     1. PRODUCTION ITEMS ON A BOOKED DAY ONLY (D3, D24). Pre/post, Additional
+        work and pass-throughs are never surcharged; the caller decides which
+        lines reach here.
+     2. A SURCHARGE IS INCOME. It adds no hours and moves no floor or Minimum
+        Job Price — which is why it is a price factor, never an hours figure.
+     3. THE CLIENT NEVER SEES IT (D8, D12). The factor is folded into the line
+        and rounded UP to the whole dollar once, after every surcharge (D20).
+        surchargeAttribution is the owner's account of where that money came
+        from, for the Cost Breakdown.
+     4. AFTER HOURS IS A SHARE OF THE DAY (D5), measured against office hours
+        on EVERY day (D11 + the brief's flagged interpretation: a Saturday 8pm
+        hour is both weekend and after hours; it only matters under "All
+        multiply"). An overnight booking belongs to its start date, and every
+        minute past midnight is after hours (D21).
+     5. A DATE TBC DAY (no date) takes no weekend or after-hours surcharge, but
+        short notice still applies (D9).
+     6. A multiplier of ×1 is how a surcharge is switched off; one below 1 is
+        read as 1. A surcharge never discounts. */
+
+/* The Rate Card's surcharge settings when a card has none (any card from
+   before v11) or a field is unusable. Weekdays are Date#getUTCDay numbers:
+   0 Sunday … 6 Saturday. Modes (D2):
+     'higher'   — day/time: the higher of weekend and after hours; short notice on top
+     'multiply' — all multiply
+     'highest'  — only the single highest surcharge applies */
+const SURCHARGE_DEFAULTS = {
+  shortNotice: 2,
+  shortNoticeHintDays: 7,
+  weekend: 1.5,
+  afterHours: 1.25,
+  officeStart: '07:00',
+  officeEnd: '17:00',
+  workingWeekdays: [1, 2, 3, 4, 5],
+  mode: 'higher',
+};
+
+const SURCHARGE_MODES = ['higher', 'multiply', 'highest'];
+
+/* Float error in base × factor is ~1e-13 at these sizes: 1120 × 1.05 is
+   1176.0000000000002, which is $1,176, not $1,177. */
+const SURCHARGE_NOISE = 1e-8;
+
+/* 'HH:MM' (or 'HH:MM:SS', as a time input can send) → minutes after midnight. */
+function clockMinutes(t) {
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(String(t === null || t === undefined ? '' : t).trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function multiplierOr(v, fallback) {
+  const n = numOrNull(v);
+  if (n === null) return fallback;
+  return Math.max(1, n);
+}
+
+/* One surcharge settings object, every field usable. Missing or unusable
+   fields take the default; office hours are taken as a pair, so a half-valid
+   window never mixes with a default end. */
+function normaliseSurcharges(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  const D = SURCHARGE_DEFAULTS;
+  const os = clockMinutes(s.officeStart);
+  const oe = clockMinutes(s.officeEnd);
+  const officeOk = os !== null && oe !== null && oe > os;
+  const days = Array.isArray(s.workingWeekdays)
+    ? s.workingWeekdays.map(Number).filter((d, i, a) => Number.isInteger(d) && d >= 0 && d <= 6 && a.indexOf(d) === i)
+    : [];
+  const hint = numOrNull(s.shortNoticeHintDays);
+  return {
+    shortNotice: multiplierOr(s.shortNotice, D.shortNotice),
+    shortNoticeHintDays: hint !== null && hint >= 0 ? Math.floor(hint) : D.shortNoticeHintDays,
+    weekend: multiplierOr(s.weekend, D.weekend),
+    afterHours: multiplierOr(s.afterHours, D.afterHours),
+    officeStart: officeOk ? String(s.officeStart).trim().slice(0, 5) : D.officeStart,
+    officeEnd: officeOk ? String(s.officeEnd).trim().slice(0, 5) : D.officeEnd,
+    workingWeekdays: days.length ? days.sort((a, b) => a - b) : D.workingWeekdays.slice(),
+    mode: SURCHARGE_MODES.indexOf(s.mode) !== -1 ? s.mode : D.mode,
+  };
+}
+
+/**
+ * A rate card's surcharge settings, with the defaults filled in.
+ *
+ * @param {object} card — the rate card; only `surcharges` is read.
+ * @returns {object} every field of SURCHARGE_DEFAULTS, usable.
+ */
+function surchargeSettings(card) {
+  return normaliseSurcharges(card && card.surcharges);
+}
+
+/**
+ * What kind of day a date is, for the weekend / public holiday surcharge.
+ *
+ * The date is read as TEXT (fyStartYear explains why a 'YYYY-MM-DD' must never
+ * go through local Date getters); its weekday comes from Date.UTC, which no
+ * timezone can shift. A holiday is any listed date that isn't `hidden` — a
+ * fetched date the owner removed — and it wins over the weekday test.
+ *
+ * @param {string|null} date — 'YYYY-MM-DD'; null or blank is a Date TBC day.
+ * @param {object} settings — the card's `surcharges` (raw is fine; defaults
+ *   fill gaps). Only workingWeekdays is read.
+ * @param {Array<string|object>} [holidays] — 'YYYY-MM-DD' strings or holiday
+ *   rows { date, hidden }.
+ * @returns {'weekday'|'weekend'|'holiday'|null} null for no date or a date
+ *   that doesn't exist (2026-02-30).
+ */
+function dayKind(date, settings, holidays) {
+  const ymd = String(date === null || date === undefined ? '' : date).trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo || dt.getUTCDate() !== d) return null;
+
+  const listed = (Array.isArray(holidays) ? holidays : []).some((h) => {
+    if (typeof h === 'string') return h.trim() === ymd;
+    if (!h || typeof h !== 'object') return false;
+    if (h.hidden && h.hidden !== '0') return false;
+    return String(h.date || '').trim() === ymd;
+  });
+  if (listed) return 'holiday';
+  return normaliseSurcharges(settings).workingWeekdays.indexOf(dt.getUTCDay()) !== -1 ? 'weekday' : 'weekend';
+}
+
+/**
+ * The share of a booking's hours that falls outside office hours (D5).
+ *
+ * An end before the start means the booking runs past midnight, and every
+ * minute after midnight is after hours (D21). Office hours that don't parse,
+ * or that end at or before they start, read as the defaults (07:00–17:00).
+ *
+ * @param {string} start — 'HH:MM'.
+ * @param {string} end — 'HH:MM'; earlier than start is overnight.
+ * @param {string} officeStart — 'HH:MM'.
+ * @param {string} officeEnd — 'HH:MM'.
+ * @returns {number} 0 to 1, exact (not rounded). 0 when either booking time is
+ *   missing or unusable, or start equals end: there are no booked hours to
+ *   divide, and an unpriceable share must not read as a surcharge.
+ */
+function afterHoursShare(start, end, officeStart, officeEnd) {
+  const a = clockMinutes(start);
+  const b0 = clockMinutes(end);
+  if (a === null || b0 === null || a === b0) return 0;
+
+  let os = clockMinutes(officeStart);
+  let oe = clockMinutes(officeEnd);
+  if (os === null || oe === null || oe <= os) {
+    os = clockMinutes(SURCHARGE_DEFAULTS.officeStart);
+    oe = clockMinutes(SURCHARGE_DEFAULTS.officeEnd);
+  }
+
+  const b = b0 < a ? b0 + 1440 : b0;
+  const total = b - a;
+  /* Office hours are only ever counted on the start date: oe < 1440, so
+     nothing past midnight can overlap them. */
+  const inside = Math.max(0, Math.min(b, oe) - Math.max(a, os));
+  return (total - inside) / total;
+}
+
+/* The surcharge chain for one day, as the steps each part of the day passes
+   through. A part is the in-hours share (1 − s) or the after-hours share (s);
+   each step multiplies that part's running price by m. Per the brief's table:
+
+     mode       in-hours           after-hours
+     higher     [w], S             [max(w, A)], S
+     multiply   w, S               w, A, S
+     highest    [max(S, w)]        [max(S, w, A)]
+
+   [max(…)] is one step, taken by the winner. On a tie the earlier of weekend,
+   after hours, short notice wins — the $ are the same either way; this only
+   decides the row's name. The order of steps is also the order the
+   attribution charges them in: under "multiply", after hours is charged on the
+   weekend price, and short notice on the day's surcharged price. */
+function surchargeParts(day, card, shortNotice, holidays) {
+  const cfg = surchargeSettings(card);
+  const date = day ? day.date : null;
+  const KINDS = ['weekday', 'weekend', 'holiday'];
+  /* A day saved with its kind (the estimate's snapshot) keeps it, so a later
+     holiday-list change moves only new estimates. No date is TBC either way. */
+  const kind = dayKind(date, cfg, []) === null
+    ? null
+    : KINDS.indexOf(day.kind) !== -1 ? day.kind : dayKind(date, cfg, holidays);
+
+  const w = { type: kind === 'holiday' ? 'holiday' : 'weekend', m: kind === 'weekend' || kind === 'holiday' ? cfg.weekend : 1 };
+  const A = { type: 'afterHours', m: cfg.afterHours };
+  const S = { type: 'shortNotice', m: shortNotice ? cfg.shortNotice : 1 };
+  const s = kind === null
+    ? 0
+    : afterHoursShare(field(day, 'startTime', 'start_time'), field(day, 'endTime', 'end_time'), cfg.officeStart, cfg.officeEnd);
+
+  const top = (cands) => cands.reduce((best, c) => (c.m > best.m ? c : best));
+  let inSteps;
+  let outSteps;
+  if (cfg.mode === 'multiply') {
+    inSteps = [w, S];
+    outSteps = [w, A, S];
+  } else if (cfg.mode === 'highest') {
+    inSteps = [top([w, S])];
+    outSteps = [top([w, A, S])];
+  } else {
+    inSteps = [w, S];
+    outSteps = [top([w, A]), S];
+  }
+  return {
+    kind,
+    share: s,
+    mode: cfg.mode,
+    parts: [{ share: 1 - s, steps: inSteps }, { share: s, steps: outSteps }],
+  };
+}
+
+/**
+ * The price factor for a production item on one booked day:
+ * (1 − s) × in-hours + s × after-hours, per the mode (see surchargeParts).
+ *
+ * @param {object} day — { date, startTime, endTime } (snake_case accepted),
+ *   optionally `kind` as snapshotted at save.
+ * @param {object} card — the rate card (or { surcharges } snapshot).
+ * @param {boolean} shortNotice — the estimate's tick.
+ * @param {Array} [holidays] — see dayKind; unused when the day carries `kind`.
+ * @returns {number} ≥ 1, unrounded. Exactly 1 when nothing applies.
+ */
+function surchargeFactor(day, card, shortNotice, holidays) {
+  const { parts } = surchargeParts(day, card, shortNotice, holidays);
+  return parts.reduce((sum, p) => sum + p.share * p.steps.reduce((f, st) => f * st.m, 1), 0);
+}
+
+/**
+ * A line's client price after surcharges: ceil(base × factor) to the whole
+ * dollar (D20), once, after all of them. A factor of 1 (or below) is no
+ * surcharge, and the base comes back to the cent, unrounded — a line nothing
+ * applies to must price exactly as it did before surcharges existed.
+ *
+ * @param {number} base — the line's price before surcharges (qty × price).
+ * @param {number} factor — surchargeFactor().
+ * @returns {number}
+ */
+function surchargedLinePrice(base, factor) {
+  const b = round2(nonNeg(base));
+  const f = num(factor);
+  if (!(f > 1) || b <= 0) return b;
+  return Math.ceil(b * f - SURCHARGE_NOISE);
+}
+
+/**
+ * Where a surcharged line's extra money came from, for the owner's Cost
+ * Breakdown (D13): one row per surcharge that added anything, in the order
+ * weekend/holiday, after hours, short notice. The rows add up TO THE CENT to
+ * price − base; each row is rounded to the cent and the last row takes the
+ * remainder, which carries the whole-dollar round-up (D20).
+ *
+ * @returns {{base:number, price:number, surcharge:number, factor:number,
+ *   kind:string|null, rows:Array<{type:string, multiplier:number,
+ *   share:number, amount:number}>}} `share` is the fraction of the day's
+ *   booked hours the row covered (1 for the whole day).
+ */
+function surchargeAttribution(base, day, card, shortNotice, holidays) {
+  const b = round2(nonNeg(base));
+  const { parts, kind } = surchargeParts(day, card, shortNotice, holidays);
+  const ORDER = ['weekend', 'holiday', 'afterHours', 'shortNotice'];
+  const acc = {};
+  let factor = 0;
+  parts.forEach((p) => {
+    let running = 1;
+    p.steps.forEach((st) => {
+      if (st.m > 1 && p.share > 0) {
+        const row = acc[st.type] || (acc[st.type] = { type: st.type, multiplier: st.m, share: 0, raw: 0 });
+        row.raw += b * p.share * running * (st.m - 1);
+        row.share += p.share;
+      }
+      running *= st.m;
+    });
+    factor += p.share * running;
+  });
+
+  const price = surchargedLinePrice(b, factor);
+  const surcharge = round2(price - b);
+  const rows = ORDER.filter((t) => acc[t] && acc[t].raw > 0).map((t) => acc[t]);
+  let sofar = 0;
+  const out = rows.map((r, i) => {
+    const amount = i === rows.length - 1 ? round2(surcharge - sofar) : round2(r.raw);
+    sofar = round2(sofar + amount);
+    return { type: r.type, multiplier: r.multiplier, share: r.share, amount };
+  });
+  return { base: b, price, surcharge, factor, kind, rows: out };
+}
+
 /** Statuses that mean the work was won. Draft and sent are still quotes. */
 const WON_STATUSES = ['approved', 'invoiced', 'paid'];
 
@@ -1889,6 +2189,13 @@ if (typeof module === 'object' && module.exports) {
     SERVICE_UNITS,
     PRICING_SHAPE,
     cardShapeOutdated,
+    SURCHARGE_DEFAULTS,
+    surchargeSettings,
+    dayKind,
+    afterHoursShare,
+    surchargeFactor,
+    surchargedLinePrice,
+    surchargeAttribution,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -1936,6 +2243,13 @@ if (typeof module === 'object' && module.exports) {
     SERVICE_UNITS,
     PRICING_SHAPE,
     cardShapeOutdated,
+    SURCHARGE_DEFAULTS,
+    surchargeSettings,
+    dayKind,
+    afterHoursShare,
+    surchargeFactor,
+    surchargedLinePrice,
+    surchargeAttribution,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,

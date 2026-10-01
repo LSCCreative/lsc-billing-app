@@ -51,7 +51,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
 
 ## Stage A + B — Surcharges and Production Booking (migration v11; ship together)
 
-- [ ] **1. The surcharge maths** (money math — Opus/high): pure functions in both `calc.js` copies.
+- [x] **1. The surcharge maths** (money math — Opus/high): pure functions in both `calc.js` copies.
   This is the riskiest arithmetic, so it goes first and has no UI.
   - `dayKind(date, settings, holidays)` → `weekday` | `weekend` | `holiday`. The working weekdays
     come from settings; a holiday is any date on the list that isn't `hidden`.
@@ -70,6 +70,43 @@ State the bucket out loud and pause for the user to switch before starting a tas
   ×1 everywhere gives the base price; attribution sums exactly over a price sweep. Mutations
   checked: mode swap, ceil → round, share inverted, overnight ignored, short notice skipped on a
   TBC day. _New functions only; `computeTotals` is untouched in this task._
+
+  **Done 2026-10-02** on branch `production-booking` (uncommitted). Seven exports in both
+  copies: `SURCHARGE_DEFAULTS`, `surchargeSettings(card)`, `dayKind`, `afterHoursShare`,
+  `surchargeFactor(day, card, shortNotice, holidays?)`, `surchargedLinePrice`,
+  `surchargeAttribution(base, day, card, shortNotice, holidays?)`. There are 18 new tests in
+  `test-calc.js`; the suite is 308/308.
+  - **Every worked example is pinned**, plus: overnight Fri 8pm–2am at $1,400 (Friday's rate); a
+    weekday holiday; a hidden holiday; ×1 everywhere; TBC with short notice; and a 1,680-case
+    attribution sweep that is exact to the cent.
+  - **Mutations, each caught with both copies mutated** (so the drift test can't be what catches
+    it): mode swap ×2, ceil → round, share inverted, overnight ignored, short notice skipped on
+    TBC, hidden holiday not skipped, rounding on the first row, no float-noise guard, factor 1
+    still ceiled.
+
+  **Shapes later tasks must use** (chosen here, not in the brief):
+  - **`card.surcharges`:** `{ shortNotice, shortNoticeHintDays, weekend, afterHours, officeStart,
+    officeEnd, workingWeekdays, mode }`.
+    - Weekdays use `getUTCDay` numbers (0 = Sunday).
+    - Modes are `'higher'` (default), `'multiply'` and `'highest'`.
+    - A missing or unusable field reads as its default, and a multiplier below 1 reads as 1.
+    - Task 4's `defaults.js` should use `SURCHARGE_DEFAULTS`, not a second copy.
+  - **A day** is `{ date, startTime, endTime }` (snake_case is accepted), plus an optional `kind`.
+    - When `kind` is present it wins over the holiday list. That's the snapshot hook for task 2.
+    - The holiday list is a 4th argument. A date of `null` is TBC.
+  - **Factor ≤ 1** returns the base to the cent, not rounded up, so a line nothing applies to
+    prices exactly as before.
+  - **Booked start = end** is a share of 0.
+  - **Past midnight is all after hours**, even after the next day's office start (D21, as worded).
+  - **Attribution** charges along a chain:
+    - in "higher" mode, each part of the day goes to the winner of weekend vs after hours, with
+      short notice on top of the surcharged day;
+    - in "multiply" mode, the order is weekend → after hours (on the weekend price) → short
+      notice;
+    - in "highest" mode, the single winner per part takes it all.
+    - Ties name the earlier of weekend, after hours, short notice; the $ are the same either way.
+    - Each row carries `share`, the fraction of booked hours it covered. Task 8 can turn that into
+      hours.
 
 - [ ] **2. Schema v11, days and holidays on the server** (money math — Opus/high, since the server
   re-prices). _Depends on: 1._

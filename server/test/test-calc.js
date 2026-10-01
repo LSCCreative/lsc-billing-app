@@ -2203,3 +2203,232 @@ test('the default card: Tolls & Parking at cost, the car per km, and no Fuel & T
   assert.deepEqual(km, { name: 'Vehicle — per km', rate: 0, mu: null, perKm: true, unit: 'km' });
   assert.equal(DEFAULT_PRICING.travelRows.filter((r) => r.perKm).length, 1);
 });
+
+/* ── Surcharges (production-booking task 1) ────────────────────────────────
+   The brief's Key Interactions 1 is the spec; its worked examples are on the
+   default card's Video Capture Full Day, $1,120. Dates: Fri 2 Oct, Sat 3 Oct
+   and Mon 5 Oct 2026 (NSW Labour Day). */
+const {
+  SURCHARGE_DEFAULTS,
+  surchargeSettings,
+  dayKind,
+  afterHoursShare,
+  surchargeFactor,
+  surchargedLinePrice,
+  surchargeAttribution,
+} = require('../src/calc');
+
+const FRI = '2026-10-02';
+const SAT = '2026-10-03';
+const LABOUR_DAY = '2026-10-05';
+const NO_SURCHARGES = {}; // a pre-v11 card: every default applies
+const withMode = (mode) => ({ surcharges: { mode } });
+const priceOn = (base, day, card, shortNotice, holidays) =>
+  surchargedLinePrice(base, surchargeFactor(day, card, shortNotice, holidays));
+
+test('surcharge settings: a card without any reads the defaults', () => {
+  assert.deepEqual(surchargeSettings(NO_SURCHARGES), SURCHARGE_DEFAULTS);
+  assert.deepEqual(SURCHARGE_DEFAULTS, {
+    shortNotice: 2, shortNoticeHintDays: 7, weekend: 1.5, afterHours: 1.25,
+    officeStart: '07:00', officeEnd: '17:00', workingWeekdays: [1, 2, 3, 4, 5], mode: 'higher',
+  });
+});
+
+test('surcharge settings: unusable fields take the default, and a multiplier never discounts', () => {
+  const s = surchargeSettings({ surcharges: {
+    shortNotice: 'x', weekend: 0.5, afterHours: '1.4', officeStart: '18:00', officeEnd: '09:00',
+    workingWeekdays: [], mode: 'add',
+  } });
+  assert.equal(s.shortNotice, 2);
+  assert.equal(s.weekend, 1);
+  assert.equal(s.afterHours, 1.4);
+  assert.deepEqual([s.officeStart, s.officeEnd], ['07:00', '17:00']);
+  assert.deepEqual(s.workingWeekdays, [1, 2, 3, 4, 5]);
+  assert.equal(s.mode, 'higher');
+});
+
+test('dayKind: weekends, weekdays and the working-weekdays setting', () => {
+  assert.equal(dayKind(SAT, {}, []), 'weekend');
+  assert.equal(dayKind('2026-10-04', {}, []), 'weekend');
+  assert.equal(dayKind(FRI, {}, []), 'weekday');
+  // A Tue–Sat business: Saturday is a working day, Monday is not.
+  const tueSat = { workingWeekdays: [2, 3, 4, 5, 6] };
+  assert.equal(dayKind(SAT, tueSat, []), 'weekday');
+  assert.equal(dayKind(LABOUR_DAY, tueSat, []), 'weekend');
+});
+
+test('dayKind: a listed holiday wins, a hidden one reads as the day it is, and no date is TBC', () => {
+  assert.equal(dayKind(LABOUR_DAY, {}, [LABOUR_DAY]), 'holiday');
+  assert.equal(dayKind(LABOUR_DAY, {}, [{ date: LABOUR_DAY, hidden: 0 }]), 'holiday');
+  assert.equal(dayKind(LABOUR_DAY, {}, [{ date: LABOUR_DAY, hidden: 1 }]), 'weekday');
+  assert.equal(dayKind(LABOUR_DAY, {}, [{ date: LABOUR_DAY, hidden: true }]), 'weekday');
+  assert.equal(dayKind(LABOUR_DAY, {}, []), 'weekday');
+  assert.equal(dayKind(null, {}, []), null);
+  assert.equal(dayKind('', {}, []), null);
+  assert.equal(dayKind('2026-02-30', {}, []), null);
+});
+
+test('afterHoursShare: the share of booked hours outside office hours', () => {
+  assert.equal(afterHoursShare('09:00', '19:00', '07:00', '17:00'), 0.2);
+  assert.equal(afterHoursShare('13:00', '21:00', '07:00', '17:00'), 0.5);
+  assert.equal(afterHoursShare('09:00', '17:00', '07:00', '17:00'), 0);
+  // An early call is after hours too (D11).
+  assert.equal(afterHoursShare('05:00', '09:00', '07:00', '17:00'), 0.5);
+});
+
+test('afterHoursShare: overnight runs past midnight, and every hour after it is after hours (D21)', () => {
+  assert.equal(afterHoursShare('20:00', '02:00', '07:00', '17:00'), 1);
+  // 3pm to 1am: 2 of 10 hours in office; 1am next day to 9am would be all after hours.
+  assert.equal(afterHoursShare('15:00', '01:00', '07:00', '17:00'), 0.8);
+  assert.equal(afterHoursShare('16:00', '09:00', '07:00', '17:00'), 16 / 17);
+});
+
+test('afterHoursShare: no times, one time, or no length is no share', () => {
+  assert.equal(afterHoursShare(null, null, '07:00', '17:00'), 0);
+  assert.equal(afterHoursShare('19:00', '', '07:00', '17:00'), 0);
+  assert.equal(afterHoursShare('19:00', '19:00', '07:00', '17:00'), 0);
+  assert.equal(afterHoursShare('25:00', '26:00', '07:00', '17:00'), 0);
+  // Unusable office hours read as the defaults.
+  assert.equal(afterHoursShare('09:00', '19:00', 'nope', '17:00'), 0.2);
+});
+
+test('worked example: a Saturday, no times, default mode is $1,680', () => {
+  assert.equal(surchargeFactor({ date: SAT }, NO_SURCHARGES, false), 1.5);
+  assert.equal(priceOn(1120, { date: SAT }, NO_SURCHARGES, false), 1680);
+});
+
+test('worked example: a weekday booked 9am–7pm, default mode is $1,176', () => {
+  // 1120 × 1.05 is 1176.0000000000002 in floating point; it must not round up to $1,177.
+  assert.equal(priceOn(1120, { date: FRI, startTime: '09:00', endTime: '19:00' }, NO_SURCHARGES, false), 1176);
+});
+
+test('worked example: a short-notice Saturday 1pm–9pm in each of the three modes', () => {
+  const day = { date: SAT, startTime: '13:00', endTime: '21:00' };
+  assert.equal(priceOn(1120, day, withMode('higher'), true), 3360);
+  assert.equal(priceOn(1120, day, withMode('multiply'), true), 3780);
+  assert.equal(priceOn(1120, day, withMode('highest'), true), 2240);
+});
+
+test('default mode: when after hours is the higher, it takes the after-hours share and weekend the rest', () => {
+  const card = { surcharges: { weekend: 1.5, afterHours: 2 } };
+  const day = { date: SAT, startTime: '13:00', endTime: '21:00' };
+  assert.equal(priceOn(1120, day, card, false), 1960); // 1120 × (0.5 × 1.5 + 0.5 × 2)
+  const a = surchargeAttribution(1120, day, card, false);
+  assert.deepEqual(a.rows, [
+    { type: 'weekend', multiplier: 1.5, share: 0.5, amount: 280 },
+    { type: 'afterHours', multiplier: 2, share: 0.5, amount: 560 },
+  ]);
+});
+
+test('an overnight Friday 8pm → 2am belongs to Friday and is all after hours', () => {
+  const day = { date: FRI, startTime: '20:00', endTime: '02:00' };
+  assert.equal(surchargeFactor(day, NO_SURCHARGES, false), 1.25);
+  assert.equal(priceOn(1120, day, NO_SURCHARGES, false), 1400);
+  // Not Saturday's rate, though half of it happens on Saturday.
+  assert.equal(priceOn(1120, day, withMode('multiply'), false), 1400);
+});
+
+test('a public holiday on a weekday takes the weekend/holiday rate; a hidden one does not', () => {
+  const day = { date: LABOUR_DAY };
+  assert.equal(priceOn(1120, day, NO_SURCHARGES, false, [LABOUR_DAY]), 1680);
+  assert.equal(priceOn(1120, day, NO_SURCHARGES, false, [{ date: LABOUR_DAY, hidden: 1 }]), 1120);
+  assert.equal(priceOn(1120, day, NO_SURCHARGES, false, []), 1120);
+  assert.equal(surchargeAttribution(1120, day, NO_SURCHARGES, false, [LABOUR_DAY]).rows[0].type, 'holiday');
+});
+
+test('a day saved with its kind keeps it, whatever the holiday list says now', () => {
+  assert.equal(priceOn(1120, { date: LABOUR_DAY, kind: 'holiday' }, NO_SURCHARGES, false, []), 1680);
+  assert.equal(priceOn(1120, { date: LABOUR_DAY, kind: 'weekday' }, NO_SURCHARGES, false, [LABOUR_DAY]), 1120);
+  // A kind on a day with no date is ignored: TBC is TBC.
+  assert.equal(priceOn(1120, { date: null, kind: 'holiday' }, NO_SURCHARGES, false), 1120);
+});
+
+test('a Date TBC day: no weekend or after hours, but short notice still applies (D9)', () => {
+  const tbc = { date: null, startTime: '20:00', endTime: '23:00' };
+  assert.equal(surchargeFactor(tbc, NO_SURCHARGES, false), 1);
+  assert.equal(priceOn(1120, tbc, NO_SURCHARGES, false), 1120);
+  assert.equal(priceOn(1120, tbc, NO_SURCHARGES, true), 2240);
+  assert.equal(priceOn(1120, tbc, withMode('multiply'), true), 2240);
+});
+
+test('×1 everywhere is the base price, to the cent, not rounded up', () => {
+  const off = { surcharges: { shortNotice: 1, weekend: 1, afterHours: 1, mode: 'multiply' } };
+  const day = { date: SAT, startTime: '20:00', endTime: '02:00' };
+  assert.equal(surchargeFactor(day, off, true), 1);
+  assert.equal(priceOn(1120, day, off, true), 1120);
+  assert.equal(priceOn(1120.5, day, off, true), 1120.5);
+  assert.equal(priceOn(1120.5, { date: FRI }, NO_SURCHARGES, false), 1120.5);
+  assert.deepEqual(surchargeAttribution(1120.5, day, off, true).rows, []);
+});
+
+test('a surcharged price rounds UP to the whole dollar, once, after every surcharge (D20)', () => {
+  // 1120.20 × 1.5 = 1680.30 → $1,681 (a round() would say $1,680).
+  assert.equal(priceOn(1120.2, { date: SAT }, NO_SURCHARGES, false), 1681);
+  // 1120.20 × 1.5 × 2 = 3360.60 → $3,361, not ceil(1680.30) × 2 = $3,362.
+  assert.equal(priceOn(1120.2, { date: SAT }, NO_SURCHARGES, true), 3361);
+  // 7am–7pm is 2 of 12 hours after hours: 480 × (5/6 + 1/6 × 1.25) is exactly 500,
+  // computed as 500.00000000000006. Float error must not cost the client a dollar.
+  assert.equal(priceOn(480, { date: FRI, startTime: '07:00', endTime: '19:00' }, NO_SURCHARGES, false), 500);
+  assert.equal(surchargedLinePrice(0, 2), 0);
+  assert.equal(surchargedLinePrice(-50, 2), 0);
+});
+
+test('attribution: the worked examples, row by row', () => {
+  const day = { date: SAT, startTime: '13:00', endTime: '21:00' };
+  assert.deepEqual(surchargeAttribution(1120, day, withMode('higher'), true).rows, [
+    { type: 'weekend', multiplier: 1.5, share: 1, amount: 560 },
+    { type: 'shortNotice', multiplier: 2, share: 1, amount: 1680 },
+  ]);
+  assert.deepEqual(surchargeAttribution(1120, day, withMode('multiply'), true).rows, [
+    { type: 'weekend', multiplier: 1.5, share: 1, amount: 560 },
+    { type: 'afterHours', multiplier: 1.25, share: 0.5, amount: 210 },
+    { type: 'shortNotice', multiplier: 2, share: 1, amount: 1890 },
+  ]);
+  assert.deepEqual(surchargeAttribution(1120, day, withMode('highest'), true).rows, [
+    { type: 'shortNotice', multiplier: 2, share: 1, amount: 1120 },
+  ]);
+  const weekday = surchargeAttribution(1120, { date: FRI, startTime: '09:00', endTime: '19:00' }, NO_SURCHARGES, false);
+  assert.deepEqual(weekday.rows, [{ type: 'afterHours', multiplier: 1.25, share: 0.2, amount: 56 }]);
+  assert.deepEqual([weekday.base, weekday.price, weekday.surcharge], [1120, 1176, 56]);
+});
+
+test('attribution: the round-up lands on the last row', () => {
+  // 560.10 + 1680.30 = 2240.40 exactly; the price rounds 3360.60 up to 3361.
+  const a = surchargeAttribution(1120.2, { date: SAT }, NO_SURCHARGES, true);
+  assert.equal(a.price, 3361);
+  assert.deepEqual(a.rows.map((r) => r.amount), [560.1, 1680.7]);
+});
+
+test('attribution: rows add up to price − base to the cent across a sweep', () => {
+  const days = [
+    { date: SAT },
+    { date: FRI, startTime: '09:00', endTime: '19:00' },
+    { date: SAT, startTime: '13:00', endTime: '21:00' },
+    { date: FRI, startTime: '15:00', endTime: '01:00' },
+    { date: SAT, startTime: '06:10', endTime: '23:35' },
+    { date: LABOUR_DAY, startTime: '04:00', endTime: '11:00' },
+    { date: null },
+  ];
+  const cards = [
+    withMode('higher'), withMode('multiply'), withMode('highest'),
+    { surcharges: { weekend: 1.35, afterHours: 1.7, shortNotice: 1.15, mode: 'higher' } },
+    { surcharges: { weekend: 1.35, afterHours: 1.7, shortNotice: 1.15, mode: 'multiply' } },
+    { surcharges: { weekend: 1.35, afterHours: 1.7, shortNotice: 1.15, mode: 'highest' } },
+  ];
+  let checked = 0;
+  for (let base = 0.01; base < 4000; base = round2(base * 1.37 + 3.33)) {
+    for (const day of days) {
+      for (const card of cards) {
+        for (const sn of [false, true]) {
+          const a = surchargeAttribution(base, day, card, sn, [LABOUR_DAY]);
+          const cents = a.rows.reduce((sum, r) => sum + Math.round(r.amount * 100), 0);
+          assert.equal(cents, Math.round((a.price - a.base) * 100), `${base} ${JSON.stringify(day)}`);
+          assert.equal(a.price, priceOn(base, day, card, sn, [LABOUR_DAY]));
+          assert.ok(a.rows.every((r) => r.amount >= 0));
+          checked += 1;
+        }
+      }
+    }
+  }
+  assert.ok(checked > 1000);
+});
