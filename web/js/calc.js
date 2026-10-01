@@ -202,6 +202,53 @@
  *      its floor: the hourly is at or above the hourly floor, and both scale
  *      by the same hours. A typed day price wins over all of this, which is how
  *      a half day stays its own figure rather than half a full day.
+ *
+ * YOUR TIME ON THE ROAD IS PRICED FROM THE FLOOR (2026-09-30,
+ * .design/estimate-accuracy/ task 6a; the user's decisions). A travel row
+ * ticked "Your time" (ownTime) is the owner's own hours, so it is priced like
+ * a service's hour, with one difference:
+ *
+ *   - AT EXACTLY THE INCOME FLOOR, NO MARKUP. Travel hours cover running
+ *     costs and pay but carry no profit. An own-time row whose `mu` is null is
+ *     auto: suggestedPrice(floor, its hours, 0) — the floor rounded up to the
+ *     whole dollar, GST-aware, as decision 3 above. A number is typed and wins.
+ *   - EVERYTHING ELSE AS FOR SERVICES: `mu: null` is no price yet, never $0
+ *     (decision 2); the server never resolves it (decision 4), so lineDef
+ *     prices a bare line on an auto row at nothing; a line added to an
+ *     estimate snapshots the resolved figure. travelRowDef is the one
+ *     resolver, as unitDef is for services.
+ *   - ONLY OWN-TIME ROWS JOIN THE FLOOR COMPARISON (travelFloorComparison).
+ *     Resold and at-cost travel are passed through and recover no overhead,
+ *     which is what price-calculator's decision 6 excluded; an own-time row
+ *     isn't one of those.
+ *
+ * Only an own-time row that is not also Direct can be auto. A blank price on
+ * any other travel row is not "auto" and not "no price": it reads as $0, which
+ * is how every build has always priced one (nonNeg), and how the v9 migration
+ * snapshotted one. PUT /api/pricing refuses a new one (travel_price_missing),
+ * so it survives only in data from before.
+ *
+ * THE CAR IS BILLED PER KM, AT COST (2026-09-30, task 6b; the user's
+ * decisions). A travel row flagged `perKm` is the car: its quantity is
+ * kilometres and its price is goals.vehicle_cost_per_km, the car's full
+ * running cost per km, entered once on Overhead — never typed on the card.
+ *
+ *   - AT COST. A km line is billed to the client and counted exactly as a
+ *     Direct row is: pass-through, in directJobCost, not income, no tax set
+ *     aside, no hours. It recovers what the car costs, with no profit on it.
+ *   - GST-EXCLUSIVE, LIKE EVERY OVERHEAD COST. On a GST-inclusive card the
+ *     billed price is the figure plus GST, so that computeTotals' exGst takes
+ *     it back to exactly the figure (task 3); anywhere else it is the figure.
+ *   - NOT OVERHEAD. The figure is on the goals row, not an overhead item, and
+ *     no rate reads it: the car is recovered per km, not across every hour.
+ *   - NO FIGURE, NO PRICE. Blank on Overhead is `mu: null` (decision 2 under
+ *     SERVICE UNITS); the server, with no goals to hand, never resolves it, so
+ *     a bare km line prices at nothing. A line added to an estimate snapshots
+ *     the figure and the flag, so a later change on Overhead moves the card,
+ *     never a saved quote.
+ *
+ * A `perKm` row is never also Your time or Direct (PUT /api/pricing refuses
+ * that); if one ever were, `perKm` decides.
  */
 
 /** Money is stored and compared at cent precision, never as raw float sums. */
@@ -249,7 +296,14 @@ function lineDef(defs, line, pricing) {
   if (hasSnapshot(line)) return line;
   const rows = defs || [];
   const row = (line.rowId && rows.find((r) => r.id === line.rowId)) || rows.find((r) => r.name === line.name) || null;
-  if (!row || !row.prices) return row;
+  if (!row) return null;
+  if (!row.prices) {
+    /* A travel row. Resolved without the income floor (decision 4 under
+       SERVICE UNITS), an auto own-time row has no price, and prices at
+       nothing, as a missing row does — never at $0 with its hours counted.
+       Any other row is returned as it is, exactly as before task 6a. */
+    return travelRowDef(row).mu === null ? null : row;
+  }
   /* A service with three prices: the one for the line's own unit, resolved
      without the income floor (decision 4 under SERVICE UNITS). A unit that
      needs the floor has no price here, and prices at nothing, as a missing
@@ -273,6 +327,7 @@ function lineSnapshot(def) {
   if (d.rate !== undefined) out.rate = nonNeg(d.rate);
   if (d.directCost) out.directCost = true;
   if (d.ownTime) out.ownTime = true;
+  if (d.perKm) out.perKm = true;
   // Not a price, but how the line bills: whether it takes a custom amount.
   if (d.customBill) out.customBill = true;
   return out;
@@ -345,6 +400,9 @@ function computeTotals(activeRows, pricing, settings, options) {
   const gstRegistered = gstCfg.registered === true && !gstFree;
   const gstRate = gstRegistered ? num(gstCfg.rate) : 0;
   const pricesIncludeGst = gstRegistered && gstCfg.pricesIncludeGst === true;
+  /* A figure as entered, less its GST. On a GST-inclusive card every figure
+     typed in carries GST, costs included; everywhere else it is the identity. */
+  const exGst = (v) => (pricesIncludeGst ? v / (1 + gstRate) : v);
 
   // ── Labour ──────────────────────────────────────────────────────────────
   // A row is billed at qty × marked-up rate, unless it carries an explicit
@@ -369,7 +427,8 @@ function computeTotals(activeRows, pricing, settings, options) {
   }
 
   // ── Travel ──────────────────────────────────────────────────────────────
-  // Three kinds of row, and they differ in what the business keeps:
+  // Three kinds of row (four since task 6b: perKm, the car, is below and is
+  // at cost like directCost), and they differ in what the business keeps:
   //   directCost — fuel, flights, accommodation: the quantity IS the amount,
   //     billed at cost, passed straight through.
   //   ownTime — the owner's own hours billed as travel ("Transport & Logistics
@@ -388,6 +447,14 @@ function computeTotals(activeRows, pricing, settings, options) {
     const def = lineDef(travelDefs, line);
     if (!def) continue;
     const qty = nonNeg(line.qty);
+    if (def.perKm) {
+      // The car, per km (task 6b): billed at cost, a pass-through like Direct,
+      // but priced by the kilometre rather than "the quantity is the amount".
+      const bill = qty * nonNeg(def.mu);
+      travelTotal += bill;
+      travelPassThrough += bill;
+      continue;
+    }
     if (def.directCost) {
       travelTotal += qty;
       travelPassThrough += qty;
@@ -414,10 +481,19 @@ function computeTotals(activeRows, pricing, settings, options) {
   for (const line of rows.equip || []) equipTotal += nonNeg(line.days) * nonNeg(line.cost);
 
   const expenseTotal = travelTotal + crewTotal + equipTotal;
-  const passThroughCost = crewTotal + equipTotal + travelPassThrough;
+  /* The two COST figures are ex-GST, like the client price they are measured
+     against (2026-09-30, .design/estimate-accuracy/ task 3). expenseTotal is
+     what the client is billed and stays as entered; these are what the
+     business pays out, and a registered business claims the GST on them back.
+     Before, on a GST-inclusive card, $1,100 of crew (really $1,000) went into
+     Minimum Job Price and the Income floor line as $1,100, and the quote read
+     $100 worse against both than it was. On any other card exGst changes
+     nothing, and a GST-free estimate stays priced as unregistered (see the
+     header), costs included. */
+  const passThroughCost = exGst(crewTotal + equipTotal + travelPassThrough);
   /* What the job costs the business out of pocket: pass-throughs, plus what
      resold travel was bought for. minimumJobPrice's direct-cost term. */
-  const directJobCost = passThroughCost + travelCost;
+  const directJobCost = exGst(crewTotal + equipTotal + travelPassThrough + travelCost);
 
   // ── GST ─────────────────────────────────────────────────────────────────
   // `billed` is the sum of every line as entered. Whether that figure already
@@ -454,7 +530,6 @@ function computeTotals(activeRows, pricing, settings, options) {
   // the overhead this job's hours carry (options.overheadRate × totalHours),
   // because running costs are deductible. With no overhead rate known the
   // whole income is the base, which errs high, as the old model always did.
-  const exGst = (v) => (pricesIncludeGst ? v / (1 + gstRate) : v);
   const incomeExGst = exGst(labourTotal + travelIncome);
   const overheadRate = numOrNull(options && options.overheadRate);
   const overheadShare = overheadRate !== null && overheadRate > 0 ? totalHours * overheadRate : 0;
@@ -776,7 +851,7 @@ function labourHoursBreakdown(activeRows, pricing) {
   const travelDefs = (pricing && pricing.travelRows) || [];
   for (const line of rows.travel || []) {
     const def = lineDef(travelDefs, line);
-    if (!def || def.directCost || !def.ownTime) continue;
+    if (!def || def.perKm || def.directCost || !def.ownTime) continue;
     const h = nonNeg(line.qty) * hoursPerUnitOf(def);
     totalHours += h;
     hourlyHours += h;
@@ -1292,13 +1367,27 @@ const SERVICE_UNITS = ['hour', 'half', 'full'];
    labour line at $0, because lineSnapshot on a row with `prices` and no `mu`
    reads no price. The rate card's own marker is `serviceDay`, which no old
    build sends; an estimate has nothing like it, so it carries this. Shared
-   here so the web and the server can't spell it two ways. */
-const PRICING_SHAPE = 'service-units';
+   here so the web and the server can't spell it two ways.
+
+   'service-units' until 2026-09-30, then 'travel-auto' (estimate-accuracy
+   task 6a): an own-time travel row's `mu` may now be null (auto), which every
+   build before it reads as $0 — its Rate Card would save the row back as a
+   typed $0 (its payload() runs every travel price through num()), and its
+   editor would snapshot the line at $0. So this marker is now ALSO carried by
+   the rate card itself (card.pricingShape): readPricing puts it on every card
+   the server serves, a build that knows it sends it back, and
+   cardShapeOutdated refuses a card without it. An older build rebuilds the
+   card field by field and drops it, so both of its writes are refused.
+
+   'travel-km' since task 6b: a 'travel-auto' build's Rate Card would drop a
+   km row's `perKm` flag and save it as a resold row at a typed $0. */
+const PRICING_SHAPE = 'travel-km';
 
 /**
- * Is a rate card in the shape from before v9? True when it has no usable
- * `serviceDay`, or any labour row carries `mu`, `hoursPerUnit` or `dayUnit` or
- * lacks a `prices` object. One definition for both sides: the rate card route
+ * Is a rate card in a shape this build can't write? True when it doesn't carry
+ * this build's `pricingShape` (see PRICING_SHAPE: a card from before task 6a,
+ * or one sent by an older build), has no usable `serviceDay`, or any labour
+ * row carries `mu`, `hoursPerUnit` or `dayUnit` or lacks a `prices` object. One definition for both sides: the rate card route
  * refuses such a card (pricing_shape_outdated), and the Rate Card screen won't
  * open one for editing — a server not yet on v9 serves this shape, and a
  * v9 screen would read every row as all-auto and save that back over every
@@ -1310,6 +1399,7 @@ const PRICING_SHAPE = 'service-units';
  */
 function cardShapeOutdated(pricing) {
   const p = pricing || {};
+  if (p.pricingShape !== PRICING_SHAPE) return true;
   if (!p.serviceDay || typeof p.serviceDay !== 'object') return true;
   const sections = Array.isArray(p.labourSections) ? p.labourSections : [];
   return sections.some((sec) =>
@@ -1466,10 +1556,10 @@ function unitDef(row, unit, pricing, ctx) {
  * arithmetic anywhere (see computeTotals). Exactly at the floor is not below
  * it.
  *
- * LABOUR SERVICES ONLY. Travel rows are excluded entirely, marked-up or not:
- * crew, hire, travel, flights and accommodation are added to a job at cost on
- * top of the labour, and are not what carries the overhead. That is
- * price-calculator's brief decision 6, and the Dashboard copy says so.
+ * LABOUR SERVICES ONLY. Resold and at-cost travel, crew and hire are added to
+ * a job at cost on top of the labour and carry no overhead (price-calculator's
+ * brief decision 6). Own-time travel rows are compared too, since task 6a, by
+ * their own function: travelFloorComparison.
  *
  * An auto unit is priced from THIS function's floorPerHour and settings; only
  * ctx.markupPct is read from ctx. So an auto price and the floor it is set
@@ -1517,6 +1607,108 @@ function serviceFloorComparison(pricing, settings, floorPerHour, ctx) {
       out.push({ sectionId: section.id, sectionLabel: section.label, rowIndex, name: row.name, units });
     });
   }
+  return out;
+}
+
+/**
+ * One travel row as the estimator prices it: the row with `mu` resolved and an
+ * `auto` flag — what lineSnapshot, lineDef and computeTotals take, as unitDef's
+ * result is for a service. See YOUR TIME ON THE ROAD in the header.
+ *
+ * An own-time row (ownTime, not directCost) with no typed `mu` is auto:
+ * suggestedPrice(ctx.floorPerHour, its hours, 0, ctx.settings) — the income
+ * floor with no markup. Without ctx, or with no floor yet, that is null: no
+ * price, never $0. Any other row keeps its typed `mu`, and a blank one reads
+ * as 0, as it always has (see YOUR TIME ON THE ROAD in the header).
+ *
+ * @param {object} row — a rate-card travel row.
+ * A `perKm` row (task 6b) is always derived: Overhead's per-km figure,
+ * ctx.vehicleCostPerKm, plus GST on a GST-inclusive card; null without one.
+ * See THE CAR IS BILLED PER KM in the header.
+ *
+ * @param {object} [ctx] — { floorPerHour, settings, vehicleCostPerKm };
+ *   LSCData.priceContext() in the browser. Its markupPct is deliberately not
+ *   read.
+ * @returns {object|null} a copy of the row with `mu` and `auto`; null for no row.
+ */
+function travelRowDef(row, ctx) {
+  if (!row) return null;
+  if (row.perKm) {
+    /* The car (task 6b): Overhead's per-km figure, GST-exclusive, plus GST on
+       a GST-inclusive card. To 4 places: a per-km price is cents and parts of
+       a cent, and 0.9 × 1.1 is 0.9900000000000001. */
+    const c = ctx || {};
+    const figure = numOrNull(c.vehicleCostPerKm);
+    let mu = figure === null || figure < 0 ? null : figure;
+    const gstCfg = (c.settings && c.settings.gst) || {};
+    if (mu !== null && gstCfg.registered === true && gstCfg.pricesIncludeGst === true) {
+      mu = Math.round(mu * (1 + num(gstCfg.rate)) * 1e4) / 1e4;
+    }
+    return Object.assign({}, row, { mu, auto: true });
+  }
+  const typed = numOrNull(row.mu);
+  const auto = typed === null && row.ownTime === true && !row.directCost;
+  let mu = typed;
+  if (auto) {
+    const c = ctx || {};
+    mu = suggestedPrice(c.floorPerHour, hoursPerUnitOf(row), 0, c.settings);
+  } else if (mu === null) {
+    mu = 0;
+  }
+  return Object.assign({}, row, { mu, auto });
+}
+
+/**
+ * The rate card's own-time travel rows beside their floors — the Dashboard's
+ * and the Rate Card's companion to serviceFloorComparison, in its shape, so
+ * one table and one badge serve both. Only rows ticked Your time and not
+ * Direct: the rest are passed through and recover no overhead (see YOUR TIME
+ * ON THE ROAD in the header). An own-time row sells by the hour only, so each
+ * entry has `units.hour` and nothing else.
+ *
+ * The floor is floorPerHour × the row's hours, measured against its price
+ * ex-GST (priceExGst), exactly at the floor not being below it. An auto price
+ * is resolved from this function's own floor and settings, so it can never be
+ * badged below the floor it was derived from.
+ *
+ * @param {object} pricing — the rate card.
+ * @param {object} settings — { gst: { registered, rate, pricesIncludeGst } }.
+ * @param {number|null} floorPerHour — incomeFloorPerHour(), GST-exclusive.
+ * @returns {Array<object>} { sectionId: 'travel', sectionLabel: 'Travel',
+ *   rowIndex (its index in travelRows), name, travel: true, units: { hour } },
+ *   the unit as serviceFloorComparison's.
+ */
+function travelFloorComparison(pricing, settings, floorPerHour) {
+  const perHour = numOrNull(floorPerHour);
+  const hasFloor = perHour !== null && perHour > 0;
+  const ctx = { floorPerHour: perHour, settings };
+  const out = [];
+  ((pricing && pricing.travelRows) || []).forEach((row, rowIndex) => {
+    if (!row || row.ownTime !== true || row.directCost || row.perKm) return;
+    const def = travelRowDef(row, ctx);
+    const hours = hoursPerUnitOf(row);
+    const muExGst = def.mu === null ? null : priceExGst(def.mu, settings);
+    const floor = hasFloor ? round2(perHour * hours) : null;
+    const belowFloor = floor === null || muExGst === null ? null : muExGst < floor;
+    out.push({
+      sectionId: 'travel',
+      sectionLabel: 'Travel',
+      rowIndex,
+      name: row.name,
+      travel: true,
+      units: {
+        hour: {
+          mu: def.mu,
+          muExGst,
+          auto: def.auto,
+          hoursPerUnit: hours,
+          floor,
+          gap: belowFloor ? round2(floor - muExGst) : belowFloor === null ? null : 0,
+          belowFloor,
+        },
+      },
+    });
+  });
   return out;
 }
 
@@ -1688,6 +1880,8 @@ if (typeof module === 'object' && module.exports) {
     hourlyFloor,
     priceExGst,
     serviceFloorComparison,
+    travelRowDef,
+    travelFloorComparison,
     unitHours,
     serviceDayOk,
     suggestedPrice,
@@ -1733,6 +1927,8 @@ if (typeof module === 'object' && module.exports) {
     hourlyFloor,
     priceExGst,
     serviceFloorComparison,
+    travelRowDef,
+    travelFloorComparison,
     unitHours,
     serviceDayOk,
     suggestedPrice,

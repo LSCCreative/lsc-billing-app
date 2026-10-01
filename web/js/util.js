@@ -17,6 +17,15 @@ const LSCUtil = (() => {
     return Number.isInteger(n) ? '$' + n.toLocaleString('en-AU') : fmt(n);
   }
 
+  /* A per-km price (the car's km line, task 6b): to the cent when it is whole
+     cents, otherwise exactly — up to four places, as calc.js keeps it — so a
+     GST-inclusive $0.968 isn't shown as $0.97 while 120 km bill at $0.968. */
+  function perKm(n) {
+    const cents = n * 100;
+    const whole = Math.abs(cents - Math.round(cents)) < 1e-9;
+    return (whole ? fmt(n) : '$' + String(Math.round(n * 1e4) / 1e4)) + '/km';
+  }
+
   /* The desktop version left `'` alone, which was safe only because every
      attribute it built was double-quoted. Escaping it too costs nothing and
      removes the need to remember that. */
@@ -165,5 +174,5 @@ const LSCUtil = (() => {
     );
   }
 
-  return { fmt, money, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce };
+  return { fmt, money, perKm, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce };
 })();

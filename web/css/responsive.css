@@ -776,6 +776,11 @@
   .tax-setting input {
     width: 100%;
   }
+  /* The travel foot's two buttons (task 6b) share the width, as its one
+     button filled it before. */
+  .pricing-sec-foot-btns .btn {
+    flex: 1;
+  }
 
   /* ── The read-only estimate's tables ─────────────────────────────────────
      🔴 These were losing a money figure, exactly as .summary-bar was in the
@@ -1103,6 +1108,13 @@
   .dash-table td.dash-unit {
     padding-top: 6px;
     padding-bottom: 6px;
+  }
+  /* An own-time travel row sells by the hour only (task 6a). In the table its
+     day cells are blank; stacked, each would print its heading over nothing,
+     so they go. Their "no half-day price" words go with them, which is right:
+     a stacked row is read as its labelled lines. */
+  .dash-table td.dash-unit-none {
+    display: none;
   }
 
   /* ── The Invoice Settings modal ──────────────────────────────────────────

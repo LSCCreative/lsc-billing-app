@@ -191,12 +191,6 @@ const CapacityView = (() => {
     valueEl.textContent = annual === null ? '—' : hrs(annual);
     valueEl.classList.toggle('is-empty', annual === null);
     $('cap-annual-note').textContent = annual === null ? missingReason(c) : derivation(c);
-
-    const perDay = c.billableHoursPerDay;
-    const dayOk = Number.isFinite(perDay) && perDay > 0 && perDay <= 24;
-    $('cap-fullday-value').textContent = dayOk ? hrs(perDay) + ' hrs' : '—';
-    $('cap-fullday-value').classList.toggle('is-empty', !dayOk);
-    $('cap-halfday').textContent = dayOk ? hrs(perDay / 2) + ' hrs' : 'half that';
   }
 
   // ── Markup ────────────────────────────────────────────────────────────────
@@ -281,15 +275,16 @@ const CapacityView = (() => {
       '<span class="spinner" id="capacity-spin"></span><span id="capacity-save-label">Save Capacity</span></button>' +
       '</div></div>' +
 
-      /* Last: a consequence for another screen, not an input to this one. It is
-         billable hours per day under a second name, deliberately not a fifth
-         stored field — one writer per number. */
+      /* Last: a pointer, not a figure. Since service rate tiers (2026-09-28) the
+         hours in a day sold on a job are the Rate Card's own Service Day, which
+         is deliberately NOT this screen's billable hours per day — that one is a
+         yearly average, and a shoot day runs longer. Repeating a day length
+         here would put two numbers for "a day" on two screens. */
       '<div class="cap-fullday">' +
-      '<div class="sum-label">Full-day hours</div>' +
-      '<div class="cap-fullday-value" id="cap-fullday-value"></div>' +
-      '<p class="goals-hint">What a Full Day row on the Rate Card starts at, and <span id="cap-halfday"></span> ' +
-      'for a Half Day. Both stay editable per row there — a shoot day often runs longer than an average working day, ' +
-      'and a half day is priced on its own, not as half of a full one.</p>' +
+      '<div class="sum-label">Days sold on a job</div>' +
+      '<p class="goals-hint">A full or half day on an estimate takes its hours from the Rate Card’s Service Day ' +
+      'setting, not from here. Billable hours per day above is a yearly average — admin and quiet days included — ' +
+      'and only sets your hourly floor.</p>' +
       '</div>'
     );
   }

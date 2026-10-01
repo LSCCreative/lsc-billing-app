@@ -6,7 +6,8 @@
  * WHY THIS SCREEN EXISTS
  * The Overhead screen answers "what does the year cost." This one answers "how
  * much is meant to be left over": Target Markup is what minimumJobPrice() and
- * the cost floor add on top of cost, and Desired Net Income — with super, a
+ * the cost floor add on top of cost — and, since service rate tiers, on top of
+ * the income floor for every auto price on the Rate Card — and Desired Net Income — with super, a
  * bad-debt allowance and the user's own tax scale — sets Target Annual
  * Revenue, which the income floor divides across billable hours.
  *
@@ -463,7 +464,7 @@ const GoalsView = (() => {
         'goals-margin',
         'Target Markup (%)',
         form.margin,
-        'Added on top of cost for a job’s minimum price and the cost floor — a markup, not a margin: 25% on cost is a 20% share of the price. Enter 25 for 25%, not 0.25.',
+        'Added on top of cost. It sets every auto price on your Rate Card (your income floor plus this markup) as well as a job’s minimum price and the cost floor, so raising it raises them all. A markup, not a margin: 25% on cost is a 20% share of the price. Enter 25 for 25%, not 0.25.',
         'min="0" step="1"'
       ) +
       hoursMarkup() +
@@ -616,7 +617,8 @@ const GoalsView = (() => {
         /* The WHOLE rate card with one field swapped — see the header note.
            PUT /api/pricing replaces the stored document outright, so a body of
            just { taxSetAsideRate } would delete every category, service and
-           travel row on the card. */
+           travel row on the card. The card's own pricingShape marker (calc.js
+           PRICING_SHAPE, task 6a) rides along with it, as served. */
         const body = Object.assign({}, LSCData.pricing(), {
           // PERCENT -> FRACTION. taxSetAsideRate is stored as 0.35, not 35.
           taxSetAsideRate: parseFloat(form.tax) / 100,

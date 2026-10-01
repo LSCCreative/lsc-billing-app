@@ -561,6 +561,24 @@ const MIGRATIONS = [
       require('./migrations/v9-service-units').migrateV9(db);
     },
   },
+  {
+    version: 10,
+    name: 'goals: what the car costs to run, per km',
+    up(db) {
+      // .design/estimate-accuracy/ task 6b (2026-09-30). The car's full
+      // running cost per km — fuel, servicing, tyres, rego, insurance, wear —
+      // entered once on Overhead and billed at cost on a quote's km line
+      // (calc.js travelRowDef). Deliberately NOT part of any overhead total:
+      // the car is recovered per km, not across every hour. Dollars per km,
+      // GST-exclusive like every Overhead cost. Nullable: unset is "no km
+      // price yet", never $0.
+      //
+      // Only if it isn't there: safe to run twice, as v9 is, because the
+      // upgrade tests rewind schema_version past a column that already exists.
+      const has = db.prepare('PRAGMA table_info(goals)').all().some((c) => c.name === 'vehicle_cost_per_km');
+      if (!has) db.exec('ALTER TABLE goals ADD COLUMN vehicle_cost_per_km REAL;');
+    },
+  },
 ];
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

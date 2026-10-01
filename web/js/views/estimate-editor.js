@@ -139,7 +139,7 @@ const EstimateEditor = (() => {
 
   // ── Line prices ───────────────────────────────────────────────────────────
 
-  const SNAP_KEYS = ['mu', 'rowId', 'hoursPerUnit', 'dayUnit', 'rate', 'directCost', 'ownTime', 'customBill'];
+  const SNAP_KEYS = ['mu', 'rowId', 'hoursPerUnit', 'dayUnit', 'rate', 'directCost', 'ownTime', 'perKm', 'customBill'];
 
   /* The snapshot a row should carry: the saved line's own when it has one,
      otherwise one taken from the definition it was built from (the live card
@@ -187,10 +187,15 @@ const EstimateEditor = (() => {
   /* Today's card price for a row at one unit, as a line snapshot — or null when
      that unit has no price yet (an auto unit with no income floor, or a unit the
      card doesn't sell). A row without `prices` (Travel) has one price and no
-     units. */
+     units; an own-time one with no typed price follows the income floor
+     (calc.js travelRowDef, task 6a), and is resolved here, never snapshotted
+     as its raw null — lineSnapshot would read that as $0. */
   function cardSnap(row, unit) {
     if (!row) return null;
-    if (!row.prices) return LSCCalc.lineSnapshot(row);
+    if (!row.prices) {
+      const travel = LSCCalc.travelRowDef(row, priceCtx);
+      return travel.mu !== null ? LSCCalc.lineSnapshot(travel) : null;
+    }
     const def = LSCCalc.unitDef(row, unit, LSCData.pricing(), priceCtx);
     return def && def.mu !== null ? LSCCalc.lineSnapshot(def) : null;
   }
@@ -410,13 +415,16 @@ const EstimateEditor = (() => {
     if (snap) tr.dataset.snap = JSON.stringify(snap);
     def = snap ? Object.assign({ name: line.name }, snap) : null;
 
-    const rateLabel = !def ? '—' : def.directCost ? 'Direct' : def.rate > 0 ? fmt(def.rate) : '—';
-    const muLabel = !def ? '—' : def.directCost ? '—' : def.mu !== def.rate ? fmt(def.mu) : 'None';
+    /* The car's km line (task 6b): at cost, its price per km from Overhead,
+       its quantity kilometres. */
+    const perKm = Boolean(def && def.perKm);
+    const rateLabel = !def ? '—' : perKm ? 'At cost' : def.directCost ? 'Direct' : def.rate > 0 ? fmt(def.rate) : '—';
+    const muLabel = !def ? '—' : perKm ? LSCUtil.perKm(def.mu) : def.directCost ? '—' : def.mu !== def.rate ? fmt(def.mu) : 'None';
 
     tr.innerHTML =
       '<div data-label="Service">' + esc(line.name) + '</div>' +
-      '<div class="right" data-label="Qty / Cost"><input class="num-inp qty-inp" type="number" min="0" step="0.01" value="' +
-      (line.qty || '') + '" aria-label="Quantity for ' + esc(line.name) + '"></div>' +
+      '<div class="right" data-label="' + (perKm ? 'Kilometres' : 'Qty / Cost') + '"><input class="num-inp qty-inp" type="number" min="0" step="0.01" value="' +
+      (line.qty || '') + '" aria-label="' + (perKm ? 'Kilometres' : 'Quantity') + ' for ' + esc(line.name) + '"></div>' +
       '<div class="right muted-td" data-label="Rate">' + rateLabel + '</div>' +
       '<div class="right muted-td" data-label="Mark-Up">' + muLabel + '</div>' +
       '<div class="right" data-label="Client Bill"><span class="bill-cell">—</span></div>' +
@@ -556,11 +564,22 @@ const EstimateEditor = (() => {
     );
   }
 
+  /* An own-time item on auto has no price until the income floor exists, and
+     the car's km row none until Overhead has its per-km cost (task 6b), so
+     their options are disabled and say why, as a service unit's is
+     (unitOptions). The browser selects the first option that isn't; with
+     none, Add is off. */
   function travelSectionMarkup(pricing) {
     const defs = (pricing && pricing.travelRows) || [];
+    const needs = LSCData.autoPriceBlocker().screen;
+    const priced = defs.map((r) => cardSnap(r, 'hour') !== null);
     const options = defs.length
-      ? defs.map((r) => '<option value="' + esc(r.name) + '">' + esc(r.name) + '</option>').join('')
+      ? defs.map((r, i) =>
+          '<option value="' + esc(r.name) + '"' + (priced[i] ? '' : ' disabled') + '>' + esc(r.name) +
+          (priced[i] ? '' : ' · no price yet, needs ' + esc(r.perKm ? 'Overhead' : needs)) + '</option>'
+        ).join('')
       : '<option value="">No items — add one under Pricing</option>';
+    const canAdd = priced.some(Boolean);
 
     return (
       '<div class="billing-block">' +
@@ -569,7 +588,7 @@ const EstimateEditor = (() => {
       '<span class="bb-sum">Subtotal <b id="sum-travel">$0.00</b></span></div>' +
       '<div class="bb-picker"><select class="svc-select" id="sel-travel" aria-label="Travel item to add">' +
       options + '</select>' +
-      '<button type="button" class="btn btn-accent btn-sm" id="add-travel">+ Add Item</button></div>' +
+      '<button type="button" class="btn btn-accent btn-sm" id="add-travel"' + (canAdd ? '' : ' disabled') + '>+ Add Item</button></div>' +
       '<div class="gt-head expense-grid"><div>Service</div><div class="right">Qty / Cost</div>' +
       '<div class="right">Rate</div><div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
       bodyMarkup('travel', 'No items added. Use the selector above to add one.') +
@@ -1161,6 +1180,7 @@ const EstimateEditor = (() => {
       LSCCalc.hoursPerUnitOf(x),
       Boolean(x.directCost),
       Boolean(x.ownTime),
+      Boolean(x.perKm),
       Boolean(x.customBill),
       travel ? Number(x.rate) || 0 : '',
     ].join('|');
@@ -1623,6 +1643,7 @@ const EstimateEditor = (() => {
       const def = defs.find((r) => r.name === (select && select.value));
       if (!def) return;
       const picked = unitSnap('', def, 'hour');
+      if (!picked.snap) return; // an own-time item with no floor yet — its option is disabled
       const tr = buildTravelRow(null, Object.assign({ name: def.name, qty: 0 }, picked.snap));
       markOwn(tr, picked);
       injectRow($('tbody-travel'), tr);

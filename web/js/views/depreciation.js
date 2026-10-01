@@ -1366,6 +1366,25 @@ const DepreciationView = (() => {
           'you bought it and claimed the credit.';
   }
 
+  /* The car is billed per km (Overhead's cost per km, task 6b), which covers
+     its wear and replacement: a Vehicle here as well is charged twice, per km
+     and again in every rate through the replacement reserve. A hint, never a
+     block — the tax deduction side still wants the car on this register, which
+     is exactly why this doesn't refuse it. Category is structural (it
+     re-renders the box), so the hint follows it without a handler. */
+  function kmHintMarkup() {
+    const perKm = LSCCalc.numOrNull(LSCData.goals().vehicleCostPerKm);
+    if (perKm === null || perKm < 0) return '';
+    return (
+      '<div class="field full"><div class="oh-asset-hint" role="note">' +
+      '<p><strong>Your car is already billed per km.</strong> Overhead has a cost per km of ' +
+      esc(LSCUtil.perKm(perKm)) + ', which covers the car’s wear and replacement. A replacement reserve here ' +
+      'would charge for that again in every hourly rate. Keep the car on this register for its tax deduction, ' +
+      'but leave Replacement cost blank so nothing is reserved for it — or clear the cost per km. This is only ' +
+      'a hint.</p></div></div>'
+    );
+  }
+
   function modalMarkup() {
     const needsLife = Boolean(NEEDS_LIFE[form.method]);
     const lifePlaceholder = LIFE_HINT[form.category] ? 'e.g. ' + LIFE_HINT[form.category] : 'years';
@@ -1432,6 +1451,8 @@ const DepreciationView = (() => {
       '</div>' +
 
       '<h3 class="dep-group">For pricing</h3><div class="form-grid">' +
+      // Above the replacement fields it is about (task 6b), for a Vehicle only.
+      (form.category === 'vehicle' ? kmHintMarkup() : '') +
       field('dep-cycle', 'Replace every (years)',
         inputHtml('dep-cycle', 'number', 'replacementCycleYears', 'min="0" step="0.5"', true),
         'How long you actually keep one before replacing it.') +

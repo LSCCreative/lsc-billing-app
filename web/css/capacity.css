@@ -45,21 +45,10 @@
   flex-shrink: 0;
 }
 
-/* Full-day hours: a consequence for the Rate Card, read-only, so it sits under
-   the save bar at a size below the headline figure. */
+/* Days sold on a job: a pointer to the Rate Card's Service Day, under the save bar. */
 .cap-fullday {
   margin-top: 26px;
   max-width: 78ch;
-}
-.cap-fullday-value {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 700;
-  font-size: 20px;
-  color: var(--text);
-  margin-bottom: 6px;
-}
-.cap-fullday-value.is-empty {
-  color: var(--muted);
 }
 
 /* Same treatment as #goals-error, #pricing-error and #overhead-error. */

@@ -70,6 +70,18 @@
  *     usual confirm (choosing to move it IS the answer to that question),
  *     switches to the Depreciation tab and opens Add Asset with the name carried
  *     over — only the name, see DepreciationView.openAdd.
+ *
+ * THE CAR, PER KM (2026-09-30, .design/estimate-accuracy/ task 6b)
+ * Operating Costs also holds one figure that is NOT an overhead cost: the
+ * car's full running cost per km (goals.vehicle_cost_per_km). Quotes bill it
+ * at cost on the Rate Card's "Vehicle — per km" row (calc.js travelRowDef),
+ * and nothing here adds it to the annual total — the car is recovered per km,
+ * not across every hour. Its own small save, as Depreciation's write-off
+ * threshold has. While it is set, the Add/Edit form warns when Motor vehicle
+ * expenses is picked: those costs are then charged twice, once per km and
+ * again in every rate. Add and edit both, unlike the asset hint: it is a
+ * warning about what the item is, not an offer to move it. No Dismiss, and
+ * never a block.
  */
 
 const OverheadView = (() => {
@@ -129,6 +141,16 @@ const OverheadView = (() => {
   let baseline = '';
   let opener = null; // the control that opened it, to hand focus back to
   let hintDismissed = false; // the double-count hint, for this modal only
+
+  // The per-km cost field, as typed and as last saved (see THE CAR, PER KM).
+  let kmRaw = '';
+  let kmSaved = '';
+  let kmSaving = false;
+  const toField = (v) => (v === null || v === undefined ? '' : String(v));
+  const kmFigure = () => {
+    const v = LSCCalc.numOrNull(LSCData.goals().vehicleCostPerKm);
+    return v === null || v < 0 ? null : v;
+  };
 
   const $ = (id) => root.querySelector('#' + id);
   const $m = (id) => overlay.querySelector('#' + id);
@@ -257,9 +279,57 @@ const OverheadView = (() => {
          copied into the charts module — these are the spellings the database
          CHECK-constrains, and a second list of them is a second thing to keep
          in step with the migration. */
+      kmMarkup() +
       OverheadCharts.donutMarkup(items(), CATEGORIES) +
       OverheadCharts.trendMarkup(snapshots())
     );
+  }
+
+  /* The car's per-km cost: one number, not an expense, so not in the table or
+     the totals above it. Same block as Depreciation's write-off threshold:
+     copy left, field and Save right. */
+  function kmMarkup() {
+    return (
+      '<div class="tax-setting oh-km"><div>' +
+      '<div class="sum-label" style="margin-bottom:4px">Vehicle — cost per km ($)</div>' +
+      '<div class="oh-km-copy">What your car costs to run for each kilometre, everything included: fuel, ' +
+      'servicing, tyres, rego, insurance and wear. Quotes bill it at cost on the Rate Card’s “Vehicle — per km” ' +
+      'line; it isn’t part of the totals above or your hourly rates. The ATO publishes a cents-per-km rate each ' +
+      'year that’s a sensible figure to check yours against. GST-exclusive, like the costs above.</div></div>' +
+      '<div class="oh-km-ctl"><input type="number" id="oh-km" min="0" step="0.01" inputmode="decimal"' +
+      ' placeholder="e.g. 0.90" value="' + esc(kmRaw) + '" aria-label="Vehicle cost per kilometre, dollars">' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="oh-km-save" data-write>Save</button></div></div>'
+    );
+  }
+
+  async function saveKm() {
+    if (kmSaving) return;
+    clearError();
+    const raw = String(kmRaw).trim();
+    const value = raw === '' ? null : parseFloat(raw);
+    if (value !== null && (!Number.isFinite(value) || value < 0)) {
+      LSCUtil.showFieldErrors($('overhead-error'), [
+        { msg: 'The cost per km must be a dollar amount, 0 or more — or blank for no km price yet.', field: $('oh-km') },
+      ]);
+      return;
+    }
+    kmSaving = true;
+    Toast.working('Saving cost per km…');
+    try {
+      /* Only this field: the goals route keeps every field it isn't sent. */
+      const reply = await LSCApi.put('/api/goals', { vehicleCostPerKm: value });
+      LSCData.setGoals(reply.goals);
+      kmSaved = toField(reply.goals.vehicleCostPerKm);
+      kmRaw = kmSaved;
+      Toast.ok(value === null ? 'Cost per km cleared.' : 'Cost per km saved.');
+    } catch (err) {
+      Toast.hide();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      showError(failureText(err, 'save the cost per km'));
+    } finally {
+      kmSaving = false;
+    }
   }
 
   // ── Errors on the screen behind the modal ─────────────────────────────────
@@ -352,12 +422,27 @@ const OverheadView = (() => {
     );
   }
 
-  /* Rewritten on each cost keystroke and frequency change. Only this box: the
-     fields keep their focus and caret. */
+  /* The car is billed per km (task 6b) and this is a car cost: it would be
+     charged twice. Add and edit alike; see THE CAR, PER KM in the header. */
+  function kmHintMarkup() {
+    if (!form || form.category !== 'motor_vehicle' || kmFigure() === null) return '';
+    return (
+      '<div class="oh-asset-hint">' +
+      '<p><strong>Your car is already billed per km.</strong> Below the table you’ve set a cost per km of ' +
+      esc(LSCUtil.perKm(kmFigure())) + ', which covers everything the car costs to run and is billed on each ' +
+      'quote’s km line. A car cost entered here as well is charged twice: per km, and again in every hourly ' +
+      'rate. Leave it out, or clear the cost per km. This is only a hint.</p></div>'
+    );
+  }
+
+  const hintsMarkup = () => assetHintMarkup() + kmHintMarkup();
+
+  /* Rewritten on each cost keystroke and frequency or category change. Only
+     this box: the fields keep their focus and caret. */
   function refreshAssetHint() {
     const box = $m('oh-asset-hint');
     if (!box) return;
-    const next = assetHintMarkup();
+    const next = hintsMarkup();
     // Unchanged markup is left alone, so the live region doesn't re-announce
     // the same hint on every digit typed.
     if (box.innerHTML !== next) box.innerHTML = next;
@@ -420,7 +505,7 @@ const OverheadView = (() => {
       /* Always in the DOM, empty until it applies, so the live region exists
          before its first announcement — a region inserted with its text
          already in it is often not read out. */
-      '<div id="oh-asset-hint" aria-live="polite">' + assetHintMarkup() + '</div>' +
+      '<div id="oh-asset-hint" aria-live="polite">' + hintsMarkup() + '</div>' +
       '<div id="oh-modal-error" role="alert"></div>' +
       '<div class="modal-actions">' +
         '<button type="button" class="btn btn-ghost btn-sm" id="oh-cancel">Cancel</button>' +
@@ -584,6 +669,7 @@ const OverheadView = (() => {
     });
     $m('oh-category').addEventListener('change', function () {
       form.category = this.value;
+      refreshAssetHint(); // the per-km hint follows the category (task 6b)
     });
     $m('oh-frequency').addEventListener('change', function () {
       form.frequency = this.value;
@@ -639,6 +725,10 @@ const OverheadView = (() => {
       return;
     }
     $('oh-add').addEventListener('click', (event) => openModal(null, event.currentTarget));
+    $('oh-km').addEventListener('input', function () {
+      kmRaw = this.value;
+    });
+    $('oh-km-save').addEventListener('click', saveKm);
     root.querySelectorAll('[data-edit]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const item = items().find((entry) => entry.id === btn.dataset.edit);
@@ -669,6 +759,13 @@ const OverheadView = (() => {
     overlay = document.getElementById('modal-overhead-item');
     saving = false;
     innerTab = handlers.inner === 'depreciation' ? 'depreciation' : 'operating';
+    kmSaved = toField(LSCData.goals().vehicleCostPerKm);
+    kmRaw = kmSaved;
+    LSCUnsaved.watch('overhead-km', {
+      label: 'the cost per km',
+      onScreen: () => Boolean(document.getElementById('oh-km')),
+      dirty: () => String(kmRaw).trim() !== String(kmSaved).trim(),
+    });
     // Reads the cache when it fires rather than closing over today's list, so a
     // resize after a write redraws the chart the screen is actually showing.
     OverheadCharts.bindResize(snapshots);

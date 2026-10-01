@@ -180,6 +180,9 @@ const LSCData = (() => {
       floorPerHour: LSCData.incomeFloor(),
       markupPct: (goals || {}).targetProfitMarginPct,
       settings: settings || {},
+      // The car's running cost per km, from Overhead (task 6b): a km travel
+      // row's price (calc.js travelRowDef).
+      vehicleCostPerKm: (goals || {}).vehicleCostPerKm,
     }),
     /* For the first-run setup checklist on the estimates empty state. */
     pricingConfigured: () => pricingSaved,

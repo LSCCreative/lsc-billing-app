@@ -6,7 +6,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
 ## Start here
 
 `.design/` holds one self-contained folder per feature track — each has its own `DESIGN_BRIEF.md`,
-`TASKS.md`, and (once any work has happened on it) `HANDOVER.md`. Five tracks exist right now:
+`TASKS.md`, and (once any work has happened on it) `HANDOVER.md`. Seven tracks exist right now:
 
 1. [`.design/nas-hosted-billing/`](.design/nas-hosted-billing/) — the base website rewrite
    (Electron → GitHub Pages + NAS-hosted API/SQLite). Largely complete and **live** (Cloudflare
@@ -62,6 +62,35 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    service → unit → Add in the estimate editor. **Brief, IA and tasks written 2026-09-28. Merged to `main` and live: tasks 1–10 done (calc.js unit pricing incl. decision 13 — an auto day is the hourly × its hours, per-service floor comparison, schema v9 + `pricing_shape_outdated` guard, Rate Card rows, Service Day + Show switch, estimate editor unit picker + line unit switch, Dashboard on Service Day + one row per service, responsive pass, accessibility pass); a code review on 2026-09-29 added a fix list (TASKS.md "Code review fixes" R1–R14; R1–R4, the pre-deploy ones, done 2026-09-29; R5–R14 can follow the deploy), task 10 **deployed 2026-09-29** (NAS v9 + Pages, on `main`); design-reviewed 2026-09-29 (no must-fixes; four should-fixes D1–D4 in TASKS.md, all done 2026-09-29), and R5–R14 done the same day except R8 (needs a person in Safari) and R9 (settled, no change). None of that is committed or deployed yet.**
    It knowingly overturns price-calculator's "nothing auto-writes the rate card" — see its brief's
    Resolved Decisions. Read its `HANDOVER.md` first. Build bucket: Opus, effort high (money math).
+6. [`.design/estimate-accuracy/`](.design/estimate-accuracy/) — follow-up to a money-logic audit on
+   2026-09-30 (the chain is sound; 253 tests pass). **Tasks 1–3, 5(a) and 6 (6a travel time
+   auto-priced at the floor, 6b the car per km at cost from Overhead, schema v10) done 2026-09-30 on
+   branch `estimate-accuracy`, uncommitted and not deployed (NAS then Pages; `PRICING_SHAPE` is now
+   `'travel-km'` and the card must carry it). 5(b) waits on the user. Task 8 (expected booking rate)
+   was scrapped by the user and task 11 (loadings) superseded by track 7, both 2026-09-30; next is
+   `/grill-me` on 9, 10, 12–14.**
+   Three fixes (Capacity's stale "Full Day starts at…" copy, the Target Markup hint, direct costs not
+   ex-GST on a GST-inclusive card), four settings (the user saved the FY 2026–27 tax scale and
+   confirmed Transport & Logistics Hrs is "Your time" and that income tax stays out of the Overhead
+   "Tax" category), and the remaining accuracy features (own-kit equipment, discount, minimum call,
+   handling markup, half-day loading) **each with an open decision — run `/grill-me` before building
+   them.** Read its `HANDOVER.md` first. Build bucket: Opus, effort high for the money-math tasks;
+   its `TASKS.md` tags every one.
+7. [`.design/production-booking/`](.design/production-booking/) — the user's 2026-09-30 request in
+   place of a booking rate, in five stages built in order: **A** surcharges (short notice, weekend /
+   NSW public holiday, after hours; Production section only; folded into the client's price, and
+   explained in a user-only Cost Breakdown), **B** Production Booking in the estimate editor (day
+   cards on a shared calendar: confirmed / pencilled / proposed), **C** the "LSC Creative" home
+   becomes a production calendar dashboard, **D** projects per UPID with a deposit + final invoice
+   pair, **E** public client pages for estimates and invoices, with typed-name e-signing of a service
+   agreement, scheduled sending through Google Workspace, and Stripe card payment. **Grill Me done
+   2026-09-30 and `DESIGN_BRIEF.md` written the same day (66 decisions in its `DECISIONS.md`);
+   IA written 2026-10-02 (D58–D66: "Projects" replaces "Estimates" in the nav, hash routes, unique
+   UPIDs, Settings becomes a screen, the data model across migrations v11–v13); no code yet.
+   `TASKS.md` written 2026-10-02 (33 tasks: A+B 1–10, C 11–13, D 14–23, E 24–32, review 33).**
+   Next is task 1 (surcharge maths, Opus/high), after estimate-accuracy's work is committed and
+   this track is branched from it. Client pages are light, in the
+   colours of the user's site **lsccreative.studio** (formerly creativelsc.com). Read its `HANDOVER.md` first. Build bucket: Opus, effort high.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes
 what's being built (the old `localStorage`/Electron-targeted overhead brief, the old

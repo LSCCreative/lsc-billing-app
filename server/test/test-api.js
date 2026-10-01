@@ -52,13 +52,14 @@ test.after(() => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-/* Every estimate write here comes from a v9 client, as the web build's all do,
-   so it carries calc.js's PRICING_SHAPE. `bare: true` sends the body as given,
-   for the tests of what the route does with a write that doesn't. */
-const ESTIMATE_WRITE = /^\/api\/estimates(\/[^/]+)?$/;
+/* Every estimate write and rate-card save here comes from a current client,
+   as the web build's all do, so it carries calc.js's PRICING_SHAPE (a card
+   carries it since task 6a). `bare: true` sends the body as given, for the
+   tests of what the route does with a write that doesn't. */
+const SHAPED_WRITE = /^\/api\/(estimates(\/[^/]+)?|pricing)$/;
 function api(pathname, { bare, ...opts } = {}) {
   let body = opts.body;
-  if (!bare && body && ESTIMATE_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
+  if (!bare && body && SHAPED_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
     body = JSON.stringify({ pricingShape: PRICING_SHAPE, ...JSON.parse(body) });
   }
   return fetch(`${baseUrl}${pathname}`, {
@@ -364,8 +365,9 @@ test('pricing: a service\'s three prices and the service day round-trip, and the
   const saved = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(body) });
   assert.equal(saved.status, 200);
   const reread = await api('/api/pricing').then((r) => r.json());
-  // Stored exactly as sent: null stays null (auto), a typed 0 stays 0.
-  assert.deepEqual(reread.pricing, body);
+  // Stored exactly as sent: null stays null (auto), a typed 0 stays 0. The
+  // card comes back carrying this server's shape marker (task 6a).
+  assert.deepEqual(reread.pricing, { pricingShape: PRICING_SHAPE, ...body });
 
   // The stored estimate's totals are computed server-side from the saved card:
   // a line with no snapshot at the full-day unit is 2 × 9 hours for the
@@ -1100,4 +1102,132 @@ test('depreciation assets: an opening value is dated to its FY, and keeps it acr
   });
   assert.equal(bad.status, 400);
   await api(`/api/depreciation-assets/${created.asset.id}`, { method: 'DELETE' });
+});
+
+test('pricing: Reset Defaults gives back Transport & Logistics Hrs as "Your time"', async () => {
+  // estimate-accuracy task 5: the owner's own hours, on a fresh or reset card.
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const row = card.travelRows.find((r) => r.name === 'Transport & Logistics Hrs');
+  assert.equal(row.ownTime, true);
+});
+
+test('pricing: since task 6a a card must carry the shape marker, and an own-time price may be auto', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  assert.equal(card.pricingShape, PRICING_SHAPE);
+  assert.equal(card.travelRows.find((r) => r.name === 'Transport & Logistics Hrs').mu, null);
+  const put = async (body, bare) => {
+    const res = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(body), bare });
+    return [res.status, (await res.json()).error];
+  };
+  const outdated = [400, 'pricing_shape_outdated'];
+  const { pricingShape, ...unmarked } = card;
+
+  // Exactly what the Rate Card from before 6a sends: every field rebuilt, no
+  // marker, and the auto transport price run through num() into a typed 0.
+  const oldTab = { ...unmarked, travelRows: unmarked.travelRows.map((r) => ({ ...r, mu: Number(r.mu) || 0 })) };
+  assert.deepEqual(await put(oldTab, true), outdated);
+  assert.deepEqual(await put({ ...card, pricingShape: 'service-units' }, true), outdated);
+  // Nothing was written.
+  assert.deepEqual((await api('/api/pricing').then((r) => r.json())).pricing, card);
+
+  // Blank prices: auto on an own-time row, allowed on a Direct row (its price
+  // prices nothing), refused anywhere else.
+  const withTravel = (row) => ({ ...card, travelRows: [row] });
+  assert.deepEqual(await put(withTravel({ name: 'Drive', rate: 25, mu: null, ownTime: true })), [200, undefined]);
+  assert.equal((await api('/api/pricing').then((r) => r.json())).pricing.travelRows[0].mu, null);
+  assert.deepEqual(await put(withTravel({ name: 'Tolls', rate: 0, mu: null, directCost: true })), [200, undefined]);
+  assert.deepEqual(await put(withTravel({ name: 'Meals', rate: 25, mu: null })), [400, 'travel_price_missing']);
+  assert.deepEqual(await put(withTravel({ name: 'Meals', rate: 25 })), [400, 'travel_price_missing']);
+  assert.deepEqual(await put(withTravel({ name: 'Meals', rate: 25, mu: '' })), [400, 'travel_price_missing']);
+  assert.deepEqual(await put(withTravel({ name: 'Meals', rate: 25, mu: 0 })), [200, undefined]);
+
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+});
+
+test('pricing: a card stored before the marker existed is served with it', async () => {
+  // Written straight to the table, as every card saved before task 6a is.
+  const { pricingShape, ...stored } = (await api('/api/pricing').then((r) => r.json())).pricing;
+  db.prepare('UPDATE pricing SET data_json = ? WHERE id = 1').run(JSON.stringify(stored));
+  const served = (await api('/api/pricing').then((r) => r.json())).pricing;
+  assert.equal(served.pricingShape, PRICING_SHAPE);
+  assert.deepEqual({ ...served, pricingShape: undefined }, { ...stored, pricingShape: undefined });
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+});
+
+test('estimates: a write from a build before task 6a is refused as outdated', async () => {
+  const res = await api('/api/estimates', {
+    method: 'POST',
+    bare: true,
+    // What that build's editor sends for an auto travel row: snapshotted at $0.
+    body: JSON.stringify({ pricingShape: 'service-units', name: 'old tab', activeRows: { travel: [{ name: 'Transport & Logistics Hrs', qty: 2, mu: 0, rate: 25, ownTime: true }] } }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'pricing_shape_outdated');
+});
+
+test('goals: the per-km vehicle cost is saved alone, cleared with blank, and never negative', async () => {
+  const put = (body) => api('/api/goals', { method: 'PUT', body: JSON.stringify(body) });
+  const read = () => api('/api/goals').then((r) => r.json()).then((r) => r.goals);
+  const others = (g) => ({ ...g, vehicleCostPerKm: undefined });
+
+  const before = await read();
+  let res = await put({ vehicleCostPerKm: 0.9 });
+  assert.equal(res.status, 200);
+  const saved = await read();
+  assert.equal(saved.vehicleCostPerKm, 0.9);
+  // Only that field moved: income, markup, capacity, super and the rest stay.
+  assert.deepEqual(others(saved), { ...others(before), capacityConfirmedAt: saved.capacityConfirmedAt });
+
+  // Another screen's save, which doesn't send it, leaves it alone.
+  assert.equal((await put({ superPct: 11 })).status, 200);
+  assert.equal((await read()).vehicleCostPerKm, 0.9);
+
+  res = await put({ vehicleCostPerKm: -0.5 });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'vehicle_cost_per_km_out_of_range');
+  assert.equal((await put({ vehicleCostPerKm: 'abc' })).status, 400);
+  assert.equal((await read()).vehicleCostPerKm, 0.9);
+
+  assert.equal((await put({ vehicleCostPerKm: '' })).status, 200);
+  assert.equal((await read()).vehicleCostPerKm, null);
+  assert.equal((await put({ vehicleCostPerKm: 0 })).status, 200); // a real figure
+  assert.equal((await read()).vehicleCostPerKm, 0);
+  assert.equal((await put({ vehicleCostPerKm: null, superPct: before.superPct })).status, 200);
+});
+
+test('pricing: a km row takes no price of its own and is never also Your time or Direct', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const km = card.travelRows.find((r) => r.perKm);
+  assert.deepEqual([km.name, km.mu, km.unit], ['Vehicle — per km', null, 'km']);
+  const put = async (row) => {
+    const res = await api('/api/pricing', { method: 'PUT', body: JSON.stringify({ ...card, travelRows: [row] }) });
+    return [res.status, (await res.json()).error];
+  };
+  assert.deepEqual(await put({ name: 'Car', rate: 0, mu: null, perKm: true, unit: 'km' }), [200, undefined]);
+  assert.deepEqual(await put({ name: 'Car', rate: 0, mu: null, perKm: true, ownTime: true }), [400, 'travel_per_km_flags']);
+  assert.deepEqual(await put({ name: 'Car', rate: 0, mu: null, perKm: true, directCost: true }), [400, 'travel_per_km_flags']);
+  // A 'travel-auto' build (6a) is refused: it would save this row as a resold $0 row.
+  const old = await api('/api/pricing', { method: 'PUT', bare: true, body: JSON.stringify({ ...card, pricingShape: 'travel-auto' }) });
+  assert.equal(old.status, 400);
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+});
+
+test('estimates: a km line is billed at cost and a bare one on the server prices at nothing', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const make = (travel) => api('/api/estimates', {
+    method: 'POST', body: JSON.stringify({ name: 'km', activeRows: { travel } }),
+  }).then((r) => r.json()).then((r) => r.estimate);
+  // As the editor sends it: snapshotted at the figure, with the flag.
+  const snapped = await make([{ name: 'Vehicle — per km', qty: 120, mu: 0.9, perKm: true }]);
+  assert.deepEqual(
+    [snapped.totals.expenseTotal, snapped.totals.directJobCost, snapped.totals.incomeExGst, snapped.totals.totalHours],
+    [108, 108, 0, 0]
+  );
+  // With no snapshot the server has no Overhead figure to price it from.
+  const bare = await make([{ name: 'Vehicle — per km', qty: 120 }]);
+  assert.equal(bare.totals.expenseTotal, 0);
+  for (const e of [snapped, bare]) await api(`/api/estimates/${e.id}`, { method: 'DELETE' });
 });

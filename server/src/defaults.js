@@ -1,5 +1,7 @@
 'use strict';
 
+const { PRICING_SHAPE } = require('./calc');
+
 /**
  * The rate card and settings a fresh billing.db starts from.
  *
@@ -30,8 +32,31 @@
  *     and full day auto. Until Profit Goals are set up those read as no price
  *     yet, which is why the defaults don't try to guess them.
  *   - Travel rows are unchanged: they are not services and have no units.
+ *
+ * TRANSPORT & LOGISTICS HRS IS "YOUR TIME" (2026-09-30, the user's call;
+ * .design/estimate-accuracy/ task 5). They are the owner's own hours, so
+ * `ownTime: true`: the whole $35 an hour is income, and the hours are billable
+ * hours that carry overhead, like labour's. Before, the row read as bought in
+ * at $25 and resold, so only the $10 over that was income and its hours
+ * counted for nothing. With the flag set, the row's `rate` no longer means
+ * anything (calc.js never reads it for an own-time row); it is left as it was
+ * rather than zeroed. Only a fresh database and Reset Defaults read this: a
+ * card already saved keeps its own row, and a line already on an estimate
+ * keeps its own snapshot.
+ *
+ * AND ITS PRICE IS AUTO (2026-09-30, task 6a): `mu: null`, so it follows the
+ * income floor with no markup (calc.js travelRowDef). It was $35. The card
+ * carries `pricingShape` (calc.js PRICING_SHAPE) because Reset Defaults hands
+ * this object straight to the Rate Card.
+ *
+ * THE CAR, PER KM (2026-09-30, task 6b). "Fuel & Tolls" is now "Tolls &
+ * Parking": fuel is part of the car's running cost, which "Vehicle — per km"
+ * bills at cost from the figure on Overhead (calc.js travelRowDef), so a
+ * fuel line as well would charge for it twice. Only a fresh database and
+ * Reset Defaults read this; the user renames a live row themselves.
  */
 const DEFAULT_PRICING = {
+  pricingShape: PRICING_SHAPE,
   serviceDay: { fullHours: 8, halfHours: 4 },
   labourSections: [
     {
@@ -73,9 +98,10 @@ const DEFAULT_PRICING = {
     },
   ],
   travelRows: [
-    { name: 'Fuel & Tolls', rate: 1, mu: 1, directCost: true },
+    { name: 'Tolls & Parking', rate: 1, mu: 1, directCost: true },
+    { name: 'Vehicle — per km', rate: 0, mu: null, perKm: true, unit: 'km' },
     { name: 'Crew Meals', rate: 30, mu: 30, unit: 'meals' },
-    { name: 'Transport & Logistics Hrs', rate: 25, mu: 35 },
+    { name: 'Transport & Logistics Hrs', rate: 25, mu: null, ownTime: true },
     { name: 'Flights & Public Transport', rate: 0, mu: 0, directCost: true },
     { name: 'Crew Accommodation', rate: 0, mu: 0, directCost: true },
   ],

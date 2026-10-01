@@ -1,7 +1,7 @@
 'use strict';
 
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('./defaults');
-const { annualBusinessCost, annualBillableHours, overheadRatePerHour } = require('./calc');
+const { PRICING_SHAPE, annualBusinessCost, annualBillableHours, overheadRatePerHour } = require('./calc');
 
 /**
  * Reading the rate card and settings, with the fallback every caller must
@@ -26,7 +26,11 @@ const { annualBusinessCost, annualBillableHours, overheadRatePerHour } = require
  */
 function readPricing(db) {
   const row = db.prepare('SELECT data_json FROM pricing WHERE id = 1').get();
-  return row ? JSON.parse(row.data_json) : DEFAULT_PRICING;
+  /* Every card this server serves is in its shape (calc.js PRICING_SHAPE),
+     including one stored before the marker existed: it has been read by this
+     server's rules since the deploy. The marker is what lets a newer build
+     tell this server from an older one, and an older build from a newer one. */
+  return row ? Object.assign(JSON.parse(row.data_json), { pricingShape: PRICING_SHAPE }) : DEFAULT_PRICING;
 }
 
 function readSettings(db) {

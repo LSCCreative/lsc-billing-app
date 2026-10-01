@@ -167,6 +167,12 @@
 .pricing-state-part {
   white-space: nowrap;
 }
+/* A part that is a sentence rather than a figure with its words — the note
+   under a travel price that stopped following the floor (task 6a). It wraps
+   inside the column instead of pushing the table wider. */
+.pricing-state-part.pricing-state-note {
+  white-space: normal;
+}
 /* Wherever the rows are a table (768px and up) the line is 72–105px wide:
    too narrow for any line with two parts, so every one wrapped, and each
    wrapped line ended in a stray "·" ("auto ·" / "floor $657.28"). There,
@@ -292,4 +298,30 @@
 .pricing-hidden-note:hover,
 .pricing-hidden-note:focus-visible {
   color: var(--text);
+}
+
+/* ── The car's km row (task 6b) ─────────────────────────────────────────────
+   Its price is Overhead's, so the Mark-Up cell shows it as text, not a field,
+   in the field's size and weight so the column still lines up; its Rate is
+   "at cost", muted, as a read-only fact. */
+.pricing-km-price {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  padding: 5px 0;
+}
+.pricing-km-price.pricing-rate-none {
+  color: var(--muted);
+}
+.pricing-km-na {
+  font-size: 11px;
+  color: var(--muted);
+}
+/* Two buttons in the travel table's foot while the card has no km row. */
+.pricing-sec-foot-btns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }

@@ -537,8 +537,9 @@ test('v8 keeps every overhead row and widens the category list', () => {
   db.prepare('DELETE FROM schema_version WHERE version >= 8').run();
 
   const result = migrate(db);
-  // v9 runs too; with no pricing row and no estimates it changes nothing.
-  assert.deepEqual([result.from, result.to, result.applied], [7, 9, 2]);
+  // v9 and every later one run too; with no pricing row and no estimates, v9
+  // changes nothing, and v10 only adds a goals column.
+  assert.deepEqual([result.from, result.to, result.applied], [7, LATEST_VERSION, LATEST_VERSION - 7]);
   const row = db.prepare("SELECT * FROM overhead_items WHERE id = 'oh_keep'").get();
   assert.deepEqual(
     [row.name, row.category, row.cost, row.frequency, row.created_at, row.updated_at],
@@ -687,7 +688,8 @@ test('v9 leaves every estimate\'s recomputed totals exactly as they were', (t) =
   assert.ok(before.est_legacy.totalHours > 20);
 
   const result = migrate(db);
-  assert.deepEqual([result.from, result.to, result.applied], [8, 9, 1]);
+  // v9 and every later one (v10 only adds a goals column).
+  assert.deepEqual([result.from, result.to, result.applied], [8, LATEST_VERSION, LATEST_VERSION - 8]);
   assert.deepEqual(recomputedTotals(db), before);
   assert.ok(logs().some((l) => /migrated to v9/.test(l)));
 
@@ -793,9 +795,10 @@ test('v9 on a fresh database changes nothing, and running it again changes nothi
     db.prepare('SELECT id, active_rows_json FROM estimates ORDER BY id').all(),
   ]);
   const once = state();
-  // Even forced to run a second time over its own output, v9 is a no-op.
+  // Even forced to run a second time over its own output, v9 is a no-op
+  // (and so is every one after it, which run again with it).
   db.prepare('DELETE FROM schema_version WHERE version >= 9').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db).applied, LATEST_VERSION - 8);
   assert.equal(state(), once);
   db.close();
 });
@@ -813,6 +816,36 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v9', () => {
-  assert.equal(LATEST_VERSION, 9);
+test('the schema knows it is at v10', () => {
+  assert.equal(LATEST_VERSION, 10);
+});
+
+/**
+ * MIGRATION v10 — goals.vehicle_cost_per_km (estimate-accuracy task 6b). One
+ * nullable column: an existing goals row keeps every value and reads the new
+ * one as unset, and running it again changes nothing.
+ */
+test('v10 adds the per-km cost as unset and touches nothing else on goals', () => {
+  const db = openDatabase(tempDbPath('v10-upgrade'));
+  db.prepare(`
+    INSERT INTO goals (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+      billable_hours_per_day, working_days_per_week, leave_days_per_year, sick_days_per_year,
+      super_pct, bad_debt_pct, created_at, updated_at)
+    VALUES (1, 65000, 25, 34.15, 8, 5, 30, 8, 12, 2, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')
+  `).run();
+  const before = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  db.exec('ALTER TABLE goals DROP COLUMN vehicle_cost_per_km;');
+  db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to], [9, 10]);
+  const after = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual(after, before);
+  assert.equal(after.vehicle_cost_per_km, null);
+
+  // Rewound again with the column still there: v10 runs, and nothing moves.
+  db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(db.prepare('SELECT * FROM goals WHERE id = 1').get(), before);
+  db.close();
 });

@@ -109,6 +109,7 @@ const FinanceDashboardView = (() => {
     annualBillableHours,
     hourlyFloor,
     serviceFloorComparison,
+    travelFloorComparison,
     unitHours,
     averageJobValue,
     jobsNeededPerYear,
@@ -192,7 +193,10 @@ const FinanceDashboardView = (() => {
       halfHours,
       halfDay: perHour === null ? null : round2(perHour * halfHours),
       fullDay: perHour === null ? null : round2(perHour * fullHours),
-      rows: serviceFloorComparison(pricing, LSCData.settings(), perHour, LSCData.priceContext()),
+      /* The services, then the own-time travel rows (task 6a): the owner's
+         hours on the road, by the hour, against the same floor. */
+      rows: serviceFloorComparison(pricing, LSCData.settings(), perHour, LSCData.priceContext())
+        .concat(travelFloorComparison(pricing, LSCData.settings(), perHour)),
       target: revenue ? revenue.total : null,
     };
   }
@@ -265,6 +269,9 @@ const FinanceDashboardView = (() => {
      text (WCAG 2.5.3) and says where it goes, which the text alone doesn't. */
   function unitCell(row, unit, label, adj) {
     const u = row.units[unit];
+    /* An own-time travel row sells by the hour only. Blank, not "—", which
+       means "no price yet" here; the words are for a screen reader. */
+    if (!u) return '<td class="right muted-td dash-unit-none" data-label="' + label + '"><span class="sr-only">no ' + adj + ' price</span></td>';
     if (u.mu === null) return '<td class="right muted-td" data-label="' + label + '">—</td>';
     let note = '';
     if (u.belowFloor) {
@@ -284,7 +291,7 @@ const FinanceDashboardView = (() => {
     );
   }
 
-  const serviceBelow = (r) => UNIT_COLS.some(([unit]) => r.units[unit].belowFloor);
+  const serviceBelow = (r) => UNIT_COLS.some(([unit]) => r.units[unit] && r.units[unit].belowFloor);
 
   /* Brief decision 7 and the "rate falls below its floor" state: the floor is
      measured against the marked-up price because that is what recovers
@@ -304,8 +311,10 @@ const FinanceDashboardView = (() => {
         'A price marked <strong>auto</strong> follows your numbers. An auto hourly price is your floor plus your ' +
           'Target Markup, so it can’t fall below it. An auto half or full day is the service’s hourly price × your ' +
           'Service Day hours, so it’s below only when you’ve typed an hourly price that is.',
-        'Crew, hire, travel, flights and accommodation aren’t compared. They’re passed through at cost on top of ' +
-          'the labour, so they recover no overhead either way.',
+        'Travel you’ve ticked as <strong>Your time</strong> is compared too, by the hour: it’s your hours on the ' +
+          'road, so its floor is your income floor, and its auto price is exactly that, with no markup.',
+        'Crew, hire, flights, accommodation and other travel aren’t compared. They’re passed through at cost on ' +
+          'top of the labour, so they recover no overhead either way.',
         'Below floor means that price, sold all year, wouldn’t cover the business’s costs and your pay at your ' +
           'current capacity. It’s a warning, not a rule — change it on the Rate Card if you agree.',
       ],
@@ -325,6 +334,7 @@ const FinanceDashboardView = (() => {
           : 'All ' + rows.length + ' clear their floor';
 
     const clear = rows.length - below;
+    const hasTravel = rows.some((r) => r.travel);
     const body = rows
       .map(
         (r) =>
@@ -354,8 +364,8 @@ const FinanceDashboardView = (() => {
           (clear
             ? '<div class="dash-show-all-row"><button type="button" class="btn btn-ghost btn-sm dash-show-all" ' +
               'aria-controls="dash-compare-table" aria-expanded="' + showAllRows + '" ' +
-              'data-rows="' + rows.length + '" data-below="' + below + '">' +
-              showAllLabel(rows.length, below) + '</button></div>'
+              'data-rows="' + rows.length + '" data-below="' + below + '"' + (hasTravel ? ' data-travel' : '') + '>' +
+              showAllLabel(rows.length, below, hasTravel) + '</button></div>'
             : '')
         : '<p class="dash-empty">No labour services on the rate card yet. Add them on the ' +
           link('pricing', 'Rate Card') + '.</p>') +
@@ -364,9 +374,11 @@ const FinanceDashboardView = (() => {
     );
   }
 
-  function showAllLabel(total, below) {
-    if (!showAllRows) return 'Show all ' + total + ' services';
-    return below ? 'Show only the ' + below + ' below floor' : 'Hide the services that clear their floor';
+  /* "services" until the table holds an own-time travel row too (task 6a). */
+  function showAllLabel(total, below, hasTravel) {
+    const what = hasTravel ? 'rows' : 'services';
+    if (!showAllRows) return 'Show all ' + total + ' ' + what;
+    return below ? 'Show only the ' + below + ' below floor' : 'Hide the ' + what + ' that clear their floor';
   }
 
   /* In place rather than through redrawComparison(): re-rendering would drop
@@ -376,7 +388,7 @@ const FinanceDashboardView = (() => {
     const table = root.querySelector('#dash-compare-table');
     if (table) table.classList.toggle('dash-table-all', showAllRows);
     btn.setAttribute('aria-expanded', String(showAllRows));
-    btn.textContent = showAllLabel(Number(btn.dataset.rows), Number(btn.dataset.below));
+    btn.textContent = showAllLabel(Number(btn.dataset.rows), Number(btn.dataset.below), btn.hasAttribute('data-travel'));
   }
 
   // ── 3. The chain ──────────────────────────────────────────────────────────

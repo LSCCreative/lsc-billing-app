@@ -20,7 +20,9 @@ const { SERVICE_UNITS, cardShapeOutdated, serviceDayOk } = require('../calc');
  * and any card without `serviceDay` (which no old build sends) — calc.js
  * cardShapeOutdated — is refused with this code, checked FIRST so an old
  * build always gets it and not some other complaint. The screen tells the user
- * to reload.
+ * to reload. Since task 6a the card also has to carry calc.js PRICING_SHAPE
+ * as `pricingShape`: a build before it would save an auto travel price back
+ * as a typed $0.
  * @returns {string|null} an error code, or null.
  */
 function pricingProblem(body) {
@@ -54,6 +56,15 @@ function pricingProblem(body) {
   }
   for (const r of Array.isArray(body.travelRows) ? body.travelRows : []) {
     if (!nonNeg(r.mu) || !nonNeg(r.rate)) return 'travel_price_negative';
+    /* No price is auto on an own-time row (task 6a), and nothing anywhere
+       else: a resold row saved blank would quote at $0 (calc.js reads a
+       legacy blank that way). A Direct row's price prices nothing, so it may
+       be blank. */
+    /* The car's row (task 6b) takes its price from Overhead, and is never
+       also Your time or Direct: each of those would bill it a different way. */
+    if (r.perKm === true && (r.ownTime === true || r.directCost === true)) return 'travel_per_km_flags';
+    const blank = r.mu === undefined || r.mu === null || r.mu === '';
+    if (blank && !(r.ownTime === true || r.directCost === true || r.perKm === true)) return 'travel_price_missing';
   }
   return null;
 }

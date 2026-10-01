@@ -42,6 +42,9 @@ const {
   unitDef,
   SERVICE_UNITS,
   cardShapeOutdated,
+  travelRowDef,
+  travelFloorComparison,
+  PRICING_SHAPE,
 } = require('../src/calc');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
 const { V8_DEFAULT_PRICING } = require('../src/migrations/v9-service-units');
@@ -80,12 +83,34 @@ const JOB = {
   equip: [{ vendor: 'Lens hire', days: 2, cost: 150 }],
 };
 
+/* The card JOB prices against: the default card, except that Transport &
+   Logistics Hrs is still a RESOLD row (costs $25, bills $35), as it was on the
+   default card until 2026-09-30. The default now marks it "Your time"
+   (estimate-accuracy task 5), but this fixture exists to exercise every path
+   at once, and the resold-travel path needs a row with a markup over its cost.
+   Pinned here rather than read from the defaults, so the worked figures below
+   test the arithmetic and not whatever the default card says this year. */
+const JOB_PRICING = {
+  ...DEFAULT_PRICING,
+  // The travel rows as the default card had them until 2026-09-30, pinned
+  // whole: tasks 5, 6a and 6b each changed the defaults (own time, auto
+  // price, Fuel & Tolls renamed and a km row added), and none of that is what
+  // this fixture tests.
+  travelRows: [
+    { name: 'Fuel & Tolls', rate: 1, mu: 1, directCost: true },
+    { name: 'Crew Meals', rate: 30, mu: 30, unit: 'meals' },
+    { name: 'Transport & Logistics Hrs', rate: 25, mu: 35 },
+    { name: 'Flights & Public Transport', rate: 0, mu: 0, directCost: true },
+    { name: 'Crew Accommodation', rate: 0, mu: 0, directCost: true },
+  ],
+};
+
 function settingsWith(gst) {
   return { ...DEFAULT_SETTINGS, gst: { ...DEFAULT_SETTINGS.gst, ...gst } };
 }
 
 test('breaks the job down into labour, expenses and pass-through', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
 
   assert.equal(t.labourTotal, 2000);
   assert.equal(t.expenseTotal, 1560);
@@ -94,7 +119,7 @@ test('breaks the job down into labour, expenses and pass-through', () => {
 });
 
 test('not GST registered: the client pays exactly what was billed', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith({ registered: false }));
+  const t = computeTotals(JOB, JOB_PRICING, settingsWith({ registered: false }));
 
   assert.equal(t.clientPriceExGst, 3560);
   assert.equal(t.gst, 0);
@@ -102,7 +127,7 @@ test('not GST registered: the client pays exactly what was billed', () => {
 });
 
 test('GST registered, prices exclusive: GST is added on top', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith({
+  const t = computeTotals(JOB, JOB_PRICING, settingsWith({
     registered: true, rate: 0.10, pricesIncludeGst: false,
   }));
 
@@ -112,7 +137,7 @@ test('GST registered, prices exclusive: GST is added on top', () => {
 });
 
 test('GST registered, prices inclusive: GST is backed out, and the parts still sum', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith({
+  const t = computeTotals(JOB, JOB_PRICING, settingsWith({
     registered: true, rate: 0.10, pricesIncludeGst: true,
   }));
 
@@ -124,7 +149,7 @@ test('GST registered, prices inclusive: GST is backed out, and the parts still s
 });
 
 test('tax set-aside is provisioned on income: labour plus the markup on resold travel', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
 
   // Transport & Logistics bills 4 × $35 but costs 4 × $25, so $40 of it is the
   // business's income. (2000 + 40) × 0.35 = 714. The pass-throughs are not.
@@ -133,7 +158,7 @@ test('tax set-aside is provisioned on income: labour plus the markup on resold t
 });
 
 test('take-home excludes pass-through, unlike the old "Gross Profit"', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
 
   assert.equal(t.estTakeHome, 1326); // 2040 income − 714 set aside
 
@@ -144,7 +169,7 @@ test('take-home excludes pass-through, unlike the old "Gross Profit"', () => {
 });
 
 test('on GST-inclusive pricing, tax is set aside on the ex-GST income figure', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith({
+  const t = computeTotals(JOB, JOB_PRICING, settingsWith({
     registered: true, rate: 0.10, pricesIncludeGst: true,
   }));
 
@@ -157,12 +182,12 @@ test('tax is set aside on profit: the overhead the job carries comes off first',
   // 14 labour hours at $25/hr of overhead = $350 of the income is running
   // costs, which are deductible. (2040 − 350) × 0.35 = 591.50; take-home is
   // what is left after overhead AND tax.
-  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS, { overheadRate: 25 });
+  const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS, { overheadRate: 25 });
   assert.equal(t.overheadShare, 350);
   assert.equal(t.taxSetAside, 591.5);
   assert.equal(t.estTakeHome, 1098.5);
   // Never a negative set-aside when overhead exceeds income.
-  const thin = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS, { overheadRate: 500 });
+  const thin = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS, { overheadRate: 500 });
   assert.equal(thin.taxSetAside, 0);
 });
 
@@ -173,7 +198,7 @@ const GST_EXCLUSIVE = { registered: true, rate: 0.10, pricesIncludeGst: false };
 const GST_INCLUSIVE = { registered: true, rate: 0.10, pricesIncludeGst: true };
 
 test('a GST-free estimate charges no GST even though the business is registered', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_EXCLUSIVE), { gstFree: true });
+  const t = computeTotals(JOB, JOB_PRICING, settingsWith(GST_EXCLUSIVE), { gstFree: true });
 
   assert.equal(t.gst, 0);
   assert.equal(t.clientPriceExGst, 3560);
@@ -181,7 +206,7 @@ test('a GST-free estimate charges no GST even though the business is registered'
 });
 
 test('GST-free on a GST-inclusive rate card: the listed rate is still the price', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE), { gstFree: true });
+  const t = computeTotals(JOB, JOB_PRICING, settingsWith(GST_INCLUSIVE), { gstFree: true });
 
   // The decision from 2026-09-10. Without the flag this job totals 3560 with
   // 323.64 of it GST; the tempting alternative was to hand the client that
@@ -193,8 +218,8 @@ test('GST-free on a GST-inclusive rate card: the listed rate is still the price'
 });
 
 test('GST-free means the whole labour figure is revenue, so tax is set aside on all of it', () => {
-  const inclusive = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE));
-  const free = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE), { gstFree: true });
+  const inclusive = computeTotals(JOB, JOB_PRICING, settingsWith(GST_INCLUSIVE));
+  const free = computeTotals(JOB, JOB_PRICING, settingsWith(GST_INCLUSIVE), { gstFree: true });
 
   // Normally 2040 of income is 1854.55 once the ATO's GST is out.
   assert.equal(inclusive.taxSetAside, 649.09);
@@ -204,20 +229,20 @@ test('GST-free means the whole labour figure is revenue, so tax is set aside on 
 });
 
 test('a GST-free estimate is priced exactly as an unregistered business would price it', () => {
-  const free = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_EXCLUSIVE), { gstFree: true });
-  const unregistered = computeTotals(JOB, DEFAULT_PRICING, settingsWith({ registered: false }));
+  const free = computeTotals(JOB, JOB_PRICING, settingsWith(GST_EXCLUSIVE), { gstFree: true });
+  const unregistered = computeTotals(JOB, JOB_PRICING, settingsWith({ registered: false }));
 
   assert.deepEqual(free, unregistered);
 });
 
 test('the flag absent, false, or a stray value leaves an estimate priced as before', () => {
-  const registered = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_EXCLUSIVE));
+  const registered = computeTotals(JOB, JOB_PRICING, settingsWith(GST_EXCLUSIVE));
 
   for (const options of [undefined, {}, { gstFree: false }, { gstFree: 'yes' }, { gstFree: 1 }]) {
     // Only a literal `true` opts out — the same rule as gst.registered, so a
     // half-populated body can never silently drop GST off an invoice.
     assert.deepEqual(
-      computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_EXCLUSIVE), options),
+      computeTotals(JOB, JOB_PRICING, settingsWith(GST_EXCLUSIVE), options),
       registered
     );
   }
@@ -314,7 +339,7 @@ const DAY_CARD = {
 // hoursPerUnit on its Full Day / Half Day rows, but JOB uses none of them, so
 // this is still the proof that every pre-existing hourly row totals as before.
 test('existing hourly rows total exactly as they did before day rows existed', () => {
-  const t = computeTotals(JOB, DEFAULT_PRICING, settingsWith(GST_INCLUSIVE));
+  const t = computeTotals(JOB, JOB_PRICING, settingsWith(GST_INCLUSIVE));
 
   assert.deepEqual(t, {
     clientPriceExGst: 3236.36,
@@ -322,9 +347,14 @@ test('existing hourly rows total exactly as they did before day rows existed', (
     totalIncGst: 3560,
     labourTotal: 2000,
     expenseTotal: 1560,
-    passThroughCost: 1420,
-    // Added 2026-09-28: pass-throughs plus what resold travel cost (4 × $25).
-    directJobCost: 1520,
+    // Ex-GST since 2026-09-30 (estimate-accuracy task 3): this card is
+    // GST-inclusive, so the 1420 of pass-throughs typed in is 1420 / 1.1.
+    // The only two figures that change moved knowingly; every other field here
+    // is as it was.
+    passThroughCost: 1290.91,
+    // Added 2026-09-28: pass-throughs plus what resold travel cost (4 × $25),
+    // ex-GST as above: 1520 / 1.1.
+    directJobCost: 1381.82,
     incomeExGst: 1854.55,
     overheadShare: 0,
     totalHours: 14,
@@ -478,8 +508,8 @@ test('the hours breakdown reaches exactly the totalHours the floor is built on',
   assert.equal(parts, t.totalHours);
 
   // And on the default card and the pre-day-row job, where everything is hourly.
-  const d = computeTotals(JOB, DEFAULT_PRICING, settingsWith({ registered: false }));
-  const db = labourHoursBreakdown(JOB, DEFAULT_PRICING);
+  const d = computeTotals(JOB, JOB_PRICING, settingsWith({ registered: false }));
+  const db = labourHoursBreakdown(JOB, JOB_PRICING);
   assert.equal(db.totalHours, d.totalHours);
   assert.deepEqual(db.units, []);
   assert.equal(db.hourlyHours, d.totalHours);
@@ -750,7 +780,7 @@ test('minimum job price covers direct costs, overhead allocation and markup', ()
   // ($1520 — pass-throughs plus what the resold travel cost) at cost, plus its
   // 14 hours' share of overhead (14 × $25 = $350) marked up 25%.
   // 1520 + 350 × 1.25 = 1957.50.
-  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
   assert.equal(minimumJobPrice(t.directJobCost, t.totalHours, 25, 25), 1957.5);
 });
 
@@ -789,9 +819,9 @@ test('no cost basis yet means no minimum job price, not a floor missing overhead
 test('the minimum job price never moves what the client is billed', () => {
   // Advisory only. The editor's toggle shows and hides this line; nothing in
   // computeTotals reads it, so the quoted price cannot follow it.
-  const t = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
   const floor = minimumJobPrice(t.directJobCost, t.totalHours, 25, 25);
-  const again = computeTotals(JOB, DEFAULT_PRICING, DEFAULT_SETTINGS);
+  const again = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
 
   // This job quotes $3560 against a $1957.50 floor — it clears it. The point is
   // that the two numbers are independent: computing the floor left every
@@ -1811,4 +1841,365 @@ test('two seeded full days carry sixteen hours into Minimum Job Price', () => {
     assert.equal(t.totalHours, 16);
     assert.equal(t.labourTotal, 2240);
   }
+});
+
+/* ── Direct costs are ex-GST on a GST-inclusive card (estimate-accuracy task 3) ──
+
+   On a GST-inclusive card every figure typed in carries GST, costs included.
+   directJobCost and passThroughCost feed Minimum Job Price and the Income floor
+   line, which are measured against the EX-GST client price, so they have to be
+   ex-GST too. The sample: 10 hrs at a $64.27/hr income floor, with $1,000 of
+   crew that is typed in as $1,100. */
+
+const GST_ACC_CARD = {
+  labourSections: [{ id: 'prod', rows: [{ id: 'vc', name: 'Video Capture', mu: 110 }] }],
+  travelRows: [
+    { id: 'fuel', name: 'Fuel', mu: 1, rate: 1, directCost: true },
+    { id: 'meals', name: 'Crew meals', mu: 33, rate: 22 },
+  ],
+  taxSetAsideRate: 0.3,
+};
+const GST_ACC_JOB = {
+  prod: [{ name: 'Video Capture', qty: 10 }],
+  crew: [{ role: 'Second Shooter', days: 1, cost: 1100 }],
+};
+/* The editor's Income floor line (estimate-editor.js paintIncome), written out
+   so the test pins the figure a person reads, not just its input. */
+const incomeFloorNeed = (t, floor) => round2(t.directJobCost + t.totalHours * floor);
+
+test('on a GST-inclusive card, $1,100 of crew typed in is $1,000 of direct cost', () => {
+  const t = computeTotals(GST_ACC_JOB, GST_ACC_CARD, settingsWith(GST_INCLUSIVE));
+  assert.equal(t.directJobCost, 1000);
+  assert.equal(t.passThroughCost, 1000);
+  assert.equal(incomeFloorNeed(t, 64.27), 1642.7); // not 1,742.70
+  // What the client is billed is untouched: 1,100 of labour + 1,100 of crew.
+  assert.equal(t.expenseTotal, 1100);
+  assert.equal(t.totalIncGst, 2200);
+  assert.equal(t.clientPriceExGst, 2000);
+  // Minimum Job Price's direct-cost term is the ex-GST figure too.
+  assert.equal(minimumJobPrice(t.directJobCost, t.totalHours, 11.5, 25), 1143.75);
+});
+
+test('the same job unregistered, GST-exclusive or GST-free keeps its costs as entered', () => {
+  for (const [label, settings, options] of [
+    ['unregistered', settingsWith({ registered: false }), undefined],
+    ['unregistered, inclusive box left ticked', settingsWith({ registered: false, pricesIncludeGst: true }), undefined],
+    ['GST-exclusive', settingsWith(GST_EXCLUSIVE), undefined],
+    ['GST-free on an inclusive card', settingsWith(GST_INCLUSIVE), { gstFree: true }],
+  ]) {
+    const t = computeTotals(GST_ACC_JOB, GST_ACC_CARD, settings, options);
+    assert.equal(t.directJobCost, 1100, label);
+    assert.equal(t.passThroughCost, 1100, label);
+    assert.equal(incomeFloorNeed(t, 64.27), 1742.7, label);
+  }
+});
+
+test('resold travel\'s cost and direct travel come out ex-GST too, and income still reconciles', () => {
+  const job = { ...GST_ACC_JOB, travel: [{ name: 'Fuel', qty: 220 }, { name: 'Crew meals', qty: 2 }] };
+  const t = computeTotals(job, GST_ACC_CARD, settingsWith(GST_INCLUSIVE));
+  // Pass-through: (1,100 crew + 220 fuel) / 1.1. Direct: that plus 2 × $22 of meals.
+  assert.equal(t.passThroughCost, 1200);
+  assert.equal(t.directJobCost, 1240);
+  // Income is the billed price less every cost, all ex-GST: 1,100 + 66 − 44 = 1,122 / 1.1.
+  assert.equal(t.incomeExGst, 1020);
+  assert.equal(round2(t.clientPriceExGst - t.directJobCost), t.incomeExGst);
+});
+
+test('across a sweep of prices, only the two cost figures differ between an inclusive card and the rule', () => {
+  for (let cost = 0; cost <= 3000; cost += 37.37) {
+    for (const hours of [0, 1, 7.5, 16]) {
+      const job = {
+        prod: [{ name: 'Video Capture', qty: hours }],
+        crew: [{ days: 1, cost }],
+        equip: [{ days: 2, cost: cost / 3 }],
+        travel: [{ name: 'Fuel', qty: cost / 7 }, { name: 'Crew meals', qty: 3 }],
+      };
+      const inc = computeTotals(job, GST_ACC_CARD, settingsWith(GST_INCLUSIVE), { overheadRate: 11.5 });
+      const passAsEntered = cost + 2 * (cost / 3) + cost / 7;
+      assert.equal(inc.passThroughCost, round2(passAsEntered / 1.1), 'pass ' + cost);
+      assert.equal(inc.directJobCost, round2((passAsEntered + 3 * 22) / 1.1), 'direct ' + cost);
+      // Every as-billed figure is exactly what the same lines bill unregistered.
+      const plain = computeTotals(job, GST_ACC_CARD, settingsWith({ registered: false }), { overheadRate: 11.5 });
+      assert.equal(inc.totalIncGst, plain.clientPriceExGst);
+      assert.equal(inc.labourTotal, plain.labourTotal);
+      assert.equal(inc.expenseTotal, plain.expenseTotal);
+      assert.equal(inc.totalHours, plain.totalHours);
+      // And the cost can never exceed what was billed for it.
+      assert.ok(inc.directJobCost <= plain.directJobCost, 'direct ' + cost);
+    }
+  }
+});
+
+/* ── Transport & Logistics Hrs is "Your time" on the default card (estimate-accuracy task 5) ── */
+
+const TRANSPORT = 'Transport & Logistics Hrs';
+
+test('the default card marks Transport & Logistics Hrs as the owner\'s own time', () => {
+  const row = DEFAULT_PRICING.travelRows.find((r) => r.name === TRANSPORT);
+  assert.equal(row.ownTime, true);
+  assert.equal(row.directCost, undefined); // own time is never also a pass-through
+  assert.equal(row.mu, null); // auto since task 6a: follows the income floor
+  // No other travel row changed kind.
+  assert.deepEqual(DEFAULT_PRICING.travelRows.filter((r) => r.ownTime).map((r) => r.name), [TRANSPORT]);
+});
+
+/* The row as the user's live card will have it once "Your time" is ticked:
+   still their typed $35. */
+const TRANSPORT_AT_35 = { ...DEFAULT_PRICING.travelRows.find((r) => r.name === TRANSPORT), mu: 35 };
+
+test('2 hours of own-time transport at $35 are $70 of income and 2 billable hours', () => {
+  const card = { ...DEFAULT_PRICING, travelRows: [TRANSPORT_AT_35] };
+  const t = computeTotals({ travel: [{ name: TRANSPORT, qty: 2 }] }, card, settingsWith({ registered: false }));
+  assert.equal(t.expenseTotal, 70);
+  assert.equal(t.incomeExGst, 70); // all of it, none treated as cost
+  assert.equal(t.directJobCost, 0);
+  assert.equal(t.passThroughCost, 0);
+  assert.equal(t.totalHours, 2);
+  assert.equal(t.taxSetAside, 24.5); // 70 × 0.35
+  // Its hours carry overhead like labour's.
+  assert.equal(computeTotals({ travel: [{ name: TRANSPORT, qty: 2 }] }, card, DEFAULT_SETTINGS, { overheadRate: 10 }).overheadShare, 20);
+  // And the hours editor agrees with the total.
+  assert.equal(labourHoursBreakdown({ travel: [{ name: TRANSPORT, qty: 2 }] }, card).totalHours, 2);
+});
+
+test('before the flag, the same 2 hours were $20 of income, $50 of cost and no hours', () => {
+  // JOB_PRICING keeps the row as it was on the default card until 2026-09-30.
+  const t = computeTotals({ travel: [{ name: TRANSPORT, qty: 2 }] }, JOB_PRICING, settingsWith({ registered: false }));
+  assert.deepEqual([t.expenseTotal, t.incomeExGst, t.directJobCost, t.totalHours], [70, 20, 50, 0]);
+});
+
+test('a transport line added from the card snapshots the flag; one saved before it keeps pricing as it was', () => {
+  const added = { name: TRANSPORT, qty: 2, ...lineSnapshot(TRANSPORT_AT_35) };
+  assert.equal(added.ownTime, true);
+  // A line saved before this change carries its own snapshot without the flag,
+  // and a saved line prices from its snapshot, never today's card.
+  const savedBefore = { name: TRANSPORT, qty: 2, mu: 35, rate: 25 };
+  const now = computeTotals({ travel: [added] }, DEFAULT_PRICING, settingsWith({ registered: false }));
+  const old = computeTotals({ travel: [savedBefore] }, DEFAULT_PRICING, settingsWith({ registered: false }));
+  assert.deepEqual([now.incomeExGst, now.totalHours], [70, 2]);
+  assert.deepEqual([old.incomeExGst, old.totalHours, old.directJobCost], [20, 0, 50]);
+});
+
+/* ── Your time on the road is priced from the floor (estimate-accuracy task 6a) ──
+
+   Sample income floor $64.27/hr (the audit's reference figures). An own-time
+   travel row with no typed price is auto: the floor, no markup, rounded up to
+   the whole dollar, GST-aware — $65 here, $71 on a GST-inclusive card. */
+
+const FLOOR = 64.27;
+const UNREG = settingsWith({ registered: false });
+const OWN_AUTO = { id: 't1', name: 'Driving', rate: 25, mu: null, ownTime: true };
+const OWN_35 = { id: 't2', name: 'Driving (typed)', rate: 25, mu: 35, ownTime: true };
+const RESOLD_35 = { id: 't3', name: 'Meals', rate: 25, mu: 35 };
+
+test('an auto own-time travel row is the income floor rounded up, with no markup', () => {
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: FLOOR, settings: UNREG }).mu, 65);
+  // Target Markup in the context is not read: travel time carries no profit.
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: FLOOR, markupPct: 25, settings: UNREG }).mu, 65);
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: 64, settings: UNREG }).mu, 64); // exactly, not up a dollar
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: FLOOR, settings: settingsWith(GST_EXCLUSIVE) }).mu, 65);
+  // Inclusive: the least whole dollar whose ex-GST part reaches 64.27 (70 is 63.64).
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: FLOOR, settings: settingsWith(GST_INCLUSIVE) }).mu, 71);
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: FLOOR, settings: UNREG }).auto, true);
+});
+
+test('an auto own-time row has no price without a floor — null, never $0', () => {
+  assert.equal(travelRowDef(OWN_AUTO).mu, null);
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: null, settings: UNREG }).mu, null);
+  assert.equal(travelRowDef(OWN_AUTO, { floorPerHour: 0, settings: UNREG }).mu, null);
+});
+
+test('a typed price wins, and nothing but an own-time row is ever auto', () => {
+  const typed = travelRowDef(OWN_35, { floorPerHour: FLOOR, settings: UNREG });
+  assert.deepEqual([typed.mu, typed.auto], [35, false]);
+  assert.equal(travelRowDef({ ...OWN_35, mu: 0 }, { floorPerHour: FLOOR }).mu, 0); // a typed 0 is a price
+  // A blank anywhere else reads as $0, as it always has (see the header).
+  for (const row of [{ name: 'x', mu: null }, { name: 'x', directCost: true }, { name: 'x', mu: '', ownTime: true, directCost: true }]) {
+    const d = travelRowDef(row, { floorPerHour: FLOOR, settings: UNREG });
+    assert.deepEqual([d.mu, d.auto], [0, false], JSON.stringify(row));
+  }
+  assert.equal(travelRowDef(null), null);
+});
+
+test('a bare line on an auto own-time row prices at nothing: no dollars and no hours', () => {
+  const card = { labourSections: [], travelRows: [OWN_AUTO], taxSetAsideRate: 0.35 };
+  assert.equal(lineDef(card.travelRows, { name: 'Driving', qty: 3 }), null);
+  const t = computeTotals({ travel: [{ name: 'Driving', qty: 3 }] }, card, UNREG);
+  assert.deepEqual([t.expenseTotal, t.incomeExGst, t.totalHours], [0, 0, 0]);
+  // A priceable travel row comes back as itself, exactly as before task 6a.
+  assert.equal(lineDef([OWN_35], { name: 'Driving (typed)' }), OWN_35);
+  assert.equal(lineDef([RESOLD_35], { name: 'Meals' }), RESOLD_35);
+});
+
+test('a line added at the auto price snapshots the figure and prices as own time', () => {
+  const def = travelRowDef(OWN_AUTO, { floorPerHour: FLOOR, settings: UNREG });
+  const snap = lineSnapshot(def);
+  assert.deepEqual(snap, { mu: 65, rowId: 't1', rate: 25, ownTime: true }); // no `auto` on a saved line
+  const card = { labourSections: [], travelRows: [OWN_AUTO], taxSetAsideRate: 0.35 };
+  const t = computeTotals({ travel: [{ name: 'Driving', qty: 2, ...snap }] }, card, UNREG);
+  assert.deepEqual([t.expenseTotal, t.incomeExGst, t.totalHours, t.directJobCost], [130, 130, 2, 0]);
+});
+
+test('a travel line saved before task 6a totals exactly as it did', () => {
+  const card = { ...DEFAULT_PRICING };
+  for (const line of [
+    { name: 'Transport & Logistics Hrs', qty: 4, mu: 35, rate: 25 },
+    { name: 'Transport & Logistics Hrs', qty: 4, mu: 35, rate: 25, ownTime: true },
+    { name: 'Fuel & Tolls', qty: 120, mu: 1, rate: 1, directCost: true },
+  ]) {
+    const a = computeTotals({ travel: [line] }, card, UNREG);
+    const b = computeTotals({ travel: [line] }, JOB_PRICING, UNREG);
+    assert.deepEqual(a, b, line.name); // the card, auto or not, is never read
+  }
+  const t = computeTotals({ travel: [{ name: 'Transport & Logistics Hrs', qty: 4, mu: 35, rate: 25 }] }, card, UNREG);
+  assert.deepEqual([t.expenseTotal, t.incomeExGst, t.totalHours], [140, 40, 0]);
+});
+
+test('travelFloorComparison: only own-time rows, each by the hour against the floor', () => {
+  const direct = { name: 'Direct own', mu: 1, ownTime: true, directCost: true };
+  const card = { travelRows: [RESOLD_35, OWN_35, direct, OWN_AUTO] };
+  const rows = travelFloorComparison(card, UNREG, FLOOR);
+  assert.deepEqual(rows.map((r) => [r.name, r.rowIndex, r.sectionId, r.travel]), [
+    ['Driving (typed)', 1, 'travel', true],
+    ['Driving', 3, 'travel', true],
+  ]);
+  assert.deepEqual(Object.keys(rows[0].units), ['hour']); // no half or full day
+  assert.deepEqual(rows[0].units.hour, { mu: 35, muExGst: 35, auto: false, hoursPerUnit: 1, floor: 64.27, gap: 29.27, belowFloor: true });
+  assert.deepEqual(rows[1].units.hour, { mu: 65, muExGst: 65, auto: true, hoursPerUnit: 1, floor: 64.27, gap: 0, belowFloor: false });
+});
+
+test('an own-time row and a resold row at identical prices are judged differently', () => {
+  const own = travelFloorComparison({ travelRows: [OWN_35] }, UNREG, FLOOR);
+  const resold = travelFloorComparison({ travelRows: [RESOLD_35] }, UNREG, FLOOR);
+  assert.equal(own.length, 1);
+  assert.equal(own[0].units.hour.belowFloor, true);
+  assert.equal(resold.length, 0); // not compared at all
+});
+
+test('travelFloorComparison: at the floor is not below, and GST comes off first', () => {
+  const at = (mu, settings) => travelFloorComparison({ travelRows: [{ ...OWN_35, mu }] }, settings, FLOOR)[0].units.hour;
+  assert.equal(at(64.27, UNREG).belowFloor, false);
+  assert.equal(at(64.26, UNREG).belowFloor, true);
+  // On a GST-inclusive card $70 is $63.64 of price: below. $71 is $64.55: clear.
+  assert.deepEqual([at(70, settingsWith(GST_INCLUSIVE)).belowFloor, at(70, settingsWith(GST_INCLUSIVE)).gap], [true, 0.63]);
+  assert.equal(at(71, settingsWith(GST_INCLUSIVE)).belowFloor, false);
+  // An auto row is never below the floor it is priced from, in any GST mode.
+  for (const settings of [UNREG, settingsWith(GST_EXCLUSIVE), settingsWith(GST_INCLUSIVE)]) {
+    for (let cents = 1; cents <= 30000; cents += 7) {
+      const u = travelFloorComparison({ travelRows: [OWN_AUTO] }, settings, cents / 100)[0].units.hour;
+      assert.equal(u.belowFloor, false, cents);
+    }
+  }
+});
+
+test('travelFloorComparison: no floor yet is "can\'t tell", not fine and not below', () => {
+  const rows = travelFloorComparison({ travelRows: [OWN_35, OWN_AUTO] }, UNREG, null);
+  assert.deepEqual(rows[0].units.hour, { mu: 35, muExGst: 35, auto: false, hoursPerUnit: 1, floor: null, gap: null, belowFloor: null });
+  assert.deepEqual(rows[1].units.hour, { mu: null, muExGst: null, auto: true, hoursPerUnit: 1, floor: null, gap: null, belowFloor: null });
+  assert.deepEqual(travelFloorComparison(undefined, UNREG, FLOOR), []);
+});
+
+test('a card without this build\'s shape marker is outdated', () => {
+  assert.equal(PRICING_SHAPE, 'travel-km');
+  // 6a's build, which would save a km row as a resold $0 row (task 6b).
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'travel-auto' }), true);
+  assert.equal(cardShapeOutdated(DEFAULT_PRICING), false);
+  const { pricingShape, ...unmarked } = DEFAULT_PRICING;
+  assert.equal(pricingShape, PRICING_SHAPE);
+  assert.equal(cardShapeOutdated(unmarked), true);
+  // Exactly what a build from before task 6a would carry, had it kept one.
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'service-units' }), true);
+});
+
+test('an own-time row that carries its own hours is priced and floored on them', () => {
+  // No screen sets hoursPerUnit on a travel row, but computeTotals counts it,
+  // so the price and the floor must use the same hours the job carries.
+  const twoHr = { ...OWN_AUTO, hoursPerUnit: 2 };
+  assert.equal(travelRowDef(twoHr, { floorPerHour: FLOOR, settings: UNREG }).mu, 129); // ceil(128.54)
+  const u = travelFloorComparison({ travelRows: [twoHr] }, UNREG, FLOOR)[0].units.hour;
+  assert.deepEqual([u.floor, u.hoursPerUnit, u.belowFloor], [128.54, 2, false]);
+});
+
+/* ── The car, per km, at cost (estimate-accuracy task 6b) ──────────────────────
+
+   Worked example from TASKS.md: 120 km at $0.90 = $108 billed. directJobCost
+   +108, incomeExGst +0, totalHours +0, and the tax set-aside unchanged. */
+
+const KM_ROW = { id: 'km', name: 'Vehicle — per km', rate: 0, mu: null, perKm: true, unit: 'km' };
+const KM_CTX = (settings) => ({ vehicleCostPerKm: 0.9, settings });
+
+test('a km row is priced from Overhead\'s figure, plus GST only on a GST-inclusive card', () => {
+  for (const settings of [UNREG, settingsWith(GST_EXCLUSIVE), settingsWith({ registered: false, pricesIncludeGst: true })]) {
+    const d = travelRowDef(KM_ROW, KM_CTX(settings));
+    assert.deepEqual([d.mu, d.auto], [0.9, true]);
+  }
+  assert.equal(travelRowDef(KM_ROW, KM_CTX(settingsWith(GST_INCLUSIVE))).mu, 0.99); // not 0.9900000000000001
+  assert.equal(travelRowDef(KM_ROW, { vehicleCostPerKm: 0.88, settings: settingsWith(GST_INCLUSIVE) }).mu, 0.968);
+  // A typed price on the row is never read: the figure is Overhead's alone.
+  assert.equal(travelRowDef({ ...KM_ROW, mu: 5 }, KM_CTX(UNREG)).mu, 0.9);
+  // The floor and the markup are never read either.
+  assert.equal(travelRowDef(KM_ROW, { vehicleCostPerKm: 0.9, floorPerHour: 64.27, markupPct: 25, settings: UNREG }).mu, 0.9);
+});
+
+test('no per-km figure is no price — null, never $0', () => {
+  for (const ctx of [undefined, {}, { vehicleCostPerKm: null }, { vehicleCostPerKm: '' }, { vehicleCostPerKm: -1 }]) {
+    assert.equal(travelRowDef(KM_ROW, ctx).mu, null, JSON.stringify(ctx));
+  }
+  assert.equal(travelRowDef(KM_ROW, { vehicleCostPerKm: 0 }).mu, 0); // a figure of $0 is a figure
+  // So a bare line on the row (the server's view) prices at nothing.
+  assert.equal(lineDef([KM_ROW], { name: 'Vehicle — per km', qty: 120 }), null);
+});
+
+test('120 km at $0.90 is $108 at cost: a direct cost, no income, no hours, no tax', () => {
+  const card = { labourSections: [{ id: 'prod', rows: [{ id: 'vc', name: 'Video Capture', mu: 110 }] }], travelRows: [KM_ROW], taxSetAsideRate: 0.3 };
+  const labour = { prod: [{ name: 'Video Capture', qty: 8, mu: 110 }] };
+  const km = { name: 'Vehicle — per km', qty: 120, ...lineSnapshot(travelRowDef(KM_ROW, KM_CTX(UNREG))) };
+  assert.deepEqual(km, { name: 'Vehicle — per km', qty: 120, mu: 0.9, rowId: 'km', rate: 0, perKm: true });
+  const before = computeTotals(labour, card, UNREG, { overheadRate: 11.5 });
+  const after = computeTotals({ ...labour, travel: [km] }, card, UNREG, { overheadRate: 11.5 });
+  assert.equal(round2(after.expenseTotal - before.expenseTotal), 108);
+  assert.equal(round2(after.clientPriceExGst - before.clientPriceExGst), 108);
+  assert.equal(round2(after.directJobCost - before.directJobCost), 108);
+  assert.equal(round2(after.passThroughCost - before.passThroughCost), 108);
+  assert.deepEqual(
+    [after.incomeExGst, after.totalHours, after.taxSetAside, after.estTakeHome, after.overheadShare],
+    [before.incomeExGst, before.totalHours, before.taxSetAside, before.estTakeHome, before.overheadShare]
+  );
+  // Minimum Job Price carries it at cost, with no markup on it.
+  assert.equal(round2(minimumJobPrice(after.directJobCost, after.totalHours, 11.5, 25) -
+    minimumJobPrice(before.directJobCost, before.totalHours, 11.5, 25)), 108);
+});
+
+test('on a GST-inclusive card the km line bills the figure plus GST and costs exactly the figure', () => {
+  const card = { labourSections: [], travelRows: [KM_ROW], taxSetAsideRate: 0.3 };
+  const km = { name: 'Vehicle — per km', qty: 120, ...lineSnapshot(travelRowDef(KM_ROW, KM_CTX(settingsWith(GST_INCLUSIVE)))) };
+  const t = computeTotals({ travel: [km] }, card, settingsWith(GST_INCLUSIVE));
+  assert.deepEqual([t.totalIncGst, t.clientPriceExGst, t.gst], [118.8, 108, 10.8]);
+  assert.deepEqual([t.directJobCost, t.passThroughCost, t.incomeExGst], [108, 108, 0]);
+});
+
+test('a km line keeps its snapshot when Overhead\'s figure changes', () => {
+  const card = { labourSections: [], travelRows: [KM_ROW], taxSetAsideRate: 0.3 };
+  const saved = { name: 'Vehicle — per km', qty: 100, mu: 0.9, rowId: 'km', perKm: true };
+  // Whatever the card or Overhead says now, the line bills what it was quoted at.
+  assert.equal(computeTotals({ travel: [saved] }, card, UNREG).expenseTotal, 90);
+  assert.equal(computeTotals({ travel: [saved] }, { ...card, travelRows: [] }, UNREG).expenseTotal, 90);
+});
+
+test('the km row is at cost even if it also carried Your time, and never joins the floor comparison', () => {
+  const both = { ...KM_ROW, ownTime: true };
+  const line = { name: 'Vehicle — per km', qty: 10, mu: 0.9, perKm: true, ownTime: true };
+  const t = computeTotals({ travel: [line] }, { labourSections: [], travelRows: [both] }, UNREG);
+  assert.deepEqual([t.incomeExGst, t.totalHours, t.directJobCost], [0, 0, 9]);
+  assert.equal(labourHoursBreakdown({ travel: [line] }, { labourSections: [], travelRows: [both] }).totalHours, 0);
+  assert.deepEqual(travelFloorComparison({ travelRows: [KM_ROW, both] }, UNREG, 64.27), []);
+});
+
+test('the default card: Tolls & Parking at cost, the car per km, and no Fuel & Tolls', () => {
+  const names = DEFAULT_PRICING.travelRows.map((r) => r.name);
+  assert.ok(!names.includes('Fuel & Tolls'));
+  assert.deepEqual(DEFAULT_PRICING.travelRows.find((r) => r.name === 'Tolls & Parking'), { name: 'Tolls & Parking', rate: 1, mu: 1, directCost: true });
+  const km = DEFAULT_PRICING.travelRows.find((r) => r.perKm);
+  assert.deepEqual(km, { name: 'Vehicle — per km', rate: 0, mu: null, perKm: true, unit: 'km' });
+  assert.equal(DEFAULT_PRICING.travelRows.filter((r) => r.perKm).length, 1);
 });

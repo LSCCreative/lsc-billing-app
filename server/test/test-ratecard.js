@@ -58,13 +58,14 @@ test.after(() => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-/* Every estimate write here comes from a v9 client, as the web build's all do,
-   so it carries calc.js's PRICING_SHAPE. `bare: true` sends the body as given,
-   for the tests of what the route does with a write that doesn't. */
-const ESTIMATE_WRITE = /^\/api\/estimates(\/[^/]+)?$/;
+/* Every estimate write and rate-card save here comes from a current client,
+   as the web build's all do, so it carries calc.js's PRICING_SHAPE (a card
+   carries it since task 6a). `bare: true` sends the body as given, for the
+   tests of what the route does with a write that doesn't. */
+const SHAPED_WRITE = /^\/api\/(estimates(\/[^/]+)?|pricing)$/;
 function api(pathname, { bare, ...opts } = {}) {
   let body = opts.body;
-  if (!bare && body && ESTIMATE_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
+  if (!bare && body && SHAPED_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
     body = JSON.stringify({ pricingShape: PRICING_SHAPE, ...JSON.parse(body) });
   }
   return fetch(`${baseUrl}${pathname}`, {
@@ -95,8 +96,11 @@ test('an estimate saved before pricing is configured still bills labour and trav
       activeRows: {
         prod: [{ name: 'Video Capture', qty: 10 }], // 10 x 140 mark-up
         travel: [
-          { name: 'Fuel & Tolls', qty: 50 }, // direct cost, billed at cost
-          { name: 'Transport & Logistics Hrs', qty: 4 }, // 4 x 35 mark-up
+          { name: 'Tolls & Parking', qty: 50 }, // direct cost, billed at cost (was Fuel & Tolls)
+          // The owner's own time, auto-priced since task 6a: a bare line on it
+          // has no price on the server (no income floor there), so it bills
+          // nothing. The web editor always sends a snapshot instead.
+          { name: 'Transport & Logistics Hrs', qty: 4 },
         ],
         crew: [{ role: 'Gaffer', days: 2, cost: 500 }],
         equip: [],
@@ -107,11 +111,14 @@ test('an estimate saved before pricing is configured still bills labour and trav
 
   const totals = created.estimate.totals;
   assert.equal(totals.labourTotal, 1400);
-  assert.equal(totals.expenseTotal, 1190); // 50 + 140 travel + 1000 crew
-  assert.equal(totals.totalIncGst, 2590);
+  assert.equal(totals.expenseTotal, 1050); // 50 tolls + 1000 crew; transport unpriced
+  assert.equal(totals.totalIncGst, 2450);
+  // Labour's 10. The transport line's 4 don't count: an unpriced line counts
+  // no hours either, never hours at $0 (calc.js lineDef).
   assert.equal(totals.totalHours, 10);
-  // 35% of income — labour plus the $40 markup on transport — which is the
-  // whole point of having found the rate card.
-  assert.equal(totals.taxSetAside, 504);
-  assert.equal(totals.estTakeHome, 936);
+  // 35% of income, which is labour — the whole point of having found the rate
+  // card. (Task 5 made transport $140 of it, 539 set aside; before that, $40
+  // and 504. Task 6a made its price auto, which only the browser resolves.)
+  assert.equal(totals.taxSetAside, 490);
+  assert.equal(totals.estTakeHome, 910);
 });

@@ -486,3 +486,22 @@
 .oh-legend-sub .oh-legend-amt {
   color: var(--muted);
 }
+
+/* ── The car's cost per km (task 6b) ────────────────────────────────────────
+   A .tax-setting block, as Depreciation's write-off threshold is: copy left,
+   field and Save right. Between the table and the charts: an input, not part
+   of either. */
+.oh-km {
+  margin-top: 22px;
+}
+.oh-km-copy {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.oh-km-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}

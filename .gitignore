@@ -26,3 +26,9 @@ web/js/config.js
 
 # Local agent credentials — repo is public, never commit
 .credentials.local.md
+
+# Brand font masters (desktop OTF/TTF + licences). The repo is public and the
+# Delight licence forbids redistributing the font files in any form. Only the
+# .woff2 a page actually loads is copied into web/fonts/ (see
+# .design/production-booking/DECISIONS.md D57).
+/Visual Design/

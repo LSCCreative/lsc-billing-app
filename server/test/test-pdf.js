@@ -166,7 +166,8 @@ test('POST /api/estimates/:id/pdf renders a real PDF and writes a copy to export
       headers: { 'content-type': 'application/json', cookie, ...(opts.headers || {}) },
     });
 
-    const saved = await api('/api/pricing', { method: 'PUT', body: JSON.stringify(PRICING) });
+    // A current client's card carries the shape marker (calc.js PRICING_SHAPE).
+    const saved = await api('/api/pricing', { method: 'PUT', body: JSON.stringify({ pricingShape: PRICING_SHAPE, ...PRICING }) });
     assert.equal(saved.status, 200);
 
     const created = await api('/api/estimates', {

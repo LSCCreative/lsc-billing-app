@@ -29,6 +29,7 @@ function loadGoals(row) {
       capacityConfirmedAt: null,
       superPct: null,
       badDebtPct: null,
+      vehicleCostPerKm: null,
     };
   }
   return {
@@ -43,13 +44,16 @@ function loadGoals(row) {
     capacityConfirmedAt: row.capacity_confirmed_at,
     superPct: row.super_pct === undefined ? null : row.super_pct,
     badDebtPct: row.bad_debt_pct === undefined ? null : row.bad_debt_pct,
+    vehicleCostPerKm: row.vehicle_cost_per_km === undefined ? null : row.vehicle_cost_per_km,
   };
 }
 
 /**
- * Resolves super_pct or bad_debt_pct for a PUT (migration v7): the body's
+ * Resolves super_pct or bad_debt_pct for a PUT (migration v7), and since v10
+ * vehicle_cost_per_km (dollars, no upper limit: max Infinity): the body's
  * value when sent (null or '' clears it), otherwise what is stored, otherwise
- * null. Unset reads as 0% everywhere, and the screen says so.
+ * null. An unset percent reads as 0% everywhere, and the screen says so; an
+ * unset per-km cost is no km price at all.
  * @returns {{value:number|null}|{error:string}}
  */
 function resolvePct(body, existing, key, column, max) {
@@ -182,6 +186,9 @@ function registerGoalsRoutes(app, db) {
     if (superPct.error) return res.status(400).json({ error: superPct.error });
     const badDebtPct = resolvePct(body, existing, 'badDebtPct', 'bad_debt_pct', 100);
     if (badDebtPct.error) return res.status(400).json({ error: badDebtPct.error });
+    // Overhead's per-km figure (v10, task 6b). Only Overhead sends it.
+    const vehicleCostPerKm = resolvePct(body, existing, 'vehicleCostPerKm', 'vehicle_cost_per_km', Infinity);
+    if (vehicleCostPerKm.error) return res.status(400).json({ error: vehicleCostPerKm.error });
 
     // A markup can't be negative (hourlyFloor reads that as unset).
     if (body.targetProfitMarginPct !== undefined && body.targetProfitMarginPct !== null && Number(body.targetProfitMarginPct) < 0) {
@@ -205,9 +212,10 @@ function registerGoalsRoutes(app, db) {
       INSERT INTO goals (
         id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
         billable_hours_per_day, working_days_per_week, leave_days_per_year, sick_days_per_year,
-        iawo_threshold, capacity_confirmed_at, super_pct, bad_debt_pct, created_at, updated_at
+        iawo_threshold, capacity_confirmed_at, super_pct, bad_debt_pct, vehicle_cost_per_km,
+        created_at, updated_at
       )
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         desired_net_income = excluded.desired_net_income,
         target_profit_margin_pct = excluded.target_profit_margin_pct,
@@ -220,6 +228,7 @@ function registerGoalsRoutes(app, db) {
         capacity_confirmed_at = excluded.capacity_confirmed_at,
         super_pct = excluded.super_pct,
         bad_debt_pct = excluded.bad_debt_pct,
+        vehicle_cost_per_km = excluded.vehicle_cost_per_km,
         updated_at = excluded.updated_at
     `).run(
       resolveGoalField(body, existing, 'desiredNetIncome', 'desired_net_income'),
@@ -233,6 +242,7 @@ function registerGoalsRoutes(app, db) {
       capacityConfirmedAt,
       superPct.value,
       badDebtPct.value,
+      vehicleCostPerKm.value,
       now,
       now
     );

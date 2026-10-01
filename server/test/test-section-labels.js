@@ -74,13 +74,14 @@ test.after(() => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-/* Every estimate write here comes from a v9 client, as the web build's all do,
-   so it carries calc.js's PRICING_SHAPE. `bare: true` sends the body as given,
-   for the tests of what the route does with a write that doesn't. */
-const ESTIMATE_WRITE = /^\/api\/estimates(\/[^/]+)?$/;
+/* Every estimate write and rate-card save here comes from a current client,
+   as the web build's all do, so it carries calc.js's PRICING_SHAPE (a card
+   carries it since task 6a). `bare: true` sends the body as given, for the
+   tests of what the route does with a write that doesn't. */
+const SHAPED_WRITE = /^\/api\/(estimates(\/[^/]+)?|pricing)$/;
 function api(pathname, { bare, ...opts } = {}) {
   let body = opts.body;
-  if (!bare && body && ESTIMATE_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
+  if (!bare && body && SHAPED_WRITE.test(pathname) && (opts.method === 'POST' || opts.method === 'PUT')) {
     body = JSON.stringify({ pricingShape: PRICING_SHAPE, ...JSON.parse(body) });
   }
   return fetch(`${baseUrl}${pathname}`, {

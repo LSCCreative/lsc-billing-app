@@ -98,6 +98,22 @@
  * counts as billable hours. Otherwise a non-direct row is bought in and
  * resold, and only its markup above Rate is income (calc.js, Travel).
  *
+ * Since task 6a (2026-09-30) an own-time row's price follows the income floor
+ * with no markup until it is typed over — calc.js travelRowDef, `mu: null` —
+ * and carries a service's state line under it ("auto · floor $X", "set by you
+ * · below floor by $X · ↺ use $X"), from travelFloorComparison. Unticking Your
+ * time on an auto row keeps the figure on screen as a typed price (the user's
+ * call), since a resold row can't be auto, and says so under the field until
+ * the next save. The card is saved with calc.js PRICING_SHAPE, without which
+ * the server refuses it.
+ *
+ * THE CAR'S KM ROW (task 6b). A travel row flagged `perKm` has no price of
+ * its own: it is Overhead's per-km running cost, shown read-only here with a
+ * link across, and billed at cost (calc.js travelRowDef). Its Rate, Direct and
+ * Your time don't apply, so they are shown as such and disabled. A card
+ * without one (every card saved before 6b) gets an "+ Add Vehicle per km"
+ * button beside "+ Add Item".
+ *
  * EACH ROW'S STATE LINE, UNDER ITS MARK-UP
  * For the unit on show: "auto · floor $X", "set by you · ↺ use $X", with
  * "below floor by $X" in place of the floor when it is, or "auto · needs
@@ -262,6 +278,30 @@ const PricingView = (() => {
     };
   }
 
+  /* An own-time travel row — Your time ticked, not Direct — is priced from the
+     floor (task 6a); any other travel row is a plain typed price. */
+  const ownAuto = (row) => row.ownTime === true && !row.directCost && !row.perKm;
+  const resolveTravel = (row) => LSCCalc.travelRowDef(row, priceCtx);
+
+  /* An own-time row's state, in unitState's terms, from the same comparison
+     the Dashboard runs (calc.js travelFloorComparison) on a one-row card. */
+  function travelState(row) {
+    const [c] = LSCCalc.travelFloorComparison({ travelRows: [row] }, priceCtx.settings, perHourFloor);
+    const u = c.units.hour;
+    if (u.auto && u.mu === null) return { kind: 'unpriced' };
+    return {
+      kind: u.auto ? 'auto' : 'set',
+      gap: u.belowFloor ? u.gap : null,
+      floor: u.floor,
+      suggestion: u.auto ? null : resolveTravel(Object.assign({}, row, { mu: null })).mu,
+    };
+  }
+
+  /* Rows whose Your time was just unticked while on auto, by row id: their
+     price was kept as typed, and the line under it says so until the next
+     save or reset. View state, not the card. */
+  let stoppedFollowing = {};
+
   /* Between the state line's parts. The no-break space holds each dot to the
      part before it, so a line that wraps (every set-by-you row does, in the
      80px Mark-Up column) ends on "·" rather than starting the next one with
@@ -275,7 +315,10 @@ const PricingView = (() => {
      so "click use 103" works by voice), then says what it acts on, which the
      visible words alone don't: the Dashboard badge's pattern. */
   function stateLineHtml(row, si, ri, st) {
-    const unit = unitOf(row);
+    /* si null: an own-time travel row, which sells by the hour only. */
+    const travel = si === null;
+    const unit = travel ? 'hour' : unitOf(row);
+    const rowAttrs = travel ? ' data-travel-ri="' + ri + '"' : ' data-si="' + si + '" data-ri="' + ri + '"';
     const part = (html) => '<span class="pricing-state-part">' + html + '</span>';
     if (st.kind === 'unpriced') {
       const needs = 'needs ' + blocker.screen;
@@ -290,7 +333,7 @@ const PricingView = (() => {
     if (st.kind === 'set') {
       const label = st.suggestion === null ? 'auto' : money(st.suggestion);
       parts.push(part(
-        '<button type="button" class="pricing-state-link" data-use-auto data-si="' + si + '" data-ri="' + ri + '"' +
+        '<button type="button" class="pricing-state-link" data-use-auto' + rowAttrs +
         ' aria-label="' + esc(st.suggestion === null
           ? 'Use auto: put ' + nameOf(row) + '’s ' + UNIT_LOWADJ[unit] + ' price back to auto'
           : 'Use ' + label + ', the suggested ' + UNIT_LOWADJ[unit] + ' price for ' + nameOf(row)) +
@@ -397,6 +440,27 @@ const PricingView = (() => {
     return sentence;
   }
 
+  /* refreshRow for an own-time travel row: the price field's figure and auto
+     styling (not while it is being typed in), the state line and its
+     sentence. Returns the sentence. */
+  function refreshTravelRow(ri) {
+    const row = card.travelRows[ri];
+    if (!row || !ownAuto(row)) return '';
+    const st = travelState(row);
+    const sentence = stateSentence(st);
+    const inp = root.querySelector('input[data-type="travel"][data-ri="' + ri + '"][data-field="mu"]');
+    if (inp) {
+      const d = resolveTravel(row);
+      if (document.activeElement !== inp) paintPrice(inp, d);
+      else inp.classList.toggle('pricing-auto', d.auto);
+    }
+    const el = root.querySelector('#tfl-' + ri);
+    if (el) el.innerHTML = stateLineHtml(row, null, ri, st);
+    const said = root.querySelector('#tfd-' + ri);
+    if (said) said.textContent = sentence;
+    return sentence;
+  }
+
   /* A rename, as it is typed: every label in the row that names the service.
      They are written at render, and a render would take the name field out
      from under the cursor. refreshRow rewrites the unit line (focus is in the
@@ -420,6 +484,7 @@ const PricingView = (() => {
 
   function refreshAllRows() {
     card.labourSections.forEach((sec, si) => sec.rows.forEach((row, ri) => refreshRow(si, ri)));
+    card.travelRows.forEach((row, ri) => refreshTravelRow(ri));
   }
 
   /* Is every service showing this unit? What a Show button's pressed state
@@ -586,6 +651,12 @@ const PricingView = (() => {
       else if (seenTravel[key])
         add('“' + name + '” is listed twice under Travel & Accommodation.', nameInp);
       seenTravel[key] = 1;
+      /* Only an own-time row can be left on auto; a blank anywhere else would
+         quote at $0 (the route refuses it: travel_price_missing). */
+      if (!ownAuto(r) && !r.directCost && !r.perKm && LSCCalc.numOrNull(r.mu) === null) {
+        add('“' + (name || 'A travel item') + '” needs a price, or tick Your time to follow your floor.',
+          q('input[data-type="travel"][data-ri="' + ri + '"][data-field="mu"]'));
+      }
     });
 
     return found;
@@ -663,26 +734,80 @@ const PricingView = (() => {
     );
   }
 
+  /* A travel row's Mark-Up cell. An own-time row's is a service's hourly
+     price field: empty with its auto figure shown when on auto, a state line
+     under it, and that line as one sentence for the field's description. Any
+     other row's is the plain client rate it always was, plus the note when Your
+     time has just been unticked off auto. */
+  function travelPriceCell(row, ri) {
+    if (row.perKm) {
+      /* Not an input: the one figure lives on Overhead (the user's call). */
+      const d = resolveTravel(row);
+      return (
+        '<span class="pricing-km-price' + (d.mu === null ? ' pricing-rate-none' : '') + '">' +
+        (d.mu === null ? '—' : esc(LSCUtil.perKm(d.mu))) + '</span>' +
+        '<div class="pricing-floor"><span class="pricing-state-part">' +
+        (d.mu === null ? 'no cost per km yet' : 'at cost, from Overhead') + '</span>' + STATE_SEP +
+        '<span class="pricing-state-part"><button type="button" class="pricing-state-link" data-state-tab="overhead"' +
+        ' aria-label="' + (d.mu === null ? 'Set' : 'Change') + ' the cost per km for ' + esc(nameOf(row)) + ' on Overhead">' +
+        (d.mu === null ? 'set it on Overhead' : 'change on Overhead') + '</button></span></div>'
+      );
+    }
+    if (ownAuto(row)) {
+      const d = resolveTravel(row);
+      const st = travelState(row);
+      return (
+        '<input type="number" min="0" step="0.01" class="pricing-price-inp' + (d.auto ? ' pricing-auto' : '') +
+        '" value="' + (d.mu === null ? '' : esc(String(d.mu))) + '" placeholder="—"' +
+        ' aria-label="Hourly price for ' + esc(nameOf(row)) + '" aria-describedby="tfd-' + ri + '"' +
+        ' data-ri="' + ri + '" data-field="mu" data-type="travel">' +
+        '<div class="pricing-floor" id="tfl-' + ri + '">' + stateLineHtml(row, null, ri, st) + '</div>' +
+        '<span hidden id="tfd-' + ri + '">' + esc(stateSentence(st)) + '</span>'
+      );
+    }
+    const blank = LSCCalc.numOrNull(row.mu) === null;
+    /* Two parts, as a state line's are: a short one, then a sentence that may
+       wrap inside the column (.pricing-state-note). */
+    const note = !stoppedFollowing[row.id] ? null : blank
+      ? ['no price', 'type one, or tick Your time again']
+      : ['set by you', 'no longer follows your floor'];
+    return (
+      '<input type="number" min="0" step="0.01" value="' + (blank ? '' : num(row.mu)) + '"' +
+      (note ? ' aria-describedby="tfd-' + ri + '"' : '') +
+      ' aria-label="Client rate for ' + esc(row.name) + '" data-ri="' + ri + '" data-field="mu" data-type="travel">' +
+      (note
+        ? '<div class="pricing-floor"><span class="pricing-state-part">' + note[0] + '</span>' + STATE_SEP +
+          '<span class="pricing-state-part pricing-state-note">' + note[1] + '</span></div>' +
+          '<span hidden id="tfd-' + ri + '">' + esc(note[0].charAt(0).toUpperCase() + note[0].slice(1) + ', ' + note[1]) + '.</span>'
+        : '')
+    );
+  }
+
   function travelSectionMarkup() {
     let rows = '';
     if (!card.travelRows.length) {
       rows = '<tr><td colspan="6" class="pricing-empty-td">No items yet — add one below.</td></tr>';
     }
     card.travelRows.forEach((row, ri) => {
+      const km = row.perKm === true;
       rows +=
         '<tr><td data-label="Service"><input class="pricing-name-inp" type="text" value="' + esc(row.name) +
         '" placeholder="Item name" aria-label="Item name" data-ri="' + ri +
         '" data-field="name" data-type="travel"></td>' +
-        '<td style="text-align:right" data-label="Rate ($)"><input type="number" min="0" step="0.01" value="' + num(row.rate) +
-        '" aria-label="Cost for ' + esc(row.name) + '" data-ri="' + ri + '" data-field="rate" data-type="travel"></td>' +
-        '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01" value="' + num(row.mu) +
-        '" aria-label="Client rate for ' + esc(row.name) + '" data-ri="' + ri + '" data-field="mu" data-type="travel"></td>' +
+        '<td style="text-align:right" data-label="Rate ($)">' +
+        (km
+          ? '<span class="pricing-km-na">at cost</span>'
+          : '<input type="number" min="0" step="0.01" value="' + num(row.rate) +
+            '" aria-label="Cost for ' + esc(row.name) + '" data-ri="' + ri + '" data-field="rate" data-type="travel">') +
+        '</td>' +
+        '<td style="text-align:right" data-label="Mark-Up ($)">' + travelPriceCell(row, ri) + '</td>' +
         '<td style="text-align:center" data-label="Direct"><input type="checkbox"' + (row.directCost ? ' checked' : '') +
+        (km ? ' disabled' : '') +
         ' data-ri="' + ri + '" data-field="directCost" data-type="travel"' +
         ' aria-label="Bill ' + esc(row.name) + ' at cost"' +
         ' title="Billed at cost — the quantity entered is the amount billed"></td>' +
         '<td style="text-align:center" data-label="Your time"><input type="checkbox"' + (row.ownTime ? ' checked' : '') +
-        (row.directCost ? ' disabled' : '') +
+        (row.directCost || km ? ' disabled' : '') +
         ' data-ri="' + ri + '" data-field="ownTime" data-type="travel"' +
         ' aria-label="' + esc(row.name) + ' is your own time"' +
         ' title="Your own hours: all of it is income, and the quantity counts as billable hours"></td>' +
@@ -703,7 +828,11 @@ const PricingView = (() => {
       '<div class="pricing-sec-foot">' +
       '<span class="pricing-hint">' + card.travelRows.length + ' item' +
       (card.travelRows.length === 1 ? '' : 's') + '</span>' +
-      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-travel">+ Add Item</button>' +
+      '<span class="pricing-sec-foot-btns">' +
+      (card.travelRows.some((r) => r.perKm)
+        ? ''
+        : '<button type="button" class="btn btn-ghost btn-sm" id="js-add-km">+ Add Vehicle per km</button>') +
+      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-travel">+ Add Item</button></span>' +
       '</div></div>'
     );
   }
@@ -801,17 +930,18 @@ const PricingView = (() => {
     return html;
   }
 
-  /* The card the server sent is in the shape from before v9 (calc.js
-     cardShapeOutdated): this page is newer than the server. Read-only and
+  /* The card the server sent is in a shape this page can't write (calc.js
+     cardShapeOutdated: before v9, or without task 6a's marker): this page is
+     newer than the server. Read-only and
      final — reloading only helps once the server has been updated. */
   function outdatedMarkup() {
     return (
       '<div class="page-head"><div><h1 class="page-title">Rate Card</h1>' +
       '<div class="page-sub">Add, rename, re-price or remove anything the estimator offers</div></div></div>' +
       '<div class="empty-state" role="alert"><h3>The server hasn’t been updated for this Rate Card yet</h3>' +
-      '<p>This page prices each service by the hour, half day and full day, but the server still ' +
-      'stores one price per service. Editing is switched off until the server is updated, so a save ' +
-      'from here can’t overwrite your prices. Reload once it has been.</p></div>'
+      '<p>This page is newer than the server, which stores the rate card in an older way. Editing is ' +
+      'switched off until the server is updated, so a save from here can’t overwrite your prices. ' +
+      'Reload once it has been.</p></div>'
     );
   }
 
@@ -897,6 +1027,7 @@ const PricingView = (() => {
         if (field === 'name') {
           target.name = input.value;
           if (input.dataset.type === 'labour') relabelRow(parseInt(input.dataset.si, 10), parseInt(input.dataset.ri, 10));
+          else refreshTravelRow(parseInt(input.dataset.ri, 10)); // its "↺ use" names it
         }
         else if (field === 'price') {
           /* Typing pins the unit on show; an empty field is auto again. A
@@ -904,10 +1035,31 @@ const PricingView = (() => {
              half-typed "1e" is auto for that moment, not $0. */
           const n = input.value === '' ? NaN : parseFloat(input.value);
           pricesOf(target)[unitOf(target)] = Number.isFinite(n) ? n : null;
+        } else if (field === 'mu' && input.dataset.type === 'travel' && ownAuto(target)) {
+          /* As a service's price: typing sets it, an empty field is auto. */
+          const n = input.value === '' ? NaN : parseFloat(input.value);
+          target.mu = Number.isFinite(n) ? n : null;
+          const ri = parseInt(input.dataset.ri, 10);
+          LSCUtil.announce($('pricing-floor-live'), nameOf(target) + ', hourly: ' + refreshTravelRow(ri));
+          return;
         } else if (field === 'customBill' || field === 'directCost' || field === 'ownTime') {
+          const wasOwnAuto = input.dataset.type === 'travel' && ownAuto(target);
           // Absent rather than false, matching the shape defaults.js ships.
           if (input.checked) target[field] = true;
           else delete target[field];
+          /* Your time changes the whole Mark-Up cell, so it re-renders. Off an
+             auto price, the figure on screen is kept as a typed one (task 6a,
+             the user's call): a resold row can't follow the floor. */
+          if (field === 'ownTime') {
+            if (wasOwnAuto && !input.checked && LSCCalc.numOrNull(target.mu) === null) {
+              target.mu = resolveTravel(Object.assign({}, target, { ownTime: true })).mu;
+              stoppedFollowing[target.id] = true;
+            }
+            if (input.checked) delete stoppedFollowing[target.id];
+            render();
+            const again = root.querySelector('input[data-type="travel"][data-ri="' + input.dataset.ri + '"][data-field="ownTime"]');
+            if (again) again.focus();
+          }
           /* Direct and your-time are exclusive — a direct row is money passed
              through, not anybody's hours — so ticking Direct clears and
              disables Your time. Structural, so it re-renders. */
@@ -936,6 +1088,16 @@ const PricingView = (() => {
        handler either: every edit already ran refreshRow as it was typed.
        On focus, select it, so typing replaces the suggestion rather than
        appending to it. */
+    root.querySelectorAll('input[data-type="travel"][data-field="mu"].pricing-price-inp').forEach((input) => {
+      input.addEventListener('blur', () => {
+        const row = card.travelRows[parseInt(input.dataset.ri, 10)];
+        if (row && ownAuto(row)) paintPrice(input, resolveTravel(row));
+      });
+      input.addEventListener('focus', () => {
+        if (input.classList.contains('pricing-auto')) input.select();
+      });
+    });
+
     root.querySelectorAll('input[data-field="price"]').forEach((input) => {
       input.addEventListener('blur', () => {
         const row = (card.labourSections[parseInt(input.dataset.si, 10)] || { rows: [] }).rows[parseInt(input.dataset.ri, 10)];
@@ -1012,6 +1174,18 @@ const PricingView = (() => {
       card.travelRows.push({ id: newRowId(), name: 'New Item', rate: 0, mu: 0 });
       render();
     });
+
+    /* The car's km row, as the default card has it (task 6b). Only offered
+       while the card has none. Focus goes to its name, as a new service's does. */
+    const addKm = $('js-add-km');
+    if (addKm) {
+      addKm.addEventListener('click', () => {
+        card.travelRows.push({ id: newRowId(), name: 'Vehicle — per km', rate: 0, mu: null, perKm: true, unit: 'km' });
+        render();
+        const nameInp = root.querySelector('input[data-type="travel"][data-ri="' + (card.travelRows.length - 1) + '"][data-field="name"]');
+        if (nameInp) nameInp.focus();
+      });
+    }
 
     root.querySelectorAll('[data-del-sec]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1097,13 +1271,20 @@ const PricingView = (() => {
         }),
       })),
       travelRows: card.travelRows.map((row) => {
-        const out = { id: row.id, name: String(row.name).trim(), rate: num(row.rate), mu: num(row.mu) };
-        if (row.directCost) out.directCost = true;
-        if (row.ownTime && !row.directCost) out.ownTime = true;
+        /* An own-time row on auto goes as null, never its resolved figure:
+           it follows the floor from here (calc.js travelRowDef). */
+        const mu = row.perKm || (ownAuto(row) && LSCCalc.numOrNull(row.mu) === null) ? null : num(row.mu);
+        const out = { id: row.id, name: String(row.name).trim(), rate: num(row.rate), mu };
+        // The car's row: its price is Overhead's, never stored on the card (task 6b).
+        if (row.perKm) out.perKm = true;
+        if (row.directCost && !row.perKm) out.directCost = true;
+        if (row.ownTime && !row.directCost && !row.perKm) out.ownTime = true;
         if (row.unit) out.unit = row.unit;
         return out;
       }),
       taxSetAsideRate: parseFloat(taxRaw) / 100,
+      // Without it the server refuses the card as outdated (calc.js PRICING_SHAPE).
+      pricingShape: LSCCalc.PRICING_SHAPE,
     };
   }
 
@@ -1129,6 +1310,7 @@ const PricingView = (() => {
       LSCData.setPricing(reply.pricing);
       card = clone(reply.pricing);
       taxRaw = toPercent(reply.pricing.taxSetAsideRate);
+      stoppedFollowing = {};
       baseline = snapshot();
       Toast.ok('Rates saved.');
       // Cleared before the re-render, not through setSaving: render() replaces
@@ -1164,6 +1346,9 @@ const PricingView = (() => {
     labour_prices_incomplete: 'a service is missing one of its three prices. Reload the page and try again.',
     labour_price_not_a_number: 'a price isn’t a number.',
     labour_price_negative: 'a price can’t be negative.',
+    travel_price_negative: 'a travel price can’t be negative.',
+    travel_price_missing: 'a travel item has no price. Type one, or tick Your time to follow your floor.',
+    travel_per_km_flags: 'the vehicle per km row can’t also be Direct or Your time. Reload the page and try again.',
     tax_set_aside_rate_not_a_fraction: 'the tax set-aside rate must be between 0 and 100.',
   };
 
@@ -1200,6 +1385,7 @@ const PricingView = (() => {
       assignRowIds(card);
       viewUnits = {};
       showDefault = 'hour';
+      stoppedFollowing = {};
       taxRaw = toPercent(reply.pricing.taxSetAsideRate);
       baseline = snapshot();
       render();
@@ -1262,6 +1448,7 @@ const PricingView = (() => {
     });
     viewUnits = {};
     showDefault = 'hour';
+    stoppedFollowing = {};
     taxRaw = toPercent(pricing.taxSetAsideRate);
     assignRowIds(card);
     /* Deliberately outside the working copy and outside snapshot(): this is
@@ -1338,6 +1525,27 @@ const PricingView = (() => {
       if (handlers.onGoTab) handlers.onGoTab(btn.dataset.stateTab);
       return;
     }
+    if (btn.hasAttribute('data-use-auto') && btn.dataset.travelRi !== undefined) {
+      const ri = parseInt(btn.dataset.travelRi, 10);
+      const row = card.travelRows[ri];
+      if (!row) return;
+      row.mu = null;
+      refreshTravelRow(ri);
+      const inp = root.querySelector('input[data-type="travel"][data-ri="' + ri + '"][data-field="mu"]');
+      const d = resolveTravel(row);
+      /* Painted here, not left to refreshTravelRow, which skips a field that
+         has focus — as this one does when the ↺ was reached without leaving
+         it (the Dashboard's badge lands focus in it). */
+      if (inp) {
+        paintPrice(inp, d);
+        inp.focus();
+      }
+      LSCUtil.announce(
+        $('pricing-floor-live'),
+        nameOf(row) + ', hourly: back to auto' + (d.mu === null ? ', no price yet.' : ', ' + money(d.mu) + '.')
+      );
+      return;
+    }
     if (btn.hasAttribute('data-use-auto')) {
       const si = parseInt(btn.dataset.si, 10);
       const ri = parseInt(btn.dataset.ri, 10);
@@ -1356,7 +1564,8 @@ const PricingView = (() => {
     }
   }
 
-  /* The Dashboard's "Below by $X" lands here with { sectionId, index, unit }:
+  /* The Dashboard's "Below by $X" lands here with { sectionId, index, unit }
+     — or sectionId 'travel' and the row's index in travelRows:
      the row's section id and its position in that section, since names are
      editable and needn't be unique, and the unit the gap is on (hour when
      absent). Shows that unit, focuses the price — the one field the gap is
@@ -1365,6 +1574,14 @@ const PricingView = (() => {
      leaves the screen at the top, as a rail click would. */
   function focusRow(target) {
     if (!target || typeof target !== 'object') return;
+    /* An own-time travel row's badge (task 6a): its price, by index. */
+    if (String(target.sectionId) === 'travel') {
+      const inp = root.querySelector('input[data-type="travel"][data-ri="' + Number(target.index) + '"][data-field="mu"]');
+      if (!inp) return;
+      inp.focus({ preventScroll: true });
+      inp.scrollIntoView({ block: 'center' });
+      return;
+    }
     const si = card.labourSections.findIndex((sec) => String(sec.id) === String(target.sectionId));
     if (si < 0) return;
     const ri = Number(target.index);

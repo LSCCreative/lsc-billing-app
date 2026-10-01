@@ -155,7 +155,8 @@ const EstimateDetail = (() => {
         return (
           '<tr><td data-label="Service">' + esc(line.name) + '</td>' +
           '<td class="right muted-td" data-label="Qty">' + esc(line.qty) + '</td>' +
-          '<td class="right muted-td" data-label="Rate">' + (def && !def.directCost ? fmt(def.mu) : '—') + '</td>' +
+          '<td class="right muted-td" data-label="Rate">' +
+            (def && def.perKm ? LSCUtil.perKm(def.mu) : def && !def.directCost ? fmt(def.mu) : '—') + '</td>' +
           '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
         );
       })
@@ -199,13 +200,18 @@ const EstimateDetail = (() => {
     const notes = estimate.notes;
     // Classified exactly as the PDF classifies it, so this screen and the
     // exported document never disagree about whether GST was charged.
-    const gstFree = LSCCalc.gstTreatment(t, estimate) === 'free';
+    const gstTreatment = LSCCalc.gstTreatment(t, estimate);
+    const gstFree = gstTreatment === 'free';
     return (
       '<div class="est-totals">' +
       '<div class="totals-card"><table>' +
       '<tr><td class="tl">Labour Subtotal</td><td class="tv">' + fmt(t.labourTotal) + '</td></tr>' +
       '<tr><td class="tl">Expenses Subtotal</td><td class="tv">' + fmt(t.expenseTotal) + '</td></tr>' +
-      '<tr><td class="tl">Pass-through Cost</td><td class="tv">' + fmt(t.passThroughCost) + '</td></tr>' +
+      /* Ex-GST whenever GST was charged, unlike the as-billed subtotals above
+         it: on a GST-exclusive card costs are typed ex-GST, and on an inclusive
+         one computeTotals takes the GST out (estimate-accuracy task 3). */
+      '<tr><td class="tl">Pass-through Cost' + (gstTreatment === 'taxable' ? ' (ex GST)' : '') +
+      '</td><td class="tv">' + fmt(t.passThroughCost) + '</td></tr>' +
       '<tr><td class="tl">Client Price (ex GST)</td><td class="tv">' + fmt(t.clientPriceExGst) + '</td></tr>' +
       '<tr><td class="tl">GST</td><td class="tv">' + (gstFree ? 'GST-free' : fmt(t.gst)) + '</td></tr>' +
       '<tr class="net-row"><td>Total (inc GST)</td><td class="tv">' + fmt(t.totalIncGst) + '</td></tr>' +

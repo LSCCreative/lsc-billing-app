@@ -99,7 +99,7 @@ service business that sells shoot days rather than units.
 - [x] **Money-math audit — all 15 findings fixed** (money math — Opus/high), 2026-09-28. See "What
       landed — audit fixes" below. **Live — NAS (migration v7) then Pages, 2026-09-28 ~13:35 AEST,
       with the user's go-ahead.** Deploy record under "What landed — audit fixes".
-- [ ] ← **NEXT: (a) the user saves their FY 2026–27 tax scale on Profit Goals** (until then the
+- [ ] ← **NEXT: (a) — settled 2026-09-30, see [`.design/estimate-accuracy/`](../estimate-accuracy/HANDOVER.md): the user reports the tax scale saved and Transport & Logistics Hrs confirmed as "Your time"; only (b) below is still open. Original text: the user saves their FY 2026–27 tax scale on Profit Goals** (until then the
       live Dashboard's floors and the Rate Card's floor lines are em dashes, by design) and decides
       whether any travel row is "Your time"; **(b) should-fix 4, a real VoiceOver pass** — a person with VoiceOver on Capacity, the Rate Card and the asset dialog, listening
       for the announcer regions inside the `aria-modal` dialogs and judging the one-second debounce.
