@@ -87,7 +87,7 @@ times.
           restart to gain that column. `api-scratch` was done and now holds 22 fetched dates plus
           a hand-added NSW Bank Holiday (2026-08-03).
 
-      - [x] **Task 4, the Rate Card blocks**: done 2026-10-02, **uncommitted**.
+      - [x] **Task 4, the Rate Card blocks**: committed 2026-10-02 (`da2db86`).
         - **What exists now:** the Surcharges block (saved with the card), the Public holidays
           block (below the save bar, saves itself), an "On set" tag in place of Production's ×,
           and `DEFAULT_PRICING` with an `additional` section holding Overtime plus `surcharges`.
@@ -97,8 +97,7 @@ times.
           `responsive.css` catches any new `.billing-block` without a grid. The Booking block will
           meet the same thing.
 
-      - [x] **Task 4** committed 2026-10-02 (`da2db86`).
-      - [x] **Task 5, the month calendar component**: done 2026-10-02, **uncommitted**.
+      - [x] **Task 5, the month calendar component**: committed 2026-10-02 (`cbe5f07`).
         - **What exists now:** `LSCCalendar.mount()` in `web/js/calendar.js` with
           `web/css/calendar.css`, both loaded by `index.html` but not mounted anywhere yet. There's
           also a shared `LSCCalendar.statusChip()` for the day cards and Coming up.
@@ -110,15 +109,14 @@ times.
           - faded is an outline, not opacity;
           - tiles vs dots goes by the calendar's own width.
 
-      - [x] **Task 5** committed 2026-10-02 (`cbe5f07`).
       - [x] **Task 6, the editor's Production Booking block**: committed 2026-10-02 (`685ebbb`).
         - **What exists now:** `web/js/views/booking-block.js` and `web/css/booking.css`. The
           editor sends `days` on every save, blocks a save with a locked day, and handles the 409.
           `api.js` refusals carry `err.data`.
         - Its Done note has the block's API and the interpretations to show the user (TBC starts
           Proposed; a day booked first needs no note; the same date twice is allowed).
-      - [x] **Task 7, production items on days, priced with surcharges**: done 2026-10-02,
-        **uncommitted**. Only `estimate-editor.js`, `booking-block.js` and `booking.css` changed;
+      - [x] **Task 7, production items on days, priced with surcharges**: committed 2026-10-02
+        (`5261323`). Only `estimate-editor.js`, `booking-block.js` and `booking.css` changed;
         no server change, and `calc.js` is untouched (349/349).
         - **What exists now:** each day card holds its production lines and its own picker. The
           Production section lists the days, has "Add to a day ▾", and holds old lines under
@@ -132,7 +130,7 @@ times.
           custom amount.
 
 **Exact next item: TASKS.md task 8, estimate detail, client PDF and Cost Breakdown PDF**
-(**money math, Opus/high**). Commit task 7 first.
+(**money math, Opus/high**).
 
 **Seams left for later tasks:**
 - **Detail and PDF (task 8):** read each `prod` line's stored `surchargedPrice` and `dayId`; don't

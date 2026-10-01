@@ -71,7 +71,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   checked: mode swap, ceil → round, share inverted, overnight ignored, short notice skipped on a
   TBC day. _New functions only; `computeTotals` is untouched in this task._
 
-  **Done 2026-10-02** on branch `production-booking` (uncommitted). Seven exports in both
+  **Done 2026-10-02** on branch `production-booking`, committed `86edf25`. Seven exports in both
   copies: `SURCHARGE_DEFAULTS`, `surchargeSettings(card)`, `dayKind`, `afterHoursShare`,
   `surchargeFactor(day, card, shortNotice, holidays?)`, `surchargedLinePrice`,
   `surchargeAttribution(base, day, card, shortNotice, holidays?)`. There are 18 new tests in
@@ -138,7 +138,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   _Modifies: `db.js`, `calc.js` (×2), `routes/estimates.js`, `ratecard.js`; new
   `routes/calendar.js`._
 
-  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is 327/327. New files are
+  **Done 2026-10-02** on `production-booking` (committed `a571c67`). The suite is 327/327. New files are
   `days.js` and `routes/calendar.js`; `estimate.js`, `routes/pricing.js` and `app.js` also changed.
   `ratecard.js` needed nothing.
   - **Migration v11** is as specified and safe to re-run. `production_days.estimate_id` cascades on
@@ -264,7 +264,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   nothing above it moves at 1280; it stacks at 375. _Modifies: `pricing.js`, `pricing.css`,
   `defaults.js`, `rows.js`. Reuses: `.billing-block`, `Info`, `LSCUtil.showFieldErrors`._
 
-  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is 349/349, with one new
+  **Done 2026-10-02** on `production-booking` (committed `da2db86`). The suite is 349/349, with one new
   test in `test-ratecard.js`. `pricing.js`, `pricing.css`, `server/src/defaults.js` and
   `test-ratecard.js` changed. `rows.js` needed nothing: a new section id never collides with
   `newSectionId`'s `catN`.
@@ -344,7 +344,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   confirmed, UPID-042". _Aesthetic: the existing dark editorial system, a quiet production-board
   grid, not Google Calendar's look (brief, Aesthetic Direction)._
 
-  **Done 2026-10-02** on `production-booking` (uncommitted). New `web/js/calendar.js` and
+  **Done 2026-10-02** on `production-booking` (committed `cbe5f07`). New `web/js/calendar.js` and
   `web/css/calendar.css`, both added to `index.html` (the CSS before `responsive.css`, the JS after
   `info.js`). Nothing mounts the calendar yet; task 6 is its first caller. The suite is unchanged
   at 349/349: there is no server change and no harness for web modules.
@@ -426,7 +426,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   against a second project in the scratch DB; nothing else in the editor moves at 1280. _Reuses:
   `.billing-block`, `Modal`, `LSCUnsaved`._
 
-  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is unchanged at 349/349:
+  **Done 2026-10-02** on `production-booking` (committed `685ebbb`). The suite is unchanged at 349/349:
   no server change. New: `web/js/views/booking-block.js` and `web/css/booking.css`. Changed:
   `estimate-editor.js` (a slot, `days` in `payload()`, the lock check before save, the 409),
   `api.js` (a refusal now carries its whole reply as `err.data`), and `index.html` (the script,
@@ -525,7 +525,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   - an estimate saved before this opens and totals identically;
   - the mutations from task 1 are re-checked through the editor path (one each).
 
-  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is unchanged at 349/349:
+  **Done 2026-10-02** on `production-booking` (committed `5261323`). The suite is unchanged at 349/349:
   there's no server change, and both `calc.js` copies are untouched. Changed:
   `estimate-editor.js`, `booking-block.js` and `booking.css`.
   - **Where the lines live.** A production line is built **inside its day's card**, as the brief's
