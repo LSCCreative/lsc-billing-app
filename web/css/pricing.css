@@ -325,3 +325,532 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ── Production booking task 4: On set, Surcharges, Public holidays ────────
+   New blocks below the tables, so nothing here reaches an existing rule.
+   Written phone first (min-width queries only), unlike the rest of this
+   screen, whose phone rules live in responsive.css: these classes are new,
+   and nothing above 1100px has a look to preserve.
+
+   The language is the editor's .billing-block (a #111 head with a Delight
+   label and a tag) and the Rate Card's own: hairline rules between rows,
+   hints at 11px muted, fields in the #1a1c20 well. */
+
+/* responsive.css gives every .billing-block head a 660px floor from 1099px
+   down, and lets the block scroll sideways, so the editor's money grids can't
+   squash. These blocks have no grid: their content wraps, and that floor only
+   pushed the head past the block's edge at 800px (measured). Doubled class to
+   outrank it from this earlier file. */
+.billing-block.surch-block,
+.billing-block.hol-block {
+  overflow-x: hidden;
+}
+.billing-block.surch-block .bb-head,
+.billing-block.hol-block .bb-head {
+  min-width: 0;
+}
+
+/* "On set", where the Production category's × was: the one section that
+   can't be deleted (D24). The accent hairline marks it as the special case;
+   the text stays --text for contrast. */
+.pricing-sec-tag {
+  flex-shrink: 0;
+  font-size: 9px;
+  padding: 2px 7px;
+  border: 1px solid var(--accent-text);
+  color: var(--text);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.surch-intro {
+  padding: 12px 16px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+  max-width: 78ch;
+}
+.surch-intro strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* One surcharge per row: what it is on the left, its figures on the right
+   (stacked on a phone, label above field, as the IA has it). */
+.surch-row {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(61, 74, 92, 0.4);
+}
+.surch-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.surch-desc {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 60ch;
+}
+.surch-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.surch-mult {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The "×" reads as part of the figure, in the screen's display face. */
+.surch-x {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--muted);
+}
+/* 16px and 44px tall on a phone: smaller text makes iOS zoom on focus. */
+.surch-inp,
+.hol-field input {
+  background: #1a1c20;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 16px;
+  padding: 6px 10px;
+  min-height: 44px;
+  outline: none;
+  transition: border-color 0.15s;
+  /* The native time and date pickers, dark to match. */
+  color-scheme: dark;
+}
+.surch-inp:focus,
+.hol-field input:focus {
+  border-color: var(--accent);
+}
+.surch-inp {
+  width: 96px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.surch-inp::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+.surch-inp.surch-inp-days {
+  width: 72px;
+}
+.surch-inp.surch-inp-time {
+  width: auto;
+  text-align: left;
+}
+.surch-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The working week: seven toggles. Checked is a fill, an accent edge and
+   full-strength text together, the Show switch's pair (design review D3), so
+   it never rests on hue alone. The real checkbox lies over its chip,
+   invisible, so a tap anywhere on the chip toggles it. */
+.surch-week {
+  align-self: stretch;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.surch-week legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+/* Phone: four to a row (Mon–Thu, Fri–Sun). Seven 44px chips don't fit in
+   the 311px a 375px screen leaves, and wrapping left Sunday alone. */
+.surch-days {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.surch-day {
+  position: relative;
+  display: flex;
+}
+.surch-day span {
+  flex: 1;
+}
+.surch-day input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.surch-day span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.surch-day input:checked + span {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.surch-day input:hover + span {
+  color: var(--text);
+}
+.surch-day input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.surch-day input[aria-invalid='true'] + span {
+  border-color: var(--err-text);
+}
+
+/* How surcharges combine: three options, each with what it makes of the
+   same short-notice weekend evening, so the choice is a comparison of
+   figures rather than of wordings. */
+.surch-modes {
+  border: 0;
+  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  margin: 0;
+  padding: 14px 16px 16px;
+  min-width: 0;
+}
+/* Floated so the legend sits inside the padding like any heading, not on
+   the border as a legend otherwise does. */
+.surch-modes-legend {
+  float: left;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  margin-bottom: 10px;
+}
+.surch-mode-opts {
+  clear: both;
+  display: grid;
+  gap: 6px;
+}
+.surch-mode-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgba(61, 74, 92, 0.6);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.surch-mode-opt:hover {
+  border-color: var(--border);
+  background: var(--row-hover);
+}
+.surch-mode-opt:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.surch-mode-opt input {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.surch-mode-words {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.surch-mode-ex {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.surch-mode-f {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Public holidays ── */
+.hol-block {
+  margin-top: 22px;
+}
+.hol-status {
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hol-status .pricing-state-link {
+  min-height: 0;
+}
+/* The NSW Bank Holiday: a fact to act on, so set apart with the accent rule
+   the info popover and the rail use to mean "read this". */
+.hol-note {
+  margin: 0 16px 14px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--accent);
+  background: rgba(61, 74, 92, 0.12);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text);
+  max-width: 78ch;
+}
+.hol-years {
+  display: grid;
+  border-top: 1px solid var(--border);
+}
+.hol-year {
+  padding: 12px 16px 10px;
+  min-width: 0;
+}
+.hol-year + .hol-year {
+  border-top: 1px solid var(--border);
+}
+.hol-year-head {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.hol-count {
+  font-family: 'Funnel Sans', sans-serif;
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hol-list {
+  list-style: none;
+}
+/* Phone: date | name over its source tag | remove. */
+.hol-item {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) 44px;
+  grid-template-areas: 'date name del' 'date src del';
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
+  min-height: 44px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  font-size: 12px;
+}
+.hol-item:last-child {
+  border-bottom: 0;
+}
+.hol-date {
+  grid-area: date;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.hol-name {
+  grid-area: name;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.hol-src {
+  grid-area: src;
+  justify-self: start;
+  font-size: 9px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* The owner's own dates stand out from the fetched ones: an edge and full
+   text, not colour alone. */
+.hol-src.hol-src-added {
+  border-color: var(--accent-text);
+  color: var(--text);
+}
+/* A date already gone this year, kept for reference. */
+.hol-past .hol-date,
+.hol-past .hol-name {
+  color: var(--muted);
+}
+.hol-del {
+  grid-area: del;
+  justify-self: end;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
+}
+.hol-empty {
+  padding: 10px 0;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+}
+/* A refused add, remove or fetch, in the screen's one error palette. */
+.hol-error {
+  display: none;
+  margin: 0 16px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+}
+.hol-error.show {
+  display: block;
+}
+.hol-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: rgba(61, 74, 92, 0.12);
+}
+.hol-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1 1 100%;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hol-optional {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.hol-field input {
+  width: 100%;
+}
+.hol-add-btns {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 100%;
+}
+.hol-add-btns .btn,
+.hol-foot .btn {
+  flex: 1;
+  justify-content: center;
+  min-height: 44px;
+}
+
+@media (min-width: 768px) {
+  .surch-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 40px;
+    align-items: start;
+  }
+  .surch-ctl {
+    align-items: flex-end;
+    gap: 10px;
+  }
+  .surch-sub {
+    justify-content: flex-end;
+  }
+  .surch-week legend {
+    margin-left: auto;
+    text-align: right;
+  }
+  .surch-week {
+    align-self: auto;
+  }
+  .surch-days {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .surch-inp,
+  .hol-field input {
+    font-size: 13px;
+    min-height: 0;
+  }
+  .surch-inp {
+    width: 80px;
+  }
+  .surch-inp.surch-inp-days {
+    width: 56px;
+  }
+  .surch-day span {
+    min-width: 38px;
+    min-height: 28px;
+  }
+  .surch-mode-opts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hol-item {
+    grid-template-columns: 82px minmax(0, 1fr) auto 28px;
+    grid-template-areas: 'date name src del';
+    min-height: 34px;
+    padding: 2px 0;
+  }
+  .hol-del {
+    min-width: 28px;
+    min-height: 28px;
+  }
+  .hol-field {
+    flex: 0 0 auto;
+  }
+  .hol-field.hol-field-name {
+    flex: 1 1 220px;
+  }
+  .hol-add-btns {
+    flex: 0 0 auto;
+  }
+  .hol-add-btns .btn,
+  .hol-foot .btn {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+}
+
+/* The two years side by side only where each column still fits a name on
+   one line: at 800 they were 295px wide and "New Year's Day" wrapped. */
+@media (min-width: 1100px) {
+  .hol-years {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hol-year + .hol-year {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surch-inp,
+  .hol-field input,
+  .surch-day span,
+  .surch-mode-opt {
+    transition: none;
+  }
+}

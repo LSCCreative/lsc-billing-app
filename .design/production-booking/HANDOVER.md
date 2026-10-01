@@ -87,14 +87,25 @@ times.
           restart to gain that column. `api-scratch` was done and now holds 22 fetched dates plus
           a hand-added NSW Bank Holiday (2026-08-03).
 
-**Exact next item: TASKS.md task 4, the Rate Card's Surcharges, Public holidays and Additional work
-blocks** (frontend, **Opus/high**: switch models first). 
+      - [x] **Task 4, the Rate Card blocks**: done 2026-10-02, **uncommitted**.
+        - **What exists now:** the Surcharges block (saved with the card), the Public holidays
+          block (below the save bar, saves itself), an "On set" tag in place of Production's ×,
+          and `DEFAULT_PRICING` with an `additional` section holding Overtime plus `surcharges`.
+        - **Beyond the spec:** "+ Add Additional work" on any card without that section. It makes
+          an empty section under id `additional`, which later stages should look up by id.
+        - **Read task 4's Done note before task 6.** The 768–1099 `.bb-head` 660px floor in
+          `responsive.css` catches any new `.billing-block` without a grid. The Booking block will
+          meet the same thing.
+
+**Exact next item: TASKS.md task 5, the month calendar component** (`web/js/calendar.js`,
+`web/css/calendar.css`; frontend, **Opus/high**: switch models first). Commit task 4 first.
 
 **Seams left for later tasks:**
-- **Holidays (task 4, and task 7):** the `GET` returns hidden rows too, flagged. The Rate Card list
-  filters on `!hidden`; the editor passes the whole list to `surchargeSnapshot`, as the server does.
-  The Public holidays block should tell the user the **NSW Bank Holiday isn't in the source** and
-  they can add it by hand.
+- **Holidays (task 7):** the `GET` returns hidden rows too, flagged. The Rate Card list filters on
+  `!hidden` (done, task 4); the editor must pass the whole list to `surchargeSnapshot`, as the server
+  does. Nothing caches the list in `LSCData` yet: the Rate Card loads it itself.
+- **Short notice hint (task 7):** read `card.surcharges.shortNoticeHintDays` through
+  `LSCCalc.surchargeSettings(card)`, as the Rate Card does, so a pre-v11 card still gets 7.
 - **Editor (tasks 6 and 7):** `collect()` must send `days` and `shortNotice`, and day ids are made
   in the browser.
   - For live pricing, build `surchargeSnapshot(days, card, holidays, { surcharges:

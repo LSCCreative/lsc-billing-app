@@ -17,7 +17,8 @@ const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const { readPricing, readSettings } = require('../src/ratecard');
 const { DEFAULT_PRICING, DEFAULT_SETTINGS } = require('../src/defaults');
-const { PRICING_SHAPE } = require('../src/calc');
+const { PRICING_SHAPE, SURCHARGE_DEFAULTS } = require('../src/calc');
+const { pricingProblem } = require('../src/routes/pricing');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -121,4 +122,28 @@ test('an estimate saved before pricing is configured still bills labour and trav
   // and 504. Task 6a made its price auto, which only the browser resolves.)
   assert.equal(totals.taxSetAside, 490);
   assert.equal(totals.estTakeHome, 910);
+});
+
+/* production-booking task 4: Overtime has moved out of Production into a new
+   "Additional work" section (D14), because `prod` is the one section on set
+   (D24) and Overtime is never surcharged. The card also carries calc.js's
+   surcharge defaults, as the Rate Card's Surcharges block shows them. */
+test('the default card keeps Overtime in Additional work, off set, with the surcharge defaults', async () => {
+  const ids = DEFAULT_PRICING.labourSections.map((s) => s.id);
+  assert.deepEqual(ids, ['preprod', 'prod', 'post', 'additional']);
+  const byId = (id) => DEFAULT_PRICING.labourSections.find((s) => s.id === id);
+  assert.equal(byId('additional').label, 'Additional work');
+  assert.deepEqual(byId('additional').rows.map((r) => r.name), ['Overtime — per hour']);
+  assert.ok(!byId('prod').rows.some((r) => /Overtime/.test(r.name)), 'Overtime is not a production item');
+
+  // The calc.js constant, not a second copy, and not the same object.
+  assert.deepEqual(DEFAULT_PRICING.surcharges, SURCHARGE_DEFAULTS);
+  assert.notEqual(DEFAULT_PRICING.surcharges, SURCHARGE_DEFAULTS);
+  assert.notEqual(DEFAULT_PRICING.surcharges.workingWeekdays, SURCHARGE_DEFAULTS.workingWeekdays);
+
+  // The route accepts the card it hands out, and Reset Defaults returns it.
+  assert.equal(pricingProblem(DEFAULT_PRICING), null);
+  const reset = await api('/api/pricing/reset', { method: 'POST' }).then((r) => r.json());
+  assert.deepEqual(reset.pricing, DEFAULT_PRICING);
+  db.prepare('DELETE FROM pricing').run();
 });

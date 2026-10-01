@@ -246,7 +246,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
     deleting it; a failed year swallowed (a partial write); UTC year instead of Sydney; boot
     counting an `added` row; boot throwing; the raw error shown to the user.
 
-- [ ] **4. Rate Card: Surcharges, Public holidays, Additional work** (frontend — Opus/high).
+- [x] **4. Rate Card: Surcharges, Public holidays, Additional work** (frontend — Opus/high).
   _Depends on: 2, 3._
   - **A Surcharges block** below the existing tables, a `.billing-block`:
     - short notice × and hint days (default ×2, 7);
@@ -263,6 +263,68 @@ State the bucket out loud and pause for the user to switch before starting a tas
   **Done when**: the block saves inside the card and reloads; a pre-v11 card shows the defaults;
   nothing above it moves at 1280; it stacks at 375. _Modifies: `pricing.js`, `pricing.css`,
   `defaults.js`, `rows.js`. Reuses: `.billing-block`, `Info`, `LSCUtil.showFieldErrors`._
+
+  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is 349/349, with one new
+  test in `test-ratecard.js`. `pricing.js`, `pricing.css`, `server/src/defaults.js` and
+  `test-ratecard.js` changed. `rows.js` needed nothing: a new section id never collides with
+  `newSectionId`'s `catN`.
+  - **Defaults:** `DEFAULT_PRICING` gains an `additional` section, "Additional work", holding
+    Overtime, which has left `prod`. It also gains `surcharges`, a copy of calc.js
+    `SURCHARGE_DEFAULTS` rather than a second literal. Only a fresh database and Reset Defaults
+    read either.
+  - **On set (D24):** `prod`'s × is replaced by an "On set" tag, which the category name's field is
+    described by. The delete handler also refuses `prod`.
+  - **Beyond the spec: "+ Add Additional work".** A card without an `additional` section (every
+    live card) gets this button in the catalogue bar, the 6b km-row precedent. It makes the
+    section **empty, under id `additional`**, which later stages look the section up by. A
+    hand-made category would be `catN`. Moving Overtime into it stays the user's job (D14):
+    delete it from Production and add it there.
+  - **The Surcharges block** sits below the tables and is part of the card: Save Services saves it,
+    and the unsaved guard covers it. The working copy starts from `LSCCalc.surchargeSettings`, so
+    a card saved before v11 shows the defaults without reading as unsaved. `payload()` sends all
+    eight fields.
+    - **Validation mirrors `surchargesProblem`.** It checks multipliers ×1–×10, hint days as a
+      whole number from 0 to 365, office hours ending after they start, and at least one working
+      day. The six route codes have words in `SAVE_REFUSALS`.
+    - **Each "How surcharges combine" option shows its live result** for a short-notice weekend
+      shoot wholly outside office hours, worked out by calc.js `surchargeFactor`: ×3 / ×3.75 / ×2
+      at the defaults (D2's own figures). The day is pinned with `kind: 'weekend'` and runs office
+      end → office start, so its share is 1 whatever the settings. Nothing is re-derived in the
+      view. The ⓘ explains the three modes, the share rule and rounding.
+    - **The flagged interpretation is said in the UI.** After hours' description reads "on any
+      day. A weekend evening is both weekend and after hours."
+  - **The Public holidays block** sits **below the save bar** and saves itself on every add,
+    remove and fetch. It says so in bold, and Save Services has nothing to do with it.
+    - It shows this year and next (filtered on `!hidden`), with past dates muted and a "fetched" or
+      "added by you" tag on each.
+    - It carries the NSW Bank Holiday note, "+ Add a date" (an inline date and optional name), "×"
+      with a confirm that says what removal means, "Fetch again", and "Last fetched …".
+    - A date already on the list is refused before the request. Failures show inside the block.
+    - Busy is shown in place (`aria-busy`, "Fetching…") rather than by disabling, so focus never
+      drops. Focus goes to the next row's × after a remove, and to "+ Add a date" after an add.
+  - **Not collapsible.** The IA's reuse map lists a collapsible head for these blocks. They are
+    short settings, and nothing in the app implements a collapsible `.billing-block` yet, so task
+    6's Booking block will be the first.
+  - **Responsive:** written phone first in `pricing.css` (new classes only).
+    - At 375: label above field, 16px/44px fields, the week as a 4-column chip grid, and holiday
+      rows of date | name over its tag | ×. No overflow, and every new control is ≥44px.
+    - At 800: `responsive.css`'s 660px `.bb-head` floor for the editor's grids was pushing these
+      heads past their block. A doubled-class override opts them out. The holiday years stay in
+      one column until 1100.
+  - **Verified in the browser** (`api-scratch`):
+    - **Nothing above the blocks moved at 1280:** the old and new builds give identical rects for
+      the page head, both settings bars, the catalogue bar, the note, the Show switch, every
+      section head, every table row and every foot.
+    - **Save and reload round-trip** with no false "unsaved" prompt, while a real edit does
+      trigger it.
+    - **Validation** names all three problems, flags each field and focuses the first.
+    - **Holidays:** add, duplicate refusal, remove, fetch and a simulated fetch failure all work.
+    - **Additional work** saves as `additional:Additional work:0`.
+    - **Console:** no errors.
+    - The scratch card was put back to the default surcharges afterwards. It keeps the new empty
+      Additional work section.
+  - **Mutations** on the new test, each caught: Overtime left in `prod`; `surcharges` dropped from
+    the defaults.
 
 - [ ] **5. The month calendar component** (frontend — Opus/high). _New shared component_
   (`web/js/calendar.js`, `web/css/calendar.css`), built for the editor first and reused by Home in

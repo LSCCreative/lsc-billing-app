@@ -1,6 +1,6 @@
 'use strict';
 
-const { PRICING_SHAPE } = require('./calc');
+const { PRICING_SHAPE, SURCHARGE_DEFAULTS } = require('./calc');
 
 /**
  * The rate card and settings a fresh billing.db starts from.
@@ -54,6 +54,15 @@ const { PRICING_SHAPE } = require('./calc');
  * bills at cost from the figure on Overhead (calc.js travelRowDef), so a
  * fuel line as well would charge for it twice. Only a fresh database and
  * Reset Defaults read this; the user renames a live row themselves.
+ *
+ * ADDITIONAL WORK AND SURCHARGES (2026-10-02, .design/production-booking/
+ * task 4). Overtime moves out of Production into a new "Additional work"
+ * section (D14): Production (id `prod`) is the one section on set (D24), and
+ * Overtime is billed after a long day, never surcharged. The id `additional`
+ * is what later stages look the section up by. `surcharges` is calc.js's own
+ * SURCHARGE_DEFAULTS, copied rather than shared so nothing can mutate the
+ * constant through the card. As above, only a fresh database and Reset
+ * Defaults read either: the user moves Overtime on a live card themselves.
  */
 const DEFAULT_PRICING = {
   pricingShape: PRICING_SHAPE,
@@ -74,7 +83,6 @@ const DEFAULT_PRICING = {
         { name: 'Video Capture', rate: 100, prices: { hour: 140, half: 640, full: 1120 } },
         { name: 'Photo Capture', rate: 80, prices: { hour: 112, half: null, full: null } },
         { name: 'Drone Aerial Capture', rate: 60, prices: { hour: 84, half: null, full: null } },
-        { name: 'Overtime — per hour', rate: 150, prices: { hour: 210, half: null, full: null } },
       ],
     },
     {
@@ -96,6 +104,13 @@ const DEFAULT_PRICING = {
         { name: 'Photo Editor', rate: 110, prices: { hour: 154, half: null, full: null } },
       ],
     },
+    {
+      id: 'additional',
+      label: 'Additional work',
+      rows: [
+        { name: 'Overtime — per hour', rate: 150, prices: { hour: 210, half: null, full: null } },
+      ],
+    },
   ],
   travelRows: [
     { name: 'Tolls & Parking', rate: 1, mu: 1, directCost: true },
@@ -108,6 +123,7 @@ const DEFAULT_PRICING = {
   // The internal income-tax provision. Was the hardcoded TAX_RATE = 0.35 that
   // the fake "Save Rates" button could never change.
   taxSetAsideRate: 0.35,
+  surcharges: Object.assign({}, SURCHARGE_DEFAULTS, { workingWeekdays: SURCHARGE_DEFAULTS.workingWeekdays.slice() }),
 };
 
 /**

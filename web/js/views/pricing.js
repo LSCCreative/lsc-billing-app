@@ -127,11 +127,39 @@
  * hourly floor and Target Markup read once at mount like the rate column.
  * The price field is described by the same facts as one plain sentence
  * (stateSentence, in a `hidden` span), not by the visible line.
+ *
+ * SURCHARGES AND PUBLIC HOLIDAYS (2026-10-02, .design/production-booking/
+ * task 4). Two blocks below the tables.
+ *
+ *   - SURCHARGES is part of the card: `card.surcharges`, saved by Save
+ *     Services like everything above it, and in the unsaved-edit check. The
+ *     working copy starts from calc.js surchargeSettings, so a card saved
+ *     before them shows the defaults (calc.js SURCHARGE_DEFAULTS) and isn't
+ *     "unsaved" for it; the first save writes them. A field that isn't a usable
+ *     figure is held as '' (as the Service Day's are) and blocks the save. Each
+ *     "How surcharges combine" option shows what it makes of one fixed case, a
+ *     short-notice weekend shoot wholly outside office hours, worked out by
+ *     calc.js surchargeFactor from the figures as typed: never re-derived here.
+ *   - PUBLIC HOLIDAYS is not part of the card. Each add, remove and "Fetch
+ *     again" saves straight away through /api/holidays (task 3), and the block
+ *     says so. It sits below the save bar for the same reason. Hidden rows (a
+ *     fetched date the owner removed) come back from the server and are left
+ *     out of the list. Only this block re-renders on a holiday change, so a
+ *     half-edited card above it is never touched.
+ *   - PRODUCTION IS ON SET (D24): the `prod` section can be renamed but has no
+ *     delete control; an "On set" tag stands in its place. A card without the
+ *     `additional` section (every card saved before this task) offers
+ *     "+ Add Additional work", which makes it under that id, empty: moving
+ *     Overtime into it is the user's call (D14).
  */
 
 const PricingView = (() => {
   const { esc, num } = LSCUtil;
   const RESERVED_SECTION_IDS = LSCRows.RESERVED_SECTION_IDS;
+  /* The section on set (D24) and the post-shoot one (D14), by the ids
+     server/src/defaults.js gives them. */
+  const ON_SET_ID = 'prod';
+  const ADDITIONAL_ID = 'additional';
 
   let root = null;
   let handlers = null;
@@ -141,8 +169,28 @@ const PricingView = (() => {
   let saving = false;
   let baseline = ''; // the card as last saved, for the unsaved-edit check
 
+  /* The public holiday list (see SURCHARGES AND PUBLIC HOLIDAYS above).
+     Not the card: saved by its own routes, never in snapshot(). */
+  let holidays = null; // { holidays, lastFetchedAt } once loaded
+  let holidayLoad = 'loading'; // 'loading' | 'ready' | 'failed'
+  let holidayBusy = false; // a holiday request is in flight
+  let addingHoliday = false; // the "+ Add a date" form is open
+
   const $ = (id) => root.querySelector('#' + id);
   const clone = (value) => JSON.parse(JSON.stringify(value));
+
+  /* The working copy of a card as the server sent it: the three parts the
+     tables edit, plus its surcharge settings with the defaults filled in (see
+     SURCHARGES above). One builder for mount, save and reset, so the three
+     can't disagree about what "unsaved" is measured against. */
+  function workingCopy(pricing) {
+    return clone({
+      serviceDay: pricing.serviceDay,
+      labourSections: pricing.labourSections || [],
+      travelRows: pricing.travelRows || [],
+      surcharges: LSCCalc.surchargeSettings(pricing),
+    });
+  }
 
   /* The working copy as it stands, for the unsaved-edit check. Deliberately not
      payload(): that trims and coerces, so a category renamed only by a trailing
@@ -642,6 +690,8 @@ const PricingView = (() => {
       });
     });
 
+    surchargeProblems(add);
+
     const seenTravel = {};
     card.travelRows.forEach((r, ri) => {
       const name = String(r.name || '').trim();
@@ -719,9 +769,16 @@ const PricingView = (() => {
     return (
       '<div class="pricing-section"><div class="pricing-sec-head">' +
       '<input class="pricing-sec-label-inp" type="text" value="' + esc(sec.label) +
-      '" placeholder="Category name" aria-label="Category name" data-si="' + si + '" data-field="label">' +
-      '<button type="button" class="del-btn" title="Delete this category"' +
-      ' aria-label="Delete the ' + esc(sec.label) + ' category" data-del-sec="' + si + '">×</button></div>' +
+      '" placeholder="Category name" aria-label="Category name" data-si="' + si + '" data-field="label"' +
+      (sec.id === ON_SET_ID ? ' aria-describedby="pricing-on-set"' : '') + '>' +
+      /* Production is the one section on set (D24): renamable, never
+         deleted, since surcharges price exactly its items. */
+      (sec.id === ON_SET_ID
+        ? '<span class="pricing-sec-tag" id="pricing-on-set" title="Surcharges apply to this category’s items. It can be renamed, not deleted.">' +
+          'On set<span class="sr-only">: surcharges apply to this category’s items. It can be renamed, not deleted.</span></span>'
+        : '<button type="button" class="del-btn" title="Delete this category"' +
+          ' aria-label="Delete the ' + esc(sec.label) + ' category" data-del-sec="' + si + '">×</button>') +
+      '</div>' +
       '<table class="pricing-table"><thead><tr><th>Service</th>' +
       '<th style="text-align:right">Rate ($/hr)</th>' +
       '<th style="text-align:right">Mark-Up ($)</th>' +
@@ -854,6 +911,367 @@ const PricingView = (() => {
     });
   }
 
+  // ── Surcharges ────────────────────────────────────────────────────────────
+
+  const MULTIPLIERS = ['shortNotice', 'weekend', 'afterHours'];
+  const MULT_NAME = { shortNotice: 'Short notice', weekend: 'Weekend & public holiday', afterHours: 'After hours' };
+  /* The modes as the IA's glossary words them, in calc.js's ids. */
+  const MODES = [
+    ['higher', 'Higher of weekend/after hours, short notice on top'],
+    ['multiply', 'Multiply all'],
+    ['highest', 'Highest one only'],
+  ];
+  /* The working week, Monday first; values are getUTCDay numbers (calc.js). */
+  const WEEK = [[1, 'Mon', 'Monday'], [2, 'Tue', 'Tuesday'], [3, 'Wed', 'Wednesday'], [4, 'Thu', 'Thursday'],
+    [5, 'Fri', 'Friday'], [6, 'Sat', 'Saturday'], [0, 'Sun', 'Sunday']];
+
+  /* What the server accepts (routes/pricing.js surchargesProblem). */
+  const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const multOk = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 10;
+  const hintOk = (v) => Number.isInteger(v) && v >= 0 && v <= 365;
+  const officeOk = (s) => CLOCK.test(s.officeStart) && CLOCK.test(s.officeEnd) && s.officeEnd > s.officeStart;
+
+  /* "×1.25", trimmed of float noise: 1.5 × 1.25 × 2 is 3.75, not 3.7500000001. */
+  const times = (f) => '×' + String(Math.round(f * 10000) / 10000);
+
+  /* What one mode makes of a short-notice weekend shoot wholly outside office
+     hours: calc.js's own factor, from the figures as typed. The day runs from
+     office end to the next office start, so every hour of it is after hours
+     (afterHoursShare is 1 whatever the office hours are), and `kind` pins it as
+     a weekend whatever the working week says. null while a figure it needs
+     isn't usable. */
+  function comboExample(mode) {
+    const s = card.surcharges;
+    if (!MULTIPLIERS.every((f) => multOk(s[f])) || !officeOk(s)) return null;
+    const day = { date: '2026-01-03', kind: 'weekend', startTime: s.officeEnd, endTime: s.officeStart };
+    return LSCCalc.surchargeFactor(day, { surcharges: Object.assign({}, s, { mode }) }, true);
+  }
+  const comboFigure = (mode) => {
+    const f = comboExample(mode);
+    return f === null ? '—' : times(f);
+  };
+
+  function combineInfo() {
+    return LSCInfo.markup({
+      id: 'surch-combine',
+      label: 'How the three ways of combining surcharges work',
+      title: 'How surcharges combine',
+      paragraphs: [
+        'Decides what happens when more than one surcharge applies to the same hours of a production day.',
+        '<strong>Higher of weekend/after hours, short notice on top:</strong> an hour that is both weekend and ' +
+          'after hours takes the larger of the two. Short notice then multiplies the result.',
+        '<strong>Multiply all:</strong> every surcharge that applies multiplies the price.',
+        '<strong>Highest one only:</strong> never more than one surcharge, the largest that applies.',
+        'After hours counts only the hours outside office hours, on any day: a weekday booked 9–7, with office ' +
+          'hours ending at 5, surcharges 2 of its 10 hours. A surcharged item is rounded up to the dollar.',
+      ],
+    });
+  }
+
+  /* A multiplier field with its "×" in front. Labelled by its row's name. */
+  function multField(f) {
+    const v = card.surcharges[f];
+    return (
+      '<span class="surch-mult"><span class="surch-x" aria-hidden="true">×</span>' +
+      '<input type="number" class="surch-inp" id="surch-' + f + '" min="1" max="10" step="0.05" inputmode="decimal"' +
+      ' value="' + esc(String(v)) + '" data-surch="' + f + '" aria-label="' + esc(MULT_NAME[f]) + ' multiplier"' +
+      ' aria-describedby="surch-' + f + '-d"></span>'
+    );
+  }
+
+  function surchRow(f, desc, extra) {
+    return (
+      '<div class="surch-row"><div class="surch-copy">' +
+      '<h3 class="surch-name">' + esc(MULT_NAME[f]) + '</h3>' +
+      '<p class="surch-desc" id="surch-' + f + '-d">' + desc + '</p></div>' +
+      '<div class="surch-ctl">' + multField(f) + (extra || '') + '</div></div>'
+    );
+  }
+
+  function surchargesMarkup() {
+    const s = card.surcharges;
+    const days = WEEK.map(([n, short, long]) =>
+      '<label class="surch-day"><input type="checkbox" value="' + n + '" data-surch-day' +
+      (s.workingWeekdays.indexOf(n) !== -1 ? ' checked' : '') + ' aria-label="' + long + '">' +
+      '<span aria-hidden="true">' + short + '</span></label>'
+    ).join('');
+    const modes = MODES.map(([id, words]) =>
+      '<label class="surch-mode-opt"><input type="radio" name="surch-mode" value="' + id + '" data-surch-mode' +
+      (s.mode === id ? ' checked' : '') + ' aria-describedby="surch-ex-' + id + '">' +
+      '<span class="surch-mode-words">' + esc(words) +
+      '<span class="surch-mode-ex" id="surch-ex-' + id + '">Short-notice weekend, after hours: ' +
+      '<span class="surch-mode-f" data-combo="' + id + '">' + comboFigure(id) + '</span></span></span></label>'
+    ).join('');
+
+    return (
+      '<section class="billing-block surch-block" aria-labelledby="surch-title">' +
+      '<div class="bb-head"><div><h2 class="bb-label" id="surch-title">Surcharges</h2>' +
+      '<span class="bb-label-tag">Production only</span></div></div>' +
+      '<p class="surch-intro">Raise the price of the On set category’s items on the days they apply to. The client ' +
+      'sees a higher item price and never the word “surcharge”. ×1 switches one off.</p>' +
+      surchRow('shortNotice',
+        'Ticked on an estimate when the job is booked late, and applies to all of its production days. The editor ' +
+          'suggests it when the first day is this close.',
+        '<label class="surch-sub">Suggest within <input type="number" class="surch-inp surch-inp-days" id="surch-hint"' +
+          ' min="0" max="365" step="1" inputmode="numeric" value="' + esc(String(s.shortNoticeHintDays)) + '"' +
+          ' data-surch="shortNoticeHintDays"> days</label>') +
+      surchRow('weekend',
+        'Days outside your working week, and every date in the public holiday list further down.') +
+      surchRow('afterHours',
+        'Only the share of a day’s booked hours outside office hours, on any day. A weekend evening is both weekend ' +
+          'and after hours.',
+        '<div class="surch-sub surch-office" role="group" aria-label="Office hours">Office hours ' +
+          '<input type="time" class="surch-inp surch-inp-time" id="surch-office-start" value="' + esc(s.officeStart) + '"' +
+          ' data-surch="officeStart" aria-label="Office hours start"> to ' +
+          '<input type="time" class="surch-inp surch-inp-time" id="surch-office-end" value="' + esc(s.officeEnd) + '"' +
+          ' data-surch="officeEnd" aria-label="Office hours end"></div>' +
+        '<fieldset class="surch-week" id="surch-week"><legend class="surch-sub">Working week</legend>' +
+          '<span class="surch-days">' + days + '</span></fieldset>') +
+      '<fieldset class="surch-modes"><legend class="surch-name surch-modes-legend">How surcharges combine' +
+      combineInfo() + '</legend><div class="surch-mode-opts">' + modes + '</div></fieldset>' +
+      '</section>'
+    );
+  }
+
+  /* After a surcharge edit: each option's worked example. In place, so the
+     field being typed in keeps focus. */
+  function refreshCombos() {
+    MODES.forEach(([id]) => {
+      const el = root.querySelector('[data-combo="' + id + '"]');
+      if (el) el.textContent = comboFigure(id);
+    });
+  }
+
+  function surchargeProblems(add) {
+    const s = card.surcharges;
+    MULTIPLIERS.forEach((f) => {
+      if (!multOk(s[f])) add('A surcharge multiplier must be between ×1 and ×10 (×1 switches it off).', $('surch-' + f));
+    });
+    if (!hintOk(s.shortNoticeHintDays)) {
+      add('Short notice’s suggestion must be a whole number of days, 0 to 365.', $('surch-hint'));
+    }
+    if (!officeOk(s)) add('Office hours must end after they start, on the same day.', $('surch-office-end'));
+    if (!s.workingWeekdays.length) {
+      add('Pick at least one day in your working week.', root.querySelector('[data-surch-day]'));
+    }
+  }
+
+  // ── Public holidays ───────────────────────────────────────────────────────
+
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /* 'YYYY-MM-DD' → "Mon 26 Jan", read as text (calc.js dayKind explains why
+     a date string never goes through local Date getters). */
+  function holidayDate(ymd, withYear) {
+    const [y, m, d] = ymd.split('-').map(Number);
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    return DOW[dow] + ' ' + d + ' ' + MON[m - 1] + (withYear ? ' ' + y : '');
+  }
+
+  /* The fetch's timestamp as a local date: "2 Oct 2026". */
+  function fetchedOn(iso) {
+    const t = new Date(iso);
+    return Number.isNaN(t.getTime()) ? null : t.getDate() + ' ' + MON[t.getMonth()] + ' ' + t.getFullYear();
+  }
+
+  const holidayLabel = (h) => (h.name ? h.name : 'Unnamed date');
+
+  function holidaySum() {
+    if (holidayLoad !== 'ready') return '';
+    const on = holidays.lastFetchedAt ? fetchedOn(holidays.lastFetchedAt) : null;
+    return on ? 'Last fetched ' + on : 'Not fetched yet';
+  }
+
+  function holidayYearMarkup(year, today) {
+    const list = holidays.holidays.filter((h) => !h.hidden && h.date.slice(0, 4) === String(year));
+    const items = list.map((h) => {
+      const past = h.date < today;
+      const src = h.source === 'added' ? 'added by you' : 'fetched';
+      return (
+        '<li class="hol-item' + (past ? ' hol-past' : '') + '">' +
+        '<span class="hol-date">' + holidayDate(h.date) + '</span>' +
+        '<span class="hol-name">' + esc(holidayLabel(h)) + '</span>' +
+        '<span class="hol-src hol-src-' + esc(h.source) + '">' + src + '</span>' +
+        '<button type="button" class="del-btn hol-del" data-hol-del="' + esc(h.date) + '"' +
+        ' aria-label="Remove ' + esc(holidayLabel(h)) + ', ' + holidayDate(h.date, true) + '">×</button></li>'
+      );
+    }).join('');
+    return (
+      '<div class="hol-year"><h3 class="hol-year-head">' + year +
+      '<span class="hol-count"> · ' + list.length + ' date' + (list.length === 1 ? '' : 's') + '</span></h3>' +
+      (list.length
+        ? '<ul class="hol-list">' + items + '</ul>'
+        : '<p class="hol-empty">No dates yet. Fetch again, or add them by hand.</p>') +
+      '</div>'
+    );
+  }
+
+  function holidayBodyMarkup() {
+    if (holidayLoad === 'loading') return '<p class="hol-status">Loading public holidays…</p>';
+    if (holidayLoad === 'failed') {
+      return (
+        '<p class="hol-status">Couldn’t load the holiday list. ' +
+        '<button type="button" class="pricing-state-link" id="hol-retry">Try again</button></p>'
+      );
+    }
+    const today = LSCUtil.today();
+    const year = Number(today.slice(0, 4));
+    const add = addingHoliday
+      ? '<form class="hol-add" id="hol-add" novalidate>' +
+        '<label class="hol-field"><span>Date</span><input type="date" id="hol-add-date" required></label>' +
+        '<label class="hol-field hol-field-name"><span>Name <span class="hol-optional">(optional)</span></span>' +
+        '<input type="text" id="hol-add-name" maxlength="100" placeholder="e.g. NSW Bank Holiday"></label>' +
+        '<span class="hol-add-btns"><button type="submit" class="btn btn-accent btn-sm">Add date</button><button type="button" class="btn btn-ghost btn-sm" id="hol-add-cancel">Cancel</button></span>' +
+        '</form>'
+      : '';
+    return (
+      '<p class="surch-intro">A production day on one of these dates takes the weekend &amp; public holiday ' +
+      'surcharge. National and NSW holidays, fetched for this year and next. <strong>Changes here save straight ' +
+      'away</strong>; estimates already saved keep the dates they were priced with.</p>' +
+      '<p class="hol-note">The NSW Bank Holiday (the first Monday in August) isn’t in the source. Add it by hand ' +
+      'if it affects your bookings.</p>' +
+      '<div class="hol-years">' + holidayYearMarkup(year, today) + holidayYearMarkup(year + 1, today) + '</div>' +
+      '<p class="hol-error" id="hol-error" role="alert"></p>' +
+      add +
+      '<div class="pricing-sec-foot hol-foot"><span class="pricing-hint" id="hol-sum-foot">' + esc(holidaySum()) + '</span>' +
+      '<span class="pricing-sec-foot-btns">' +
+      (addingHoliday ? '' : '<button type="button" class="btn btn-ghost btn-sm" id="hol-add-open">+ Add a date</button>') +
+      '<button type="button" class="btn btn-ghost btn-sm" id="hol-fetch">' +
+      (holidayBusy === 'fetch' ? 'Fetching…' : 'Fetch again') + '</button></span></div>'
+    );
+  }
+
+  function holidaysMarkup() {
+    return (
+      '<section class="billing-block hol-block" aria-labelledby="hol-title">' +
+      '<div class="bb-head"><div><h2 class="bb-label" id="hol-title">Public holidays</h2>' +
+      '<span class="bb-label-tag">National + NSW</span></div></div>' +
+      '<div id="hol-body">' + holidayBodyMarkup() + '</div></section>'
+    );
+  }
+
+  /* Re-renders the holiday block alone, then puts focus on `focusSel` if
+     given and present (else `fallbackSel`). */
+  function paintHolidays(focusSel, fallbackSel) {
+    const body = $('hol-body');
+    if (!body) return;
+    body.innerHTML = holidayBodyMarkup();
+    const target = (focusSel && body.querySelector(focusSel)) || (fallbackSel && body.querySelector(fallbackSel));
+    if (target) target.focus();
+  }
+
+  async function loadHolidays() {
+    holidayLoad = 'loading';
+    paintHolidays();
+    try {
+      holidays = await LSCApi.get('/api/holidays');
+      holidayLoad = 'ready';
+    } catch (err) {
+      if (err instanceof LSCApi.ApiError && err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      holidayLoad = 'failed';
+    }
+    if (onScreen()) paintHolidays();
+  }
+
+  /* Busy, in place: the block is marked aria-busy and "Fetch again" reads
+     "Fetching…". Nothing is disabled or re-rendered, either of which would
+     drop focus from the button just pressed; a second press while busy is
+     simply ignored (holidayRequest). */
+  function markBusy(kind) {
+    holidayBusy = kind;
+    const body = $('hol-body');
+    if (!body) return;
+    body.setAttribute('aria-busy', kind ? 'true' : 'false');
+    const f = $('hol-fetch');
+    if (f) f.textContent = kind === 'fetch' ? 'Fetching…' : 'Fetch again';
+  }
+
+  /* One holiday request: busy while it runs, the list replaced by the
+     server's on success (the caller re-paints and places focus), and on
+     failure a sentence in the block with everything else left as it was,
+     the add form's typing included. Returns the reply, or false. */
+  async function holidayRequest(kind, send, failWords) {
+    if (holidayBusy) return false;
+    LSCUtil.clearFieldErrors($('hol-error'));
+    markBusy(kind);
+    try {
+      const reply = await send();
+      holidays = { holidays: reply.holidays, lastFetchedAt: reply.lastFetchedAt };
+      holidayBusy = false;
+      return reply;
+    } catch (err) {
+      markBusy(false);
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') {
+        handlers.onAuthLost({ keepScreen: true });
+        return false;
+      }
+      if (!onScreen()) return false;
+      const words = err.kind === 'network'
+        ? 'the server is unreachable. Try again once it’s back.'
+        : HOLIDAY_REFUSALS[err.code] || err.message || 'the server refused the request.';
+      const box = $('hol-error');
+      box.textContent = failWords + words;
+      box.classList.add('show');
+      return false;
+    }
+  }
+
+  const HOLIDAY_REFUSALS = {
+    holiday_date_invalid: 'that isn’t a real date.',
+    holiday_name_invalid: 'the name isn’t text.',
+    holiday_name_too_long: 'the name is longer than 100 characters.',
+    holiday_not_found: 'it had already gone. Reload the page to see the current list.',
+  };
+
+  async function fetchHolidays() {
+    const reply = await holidayRequest('fetch', () => LSCApi.post('/api/holidays/fetch'), 'Couldn’t fetch: ');
+    if (!reply || !onScreen()) return;
+    const n = (reply.added || []).length;
+    paintHolidays('#hol-fetch');
+    Toast.ok(n ? 'Fetched ' + n + ' new date' + (n === 1 ? '' : 's') + '.' : 'The list is up to date.');
+  }
+
+  async function addHoliday() {
+    const dateInp = $('hol-add-date');
+    const nameInp = $('hol-add-name');
+    const date = dateInp.value;
+    const name = nameInp.value.trim();
+    const box = $('hol-error');
+    const refuse = (msg, field) => LSCUtil.showFieldErrors(box, [{ msg, fields: [field] }]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return refuse('Pick a date to add.', dateInp);
+    const existing = holidays.holidays.find((h) => h.date === date && !h.hidden);
+    if (existing) return refuse(holidayDate(date, true) + ' is already on the list, as “' + holidayLabel(existing) + '”.', dateInp);
+    const reply = await holidayRequest('add',
+      () => LSCApi.put('/api/holidays/' + date, { name }), 'Couldn’t add it: ');
+    if (!reply) return;
+    addingHoliday = false;
+    if (!onScreen()) return;
+    paintHolidays('#hol-add-open');
+    Toast.ok('Added ' + holidayDate(date, true) + '.');
+  }
+
+  async function removeHoliday(date) {
+    const h = holidays.holidays.find((x) => x.date === date);
+    if (!h) return;
+    const confirmed = window.confirm(
+      'Remove “' + holidayLabel(h) + '” (' + holidayDate(date, true) + ')?\n\n' +
+        'New production days on it won’t take the public holiday surcharge. Estimates already saved keep it.' +
+        (h.source === 'fetched' ? ' Fetching again won’t bring it back; add the date by hand if you change your mind.' : '')
+    );
+    if (!confirmed) return;
+    /* Where focus goes once the row has gone: the next row's remove, else
+       the previous one's, else "+ Add a date". */
+    const dels = Array.from(root.querySelectorAll('[data-hol-del]')).map((b) => b.dataset.holDel);
+    const at = dels.indexOf(date);
+    const next = dels[at + 1] || dels[at - 1];
+    const reply = await holidayRequest('remove', () => LSCApi.del('/api/holidays/' + date), 'Couldn’t remove it: ');
+    if (!reply || !onScreen()) return;
+    paintHolidays(next ? '[data-hol-del="' + next + '"]' : null, '#hol-add-open');
+    Toast.ok('Removed ' + holidayDate(date, true) + '.');
+  }
+
   function markup() {
     let html =
       '<div class="page-head"><div><h1 class="page-title">Rate Card</h1>' +
@@ -884,7 +1302,11 @@ const PricingView = (() => {
       '</div></div>' +
       '<div class="pricing-catalogue-bar">' +
       '<span class="pricing-hint">These categories and services are exactly what you pick from when building an estimate.</span>' +
-      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-cat">+ Add Category</button>' +
+      '<span class="pricing-sec-foot-btns">' +
+      (card.labourSections.some((s) => s.id === ADDITIONAL_ID)
+        ? ''
+        : '<button type="button" class="btn btn-ghost btn-sm" id="js-add-additional">+ Add Additional work</button>') +
+      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-cat">+ Add Category</button></span>' +
       '</div>' +
       /* Directly above the tables, so it is read before the first read-only
          field is reached rather than after. #pricing-rate-note is the target of
@@ -915,6 +1337,7 @@ const PricingView = (() => {
     });
     html += travelSectionMarkup();
     html += '</div>';
+    html += surchargesMarkup();
 
     html +=
       '<div id="pricing-error" role="alert"></div>' +
@@ -925,7 +1348,10 @@ const PricingView = (() => {
       '<button type="button" class="btn btn-ghost btn-sm" id="js-reset" data-write>Reset Defaults</button>' +
       '<button type="button" class="btn btn-accent" id="js-save-pricing" data-write>' +
       '<span class="spinner" id="save-spin"></span><span id="save-label">Save Services</span></button>' +
-      '</div></div>';
+      '</div></div>' +
+      /* Below the save bar: it saves itself (see SURCHARGES AND PUBLIC
+         HOLIDAYS above), and the bar's Save has nothing to do with it. */
+      holidaysMarkup();
 
     return html;
   }
@@ -1133,6 +1559,36 @@ const PricingView = (() => {
     $('tax-inp').addEventListener('input', function () {
       taxRaw = this.value;
     });
+
+    /* The Surcharges block (see SURCHARGES above). A figure that isn't one
+       is held as '', as the Service Day's are, so the save can name the field;
+       a time input reads '' until all of it is filled in. Every edit updates
+       the combine options' examples in place. */
+    root.querySelectorAll('[data-surch]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const f = input.dataset.surch;
+        if (input.type === 'time') card.surcharges[f] = input.value;
+        else {
+          const v = input.value === '' ? NaN : Number(input.value);
+          card.surcharges[f] = Number.isFinite(v) ? v : '';
+        }
+        refreshCombos();
+      });
+    });
+    root.querySelectorAll('[data-surch-day]').forEach((box) => {
+      box.addEventListener('change', () => {
+        // Ascending, as calc.js surchargeSettings holds them, so ticking a day
+        // off and on again is no change.
+        card.surcharges.workingWeekdays = Array.from(root.querySelectorAll('[data-surch-day]:checked'))
+          .map((b) => Number(b.value))
+          .sort((a, b) => a - b);
+      });
+    });
+    root.querySelectorAll('[data-surch-mode]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        if (radio.checked) card.surcharges.mode = radio.value;
+      });
+    });
   }
 
   function bindStructure() {
@@ -1170,6 +1626,19 @@ const PricingView = (() => {
       });
     });
 
+    /* The post-shoot section (D14), under the id later stages look it up by.
+       Empty: which services go in it, Overtime included, is the user's call.
+       Focus goes to its name, as a new service's does. */
+    const addAdditional = $('js-add-additional');
+    if (addAdditional) {
+      addAdditional.addEventListener('click', () => {
+        card.labourSections.push({ id: ADDITIONAL_ID, label: 'Additional work', rows: [] });
+        render();
+        const inp = root.querySelector('.pricing-sec-label-inp[data-si="' + (card.labourSections.length - 1) + '"]');
+        if (inp) inp.focus();
+      });
+    }
+
     $('js-add-travel').addEventListener('click', () => {
       card.travelRows.push({ id: newRowId(), name: 'New Item', rate: 0, mu: 0 });
       render();
@@ -1191,7 +1660,8 @@ const PricingView = (() => {
       btn.addEventListener('click', () => {
         const si = parseInt(btn.dataset.delSec, 10);
         const sec = card.labourSections[si];
-        if (!sec) return;
+        // Production is on set and never deleted (D24); it has no button.
+        if (!sec || sec.id === ON_SET_ID) return;
         const count = sec.rows.length;
         const confirmed = window.confirm(
           'Delete the “' + sec.label + '” category and its ' + count + ' service' +
@@ -1283,6 +1753,16 @@ const PricingView = (() => {
         return out;
       }),
       taxSetAsideRate: parseFloat(taxRaw) / 100,
+      surcharges: {
+        shortNotice: card.surcharges.shortNotice,
+        shortNoticeHintDays: card.surcharges.shortNoticeHintDays,
+        weekend: card.surcharges.weekend,
+        afterHours: card.surcharges.afterHours,
+        officeStart: card.surcharges.officeStart,
+        officeEnd: card.surcharges.officeEnd,
+        workingWeekdays: card.surcharges.workingWeekdays.slice(),
+        mode: card.surcharges.mode,
+      },
       // Without it the server refuses the card as outdated (calc.js PRICING_SHAPE).
       pricingShape: LSCCalc.PRICING_SHAPE,
     };
@@ -1308,7 +1788,7 @@ const PricingView = (() => {
       const reply = await LSCApi.put('/api/pricing', body);
       // Only now is this the card estimates are priced against.
       LSCData.setPricing(reply.pricing);
-      card = clone(reply.pricing);
+      card = workingCopy(reply.pricing);
       taxRaw = toPercent(reply.pricing.taxSetAsideRate);
       stoppedFollowing = {};
       baseline = snapshot();
@@ -1350,6 +1830,12 @@ const PricingView = (() => {
     travel_price_missing: 'a travel item has no price. Type one, or tick Your time to follow your floor.',
     travel_per_km_flags: 'the vehicle per km row can’t also be Direct or Your time. Reload the page and try again.',
     tax_set_aside_rate_not_a_fraction: 'the tax set-aside rate must be between 0 and 100.',
+    surcharges_invalid: 'the surcharge settings are malformed. Reload the page and try again.',
+    surcharge_multiplier_out_of_range: 'a surcharge multiplier must be between ×1 and ×10.',
+    surcharge_hint_days_out_of_range: 'short notice’s suggestion must be a whole number of days, 0 to 365.',
+    surcharge_office_hours_invalid: 'office hours must end after they start.',
+    surcharge_weekdays_invalid: 'pick at least one day in your working week.',
+    surcharge_mode_invalid: 'pick how surcharges combine.',
   };
 
   async function reset() {
@@ -1381,7 +1867,7 @@ const PricingView = (() => {
          ids (see ROW IDS above), and the unit view is keyed by id — without
          them every row would share one entry, and switching one row's unit
          would switch them all. */
-      card = clone(reply.pricing);
+      card = workingCopy(reply.pricing);
       assignRowIds(card);
       viewUnits = {};
       showDefault = 'hour';
@@ -1429,6 +1915,10 @@ const PricingView = (() => {
     handlers = viewHandlers;
     saving = false;
     usage = null;
+    holidays = null;
+    holidayLoad = 'loading';
+    holidayBusy = false;
+    addingHoliday = false;
 
     const pricing = LSCData.pricing();
     /* A server not yet on v9 serves a card this screen can't read: every row
@@ -1441,11 +1931,7 @@ const PricingView = (() => {
       root.innerHTML = outdatedMarkup();
       return;
     }
-    card = clone({
-      serviceDay: pricing.serviceDay,
-      labourSections: pricing.labourSections || [],
-      travelRows: pricing.travelRows || [],
-    });
+    card = workingCopy(pricing);
     viewUnits = {};
     showDefault = 'hour';
     stoppedFollowing = {};
@@ -1479,7 +1965,9 @@ const PricingView = (() => {
        so a listener bound to one button would be lost with it. */
     root.addEventListener('click', onRootClick);
     root.addEventListener('change', onRootChange);
+    root.addEventListener('submit', onRootSubmit);
     loadUsage();
+    loadHolidays();
     focusRow(handlers && handlers.focusRow);
   }
 
@@ -1501,7 +1989,32 @@ const PricingView = (() => {
     showUnit(parseInt(sel.dataset.si, 10), parseInt(sel.dataset.ri, 10), sel.value, '.pricing-unit-sel');
   }
 
+  /* The Public holidays block's buttons, delegated: the block re-renders on
+     its own (paintHolidays). */
+  function onHolidayClick(event) {
+    const btn = event.target.closest('#hol-body button');
+    if (!btn || !root.contains(btn)) return false;
+    if (btn.id === 'hol-retry') loadHolidays();
+    else if (btn.id === 'hol-fetch') fetchHolidays();
+    else if (btn.id === 'hol-add-open') {
+      addingHoliday = true;
+      paintHolidays('#hol-add-date');
+    } else if (btn.id === 'hol-add-cancel') {
+      addingHoliday = false;
+      paintHolidays('#hol-add-open');
+    } else if (btn.dataset.holDel) removeHoliday(btn.dataset.holDel);
+    else return false;
+    return true;
+  }
+
+  function onRootSubmit(event) {
+    if (event.target.id !== 'hol-add') return;
+    event.preventDefault();
+    addHoliday();
+  }
+
   function onRootClick(event) {
+    if (onHolidayClick(event)) return;
     const show = event.target.closest('[data-show-all]');
     if (show && root.contains(show)) {
       const unit = show.dataset.showAll;
