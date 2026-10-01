@@ -141,7 +141,9 @@ const LSCApi = (() => {
     throw new ApiError(
       res.status >= 500 ? 'server' : 'client',
       (payload && payload.message) || 'The server rejected that request.',
-      { status: res.status, code }
+      // `data`: the whole reply, for a refusal that carries more than its code
+      // (date_locked names the date, so the editor can point at that day).
+      { status: res.status, code, data: payload }
     );
   }
 

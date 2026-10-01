@@ -1,0 +1,390 @@
+/* The estimate editor's Production Booking block and its add-day dialog
+   (js/views/booking-block.js). New classes only: every other editor block
+   keeps its rules, so nothing above or below this one moves.
+
+   Written phone first. The calendar sits above the day cards until 1100px,
+   then beside them, at the ~420px the brief gives it (Responsive Behavior). */
+
+/* responsive.css gives every .billing-block a 660px floor below 1100 and lets
+   it scroll sideways, so the editor's money grids can't squash. This block has
+   no grid: its content wraps, and that floor would push its head past the
+   block's edge. Doubled class to outrank it from this earlier file (the same
+   fix as the Rate Card's Surcharges block). */
+.billing-block.booking-block {
+  overflow-x: hidden;
+}
+.billing-block.booking-block .bb-head {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  cursor: pointer;
+}
+
+/* ── The head: a disclosure button and a one-line summary ─────────────────── */
+
+.booking-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.booking-block.is-open .bb-chevron {
+  transform: rotate(90deg);
+}
+.booking-head .bb-sum {
+  font-variant-numeric: tabular-nums;
+}
+@media (min-width: 768px) {
+  .booking-toggle {
+    min-height: 0;
+  }
+}
+
+/* ── The body: calendar and cards ──────────────────────────────────────────── */
+
+.booking-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  padding: 16px 14px;
+}
+.booking-body[hidden] {
+  display: none;
+}
+@media (min-width: 1100px) {
+  .booking-body {
+    grid-template-columns: 420px minmax(0, 1fr);
+    align-items: start;
+    padding: 16px;
+  }
+}
+.booking-load-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.booking-days-col {
+  container: days / inline-size;
+  min-width: 0;
+}
+.booking-days-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.booking-days-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.booking-days-bar .btn {
+  min-height: 44px;
+}
+@media (min-width: 768px) {
+  .booking-days-bar .btn {
+    min-height: 0;
+  }
+}
+.booking-empty {
+  padding: 18px 14px;
+  border: 1px dashed var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.booking-empty[hidden] {
+  display: none;
+}
+
+/* ── A day card ────────────────────────────────────────────────────────────── */
+
+.day-cards {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.day-cards:empty {
+  display: none;
+}
+/* A status rail down the left edge, in the calendar's own colours (hatched
+   when pencilled), so a card and its tile read as the same thing. The word is
+   in the chip beside the title: the rail is never the only signal. */
+.day-card {
+  position: relative;
+  padding: 10px 12px 12px 16px;
+  background: rgba(61, 74, 92, 0.12);
+  border: 1px solid var(--border);
+}
+.day-card::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  bottom: -1px;
+  width: 4px;
+  background: var(--cal-confirmed);
+}
+.day-card.is-pencilled::before {
+  background: var(--cal-hatch);
+}
+.day-card.is-proposed::before {
+  background: var(--cal-proposed);
+}
+.day-card.is-locked {
+  border-color: var(--err-border);
+}
+
+.day-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.day-card-title {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.day-card-del {
+  margin-left: auto;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 18px;
+}
+@media (min-width: 768px) {
+  .day-card-del {
+    min-width: 28px;
+    min-height: 28px;
+    font-size: 16px;
+  }
+}
+
+/* Label above field, one per row on a phone; four across once the column can
+   hold them (the editor at 768 and up). */
+.day-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+@container days (min-width: 460px) {
+  .day-fields {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
+    gap: 10px 8px;
+    align-items: start;
+  }
+}
+.day-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.day-field label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.day-field .text-inp,
+.day-field .svc-select {
+  width: 100%;
+  max-width: none;
+  min-height: 44px;
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  color-scheme: dark;
+}
+@media (min-width: 768px) {
+  .day-field .text-inp,
+  .day-field .svc-select {
+    min-height: 30px;
+    font-size: 12px;
+  }
+}
+.day-hint {
+  font-size: 10px;
+  color: var(--muted);
+}
+.day-note {
+  margin-top: 10px;
+}
+.day-note[hidden] {
+  display: none;
+}
+
+.day-overnight,
+.day-clash {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.day-overnight {
+  color: var(--text);
+}
+.day-overnight[hidden],
+.day-clash[hidden] {
+  display: none;
+}
+/* Another project's booking on this date. A pencil is a heads-up in the
+   pencilled colour's rule; a lock (D16) uses the app's error treatment, because
+   it is the one that stops the save. */
+.day-clash {
+  padding-left: 8px;
+  border-left: 2px solid var(--cal-pencilled);
+  color: var(--muted);
+}
+.day-clash.is-note {
+  border-left-color: var(--cal-confirmed);
+}
+.day-clash.is-lock {
+  padding: 8px 10px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+}
+
+/* ── The add-day dialog ────────────────────────────────────────────────────── */
+
+/* A bottom sheet on a phone, full width, buttons full width at 44px
+   (brief, Responsive Behavior); a centred box from 768px. */
+#modal-add-day {
+  align-items: flex-end;
+}
+#modal-add-day .ad-box {
+  width: 100%;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  border-bottom: none;
+}
+@media (min-width: 768px) {
+  #modal-add-day {
+    align-items: center;
+  }
+  #modal-add-day .ad-box {
+    width: 460px;
+    max-width: 95vw;
+    padding: 26px 30px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+.ad-eyebrow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+#modal-add-day .modal-title {
+  margin-bottom: 14px;
+}
+.ad-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.ad-msg {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.ad-msg b {
+  color: var(--text);
+  font-weight: 600;
+}
+.ad-msg.is-warn {
+  padding-left: 10px;
+  border-left: 2px solid var(--cal-pencilled);
+  color: var(--text);
+}
+.ad-msg.is-lock {
+  padding: 9px 12px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+}
+.ad-msg.is-lock b {
+  color: var(--err-text);
+}
+.ad-note {
+  margin-bottom: 14px;
+}
+.ad-note input {
+  min-height: 44px;
+  font-size: 16px;
+}
+.ad-note-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (min-width: 768px) {
+  .ad-note input {
+    min-height: 0;
+    font-size: 13px;
+  }
+}
+
+.ad-adds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ad-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ad-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--row-hover);
+}
+.ad-add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* The status's own mark: a solid square, a hatched square, a quarter square. */
+.ad-swatch {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  background: var(--cal-confirmed);
+}
+.ad-add.is-pencilled .ad-swatch {
+  background: var(--cal-hatch);
+}
+.ad-add.is-proposed .ad-swatch {
+  width: 7px;
+  height: 7px;
+  margin: 0 3.5px;
+  background: var(--cal-proposed);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .booking-block .bb-chevron,
+  .ad-add {
+    transition: none;
+  }
+}

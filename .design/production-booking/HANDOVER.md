@@ -110,8 +110,19 @@ times.
           - faded is an outline, not opacity;
           - tiles vs dots goes by the calendar's own width.
 
-**Exact next item: TASKS.md task 6, the editor's Production Booking block and day cards**
-(frontend, **Opus/high**). Commit task 5 first.
+      - [x] **Task 5** committed 2026-10-02 (`cbe5f07`).
+      - [x] **Task 6, the editor's Production Booking block**: done 2026-10-02, **uncommitted**.
+        - **What exists now:** `web/js/views/booking-block.js` and `web/css/booking.css`. The
+          editor sends `days` on every save, blocks a save with a locked day, and handles the 409.
+          `api.js` refusals carry `err.data`.
+        - **Read task 6's Done note before task 7.** It has the block's API and the interpretations
+          to show the user (TBC starts Proposed; a day booked first needs no note; the same date
+          twice is allowed).
+        - **Task 7 hooks in at two points.** Production lines need a `dayId` from these cards, and
+          `onChange` already calls `recalc`. The remove confirm already says items go with the day.
+
+**Exact next item: TASKS.md task 7, production items on days, priced with surcharges** (**money
+math, Opus/high**). Commit task 6 first.
 
 **Seams left for later tasks:**
 - **Holidays (task 7):** the `GET` returns hidden rows too, flagged. The Rate Card list filters on

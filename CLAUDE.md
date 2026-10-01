@@ -94,8 +94,10 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    the same day, committed `a571c67`; task 3 (public holidays: `/api/holidays` routes and a boot
    fetch from Nager.Date) committed `a7c1dc7` the same day; task 4 (the Rate Card's Surcharges and
    Public holidays blocks, Additional work in the defaults) committed `da2db86`; task 5 (the shared
-   month calendar component, `web/js/calendar.js`) done the same day, uncommitted. None of it is
-   deployed.** Next is task 6 (the editor's Production Booking block, Opus/high). Client pages are light, in the
+   month calendar component, `web/js/calendar.js`) committed `cbe5f07`; task 6 (the editor's
+   Production Booking block: day cards, add-day pop-up, clash lock) done the same day, uncommitted.
+   None of it is deployed.** Next is task 7 (production items on days, priced with surcharges;
+   money math, Opus/high). Client pages are light, in the
    colours of the user's site **lsccreative.studio** (formerly creativelsc.com). Read its `HANDOVER.md` first. Build bucket: Opus, effort high.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes

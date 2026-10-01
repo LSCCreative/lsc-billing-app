@@ -85,6 +85,7 @@ const EstimateEditor = (() => {
   let saving = false;
   let link = null; // { id, name } of the client record this estimate points at
   let baseline = ''; // the form as it was at mount, for the unsaved-edit check
+  let booking = null; // the Production Booking block (views/booking-block.js)
 
   /* The two Finance figures the advisory floor is built from, resolved once at
      mount. Same reasoning as pricing.js's computedRate: nothing reachable from
@@ -778,6 +779,8 @@ const EstimateEditor = (() => {
           (estimate && estimate.gstFree ? ' checked' : '') + '><span>GST-free job</span></label>'
         : '') +
       '</div>' +
+      // The Production Booking block (production-booking task 6), filled by BookingBlock.mount.
+      '<div id="booking-slot"></div>' +
       ratesBarMarkup() +
       // Where a line's unit switch is announced (switchUnit).
       '<p class="sr-only" id="editor-live" aria-live="polite"></p>';
@@ -1449,6 +1452,8 @@ const EstimateEditor = (() => {
       gstFree: gstFreeNow(),
       client,
       activeRows: collect(),
+      // Replaces the estimate's days whole on the server, so it is always sent.
+      days: booking ? booking.payloadDays() : [],
       // Says this build prices lines from the v9 card; the server refuses an
       // estimate write without it (calc.js PRICING_SHAPE says why).
       pricingShape: LSCCalc.PRICING_SHAPE,
@@ -1479,6 +1484,13 @@ const EstimateEditor = (() => {
     // The client's ABN prints on the invoice.
     if (body.client.abn && !abnValid(body.client.abn)) {
       fieldError('That client ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.', 'f-abn');
+      return;
+    }
+
+    // A day on a date another project has confirmed, with no specification note (D16).
+    const locked = booking && booking.lockProblem();
+    if (locked) {
+      fieldError(locked.msg, locked.fieldId);
       return;
     }
 
@@ -1521,6 +1533,12 @@ const EstimateEditor = (() => {
       Toast.hide();
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      // Confirmed by another project since this editor last looked: point at that day's note.
+      if (err.code === 'date_locked' && booking) {
+        const lock = booking.serverLocked(err.data && err.data.date, err.data && err.data.upid);
+        if (lock.fieldId) return fieldError(lock.msg, lock.fieldId);
+        return showError(lock.msg);
+      }
       showError(
         err.kind === 'network'
           ? 'Couldn’t save — the server is unreachable. Your work is still here; try again once it’s back.'
@@ -1585,6 +1603,10 @@ const EstimateEditor = (() => {
     $('js-save').addEventListener('click', save);
     const del = $('js-delete');
     if (del) del.addEventListener('click', remove);
+
+    ['f-upid', 'f-name', 'f-business'].forEach((id) =>
+      $(id).addEventListener('change', () => booking.refreshIdentity())
+    );
 
     const business = $('f-business');
     ClientTypeahead.attach(business, { onPick: pickClient });
@@ -1692,6 +1714,19 @@ const EstimateEditor = (() => {
 
     root.innerHTML = formMarkup(estimate, pricing);
     restoreRows(activeRows, pricing);
+    booking = BookingBlock.mount($('booking-slot'), {
+      estimate,
+      // Collapsed unless there is booking to show (D64).
+      hasProductionItems: Array.isArray(activeRows.prod) && activeRows.prod.length > 0,
+      // How this estimate's own tiles are labelled on the calendar, read live.
+      identity: () => ({
+        upid: $('f-upid').value.trim(),
+        projectName: $('f-name').value.trim(),
+        client: $('f-business').value.trim(),
+      }),
+      // Days don't move a price yet; task 7 prices production items on them.
+      onChange: recalc,
+    });
     bind(pricing);
     paintLink();
     recalc();

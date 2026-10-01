@@ -407,7 +407,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
     - **Nothing moved:** the Estimates screen's element rects at 1280 are identical with and
       without `calendar.css`. The console shows no errors.
 
-- [ ] **6. Editor: the Production Booking block and day cards** (frontend — Opus/high).
+- [x] **6. Editor: the Production Booking block and day cards** (frontend — Opus/high).
   _Depends on: 2, 5._
   - A collapsible `.billing-block` below the doc-type bar. It's collapsed unless the estimate
     has days or production items (D64), and its head summarises them.
@@ -425,6 +425,83 @@ State the bucket out loud and pause for the user to switch before starting a tas
   **Done when**: three days can be added, edited, moved and removed; lock and override work
   against a second project in the scratch DB; nothing else in the editor moves at 1280. _Reuses:
   `.billing-block`, `Modal`, `LSCUnsaved`._
+
+  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is unchanged at 349/349:
+  no server change. New: `web/js/views/booking-block.js` and `web/css/booking.css`. Changed:
+  `estimate-editor.js` (a slot, `days` in `payload()`, the lock check before save, the 409),
+  `api.js` (a refusal now carries its whole reply as `err.data`), and `index.html` (the script,
+  the stylesheet and a `#modal-add-day` overlay).
+  - **`BookingBlock.mount(slot, { estimate, identity, hasProductionItems, onChange })`** returns
+    `{ payloadDays, lockProblem, serverLocked, refreshIdentity }`.
+    - It keeps its own day state and doesn't read the DOM. `payloadDays()` is sorted by date with
+      TBC days last, so the server's `sort` matches what's on screen.
+    - Day ids are `d` + a random UUID's hex, made in the browser.
+    - `onChange` is wired to the editor's `recalc`. That does nothing yet, and task 7 needs it.
+  - **Collapsed unless** the estimate has days or `prod` lines (D64). Every scratch estimate has a
+    `prod` line, so they all open. A new estimate starts closed. **Nothing is fetched until the
+    block opens:** the calendar mounts on first open, and each month it shows is then fetched from
+    `/api/calendar`.
+  - **The calendar:** this estimate's days come from the editor's live state, labelled with the
+    UPID, name and business as typed, and refreshed on `change`. The server's copy of them is
+    dropped, so they're never drawn twice. Other projects' days are faded.
+    - Clicking a date, or pressing Enter on it, opens the add-day pop-up.
+    - Clicking one of this estimate's tiles focuses that card. Clicking another project's tile
+      opens the pop-up for its date, which names who has it (D23).
+  - **The lock mirrors `days.js` `lockedDay` exactly.** It applies only to a day that is new, has
+    moved, or has just been made confirmed, on a date another estimate has confirmed, with no note.
+    - **In the pop-up:** the three buttons stay disabled until a note is typed, and focus starts
+      in the note.
+    - **On a card:** the error-style line plus the note field (`aria-invalid`). The lock is
+      announced once, through the block's polite live region.
+    - **Save:** `lockProblem()` stops it client-side and focuses that day's note. A 409
+      `date_locked` (someone confirmed the date since the editor fetched) does the same through
+      `serverLocked(date, upid)`, which also re-fetches the month on show.
+  - **Pencilled elsewhere:** "Already pencilled for X. Add anyway?" in the pop-up, and "Also
+    pencilled for X." on the card. Proposed elsewhere says nothing (D15).
+  - **Interpretations the user may want to check:**
+    - **A Date TBC day starts as Proposed** (the card's select changes it). It is on no calendar,
+      and accepting leaves it alone (D18), so Proposed is the least committal choice.
+    - **A day booked before another project confirmed its date** reads "Since confirmed for X.
+      This day was booked first." It isn't asked for a note, matching the server.
+    - **The same date twice on one estimate is allowed.** The pop-up notes it ("This estimate
+      already has a day on…").
+    - **Remove uses `window.confirm`**, as the editor's own Delete does. The wording already
+      warns that items on the day go too, ready for task 7.
+  - **Layout** (phone first): the calendar sits above the cards, and beside them at 420px from
+    1100. Card fields stack on a phone and go four across once the cards' column is 460px wide (a
+    container query). The pop-up is a full-width bottom sheet with 44px buttons below 768, and a
+    460px box above. Like the Rate Card's blocks, it opts out of `responsive.css`'s 660px
+    `.bb-head` floor.
+  - **Verified** against `api-scratch`, mostly with dispatched events:
+    - **Days:** three days added (confirmed, pencilled, TBC), an overnight time ("Ends next day"
+      shown), saved, and reloaded intact. The total was unchanged at $400 (no lines on days yet),
+      and the surcharge snapshot was stored.
+    - **Unsaved guard:** clean on open, dirty after a status change, clean again once it's
+      reverted.
+    - **Second project ("Test draft", now UPID `TST-001`):**
+      - lock and override in the pop-up, and the pencil warning;
+      - a cleared note re-locks the day;
+      - save is blocked and focus goes to that day's note;
+      - a moved day re-checks;
+      - the saved note is stored with its day.
+    - **Server 409:** a raw-API PUT confirmed 21 Oct on Audit A behind the editor's back. The save
+      then came back 409, and the right card locked with its note focused.
+    - **Other paths:** a new estimate is collapsed with zero `/api/calendar` requests until
+      opened; Enter on a cell opens the pop-up, and Escape returns focus to the cell; remove asks
+      first, then focuses the next card.
+    - **Nothing moved:** at 1280, all 303 other editor elements kept their x, width and height.
+      Those above the block didn't move, and every one below shifted by the same 755.9px (the
+      block plus its margin).
+    - **Overflow and targets:** no document overflow at 1280, 800 or 375. At 375 every control
+      in the block is at least 44px and the calendar shows dots. The sheet is full width at the
+      bottom, with 44px buttons.
+    - **Console:** only the intended 409, and Chrome blocking the unsaved prompt on scripted
+      reloads.
+  - **Scratch DB state for task 7:**
+    - Audit A (`est_8dca1cee`) has Sat 3 Oct (confirmed), Wed 14 Oct 18:00–02:00 (pencilled),
+      Wed 21 Oct (confirmed, added by the raw API) and a TBC day.
+    - "Test draft" is now `TST-001`, with Sat 3 Oct (confirmed, note "Subcontractor shooting")
+      and Wed 14 Oct (proposed).
 
 - [ ] **7. Editor: production items live on days, priced with surcharges** (money math —
   Opus/high). _Depends on: 1, 6._
