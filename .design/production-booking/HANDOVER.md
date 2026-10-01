@@ -111,33 +111,40 @@ times.
           - tiles vs dots goes by the calendar's own width.
 
       - [x] **Task 5** committed 2026-10-02 (`cbe5f07`).
-      - [x] **Task 6, the editor's Production Booking block**: done 2026-10-02, **uncommitted**.
+      - [x] **Task 6, the editor's Production Booking block**: committed 2026-10-02 (`685ebbb`).
         - **What exists now:** `web/js/views/booking-block.js` and `web/css/booking.css`. The
           editor sends `days` on every save, blocks a save with a locked day, and handles the 409.
           `api.js` refusals carry `err.data`.
-        - **Read task 6's Done note before task 7.** It has the block's API and the interpretations
-          to show the user (TBC starts Proposed; a day booked first needs no note; the same date
-          twice is allowed).
-        - **Task 7 hooks in at two points.** Production lines need a `dayId` from these cards, and
-          `onChange` already calls `recalc`. The remove confirm already says items go with the day.
+        - Its Done note has the block's API and the interpretations to show the user (TBC starts
+          Proposed; a day booked first needs no note; the same date twice is allowed).
+      - [x] **Task 7, production items on days, priced with surcharges**: done 2026-10-02,
+        **uncommitted**. Only `estimate-editor.js`, `booking-block.js` and `booking.css` changed;
+        no server change, and `calc.js` is untouched (349/349).
+        - **What exists now:** each day card holds its production lines and its own picker. The
+          Production section lists the days, has "Add to a day ▾", and holds old lines under
+          "Unassigned — pick a day". Live surcharged prices, "incl. weekend ×1.5" notes,
+          "Surcharges +$X ⓘ", the short notice tick and hint, and D26's hours hint are all in.
+        - **Verified to the cent against the server** on every worked example, all three modes,
+          and the five task 1 mutations re-checked through the editor. Details are in TASKS.md
+          task 7's Done note.
+        - **Show the user before task 8** the interpretations listed in that Done note, and the one
+          task 2 flagged: a custom-bill production line on a surcharged day is surcharged on its
+          custom amount.
 
-**Exact next item: TASKS.md task 7, production items on days, priced with surcharges** (**money
-math, Opus/high**). Commit task 6 first.
+**Exact next item: TASKS.md task 8, estimate detail, client PDF and Cost Breakdown PDF**
+(**money math, Opus/high**). Commit task 7 first.
 
 **Seams left for later tasks:**
-- **Holidays (task 7):** the `GET` returns hidden rows too, flagged. The Rate Card list filters on
-  `!hidden` (done, task 4); the editor must pass the whole list to `surchargeSnapshot`, as the server
-  does. Nothing caches the list in `LSCData` yet: the Rate Card loads it itself.
-- **Short notice hint (task 7):** read `card.surcharges.shortNoticeHintDays` through
-  `LSCCalc.surchargeSettings(card)`, as the Rate Card does, so a pre-v11 card still gets 7.
-- **Editor (tasks 6 and 7):** `collect()` must send `days` and `shortNotice`, and day ids are made
-  in the browser.
-  - For live pricing, build `surchargeSnapshot(days, card, holidays, { surcharges:
-    estimate.surcharges, days: estimate.days })`, or `null` for a new estimate. Pass `{ days,
-    surcharges, shortNotice }` to `computeTotals`, and the totals then match the server to the
-    cent.
-  - "Update to current rates" should also send `refreshSurcharges: true`.
-  - Handle the 409 `date_locked` and its message.
+- **Detail and PDF (task 8):** read each `prod` line's stored `surchargedPrice` and `dayId`; don't
+  re-price. A line without `dayId` is an unassigned legacy line: list it as today, not under a day.
+  The editor's `surNote()` (`estimate-editor.js`) shows how to word an attribution row, for the
+  Cost Breakdown.
+- **Announcing a surcharge recompute (task 9):** not done. The editor updates figures silently.
+  The brief wants one polite announcement per recompute. Debounce it, because every keystroke in a
+  quantity recalculates.
+- **Holidays in the editor:** fetched once, the first time the estimate has a dated day. Until it
+  arrives, or if it fails, new dates price as non-holidays. The server always prices with the real
+  list on save, and the detail screen shows what was stored.
 - **Status migration (task 15):** turn foreign keys off for the `estimates` rebuild, or the cascade
   deletes every production day. Also exclude declined estimates in `lockedDay` (`days.js`) and in
   `routes/calendar.js`.

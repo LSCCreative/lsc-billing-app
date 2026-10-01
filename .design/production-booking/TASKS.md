@@ -503,7 +503,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
     - "Test draft" is now `TST-001`, with Sat 3 Oct (confirmed, note "Subcontractor shooting")
       and Wed 14 Oct (proposed).
 
-- [ ] **7. Editor: production items live on days, priced with surcharges** (money math —
+- [x] **7. Editor: production items live on days, priced with surcharges** (money math —
   Opus/high). _Depends on: 1, 6._
   - **Production items:** the Production section's "+ Add" becomes "Add to a day ▾". Each day
     card lists its items with the existing service → unit → Add picker scoped to `prod`, and each
@@ -524,6 +524,104 @@ State the bucket out loud and pause for the user to switch before starting a tas
     hours);
   - an estimate saved before this opens and totals identically;
   - the mutations from task 1 are re-checked through the editor path (one each).
+
+  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is unchanged at 349/349:
+  there's no server change, and both `calc.js` copies are untouched. Changed:
+  `estimate-editor.js`, `booking-block.js` and `booking.css`.
+  - **Where the lines live.** A production line is built **inside its day's card**, as the brief's
+    day card asks ("that day's production items, the existing labour line UI").
+    - Each card has its own service → unit → Add picker, a "Day total", and D26's hint ("Booked 10
+      hrs, items cover 8.").
+    - A line's `dayId` is read from the card it sits in. It is never stored on the row, so a
+      line can't disagree with where it's shown.
+    - The editor builds one items element per day (`itemsFor(dayId)`). The booking block **moves**
+      it into the card on every paint and never rebuilds it, so typing survives re-sorts and month
+      fetches.
+  - **The Production section** keeps its place and its Subtotal (surcharges included). Its
+    "+ Add Service" became **"Add to a day ▾" + "+ Add Items"**.
+    - That opens the booking block and focuses the chosen day's picker. "A new Date TBC day" makes
+      one first. The day's own picker does the adding, so there is one way to add an item.
+    - Under it is one line per day (title, status chip, items, total), each linking to its card.
+    - Then **"Unassigned — pick a day"**: lines saved before days existed, priced exactly as before.
+      Each has a "Pick a day…" select that moves it onto a day. The move is rebuilt rather than
+      moved, so it keeps quantity, override and both rate marks.
+  - **Live pricing** is calc.js, as the server prices it. Nothing in the view multiplies:
+    - `surchargeSnapshot` is built with the stored snapshot as `prior`, or `null` once "Update to
+      current rates" asked.
+    - `stampSurchargedPrices` gives each line's price, and `computeTotals` gets `{ days,
+      surcharges, shortNotice }`.
+    - A surcharged line shows a muted note under its price from `surchargeAttribution`: "incl.
+      weekend ×1.5", "after hours ×1.25 on 2 of 10 hrs", "short notice ×2", or "public holiday".
+  - **Summary:** "Surcharges +$X ⓘ", owner-only, is an advisory-style line under the bars.
+    - It's shown only when a surcharge applies, and isn't under the overhead switch.
+    - The ⓘ names the estimate's own settings and mode and says the floors don't move.
+  - **Short notice:** a tick in the doc-type bar, beside GST-free. The hint ("First shoot day is
+    tomorrow — short notice?") uses the earliest booked date from today on, against the live card's
+    `shortNoticeHintDays`. It's never ticked for you. `payload()` always sends `shortNotice`.
+  - **"Update to current rates"** also sets `refreshSurcharges` (sent on save), but only when that
+    changes the snapshot. A no-op click doesn't make the form dirty. The toast says when it did.
+  - **Holidays:** `GET /api/holidays` is fetched once, the first time a day has a date, and the
+    whole list goes in, hidden rows included, as the server does it.
+  - **Booking block additions:** `itemsFor`, `list()`, `showDay(id)` and `addTbc()`. Focus inside a
+    day's items survives a repaint. The remove confirm counts the day's items ("Its production item
+    is removed too.").
+  - **Interpretations to show the user:**
+    - **"Add to a day" goes to the day, not straight to a line.** Adding happens in the day card's
+      picker, so the Production section doesn't carry a second service/unit picker.
+    - **A line moves one way only,** from Unassigned onto a day. Moving between days means removing
+      the line and adding it to the other day.
+    - **The short notice hint** counts any status and hides once the box is ticked.
+    - **"Surcharges +$X" stays visible** with the overhead switch off, because it's part of the
+      price, not an advisory floor.
+    - **From task 2, still to confirm:** a custom-bill production line on a surcharged day is
+      surcharged on its custom amount.
+  - **Verified** headless against `api-scratch` (dispatched events, puppeteer):
+    - **Worked examples,** all on Audit A with Video Capture — Full Day at $1,120:
+      - Sat, no times: $1,680, "incl. weekend ×1.5".
+      - Weekday 9–7: $1,176, "after hours ×1.25 on 2 of 10 hrs".
+      - Overnight 6pm–2am: $1,400.
+      - TBC: $1,120.
+      - Short-notice Sat 1–9pm: $3,360 (default), $3,780 (multiply), $2,240 (highest). The other
+        modes were reached by changing the card's mode, then "Update to current rates". The card
+        is back on "higher".
+      - TBC with short notice: $2,240.
+    - **Editor = server to the cent** on save: total $11,152.00, tax set-aside $3,723.27,
+      take-home $6,914.65, `surchargeTotal` 6272, and each line's stored `surchargedPrice`.
+    - **Floors unmoved:** Minimum Job Price $642.60 and Income floor $2,793.44, before and after
+      the short-notice tick (same 34 hrs).
+    - **Saved estimates never move:** after the card's mode changed, the estimate opened at its
+      pinned price until "Update to current rates".
+    - **Old estimates open at their stored total.** Three scratch estimates match exactly.
+      `est_d9c6e5bf` and `est_1c0705ef` show $2,000 / $4,000 against stored $1,400 / $2,800, but
+      the server's own `computeTotals` gives the same $2,000 / $4,000. They're stale seed rows from
+      27 Sep, not this change.
+    - **Unsaved guard:** clean on open for all five estimates and a new one.
+    - **Paths:** move a line onto a day (×1.5, saved with its `dayId`); a new estimate via "A new
+      Date TBC day" (picker focused, saved); remove a day with an item (confirm counts it, line
+      and price gone).
+    - **Nothing moved at 1280:** old build (HEAD's three files) vs new, for a legacy estimate.
+      - All 218 elements outside the booking block, the Production block, the doc-type bar and
+        the surcharge line kept x, width and height.
+      - Everything above the Production block kept its y. Everything after it shifted by one
+        constant 106.5px.
+    - **Overflow:** none at 1280, 800 or 375. At 375, every new control is ≥ 44px except the
+      Short notice checkbox (13px, the GST-free tick's own pattern; its label is the target). That
+      goes to task 9.
+    - **Console:** no errors (one 401 before sign-in, from the harness).
+  - **Mutations,** each in `web/js/calc.js` only and each caught by the editor's figures:
+    - **mode swap** ("higher" taking multiply's steps): Sat 1–9pm with short notice went $3,360 →
+      $3,780;
+    - **ceil → round:** a Drone hour on the 9–7 day went $89 → $88;
+    - **share inverted:** 9–7 went $1,176 → $1,344;
+    - **overnight ignored:** 3pm–1am went $1,344 → $1,400. On 6pm–2am it isn't visible, because
+      that day is wholly after hours either way;
+    - **short notice skipped on TBC:** $2,240 → $1,120.
+    - The file was restored and `git diff` is clean.
+  - **Scratch DB state:**
+    - Audit A (`est_8dca1cee`) now has short notice ticked and a Full Day on each of its four days
+      (Sat 3 Oct 1–9pm, Wed 14 Oct 6pm–2am, Wed 21 Oct 9–7, TBC). Its old Video Capture line is
+      still unassigned. Total $11,152.
+    - "Test draft" (`TST-001`) had its 100 hrs of Video Capture moved onto Sat 3 Oct ($30,000).
 
 - [ ] **8. Estimate detail, client PDF and Cost Breakdown PDF** (money math — Opus/high).
   _Depends on: 7._

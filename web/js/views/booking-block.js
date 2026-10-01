@@ -12,13 +12,24 @@
  * adding items. Nothing is fetched until it is opened.
  *
  * WHAT THE EDITOR GETS
- *   const booking = BookingBlock.mount(slot, { estimate, identity, hasProductionItems, onChange });
+ *   const booking = BookingBlock.mount(slot, { estimate, identity, hasProductionItems, onChange, itemsFor });
  *   booking.payloadDays()      // the `days` the estimate routes take, in display order
+ *   booking.list()             // the same days with their card titles ("Day 1 · Sat 3 Oct")
  *   booking.lockProblem()      // { msg, fieldId } for a day the server would refuse, or null
  *   booking.serverLocked(date) // after a 409 date_locked: { msg, fieldId }
  *   booking.refreshIdentity()  // the UPID / name / business changed: redraw this estimate's tiles
- * Day ids are made here, in the browser, because task 7's production lines
- * point at their day (`dayId`) before the estimate has ever been saved.
+ *   booking.showDay(id)        // open the block and scroll that day's card into view
+ *   booking.addTbc()           // add a Date TBC day; returns its id
+ * Day ids are made here, in the browser, because production lines point at
+ * their day (`dayId`) before the estimate has ever been saved.
+ *
+ * PRODUCTION ITEMS (task 7)
+ * A day's items are the editor's own labour rows, so the editor builds them:
+ * `itemsFor(dayId)` returns one element per day, the same element every time,
+ * and each paint moves it into that day's card. Cards are re-rendered whole,
+ * but the items element is only ever moved, never rebuilt, so what is typed in
+ * it survives a re-sort, a month fetch or a status change. A removed day's
+ * element is simply not put back; the editor drops it on the next onChange.
  *
  * THE LOCK MIRRORS THE SERVER
  * server/src/days.js lockedDay refuses a day whose date another estimate has
@@ -223,6 +234,7 @@ const BookingBlock = (() => {
     const forced = new Map(); // date → UPID, for dates the server refused with date_locked
     const announced = new Set(); // `${id}|${date}` locks already announced
     const onChange = typeof opts.onChange === 'function' ? opts.onChange : () => {};
+    const itemsFor = typeof opts.itemsFor === 'function' ? opts.itemsFor : () => null;
 
     slot.innerHTML =
       '<div class="billing-block booking-block" id="block-booking">' +
@@ -379,6 +391,8 @@ const BookingBlock = (() => {
         '<input type="text" class="text-inp" id="' + k + '-note" data-f="overrideNote" maxlength="' + MAX_NOTE + '"' +
         ' placeholder="e.g. Subcontractor shooting" value="' + esc(day.overrideNote) + '" aria-describedby="' + k + '-clash">' +
         '</div>' +
+        // The day's production items: the editor's element, moved in by paintCards.
+        '<div class="day-items-slot"></div>' +
         '</div>' +
         '</li>'
       );
@@ -422,13 +436,21 @@ const BookingBlock = (() => {
     function paintCards() {
       const list = $('booking-cards');
       const active = document.activeElement;
-      const keep = active && list.contains(active) && active.closest('[data-day-id]')
+      const inList = active && list.contains(active);
+      // Focus inside a day's items stays on that very element: it is moved, not rebuilt.
+      const inItems = inList && active.closest('.day-items-slot') ? active : null;
+      const keep = inList && !inItems && active.closest('[data-day-id]')
         ? { id: active.closest('[data-day-id]').dataset.dayId, f: active.dataset.f || active.dataset.act }
         : null;
       list.innerHTML = days.map((d, i) => cardMarkup(d, i + 1)).join('');
-      list.querySelectorAll('[data-day-id]').forEach((li) => updateCard(li, byId(li.dataset.dayId)));
+      list.querySelectorAll('[data-day-id]').forEach((li) => {
+        updateCard(li, byId(li.dataset.dayId));
+        const items = itemsFor(li.dataset.dayId);
+        if (items) li.querySelector('.day-items-slot').appendChild(items);
+      });
       $('booking-empty').hidden = days.length > 0;
-      if (keep) focusCard(keep.id, keep.f);
+      if (inItems && inItems.isConnected) inItems.focus();
+      else if (keep) focusCard(keep.id, keep.f);
     }
 
     function focusCard(id, f) {
@@ -535,13 +557,16 @@ const BookingBlock = (() => {
       );
     }
 
-    $('booking-add-tbc').addEventListener('click', () => {
+    function addTbc() {
       const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: '', endTime: '', overrideNote: '' };
       days = sortDays(days.concat(day));
-      paint();
+      if (!open) setOpen(true);
+      else paint();
       onChange();
-      focusCard(day.id, 'date');
-    });
+      return day.id;
+    }
+
+    $('booking-add-tbc').addEventListener('click', () => focusCard(addTbc(), 'date'));
 
     // ── Editing a card ────────────────────────────────────────────────────────
 
@@ -590,8 +615,11 @@ const BookingBlock = (() => {
       const li = btn.closest('[data-day-id]');
       const i = days.findIndex((d) => d.id === li.dataset.dayId);
       const title = titleOf(days[i], i + 1);
-      // Task 7 puts production items on days, and they go with it.
-      if (!window.confirm('Remove ' + title + '? Any production items on it are removed too.')) return;
+      // Its production items go with it, so the question says how many.
+      const items = itemsFor(li.dataset.dayId);
+      const n = items ? items.querySelectorAll('[data-rid]').length : 0;
+      const what = n ? ' Its ' + (n === 1 ? 'production item is' : n + ' production items are') + ' removed too.' : '';
+      if (!window.confirm('Remove ' + title + '?' + what)) return;
       days.splice(i, 1);
       paint();
       onChange();
@@ -642,6 +670,27 @@ const BookingBlock = (() => {
         return day
           ? { msg: clashLine(day)[0], fieldId: 'bd-' + day.id + '-note' }
           : { msg: 'A date on this estimate has been confirmed by another project. Add a specification note to that day to book it anyway.', fieldId: null };
+      },
+
+      /** The days as payloadDays() gives them, each with its card's title. */
+      list: () =>
+        days.map((d, i) => ({
+          id: d.id,
+          date: d.date,
+          status: d.status,
+          startTime: d.startTime,
+          endTime: d.endTime,
+          title: titleOf(d, i + 1),
+        })),
+
+      addTbc,
+
+      /** Open the block and bring a day's card into view; the caller moves focus. */
+      showDay(id) {
+        reveal();
+        const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+        if (li) li.scrollIntoView({ block: 'nearest' });
+        return li;
       },
 
       refreshIdentity() {

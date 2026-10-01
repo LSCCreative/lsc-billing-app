@@ -62,6 +62,23 @@
  * line is added at is frozen into its snapshot like any other: this file never
  * resolves a price after that except on one of the actions above.
  *
+ * PRODUCTION ITEMS LIVE ON DAYS (2026-10-02, .design/production-booking/ task 7)
+ * A Production line (section id `prod`, D24) belongs to a booked day (D4): it
+ * is built inside that day's card in the Production Booking block, which has
+ * its own service → unit → Add picker, and it saves with that day's `dayId`
+ * (read from where the row sits, never stored on the row). The Production
+ * section further down keeps its place and subtotal; it lists the days, and
+ * its "Add to a day" select takes you to a day's picker. A Production line
+ * saved before days existed has no day: it is shown there, under
+ * "Unassigned — pick a day", priced exactly as before until it is moved.
+ *
+ * Surcharges are priced by calc.js, as the server prices them: the snapshot
+ * (surchargeSnapshot, kept from the stored estimate unless "Update to current
+ * rates" asks for today's), each line's surcharged price (stampSurchargedPrices)
+ * and the totals (computeTotals). A line's "incl. weekend ×1.5" comes from
+ * surchargeAttribution on the same base. Nothing here multiplies a price. The
+ * surcharge is income for the same hours, so neither advisory floor moves.
+ *
  * CLIENT FIELDS
  * The estimate carries a client *snapshot* — {businessName, contactName, email,
  * phone, abn, address} — not the desktop app's flat businessName/clientName/
@@ -86,6 +103,22 @@ const EstimateEditor = (() => {
   let link = null; // { id, name } of the client record this estimate points at
   let baseline = ''; // the form as it was at mount, for the unsaved-edit check
   let booking = null; // the Production Booking block (views/booking-block.js)
+
+  /* Production items on days (production-booking task 7; see PRODUCTION
+     ITEMS LIVE ON DAYS below). One items element per day, by day id, kept
+     here and moved into its card by the booking block. */
+  const dayPanels = new Map();
+  /* The public-holiday list (GET /api/holidays, hidden rows included, as the
+     server reads it), for pricing a new or moved day. null until fetched;
+     fetched once, the first time the estimate has a dated day. */
+  let holidays = null;
+  let holidaysAsked = false;
+  /* "Update to current rates" also re-takes the surcharge settings and each
+     day's weekday/weekend/holiday kind from today's Rate Card and holiday
+     list. Sent as refreshSurcharges on the next save, so the server does the
+     same. */
+  let refreshSurcharges = false;
+  let daysSig = ''; // the day titles the day selects were last built from
 
   /* The two Finance figures the advisory floor is built from, resolved once at
      mount. Same reasoning as pricing.js's computedRate: nothing reachable from
@@ -262,11 +295,13 @@ const EstimateEditor = (() => {
      Starts on Hour every time the service changes (brief decision 11) — or, when
      the hour has no price, on the first unit that has one. `keep` (a repaint
      after the rates toggle) holds the current choice if it can still be priced.
-     No priceable unit: every option disabled, and Add with it. */
-  function paintPicker(section, keep) {
-    const svc = $('sel-' + section.id);
-    const unitSel = $('unit-' + section.id);
-    const add = $('add-' + section.id);
+     No priceable unit: every option disabled, and Add with it. `els` is a day
+     card's own picker ({ svc, unitSel, add }), which may not be in the page
+     yet; without it, the section's picker is looked up by id. */
+  function paintPicker(section, keep, els) {
+    const svc = els ? els.svc : $('sel-' + section.id);
+    const unitSel = els ? els.unitSel : $('unit-' + section.id);
+    const add = els ? els.add : $('add-' + section.id);
     if (!svc || !unitSel || !add) return;
     const row = section.rows.find((r) => r.name === svc.value) || null;
     if (!row || !row.prices) {
@@ -296,6 +331,7 @@ const EstimateEditor = (() => {
         if (row && row.prices) sel.innerHTML = unitOptions(section.id, row, unitKey(snap), true);
       });
       paintPicker(section, true);
+      if (section.id === 'prod') dayPanels.forEach((panel) => paintPicker(section, true, pickerEls(panel)));
     });
   }
 
@@ -328,13 +364,22 @@ const EstimateEditor = (() => {
   }
 
   /* One labour or travel row read back as a saved line: name, snapshot, and
-     what was typed. */
+     what was typed — and, for a Production row in a day's card, that day. */
   function lineFrom(tr, withOverride) {
     const line = Object.assign({ name: tr.dataset.name }, snapOf(tr) || {}, {
       qty: num(inputValue(tr, '.qty-inp')),
     });
     if (withOverride) line.override = num(inputValue(tr, '.custom-bill-inp'));
+    const dayId = rowDayId(tr);
+    if (dayId) line.dayId = dayId;
     return line;
+  }
+
+  /* A Production row's day is the card it sits in. */
+  function rowDayId(tr) {
+    if (tr.dataset.section !== 'prod') return null;
+    const panel = tr.closest('[data-items-day]');
+    return panel ? panel.dataset.itemsDay : null;
   }
 
   // ── Row builders ──────────────────────────────────────────────────────────
@@ -397,7 +442,11 @@ const EstimateEditor = (() => {
       '<div class="right" data-label="' + qtyLabel + '"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
       (line.qty || '') + '" aria-label="' + qtyLabel + ' for ' + esc(line.name) + '"></div>' +
       '<div class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</div>' +
-      '<div class="right" data-label="Client Bill"><span class="bill-cell">—</span>' + customCell + '</div>' +
+      /* A Production line on a surcharged day says why its price is higher,
+         under the price, owner-only (the client's copy never says it, D8). */
+      '<div class="right' + (section.id === 'prod' ? ' bill-col' : '') + '" data-label="Client Bill">' +
+      '<span class="bill-cell">—</span>' + customCell +
+      (section.id === 'prod' ? '<span class="sur-note" hidden></span>' : '') + '</div>' +
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' +
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button></div>';
 
@@ -565,6 +614,248 @@ const EstimateEditor = (() => {
     );
   }
 
+  // ── Production items on days (task 7) ─────────────────────────────────────
+
+  // "Add to a day"'s option for a new Date TBC day. A space: no day id can hold one (days.js DAY_ID).
+  const NEW_TBC = 'new tbc';
+
+  const labourHead =
+    '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
+    '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>';
+
+  /* The Production section, in its usual place: the subtotal of every
+     production line, surcharges included; "Add to a day", which takes you to
+     a day card's picker (or makes a Date TBC day); one line per day; and the
+     lines that have no day yet. paintDays() fills the day parts. */
+  function prodSectionMarkup(section) {
+    return (
+      '<div class="billing-block" id="block-prod">' +
+      '<div class="bb-head"><div><h2 class="bb-label">' + esc(section.label) + '</h2>' +
+      '<span class="bb-label-tag">On set</span></div>' +
+      '<span class="bb-sum">Subtotal <b id="sum-prod">$0.00</b></span></div>' +
+      '<div class="bb-picker prod-add">' +
+      '<label class="prod-add-label" for="prod-day-sel">Add to a day</label>' +
+      '<select class="svc-select" id="prod-day-sel"></select>' +
+      '<button type="button" class="btn btn-accent btn-sm" id="prod-day-go">+ Add Items</button></div>' +
+      '<ol class="prod-days" id="prod-days"></ol>' +
+      '<div class="prod-unassigned" id="prod-unassigned" hidden>' +
+      '<p class="prod-unassigned-head" id="prod-unassigned-head">Unassigned — pick a day</p>' +
+      '<p class="prod-unassigned-note">Added before production days. Each prices as it always has until you ' +
+      'move it onto a day, where that day’s surcharges apply.</p>' +
+      labourHead +
+      bodyMarkup('prod', 'No unassigned production items.') +
+      '</div>' +
+      '</div>'
+    );
+  }
+
+  const pickerEls = (panel) => ({
+    svc: panel.querySelector('.day-svc'),
+    unitSel: panel.querySelector('.unit-select'),
+    add: panel.querySelector('.day-add'),
+  });
+
+  const prodSection = () => sections.find((s) => s.id === 'prod' && !s.archived) || null;
+
+  /* One day's items: its own picker, the labour grid, and the D26 hours
+     hint. Built once per day and kept (dayPanels); the booking block moves it
+     into the day's card on every paint. */
+  function panelFor(dayId) {
+    if (dayPanels.has(dayId)) return dayPanels.get(dayId);
+    const section = prodSection();
+    const panel = document.createElement('div');
+    panel.className = 'day-items';
+    panel.dataset.itemsDay = dayId;
+    const k = 'di-' + dayId;
+    const options = section && section.rows.length
+      ? section.rows.map((r) => '<option value="' + esc(r.name) + '">' + esc(r.name) + '</option>').join('')
+      : '';
+    panel.innerHTML =
+      '<div class="day-items-bar"><span class="day-items-label" id="' + k + '-l">Production items</span>' +
+      '<span class="day-items-sum">Day total <b class="day-items-total">$0.00</b></span></div>' +
+      (options
+        ? '<div class="bb-picker day-picker">' +
+          '<select class="svc-select day-svc" aria-label="Production service to add"></select>' +
+          '<select class="svc-select unit-select" aria-label="Unit to add"></select>' +
+          '<button type="button" class="btn btn-accent btn-sm day-add">+ Add</button></div>'
+        : '<p class="day-items-none">No Production services on the rate card to add.</p>') +
+      labourHead +
+      '<div class="gt-body" data-empty-text="No production items on this day yet.">' +
+      '<div class="empty-row">No production items on this day yet.</div></div>' +
+      '<p class="day-hours" hidden></p>';
+    dayPanels.set(dayId, panel);
+    if (!options) return panel;
+
+    const els = pickerEls(panel);
+    els.svc.innerHTML = options;
+    els.svc.addEventListener('change', () => paintPicker(section, false, els));
+    paintPicker(section, false, els);
+    /* As the section pickers do (bind): snapshotted at the picked unit there
+       and then, at last time's price while that toggle is on. */
+    els.add.addEventListener('click', () => {
+      const row = section.rows.find((r) => r.name === els.svc.value);
+      if (!row) return;
+      const picked = unitSnap(section.id, row, row.prices ? els.unitSel.value : 'hour');
+      if (!picked.snap) return;
+      const tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 0 }, picked.snap));
+      markOwn(tr, picked);
+      injectRow(panel.querySelector('.gt-body'), tr);
+      const qty = tr.querySelector('.qty-inp');
+      if (qty) qty.focus();
+    });
+    return panel;
+  }
+
+  /* An unassigned line's way onto a day: a select under its name. */
+  function addMoveControl(tr) {
+    const svc = tr.firstElementChild;
+    const wrap = document.createElement('div');
+    wrap.className = 'lab-move';
+    wrap.innerHTML =
+      '<select class="lab-move-sel" aria-label="Move ' + esc(tr.dataset.name) + ' to a day"></select>';
+    svc.classList.add('lab-svc');
+    svc.appendChild(wrap);
+    const sel = wrap.firstElementChild;
+    sel.innerHTML = moveOptions();
+    sel.addEventListener('change', () => {
+      if (sel.value) moveToDay(tr, sel.value);
+    });
+  }
+
+  function moveOptions() {
+    const days = booking ? booking.list() : [];
+    return '<option value="">' + (days.length ? 'Pick a day…' : 'No days booked yet') + '</option>' +
+      days.map((d) => '<option value="' + esc(d.id) + '">' + esc(d.title) + '</option>').join('');
+  }
+
+  /* Rebuilt rather than moved, so it loses its move select; everything typed,
+     and both rate marks, go with it (as reprice does). */
+  function moveToDay(tr, dayId) {
+    const section = sections.find((sec) => sec.id === 'prod');
+    const line = Object.assign({ name: tr.dataset.name }, snapOf(tr) || {}, {
+      qty: inputValue(tr, '.qty-inp'),
+      override: inputValue(tr, '.custom-bill-inp'),
+    });
+    const fresh = buildLabourRow(section, null, line);
+    if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
+    if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
+    const day = (booking ? booking.list() : []).find((d) => d.id === dayId);
+    tr.remove();
+    injectRow(panelFor(dayId).querySelector('.gt-body'), fresh);
+    if (booking) booking.showDay(dayId);
+    const qty = fresh.querySelector('.qty-inp');
+    if (qty) qty.focus();
+    LSCUtil.announce($('editor-live'), tr.dataset.name + ' moved to ' + (day ? day.title : 'its day') + '.');
+  }
+
+  /* "Booked 12 hrs, items cover 8" (D26): the day's booked hours, from its
+     times, when they're longer than its items' hours. Never a price. */
+  function bookedHours(day) {
+    const toMin = (t) => {
+      const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    };
+    const a = toMin(day.startTime);
+    const b = toMin(day.endTime);
+    if (a === null || b === null || a === b) return 0;
+    return ((b < a ? b + 1440 : b) - a) / 60;
+  }
+
+  const hrsText = (n) => {
+    const r = Math.round(n * 100) / 100;
+    return r + (r === 1 ? ' hr' : ' hrs');
+  };
+
+  /* Everything about the days that isn't a price: the Production section's
+     day list and "Add to a day" select, each unassigned line's day select,
+     each day card's labels, dropped days' items. Selects are only rebuilt when
+     the days themselves change, so one being used is never pulled from under
+     the pointer. `perDay` is recalc's { dayId → { total, hours, count, names } }. */
+  function paintDays(perDay, unassigned) {
+    // Mid-mount (restoreRows runs before the booking block exists): nothing to paint yet.
+    if (!booking) return;
+    const days = booking.list();
+    const live = new Set(days.map((d) => d.id));
+    Array.from(dayPanels.keys()).forEach((id) => {
+      if (!live.has(id)) dayPanels.delete(id);
+    });
+
+    const sig = days.map((d) => d.id + '|' + d.title + '|' + d.status).join('\n');
+    if (sig !== daysSig) {
+      daysSig = sig;
+      const sel = $('prod-day-sel');
+      if (sel) {
+        const was = sel.value;
+        sel.innerHTML =
+          days.map((d) => '<option value="' + esc(d.id) + '">' + esc(d.title) + '</option>').join('') +
+          '<option value="' + NEW_TBC + '">A new Date TBC day</option>';
+        sel.value = live.has(was) ? was : days.length ? days[0].id : NEW_TBC;
+      }
+      rowsIn('prod').forEach((tr) => {
+        const move = tr.querySelector('.lab-move-sel');
+        if (move) move.innerHTML = moveOptions();
+      });
+      days.forEach((d) => {
+        const panel = dayPanels.get(d.id);
+        if (!panel) return;
+        panel.querySelector('.day-items-label').textContent = 'Production items, ' + d.title;
+        const els = pickerEls(panel);
+        if (els.svc) els.svc.setAttribute('aria-label', 'Production service to add to ' + d.title);
+        if (els.unitSel) els.unitSel.setAttribute('aria-label', 'Unit to add to ' + d.title);
+        if (els.add) els.add.setAttribute('aria-label', 'Add to ' + d.title);
+      });
+    }
+
+    days.forEach((d) => {
+      const panel = dayPanels.get(d.id);
+      if (!panel) return;
+      const p = perDay.get(d.id) || { total: 0, hours: 0 };
+      panel.querySelector('.day-items-total').textContent = fmt(p.total);
+      const booked = bookedHours(d);
+      const hint = panel.querySelector('.day-hours');
+      const long = booked > 0 && booked - p.hours > 1e-9;
+      hint.hidden = !long;
+      hint.textContent = long ? 'Booked ' + hrsText(booked) + ', items cover ' + hrsText(p.hours).replace(/ hrs?$/, '') + '.' : '';
+    });
+
+    const list = $('prod-days');
+    if (list) {
+      const html = days.length
+        ? days.map((d) => {
+            const p = perDay.get(d.id) || { total: 0, count: 0, names: [] };
+            return (
+              '<li class="prod-day"><button type="button" class="prod-day-link" data-day="' + esc(d.id) + '">' +
+              esc(d.title) + '</button>' + LSCCalendar.statusChip(d.status) +
+              '<span class="prod-day-items">' +
+              (p.count ? esc(p.names.join(', ')) : 'No items yet') + '</span>' +
+              '<b class="prod-day-total">' + fmt(p.total) + '</b></li>'
+            );
+          }).join('')
+        : '<li class="prod-days-empty">No production days yet. Book one in Production Booking above, or add ' +
+          'a Date TBC day here.</li>';
+      if (list.innerHTML !== html) list.innerHTML = html;
+    }
+    const group = $('prod-unassigned');
+    if (group) group.hidden = unassigned === 0;
+  }
+
+  /* "incl. weekend ×1.5" under a surcharged line's price: the rows of
+     calc.js surchargeAttribution, in its order, with the hours a partial
+     share covered. Empty when nothing applied. */
+  const SUR_WORD = { weekend: 'weekend', holiday: 'public holiday', afterHours: 'after hours', shortNotice: 'short notice' };
+  function surNote(base, day, surcharges, shortNotice) {
+    const att = LSCCalc.surchargeAttribution(base, day, { surcharges: surcharges.settings }, shortNotice);
+    if (!(att.surcharge > 0)) return '';
+    const booked = bookedHours(day);
+    const parts = att.rows.map((r) => {
+      const part = r.share < 1 - 1e-9 && booked > 0
+        ? ' on ' + hrsText(r.share * booked).replace(/ hrs?$/, '') + ' of ' + hrsText(booked)
+        : '';
+      return SUR_WORD[r.type] + ' ×' + r.multiplier + part;
+    });
+    return 'incl. ' + parts.join(', ');
+  }
+
   /* An own-time item on auto has no price until the income floor exists, and
      the car's km row none until Overhead has its per-km cost (task 6b), so
      their options are disabled and say why, as a service unit's is
@@ -677,6 +968,37 @@ const EstimateEditor = (() => {
     );
   }
 
+  /* "Surcharges +$X ⓘ" (brief, Key Interactions 2.6): owner-only, and not a
+     headline figure — it is already inside the Labour Subtotal — so it takes
+     the advisory line's shape rather than a .sum-item. Shown only when a
+     surcharge applies; not under the overhead switch, which governs the two
+     advisory floors, not this. The ⓘ's first paragraph is the estimate's own
+     settings, filled by paintSurcharges(). */
+  function surchargeLineMarkup() {
+    return (
+      '<div class="mjp-line sur-line" id="sur-line" hidden>' +
+      '<span class="mjp-line-label">Surcharges</span>' +
+      '<span class="mjp-line-fig"><span class="mjp-line-value" id="s-surcharges">+$0.00</span>' +
+      LSCInfo.markup({
+        id: 'surcharges',
+        label: 'How the surcharges are worked out',
+        title: 'Surcharges',
+        paragraphs: [
+          '<span id="sur-info-rules"></span>',
+          'Each production line on a day is multiplied, then rounded up to the whole dollar. After hours counts ' +
+            'only the share of a day’s booked hours outside office hours.',
+          'A surcharge is income for the same work: it adds no hours, so the Minimum Job Price and the Income ' +
+            'floor don’t move. The client sees only each line’s price, never the word “surcharge”.',
+          'These settings are kept from when this estimate was first priced. <strong>Update to current ' +
+            'rates</strong> takes today’s Rate Card and public holidays.',
+        ],
+      }) +
+      '</span>' +
+      '<span class="mjp-line-note">already in the Labour Subtotal, folded into each production line’s price</span>' +
+      '</div>'
+    );
+  }
+
   function summaryMarkup() {
     return (
       overheadToggleMarkup() +
@@ -701,6 +1023,7 @@ const EstimateEditor = (() => {
       '<div class="sum-label">Est. Take-Home <span class="sum-label-note">(income ex GST, less the overhead its hours carry and the tax set-aside — pass-through excluded)</span></div>' +
       '<div class="sum-value" id="s-takehome" style="color:var(--ok)">$0.00</div></div>' +
       '</div>' +
+      surchargeLineMarkup() +
       /* Under the bars, not inside them: a sixth .sum-item would read as one
          more headline figure, and this one is explicitly not that. */
       minimumLineMarkup()
@@ -769,6 +1092,12 @@ const EstimateEditor = (() => {
       '<input class="inv-num-inp" id="f-invnum" type="text" placeholder="e.g. INV-001" value="' +
       esc((estimate && estimate.invoiceNumber) || '') + '">' +
       '</div>' +
+      /* Short notice (D19): a tick the owner decides; the hint only suggests it
+         when the first booked date is close. Multiplies production lines only. */
+      '<div class="sn-group">' +
+      '<label class="sn-check"><input type="checkbox" id="f-shortnotice" aria-describedby="sn-hint"' +
+      (estimate && estimate.shortNotice ? ' checked' : '') + '><span>Short notice</span></label>' +
+      '<span class="sn-hint" id="sn-hint"></span></div>' +
       /* Only offered when the business is registered — for an unregistered one
          GST never applies, so the toggle would be a control that does nothing.
          An estimate's stored flag is preserved rather than cleared when it isn't
@@ -787,7 +1116,7 @@ const EstimateEditor = (() => {
 
     html += deliverablesSectionMarkup();
     sections.forEach((section) => {
-      html += labourSectionMarkup(section);
+      html += section.id === 'prod' && !section.archived ? prodSectionMarkup(section) : labourSectionMarkup(section);
     });
     html += travelSectionMarkup(pricing);
     html += costSectionMarkup('crew', 'External Crew &amp; Contracts', '+ Add Crew Member',
@@ -811,7 +1140,12 @@ const EstimateEditor = (() => {
 
   // ── Reading the form back ─────────────────────────────────────────────────
 
+  /* Production rows sit in several bodies — each day card's, in date order,
+     then the Production section's unassigned ones — so they are every
+     Production row in the form, in page order. A removed day's rows have left
+     the page with its card. */
   function rowsIn(id) {
+    if (id === 'prod') return Array.from(root.querySelectorAll('.gt-row[data-rid][data-section="prod"]'));
     const body = $('tbody-' + id);
     return body ? Array.from(body.querySelectorAll('[data-rid]')) : [];
   }
@@ -865,17 +1199,101 @@ const EstimateEditor = (() => {
     return bill === null ? 0 : bill;
   }
 
+  const shortNoticeNow = () => {
+    const box = $('f-shortnotice');
+    return box ? box.checked : !!(existing && existing.shortNotice);
+  };
+
+  /* The surcharge snapshot this estimate would be saved with, built the way
+     routes/estimates.js prepareWrite builds it: the stored one kept (settings,
+     and each unmoved day's kind) unless "Update to current rates" asked for
+     today's; '{}' with no days. */
+  function surchargesNow(days, pricing) {
+    if (!days.length) return {};
+    const prior = existing && !refreshSurcharges
+      ? { surcharges: existing.surcharges || {}, days: existing.days || [] }
+      : null;
+    return LSCCalc.surchargeSnapshot(days, pricing, holidays || [], prior);
+  }
+
+  /* Fetched the first time a day has a date: a new or moved day's
+     weekend/holiday kind needs it, and nothing else does. Until it arrives (or
+     if it can't), dates price against no holidays; the server prices on save
+     with the real list either way. */
+  async function loadHolidays() {
+    if (holidaysAsked) return;
+    holidaysAsked = true;
+    try {
+      const reply = await LSCApi.get('/api/holidays');
+      holidays = reply.holidays || [];
+    } catch (err) {
+      if (err instanceof LSCApi.ApiError && err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      holidaysAsked = false; // asked again at the next change
+      return;
+    }
+    if (onScreen()) recalc();
+  }
+
   function recalc() {
     const pricing = LSCData.pricing();
 
+    // Read first: the Production rows' prices depend on their days.
+    const active = collect();
+    const days = booking ? booking.payloadDays() : [];
+    if (days.some((d) => d.date) && !holidays) loadHolidays();
+    const surcharges = surchargesNow(days, pricing);
+    const shortNotice = shortNoticeNow();
+    const options = {
+      gstFree: gstFreeNow(),
+      // The job's overhead share comes off before tax is set aside.
+      overheadRate,
+      days,
+      surcharges,
+      shortNotice,
+    };
+    /* Each Production line at the price the server will stamp on it: its
+       surchargedPrice when it is on a day, its base otherwise. Index i of
+       active.prod is rowsIn('prod')[i], since collect() read it from there. */
+    const stamped = LSCCalc.stampSurchargedPrices({ prod: active.prod || [] }, pricing, options).prod;
+    const dayById = new Map(days.map((d) => [d.id, Object.assign({}, d, { kind: (surcharges.days || {})[d.id] })]));
+    const perDay = new Map();
+    let unassigned = 0;
+
     sections.forEach((section) => {
       let subtotal = 0;
-      rowsIn(section.id).forEach((tr) => {
+      rowsIn(section.id).forEach((tr, i) => {
         const line = lineFrom(tr, true);
-        subtotal += paintRow(tr, labourBill(labourDef(section, line, pricing), line));
+        const def = labourDef(section, line, pricing);
+        const base = labourBill(def, line);
+        if (section.id !== 'prod') {
+          subtotal += paintRow(tr, base);
+          return;
+        }
+        const s = stamped[i] && stamped[i].surchargedPrice;
+        const bill = base === null ? null : typeof s === 'number' ? s : base;
+        subtotal += paintRow(tr, bill);
+        const day = line.dayId ? dayById.get(line.dayId) : null;
+        const note = tr.querySelector('.sur-note');
+        if (note) {
+          const text = day && bill !== null && bill > base ? surNote(base, day, surcharges, shortNotice) : '';
+          note.textContent = text;
+          note.hidden = !text;
+        }
+        if (!day) {
+          unassigned += 1;
+          return;
+        }
+        const p = perDay.get(day.id) || { total: 0, hours: 0, count: 0, names: [] };
+        p.total += bill || 0;
+        p.hours += def ? num(line.qty) * LSCCalc.hoursPerUnitOf(def) : 0;
+        p.count += 1;
+        p.names.push(line.name);
+        perDay.set(day.id, p);
       });
       setText('sum-' + section.id, fmt(subtotal));
     });
+    paintDays(perDay, unassigned);
+    paintShortNotice(days);
 
     let travelSubtotal = 0;
     rowsIn('travel').forEach((tr) => {
@@ -897,12 +1315,8 @@ const EstimateEditor = (() => {
     });
 
     // The headline figures, from the same code the server will run on save.
-    const active = collect();
-    const totals = LSCCalc.computeTotals(active, pricing, LSCData.settings(), {
-      gstFree: gstFreeNow(),
-      // The job's overhead share comes off before tax is set aside.
-      overheadRate,
-    });
+    const totals = LSCCalc.computeTotals(active, pricing, LSCData.settings(), options);
+    paintSurcharges(totals, surcharges);
     setText('s-hours', totals.totalHours);
     setText('s-labour', fmt(totals.labourTotal));
     setText('s-expenses', fmt(totals.expenseTotal));
@@ -933,6 +1347,43 @@ const EstimateEditor = (() => {
     );
     const days = parts.join(', ');
     return b.hourlyHours ? days + ', plus ' + hrs(b.hourlyHours) + ' of hourly work' : days;
+  }
+
+  /* The owner's "Surcharges +$X" line, from totals.surchargeTotal (calc.js),
+     and the settings it was priced under for its ⓘ. */
+  const MODE_WORDS = {
+    higher: 'the higher of weekend and after hours applies, with short notice on top',
+    multiply: 'they all multiply',
+    highest: 'only the highest one applies',
+  };
+  function paintSurcharges(totals, surcharges) {
+    const line = $('sur-line');
+    if (!line) return;
+    const amount = totals.surchargeTotal || 0;
+    line.hidden = !(amount > 0);
+    if (line.hidden) return;
+    setText('s-surcharges', '+' + fmt(amount));
+    const s = LSCCalc.surchargeSettings({ surcharges: surcharges.settings });
+    setText(
+      'sur-info-rules',
+      'Priced under weekend & public holiday ×' + s.weekend + ', after hours ×' + s.afterHours + ' (outside ' +
+        s.officeStart + '–' + s.officeEnd + ') and short notice ×' + s.shortNotice + ': ' + MODE_WORDS[s.mode] + '.'
+    );
+  }
+
+  /* D19: when the first booked date from today on is within the Rate Card's
+     threshold, suggest the tick. Never ticks it; says nothing once ticked. */
+  function paintShortNotice(days) {
+    const hint = $('sn-hint');
+    if (!hint) return;
+    const todayStr = today();
+    const next = days.map((d) => d.date).filter((d) => d && d >= todayStr).sort()[0];
+    const within = LSCCalc.surchargeSettings(LSCData.pricing()).shortNoticeHintDays;
+    const n = next ? Math.round((Date.parse(next + 'T00:00:00Z') - Date.parse(todayStr + 'T00:00:00Z')) / 86400000) : null;
+    const text = n !== null && n <= within && !shortNoticeNow()
+      ? 'First shoot day is ' + (n === 0 ? 'today' : n === 1 ? 'tomorrow' : 'in ' + n + ' days') + ' — short notice?'
+      : '';
+    if (hint.textContent !== text) hint.textContent = text;
   }
 
   const includeOverheadNow = () => {
@@ -1159,6 +1610,7 @@ const EstimateEditor = (() => {
     const fresh = section ? buildLabourRow(section, null, line) : buildTravelRow(null, line);
     if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
     if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
+    if (tr.querySelector('.lab-move')) addMoveControl(fresh); // still unassigned
     tr.replaceWith(fresh);
     return fresh;
   }
@@ -1221,14 +1673,26 @@ const EstimateEditor = (() => {
     const box = $('f-rates-last');
     if (box) box.checked = false;
     $('rates-note').textContent = 'Each line keeps the price it was added at.';
+    /* The surcharge half (production-booking task 2's refreshSurcharges):
+       today's multipliers, mode and office hours, and each day's kind read
+       from today's holiday list. Asked for only when it changes something, so
+       a no-op click doesn't leave the form looking edited. */
+    const days = booking ? booking.payloadDays() : [];
+    const pricing = LSCData.pricing();
+    const kept = JSON.stringify(surchargesNow(days, pricing));
+    const was = refreshSurcharges;
+    refreshSurcharges = true;
+    const surchargesMoved = !was && JSON.stringify(surchargesNow(days, pricing)) !== kept;
+    if (!was && !surchargesMoved) refreshSurcharges = false;
     paintLineUnits();
     recalc();
     const lines = (n) => n + ' line' + (n === 1 ? '' : 's');
-    const kept = (n) => (n === 1 ? ' kept its' : ' kept their') + ' price';
+    const keptIts = (n) => (n === 1 ? ' kept its' : ' kept their') + ' price';
     Toast.ok(
       (changed ? changed + ' price' + (changed === 1 ? '' : 's') + ' updated to the rate card' : 'Every price already matches the rate card') +
-        (missing ? '; ' + lines(missing) + (missing === 1 ? ' isn’t' : ' aren’t') + ' on it any more and' + kept(missing) : '') +
-        (unpriced ? '; ' + lines(unpriced) + ' at a unit with no price on it yet' + kept(unpriced) : '') + '.'
+        (surchargesMoved ? '; surcharges now follow today’s Rate Card and public holidays' : '') +
+        (missing ? '; ' + lines(missing) + (missing === 1 ? ' isn’t' : ' aren’t') + ' on it any more and' + keptIts(missing) : '') +
+        (unpriced ? '; ' + lines(unpriced) + ' at a unit with no price on it yet' + keptIts(unpriced) : '') + '.'
     );
   }
 
@@ -1436,7 +1900,7 @@ const EstimateEditor = (() => {
       address: $('f-address').value.trim(),
     });
 
-    return {
+    const body = {
       upid: $('f-upid').value.trim(),
       name: $('f-name').value.trim(),
       date: $('f-date').value,
@@ -1454,10 +1918,15 @@ const EstimateEditor = (() => {
       activeRows: collect(),
       // Replaces the estimate's days whole on the server, so it is always sent.
       days: booking ? booking.payloadDays() : [],
+      // Like days: a PUT without it keeps the stored tick, so it is always sent.
+      shortNotice: shortNoticeNow(),
       // Says this build prices lines from the v9 card; the server refuses an
       // estimate write without it (calc.js PRICING_SHAPE says why).
       pricingShape: LSCCalc.PRICING_SHAPE,
     };
+    // Only when asked for, so the form isn't "unsaved" until it is.
+    if (refreshSurcharges) body.refreshSurcharges = true;
+    return body;
   }
 
   /* The whole form, as it would be saved, in one string. Compared against the
@@ -1573,10 +2042,21 @@ const EstimateEditor = (() => {
 
   // ── Wiring ────────────────────────────────────────────────────────────────
 
-  function restoreRows(activeRows, pricing) {
+  /* A Production line goes to its day's items when it has a day this estimate
+     still has, and to "Unassigned — pick a day" otherwise (every line saved
+     before task 7). Its stored surchargedPrice isn't read: the server stamps
+     it again on save, and recalc shows what that will be. */
+  function restoreRows(activeRows, pricing, days) {
+    const dayIds = new Set((days || []).map((d) => String(d.id)));
     sections.forEach((section) => {
       (activeRows[section.id] || []).forEach((line) => {
-        injectRow($('tbody-' + section.id), buildLabourRow(section, labourDef(section, line, pricing), line));
+        const tr = buildLabourRow(section, labourDef(section, line, pricing), line);
+        if (section.id !== 'prod' || section.archived) return injectRow($('tbody-' + section.id), tr);
+        if (line.dayId && dayIds.has(String(line.dayId))) {
+          return injectRow(panelFor(String(line.dayId)).querySelector('.gt-body'), tr);
+        }
+        addMoveControl(tr);
+        injectRow($('tbody-prod'), tr);
       });
     });
     (activeRows.travel || []).forEach((line) => {
@@ -1629,6 +2109,28 @@ const EstimateEditor = (() => {
     // like any other input that feeds them.
     const gstFreeBox = $('f-gstfree');
     if (gstFreeBox) gstFreeBox.addEventListener('change', recalc);
+    $('f-shortnotice').addEventListener('change', recalc);
+
+    /* "Add to a day": to that day's picker, or to a new Date TBC day's. The
+       day's own picker does the adding, so there is one way to add an item. */
+    const goToDay = (dayId) => {
+      if (!booking) return;
+      booking.showDay(dayId);
+      const panel = dayPanels.get(dayId);
+      const target = panel && (panel.querySelector('.day-svc') || panel.querySelector('.qty-inp'));
+      if (target) target.focus();
+    };
+    const dayGo = $('prod-day-go');
+    if (dayGo) {
+      dayGo.addEventListener('click', () => {
+        const value = $('prod-day-sel').value;
+        goToDay(value === NEW_TBC ? booking.addTbc() : value);
+      });
+      $('prod-days').addEventListener('click', (e) => {
+        const link = e.target.closest('.prod-day-link');
+        if (link) goToDay(link.dataset.day);
+      });
+    }
 
     /* Straight to recalc() like any other input that feeds the bar — not a
        lighter show/hide path. The toggle changes nothing computeTotals reads,
@@ -1712,8 +2214,15 @@ const EstimateEditor = (() => {
     const activeRows = (estimate && estimate.activeRows) || {};
     sections = sectionsFor(activeRows, pricing, estimate && estimate.sectionLabels);
 
+    booking = null;
+    dayPanels.clear();
+    holidays = null;
+    holidaysAsked = false;
+    refreshSurcharges = false;
+    daysSig = null; // so the first paint builds the day selects
+
     root.innerHTML = formMarkup(estimate, pricing);
-    restoreRows(activeRows, pricing);
+    restoreRows(activeRows, pricing, estimate && estimate.days);
     booking = BookingBlock.mount($('booking-slot'), {
       estimate,
       // Collapsed unless there is booking to show (D64).
@@ -1724,8 +2233,10 @@ const EstimateEditor = (() => {
         projectName: $('f-name').value.trim(),
         client: $('f-business').value.trim(),
       }),
-      // Days don't move a price yet; task 7 prices production items on them.
+      // A day's date, times or removal moves its items' prices.
       onChange: recalc,
+      // Each day's production items (task 7), built here and kept across paints.
+      itemsFor: (dayId) => panelFor(dayId),
     });
     bind(pricing);
     paintLink();

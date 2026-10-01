@@ -388,3 +388,220 @@
     transition: none;
   }
 }
+
+/* ── Production items on a day (task 7) ─────────────────────────────────────
+   The editor's own labour grid, picker and rows, inside the day card. The
+   card is narrower than a full billing block, so responsive.css's 660px grid
+   floor (below 1100) is lifted here: the grid's Service column takes up the
+   difference, and below 768 the rows stack as they do everywhere else. */
+.billing-block.booking-block .bb-picker,
+.billing-block.booking-block .gt-head,
+.billing-block.booking-block .gt-row,
+.billing-block.booking-block .gt-body > * {
+  min-width: 0;
+}
+.day-items {
+  margin: 12px -12px -12px -16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.day-items-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 12px 8px 16px;
+}
+.day-items-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.day-items-sum {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.day-items-sum b {
+  color: var(--text);
+}
+.day-picker {
+  border-top: 1px solid var(--border);
+}
+.day-items-none {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+/* D26: a hint, not a price. */
+.day-hours {
+  padding: 8px 16px 10px;
+  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  font-size: 11px;
+  color: var(--muted);
+}
+.day-hours[hidden] {
+  display: none;
+}
+
+/* A Production line's price with "incl. weekend ×1.5" under it. Wrapping, not
+   a column, so it works both in the grid cell and in the stacked phone row
+   (label | value, with the note on its own line beneath). */
+.gt-row > div.bill-col {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+/* app.css's width:100% on .bill-cell would, once the cell wraps, put the
+   price on a line below its stacked label; it fills the line's rest instead. */
+.gt-row > div.bill-col .bill-cell {
+  flex: 1 1 auto;
+  width: auto;
+}
+.sur-note {
+  flex: 1 0 100%;
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  color: var(--muted);
+}
+.sur-note[hidden] {
+  display: none;
+}
+
+/* ── The Production section ───────────────────────────────────────────────── */
+
+.prod-add-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.prod-days {
+  list-style: none;
+}
+.prod-day,
+.prod-days-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  font-size: 12px;
+}
+.prod-days-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+.prod-days > :last-child {
+  border-bottom: none;
+}
+.prod-day-link {
+  min-height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--muted2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.prod-day-link:hover {
+  text-decoration-color: var(--text);
+}
+@media (min-width: 768px) {
+  .prod-day-link {
+    min-height: 0;
+  }
+}
+.prod-day-items {
+  flex: 1 1 12em;
+  min-width: 0;
+  color: var(--muted);
+}
+.prod-day-total {
+  margin-left: auto;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.prod-unassigned {
+  border-top: 1px solid var(--border);
+}
+.prod-unassigned[hidden] {
+  display: none;
+}
+.prod-unassigned-head {
+  padding: 10px 14px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--cal-pencilled);
+}
+.prod-unassigned-note {
+  padding: 0 14px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* An unassigned line's day select, under its name, in .lab-unit-sel's chrome. */
+.lab-move {
+  margin-top: 4px;
+}
+.lab-move-sel {
+  max-width: 100%;
+  background: #1a1c20;
+  border: 1px solid var(--cal-pencilled);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 10.5px;
+  padding: 2px 4px;
+  cursor: pointer;
+  color-scheme: dark;
+}
+.lab-move-sel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-width: 767px) {
+  .lab-move-sel {
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
+/* ── Short notice, in the doc-type bar (D19) ──────────────────────────────── */
+
+.sn-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.sn-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.sn-check input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.sn-hint {
+  font-size: 11px;
+  color: var(--cal-pencilled);
+}
+.sn-hint:empty {
+  display: none;
+}
