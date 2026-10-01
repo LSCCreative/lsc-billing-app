@@ -97,8 +97,21 @@ times.
           `responsive.css` catches any new `.billing-block` without a grid. The Booking block will
           meet the same thing.
 
-**Exact next item: TASKS.md task 5, the month calendar component** (`web/js/calendar.js`,
-`web/css/calendar.css`; frontend, **Opus/high**: switch models first). Commit task 4 first.
+      - [x] **Task 4** committed 2026-10-02 (`da2db86`).
+      - [x] **Task 5, the month calendar component**: done 2026-10-02, **uncommitted**.
+        - **What exists now:** `LSCCalendar.mount()` in `web/js/calendar.js` with
+          `web/css/calendar.css`, both loaded by `index.html` but not mounted anywhere yet. There's
+          also a shared `LSCCalendar.statusChip()` for the day cards and Coming up.
+        - **Read task 5's Done note before tasks 6 and 12.** It gives the API, the callbacks'
+          `{ trigger }` for `Modal`, and the interpretations to show the user:
+          - tiles aren't tab stops, because a list of the selected date's bookings under the grid
+            is the keyboard and phone route;
+          - "quarter tile" is read as half width × half height;
+          - faded is an outline, not opacity;
+          - tiles vs dots goes by the calendar's own width.
+
+**Exact next item: TASKS.md task 6, the editor's Production Booking block and day cards**
+(frontend, **Opus/high**). Commit task 5 first.
 
 **Seams left for later tasks:**
 - **Holidays (task 7):** the `GET` returns hidden rows too, flagged. The Rate Card list filters on

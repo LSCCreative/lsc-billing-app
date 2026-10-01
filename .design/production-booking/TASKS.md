@@ -326,7 +326,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   - **Mutations** on the new test, each caught: Overtime left in `prod`; `surcharges` dropped from
     the defaults.
 
-- [ ] **5. The month calendar component** (frontend — Opus/high). _New shared component_
+- [x] **5. The month calendar component** (frontend — Opus/high). _New shared component_
   (`web/js/calendar.js`, `web/css/calendar.css`), built for the editor first and reused by Home in
   task 12.
   - A month grid with "Go to date" (jumps to the month and highlights the date), previous/next and
@@ -343,6 +343,69 @@ State the bucket out loud and pause for the user to switch before starting a tas
   it can be driven entirely by keyboard; and a screen reader announces "Saturday 4 October: 1
   confirmed, UPID-042". _Aesthetic: the existing dark editorial system, a quiet production-board
   grid, not Google Calendar's look (brief, Aesthetic Direction)._
+
+  **Done 2026-10-02** on `production-booking` (uncommitted). New `web/js/calendar.js` and
+  `web/css/calendar.css`, both added to `index.html` (the CSS before `responsive.css`, the JS after
+  `info.js`). Nothing mounts the calendar yet; task 6 is its first caller. The suite is unchanged
+  at 349/349: there is no server change and no harness for web modules.
+  - **API:** `LSCCalendar.mount(el, { id, label, emphasis, today, selected, showList,
+    onRangeChange, onDateActivate, onTileActivate })` returns `{ setDays, setEmphasis, goTo, range,
+    selected, focus }`.
+    - Days are `GET /api/calendar`'s shape as is. Date TBC days and unknown statuses are dropped.
+    - The component never fetches. `onRangeChange({ month, from, to })` fires on mount and on
+      every month change, with the six-week range to ask `/api/calendar` for. `from`/`to` are
+      always 42 days, Monday first.
+    - Both activate callbacks get `{ trigger }`: the live cell, or the list button. Hand it to
+      `Modal` so focus goes back there.
+    - Also exported for tasks 6 and 12: `statusChip(status)` (the shared chip from the IA's reuse
+      map), `describeDate`, `timeText`, `gridRange`, `longDate`, `shortDate`, `addDays`,
+      `addMonths`, `isDate`.
+  - **Interpretations the user may want to check:**
+    - **Tiles are not keyboard stops.** A tile inside a grid cell would be a second interactive
+      layer, and Enter already belongs to the date. A tile is a pointer shortcut. The keyboard and
+      phones reach each day through **a list under the grid of the selected date's bookings**, as
+      buttons with words, and Tab goes from the grid straight into it. The list is on at every
+      width (`showList: false` turns it off). It is also D29's "tapped-date list".
+    - **"Quarter tile"** is read as half the width and half the height of a full tile. At the
+      400px layout that is a grey slug too short for text, so its UPID is in the cell's name, the
+      `title` tooltip and the list. At 640px and up it carries the UPID.
+    - **Faded (D23)** is an outline in the status colour with `--muted` text (pencilled keeps a
+      faint hatch), not lowered opacity, so the status colour stays readable as a line. With
+      emphasis on, the estimate's own days sort first in each cell and its list entries say
+      "this estimate".
+    - **Tiles or dots go by the calendar's own width** (a container query), not the viewport:
+      dots under 400px, UPID tiles from 400 (the editor's ~420px column at 1280), and tiles with
+      the project name from 640 (Home, and the editor at 768–1099). At 375 that gives dots, as
+      D29 asks. Touch sizing (44px controls) still follows the viewport, under 768.
+    - Weekends get a faint tint (they carry a surcharge). Public holidays don't yet. There is a
+      seam if task 6 or 12 wants them: pass them in and add a cell class.
+    - Six weeks always, so the block never changes height. Clicking an out-of-month date moves to
+      its month. Next or previous month keeps the day of the month, clamped (31 Jan → 28 Feb).
+  - **Status tokens** (`:root` in calendar.css), measured against `--bg` / `--surface`:
+    `--cal-confirmed` #5f9a6d (5.35 / 4.04), `--cal-pencilled` #c9a443 (7.50 / 5.67), hatch
+    `#ad8a35` (5.77 / 4.13), `--cal-proposed` #8d939c (5.74 / 4.34). Text is `--cal-ink` #121212,
+    at least 5.65:1 on any of them.
+  - **Accessibility:** an ARIA grid with one roving tab stop. The visible title stays "October
+    2026", and the grid's name is "Production calendar, October 2026" through an sr-only span.
+    Cell contents are aria-hidden, so the cell's name is all that's read: "Saturday 3 October: 1
+    confirmed, LSC-042; 1 pencilled, LSC-051", with "Today, " in front on today. A month change is
+    announced through a polite live region. The key help is in an sr-only description. Reduced
+    motion turns off the 180ms month slide and every transition.
+  - **Verified** against `api-scratch` with a 15-day fixture across Sep–Dec and all three
+    statuses, mounted into the signed-in app at 420px (emphasis on) and full width (emphasis off):
+    - **1280 / 800 / 375:** no document overflow at any width. At 375 both calendars show dots,
+      and every control and cell is at least 44px. At 800 and 1280 the bar's controls use the
+      app's compact desktop sizes, on purpose. Screenshots were saved to the session scratchpad,
+      not the repo.
+    - **Keyboard, dispatched:** arrows, Home/End and PageUp/PageDown across month and year
+      boundaries, one tab stop throughout, and `onRangeChange` firing only when the month changes.
+    - **Keyboard, real keys (headless Chrome):** Tab reaches the grid; arrows show the accent
+      `:focus-visible` ring; Enter fires `onDateActivate`; the next Tab lands on the first list
+      entry.
+    - **Clicks, dispatched:** a tile, a cell, an out-of-month cell, a list entry, the three
+      buttons and Go to date (jumps, washes the date in accent, lists its bookings).
+    - **Nothing moved:** the Estimates screen's element rects at 1280 are identical with and
+      without `calendar.css`. The console shows no errors.
 
 - [ ] **6. Editor: the Production Booking block and day cards** (frontend — Opus/high).
   _Depends on: 2, 5._
