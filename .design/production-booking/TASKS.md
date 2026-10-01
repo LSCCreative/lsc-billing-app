@@ -201,7 +201,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   another state's holiday dropped), the tombstone and the failure path. _Modifies: `app.js`; new
   `routes/holidays.js`._
 
-  **Done 2026-10-02** on `production-booking`, committed `da46d38`. The suite is
+  **Done 2026-10-02** on `production-booking`, committed `a7c1dc7`. The suite is
   348/348, with 20 new tests in `test-holidays.js` and one in `test-db.js`. New files are
   `holidays.js` and `routes/holidays.js`; `app.js`, `index.js` and `db.js` also changed.
   - **Routes** (all behind the sign-in; the shapes task 4 builds on):

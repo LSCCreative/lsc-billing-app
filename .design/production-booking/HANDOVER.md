@@ -78,7 +78,7 @@ times.
         - **Read task 2's Done note before tasks 6, 7 and 15.** It lists the write rules, error
           codes and snapshot behaviour they build on.
 
-      - [x] **Task 3, public holidays**: done and committed 2026-10-02 (`da46d38`).
+      - [x] **Task 3, public holidays**: done and committed 2026-10-02 (`a7c1dc7`).
         - **What exists now:** `GET /api/holidays`, `POST /api/holidays/fetch`, `PUT` and `DELETE
           /api/holidays/:date`, and a non-blocking boot top-up from Nager.Date.
         - **Read task 3's Done note before task 4.** It has the response shapes, the tombstone
