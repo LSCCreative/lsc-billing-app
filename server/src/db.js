@@ -603,7 +603,8 @@ const MIGRATIONS = [
       //
       // 2. holidays — national + NSW public holidays (D6, D7). `hidden` is a
       //    fetched date the owner removed, kept so a re-fetch never brings it
-      //    back.
+      //    back. `fetched_at` (task 3) is when a fetch last confirmed a
+      //    fetched row; the newest one is the Rate Card's "last fetched".
       //
       // 3. estimates.short_notice (the tick, D19) and estimates.surcharges_json
       //    (calc.js surchargeSnapshot: the settings it was priced under and
@@ -629,9 +630,14 @@ const MIGRATIONS = [
           date   TEXT PRIMARY KEY,
           name   TEXT NOT NULL DEFAULT '',
           source TEXT NOT NULL CHECK (source IN ('fetched', 'added')),
-          hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1))
+          hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
+          fetched_at TEXT
         );
       `);
+      // A holidays table made by v11 before task 3 has no fetched_at.
+      if (!db.prepare('PRAGMA table_info(holidays)').all().some((c) => c.name === 'fetched_at')) {
+        db.exec('ALTER TABLE holidays ADD COLUMN fetched_at TEXT;');
+      }
       const cols = db.prepare('PRAGMA table_info(estimates)').all().map((c) => c.name);
       if (!cols.includes('short_notice')) {
         db.exec('ALTER TABLE estimates ADD COLUMN short_notice INTEGER NOT NULL DEFAULT 0;');

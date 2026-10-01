@@ -4,6 +4,7 @@ const { config, ensureDataDirs } = require('./config');
 const { openDatabase } = require('./db');
 const { createApp } = require('./app');
 const { scheduleNightlyBackups } = require('./backup');
+const { fetchIfNextYearMissing } = require('./holidays');
 
 function main() {
   ensureDataDirs();
@@ -24,6 +25,12 @@ function main() {
   const server = app.listen(config.port, () => {
     console.log(`LSC Billing server listening on :${config.port}`);
     console.log(`Data directory: ${config.dataDir}`);
+  });
+
+  // Top up the public-holiday list in the background. Not awaited and never
+  // throws: a source being down must not hold up or stop the server.
+  fetchIfNextYearMissing(db).then((r) => {
+    if (!r.skipped && !r.error) console.log(`[holidays] fetched, ${r.added} new date(s)`);
   });
 
   // Close the database cleanly so WAL is checkpointed rather than left for

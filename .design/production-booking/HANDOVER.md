@@ -69,7 +69,7 @@ times.
       - [x] **Task 1, the surcharge maths**: done and committed 2026-10-02 (`86edf25`).
         - Pure functions in both `calc.js` copies.
         - The settings, day and attribution shapes it chose are in TASKS.md task 1's Done note.
-      - [x] **Task 2, schema v11 with days on the server**: done 2026-10-02, **uncommitted**.
+      - [x] **Task 2, schema v11 with days on the server**: done 2026-10-02, committed `a571c67`.
         - **What exists now:** migration v11, surcharged `computeTotals`, the estimate routes
           taking `days`, the clash lock, and `GET /api/calendar`. `PRICING_SHAPE` is
           `'production-days'`.
@@ -78,13 +78,23 @@ times.
         - **Read task 2's Done note before tasks 6, 7 and 15.** It lists the write rules, error
           codes and snapshot behaviour they build on.
 
-**Exact next item: TASKS.md task 3, public holidays (fetch and edit)** (backend,
-**Sonnet/high**: switch models first). Commit task 2 first if the user agrees.
+      - [x] **Task 3, public holidays**: done and committed 2026-10-02 (`da46d38`).
+        - **What exists now:** `GET /api/holidays`, `POST /api/holidays/fetch`, `PUT` and `DELETE
+          /api/holidays/:date`, and a non-blocking boot top-up from Nager.Date.
+        - **Read task 3's Done note before task 4.** It has the response shapes, the tombstone
+          rule and the one schema change (`holidays.fetched_at`, amended inside v11).
+        - **A dev DB already at v11** needs `DELETE FROM schema_version WHERE version >= 11` and a
+          restart to gain that column. `api-scratch` was done and now holds 22 fetched dates plus
+          a hand-added NSW Bank Holiday (2026-08-03).
 
-**Seams task 2 left for later tasks:**
-- **Holidays (task 3):** the `holidays` table exists, and the estimate routes already read it. Task
-  3 adds the routes. Its `GET` also has to give the editor the list, so task 7's live pricing builds
-  the same snapshot as the server.
+**Exact next item: TASKS.md task 4, the Rate Card's Surcharges, Public holidays and Additional work
+blocks** (frontend, **Opus/high**: switch models first). 
+
+**Seams left for later tasks:**
+- **Holidays (task 4, and task 7):** the `GET` returns hidden rows too, flagged. The Rate Card list
+  filters on `!hidden`; the editor passes the whole list to `surchargeSnapshot`, as the server does.
+  The Public holidays block should tell the user the **NSW Bank Holiday isn't in the source** and
+  they can add it by hand.
 - **Editor (tasks 6 and 7):** `collect()` must send `days` and `shortNotice`, and day ids are made
   in the browser.
   - For live pricing, build `surchargeSnapshot(days, card, holidays, { surcharges:

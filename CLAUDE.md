@@ -91,7 +91,9 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    On branch `production-booking` (from estimate-accuracy at `e83533a`): task 1 (surcharge
    maths) committed 2026-10-02; task 2 (schema v11: production days, holidays table, surcharged
    `computeTotals`, clash lock, `GET /api/calendar`, `PRICING_SHAPE` `'production-days'`) done
-   the same day, uncommitted and not deployed.** Next is task 3 (public holidays, Sonnet/high). Client pages are light, in the
+   the same day, committed `a571c67`; task 3 (public holidays: `/api/holidays` routes and a boot
+   fetch from Nager.Date) committed `da46d38` the same day. None of it is deployed.** Next is task 4
+   (the Rate Card's Surcharges and Public holidays blocks, Opus/high). Client pages are light, in the
    colours of the user's site **lsccreative.studio** (formerly creativelsc.com). Read its `HANDOVER.md` first. Build bucket: Opus, effort high.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes

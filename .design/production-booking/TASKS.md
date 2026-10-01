@@ -187,7 +187,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   - **In the browser** (`api-scratch` migrated to v11): an existing estimate re-saved at the same
     total with `days: []`, and the Rate Card round-tripped as current.
 
-- [ ] **3. Public holidays: fetch and edit** (backend — Sonnet/high). _Depends on: 2._
+- [x] **3. Public holidays: fetch and edit** (backend — Sonnet/high). _Depends on: 2._
   - `POST /api/holidays/fetch` pulls this year and next from a free, keyless Australian holiday
     source (e.g. Nager.Date `/PublicHolidays/{year}/AU`). It keeps national holidays and those
     whose subdivision includes `AU-NSW` (D6), upserts them as `fetched`, and never re-adds a
@@ -200,6 +200,51 @@ State the bucket out loud and pause for the user to switch before starting a tas
   **Done when** tests with a stubbed source pin the NSW filter (e.g. Bank Holiday included,
   another state's holiday dropped), the tombstone and the failure path. _Modifies: `app.js`; new
   `routes/holidays.js`._
+
+  **Done 2026-10-02** on `production-booking`, committed `da46d38`. The suite is
+  348/348, with 20 new tests in `test-holidays.js` and one in `test-db.js`. New files are
+  `holidays.js` and `routes/holidays.js`; `app.js`, `index.js` and `db.js` also changed.
+  - **Routes** (all behind the sign-in; the shapes task 4 builds on):
+    - `GET /api/holidays` returns `{ holidays: [{ date, name, source, hidden }], lastFetchedAt }`.
+      Hidden rows **are** included and flagged, so the editor builds the same snapshot the server
+      does (`dayKind` skips them itself). The Rate Card list should filter on `!hidden`.
+    - `POST /api/holidays/fetch` returns the same plus `added` (dates new to the table). On any
+      failure it is a 502 `holiday_fetch_failed` with a fixed "Add dates by hand" message; the raw
+      network error goes to the log only.
+    - **`PUT /api/holidays/:date`** (body `{ name }`) and **`DELETE /api/holidays/:date`**, not a
+      `PUT /api/holidays` as the task text said, because add and remove are per date.
+      - PUT on a new date adds it as `added`.
+      - PUT on an existing date un-hides it and renames it if a name is given. It keeps its
+        source, so a removed fetched date comes back as `fetched`.
+      - DELETE on `added` deletes the row; on `fetched` it sets `hidden`; on a missing date it is
+        404.
+      - Errors: `holiday_date_invalid` (400, a real calendar date is required),
+        `holiday_name_invalid`, `holiday_name_too_long` (100), `holiday_not_found`.
+  - **The fetch:** `nagerSource(year)` is Nager.Date, with a 10s timeout. Any
+    `async (year) => list` can replace it: `createApp(db, { holidaySource })` for tests.
+    - It asks for this year and next (**Sydney's calendar year, not UTC's**).
+    - It keeps `global: true` entries and those whose `counties` include `AU-NSW`. Malformed
+      entries are dropped, and the first of a repeated date wins.
+    - **All-or-nothing:** every year is fetched before anything is written, then one transaction.
+    - A re-fetch never un-hides a removed date, and never overwrites an `added` row's name.
+  - **Boot:** `index.js` calls `fetchIfNextYearMissing(db)` without awaiting it. It runs if no
+    **fetched** row exists for next year (a date the owner added doesn't count), and it logs rather
+    than throws. It ran against the real source on `api-scratch`: 22 dates.
+  - **Schema change inside v11:** `holidays.fetched_at`, set on each fetched row by a fetch.
+    `lastFetchedAt` is the newest. v11 isn't deployed anywhere, so it was amended in place with a
+    guarded `ALTER` for a table made earlier. **A dev DB already at v11 needs
+    `DELETE FROM schema_version WHERE version >= 11` and a restart** (re-run-safe; `api-scratch`
+    was done this way).
+  - **Real-data findings** (Nager, 2026–27), for the user rather than a bug:
+    - the **NSW Bank Holiday is not in the source** (first Monday of August, banks only), so the
+      Rate Card should say they can add it by hand;
+    - Nager lists the *observed* Christmas and Boxing Day dates and never a weekend one. That is
+      harmless, because a weekend date already takes the weekend rate;
+    - Easter Saturday and Sunday are kept (NSW observes both).
+  - **Mutations**, each caught: state-only holidays dropped; no filter at all; wrong state; a
+    re-fetch un-hiding; a re-fetch overwriting an `added` row; DELETE of a fetched row really
+    deleting it; a failed year swallowed (a partial write); UTC year instead of Sydney; boot
+    counting an `added` row; boot throwing; the raw error shown to the user.
 
 - [ ] **4. Rate Card: Surcharges, Public holidays, Additional work** (frontend — Opus/high).
   _Depends on: 2, 3._

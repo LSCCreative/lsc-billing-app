@@ -15,6 +15,7 @@ const { registerGoalsRoutes } = require('./routes/goals');
 const { registerDepreciationRoutes } = require('./routes/depreciation');
 const { registerTaxYearRoutes } = require('./routes/tax-years');
 const { registerCalendarRoutes } = require('./routes/calendar');
+const { registerHolidayRoutes } = require('./routes/holidays');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -44,9 +45,10 @@ function corsMiddleware(req, res, next) {
 
 /**
  * Builds the Express app. Takes an open database handle so tests can pass a
- * throwaway one instead of the real billing.db.
+ * throwaway one instead of the real billing.db. `opts.holidaySource` swaps the
+ * public-holiday fetch for a stub.
  */
-function createApp(db) {
+function createApp(db, opts = {}) {
   const app = express();
 
   if (config.trustProxy) app.set('trust proxy', true);
@@ -91,6 +93,7 @@ function createApp(db) {
   registerDepreciationRoutes(app, db);
   registerTaxYearRoutes(app, db);
   registerCalendarRoutes(app, db);
+  registerHolidayRoutes(app, db, opts);
 
   // ── Static app shell. Empty until the UI is ported off the Electron build.
   app.use(express.static(PUBLIC_DIR, { index: 'index.html', extensions: ['html'] }));

@@ -889,6 +889,24 @@ test('v11 leaves every estimate as it was, with no days and nothing surcharged',
   db.close();
 });
 
+test('v11 gives a holidays table made before task 3 its fetched_at column, keeping the rows', () => {
+  const db = openDatabase(tempDbPath('v11-fetched-at'));
+  db.exec(`
+    DROP TABLE holidays;
+    CREATE TABLE holidays (
+      date TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL CHECK (source IN ('fetched', 'added')),
+      hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1))
+    );
+    INSERT INTO holidays (date, name, source) VALUES ('2026-10-05', 'Labour Day', 'fetched');
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(db.prepare('SELECT date, name, source, hidden, fetched_at FROM holidays').all(),
+    [{ date: '2026-10-05', name: 'Labour Day', source: 'fetched', hidden: 0, fetched_at: null }]);
+  db.close();
+});
+
 test('v11: a day belongs to one estimate, has a known status, and goes when its estimate does', () => {
   const db = openDatabase(tempDbPath('v11-days'));
   const now = nowIso();
