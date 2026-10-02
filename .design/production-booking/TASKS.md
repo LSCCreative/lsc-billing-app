@@ -1,10 +1,10 @@
 # Build Tasks: Production Booking
 
 Generated from: [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md), [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md)
-and [`DECISIONS.md`](DECISIONS.md) (D1–D72, all the user's; don't re-ask; D67–D72 came from the 2026-10-02 money review).
+and [`DECISIONS.md`](DECISIONS.md) (D1–D99, all the user's; don't re-ask; D67–D72 came from the 2026-10-02 money review, D73–D99 are Stage B2).
 Date: 2 October 2026
 
-Stages are built in order, **A+B → C → D → E** (D1), and each one ships and is usable on its own.
+Stages are built in order, **A+B → B2 → C → D → E** (D1, D73), and each one ships and is usable on its own.
 Every task carries a model/effort tag from root `CLAUDE.md`'s buckets:
 
 - **(money math — Opus/high)**: `calc.js`, a stored or printed price, invoice amounts, or anything
@@ -904,6 +904,332 @@ State the bucket out loud and pause for the user to switch before starting a tas
   - **Pages:** `main` fast-forwarded to `6074c3e` and pushed, run 36971522863 success; live
     `index.html` carries `calendar.js?v=6074c3e0` and `js/views/booking-block.js` serves 200.
 
+## Stage B2 — Day-built estimates and the post-production planner (migration v12; built before C)
+
+Added 2026-10-03 from the brief's "Stage B2" section and the IA's "Stage B2 addendum" (D73–D99).
+Task ids are **B2-1 … B2-13**, so tasks 11–33 keep their numbers. Build them in order. B2 ships
+on its own (B2-13) before task 11 starts. The ground rules above apply. In particular: **a new field
+must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equip, equipment
+`item`, prod `capture`, the deliverable's `id`/`typeId`/`typeName`/`multiplier`, the post line's
+`deliverableId`, `rentals`) must each reach:
+
+- the editor's row builder and `collect()`;
+- `payload()`;
+- the server's write checks;
+- the duplicate route;
+- the estimate detail;
+- the PDF;
+- from Stage E, the public serializer.
+
+- [x] **B2-1. `postPlan` and the card shape** (money math — Opus/high). _Pure functions in both
+  `calc.js` copies._ **Done 2026-10-03, uncommitted.**
+  - **`postPlan(activeRows, pricing)`** → `{ captureHours, shares: [{ deliverableId, hours }],
+    recommended, onPostLines }`, per the brief's B2 Key Interactions 3:
+    - Capture hours = Σ `unitHours × qty` over `prod` lines with `capture` (falling back to the
+      card's row of the same name when the line has no `capture` field).
+    - Each share = capture × multiplier × qty, rounded **up** to 0.5.
+    - Recommended = Σ shares.
+    - `onPostLines` = the hours of every `post` line.
+  - **Worked-example tests** in `test-calc.js`: 10 capture → 20 + 15 = 35; ×0.33 → 3.5; no capture
+    → 0; untyped → 0; qty 0 → 0; a Full Day on a card whose Service Day is 7 hrs → 7.
+  - **`PRICING_SHAPE`** → `'deliverable-types'`, with the card marker and `cardShapeOutdated`, in the
+    v9/6a/v11 pattern. `DEFAULT_PRICING` gains `deliverableTypes: []` and no `capture` ticks (the
+    user ticks their own).
+  - **A pinned test:** a non-`prod` line with a `dayId` on a Saturday, after hours, short-notice day
+    is **never** surcharged. It covers travel (including own-time Transport hrs and per-km), crew
+    and equip.
+  - **Mutations:** the rounding direction, qty dropped, the capture fallback skipped, and a surcharge
+    let onto `travel`. Each must fail a test.
+
+  **Done when** the suite is green, the drift test passes, and the four mutations are listed.
+
+  **Done note (2026-10-03).** `npm test` 387/387 (was 377), and the drift test passes.
+  - **What exists now:**
+    - `calc.js` `postPlan` (both copies, exported to `LSCCalc`) under a new "post-production
+      planner" heading after `costBreakdown`. `PRICING_SHAPE` is `'deliverable-types'`.
+    - `defaults.js` `DEFAULT_PRICING.deliverableTypes: []`, with no Capture ticks.
+    - `PUT /api/pricing` refuses a `capture` that isn't a boolean (`labour_capture_not_a_flag`)
+      and a malformed `deliverableTypes` (`deliverable_types_invalid`): not an array, or a type
+      without a string `id`, with `services` not a list of names, or a multiplier that isn't a
+      number ≥ 0. Not in the spec; added so B2-9 has a server check to lean on.
+    - **The Rate Card carries both fields through a save** (`pricing.js` `workingCopy` and
+      `payload()`), and the two refusal codes have messages. Without that, bumping the shape
+      would have let this build's own Rate Card drop them. Verified in the browser against
+      `api-scratch`: a seeded type and tick survive "Save Services". The scratch card was put back.
+      B2-9 builds the editing UI on top.
+  - **Tests** (`test-calc.js`, 9 new, and one in `test-api.js`):
+    - the worked example (10 → 20 + 15 = 35);
+    - rounding (×0.33 → 3.5, 3 × 0.1 × 5 → 1.5 not 2, on and just over a half hour, recommended =
+      Σ rounded shares);
+    - edge cases (no capture, untyped, saved before B2 with no id, qty 0, negative or non-numeric
+      qty and multiplier);
+    - a Full Day on a 7-hr card → 7;
+    - the capture flag and its fallback;
+    - only `prod` counts;
+    - "on post lines";
+    - the B2 fields price nothing (with vs without, `computeTotals` deep-equal);
+    - **the pinned D3 test:** own-time Transport hrs, per km, direct, resold meals, crew and equip
+      on a Saturday 6–11pm short-notice day total exactly as with no day, through `computeTotals`,
+      `stampSurchargedPrices` and `costBreakdown`;
+    - the shape guard refuses `'production-days'`;
+    - and the route round trip plus each refusal.
+  - **Mutations, each failing a test:**
+    - rounding down, rounding to nearest, and the float-noise guard dropped;
+    - qty dropped from the share;
+    - the capture fallback skipped, and a snapshotted `capture: false` ignored;
+    - an untyped deliverable counted;
+    - hours read as quantity;
+    - a surcharge let onto own-time/resold travel, per-km travel, crew or equip, and stamping on
+      every section.
+  - **Interpretations to show the user:**
+    1. **Capture counts the hours a line bills**, meaning its own snapshotted hours per unit
+       through `lineDef`, the same figure as `computeTotals`' `totalHours`. The brief's
+       `unitHours(pricing, unit)` reads the live Service Day instead. The two differ only when the
+       Service Day changed after the line was added: a Full Day added at 8 hrs on a card now at 7
+       captures 8, as it bills 8.
+    2. **The capture fallback matches the card row by `rowId`, then by name**, as `lineDef` does,
+       so a service renamed on the card still finds its tick. The brief says "the same name".
+    3. **"Untyped" means no `typeId`.** A deliverable carrying a multiplier but no type
+       recommends 0.
+  - **Seams for later tasks:**
+    - **B2-10:** the editor's deliverable `collect()` saves a qty of 0 or blank as 1 (`|| 1`), so
+      a qty-0 deliverable shows 0 live and its full share after a save. Decide there whether qty 0
+      is allowed.
+    - **B2-2:** `costBreakdown`'s equipment name reads `vendor` (`atCost('equip', 'vendor', …)`).
+      For the Cost Breakdown PDF to print `item || vendor` as the client PDF will, change it
+      there.
+
+- [ ] **B2-2. Schema v12, rentals, and the server's line rules** (money math — Opus/high, because
+  it governs which lines can carry a day). _Depends on: B2-1._
+  - **Migration v12:** the `rentals` table, per the IA (columns, indexes, `ON DELETE CASCADE`).
+    Write a `test-db.js` migration test. Extend `db.js`'s v11 trap comment to name `rentals` too.
+  - **`days.js` `lineDayProblem`** allows `dayId` on `prod`, `travel`, `crew` and `equip`.
+    - `deliverableId` is refused outside `post`, and refused when it names no deliverable
+      (`line_deliverable_unknown`).
+    - Deliverable ids must be unique on the estimate.
+  - **Rentals on the estimate routes:**
+    - `GET` returns `rentals`.
+    - `POST`/`PUT` replace them wholesale, inside the same transaction as days.
+    - The write refuses `rental_vendor_duplicate` and bad dates or methods, and drops a rental whose
+      vendor is on no equipment line.
+  - **`GET /api/calendar`** adds `rentals` overlapping the range. A rental with one date is a
+    one-day marker; one with no dates is left out.
+  - **Duplicate route:** travel, crew and equip lines come off their days too (count them in
+    `unbooked`). The copy gets **no rentals**, because it's a new project with no dates (D60).
+    Deliverables, their tags and `capture` are copied as they are.
+  - **PDF:** equipment prints `item || vendor`. A post line prints " · <deliverable name>" when its
+    `deliverableId` resolves. `daysWithItems` stays `prod`-only (D85).
+  - **Tests:**
+    - an estimate saved before B2 totals identically, through the route and `computeTotals`;
+    - the round trip of every new field;
+    - each refusal code.
+
+  **Done when** `npm test` is green with the new tests, and a raw-API save of travel, crew and equip
+  on days plus two rentals round-trips and shows on `/api/calendar`.
+
+- [ ] **B2-3. Deliverables block: moved, restyled, typed; the Prices bar moved** (frontend —
+  Opus/high). _Depends on: B2-1._ This is the first visible B2 slice, to confirm the look early.
+  - **Placement:** Deliverables moves above the booking block, and the Prices bar moves above
+    Deliverables (D98).
+  - **The treatment (D86):** the Total box's tint (`rgba(184,84,68,.08)` fill, a stronger accent
+    border at 2px) and a larger Delight heading, in additive CSS. Check text contrast on the tint
+    (≥4.5:1).
+  - **Columns:** Type ▾ · Name · Format · Length · Qty · Post hrs (rec.) · ×.
+    - Type lists the card's `deliverableTypes` alphabetically, after "— None —".
+    - Each deliverable gets a browser-made `id`, assigned on load to old rows that lack one.
+    - Picking a type prefills a blank Name and snapshots `typeId`/`typeName`/`multiplier`.
+    - *Adding post lines is B2-10.*
+    - Post hrs shows "—" until B2-10.
+  - **Phones:** stacked `data-label` rows, as the other tables.
+
+  **Done when** an old estimate opens with its deliverables intact and unsaved-clean; the Type
+  saves and reloads; and nothing outside the moved blocks shifts at 1280 except by the blocks' own
+  height change. _Reuses: `.billing-block`, the deliverable row builder._
+
+- [ ] **B2-4. The service menu, and every on-set kind on a day** (money math — Opus/high, because
+  production lines price live). _Depends on: B2-2._ This is the riskiest slice.
+  - **The button:** "Add Production Service Items" on each day card ("Add items" on Not on a day)
+    replaces the card's service → unit → Add picker.
+  - **The menu (≥768):** it swaps in for the calendar in its column. It has the head "Adding to
+    <day>" + Done, and four disclosure groups:
+    - **Production** (open): rows with unit buttons and muted prices;
+    - **Travel**: rows with Add;
+    - **External Crew**: "+ Add crew member";
+    - **Equipment Hire**: "+ Add hire item".
+    A running "N added" count shows. Done or Escape returns the calendar with focus on the
+    trigger, and another card's button retargets it. A filter field appears when there are more
+    than 12 Production rows.
+  - **Below 768:** the menu is a `Modal` bottom sheet with 44px targets and a sticky Done.
+  - **Day cards** hold line groups (Production · Travel · Crew · Equipment, each shown only with
+    lines) and a day total over everything on the day. Travel, crew and equip rows read their
+    `dayId` from their card, as `prod` rows already do. `itemsFor(dayId)` becomes per kind. The
+    move-not-rebuild rule holds for every group.
+  - **The "Not on a day" card** comes last. On open, old unassigned `prod` lines and every travel,
+    crew and equip line without a `dayId` are placed there. Production lines in it price as
+    unassigned lines do today.
+  - **Each add is announced politely.** Vehicle per km arrives focused at 0 km. Crew focuses Role,
+    and equipment focuses Vendor (still the old single field until B2-7).
+  - **Reaching the old flat sections:** the Travel, Crew and Equipment sections' own add buttons go
+    away. Their lines now live in cards. *The read-only summaries are B2-6*, so until then those
+    sections render empty heads. That's fine on the branch, but not deployable.
+
+  **Done when:**
+  - a day holds all four kinds;
+  - totals match the server to the cent on save (including a surcharged production line next to an
+    unsurcharged travel line on a Saturday);
+  - an old estimate opens with everything in Not on a day, at its stored total, unsaved-clean;
+  - nothing above the booking block moves at 1280.
+
+  _Reuses: `BookingBlock`, the labour row and cost row builders, `Modal`._
+
+- [ ] **B2-5. Moving lines: drag, Move to, Duplicate day** (money math — Opus/high, because a move
+  re-prices). _Depends on: B2-4._
+  - **Drag (mouse and pen, pointer events):** a handle `<button>` on each line. Drop targets are
+    the same kind's group on any card, and Not on a day. A drop rule shows the insert point.
+    Dropping in its own card reorders. There's no handle below 768.
+  - **Move to ▾** on every line (the handle button opens it for keyboard users), listing the days
+    by title, then "Not on a day". Focus follows the line.
+  - **Either way:** quantity, unit, override and both rate marks are kept. The price re-prices for
+    the new day, and the announcement says the line, the day, the new price and the surcharge. This
+    overturns task 7's one-way move (D80).
+  - **Duplicate day:** a new Date TBC day (Proposed) after the source, copying every line, with
+    production re-priced as TBC. Equipment copies keep their vendor. Focus goes to the new card's
+    date.
+
+  **Done when:**
+  - a Video Capture Full Day dragged Sat → Mon goes $1,680 → $1,120, and back again;
+  - saved totals equal the server's;
+  - Move to works from the keyboard alone;
+  - Duplicate then date gives the weekend price;
+  - mutations: keeping the old day's surcharge on move is caught by a figure check.
+
+- [ ] **B2-6. "On set, by day": the four read-only summaries, and the editor order** (money math —
+  Opus/high, because it renders day totals). _Depends on: B2-4._
+  - **One builder for four summaries** (Production, Travel, External Crew & Contracts, Equipment
+    Hire). Each has:
+    - groups per day in card order (title, status chip, lines, group total, "Edit on the day ↑"
+      focusing the card);
+    - Date TBC days, then "Not on a day";
+    - the subtotal;
+    - "Add to a day ▾" opening that day's menu at the category.
+    An empty summary shows "Nothing on set yet." It replaces task 7's Production day list and its
+    Unassigned group.
+  - **The order (D98):** Pre-Production → Post-Production → Additional work → the "On set, by day"
+    divider → the four summaries → summary area.
+
+  **Done when** each summary's subtotal equals the matching figure in `computeTotals`, legacy
+  estimates show one "Not on a day" group per summary, and the order matches D98 at 1280, 800 and
+  375.
+
+- [ ] **B2-7. Gear rentals** (frontend — Opus/high). _Depends on: B2-4._
+  - **Equipment rows:** split into **Vendor** (a typeahead from this estimate's vendors) and
+    **Item**. Old lines show their `vendor` text as the Item, with Vendor blank (confirmed
+    2026-10-03).
+  - **The Gear rentals panel**, under both columns, has one row per vendor (trimmed,
+    case-insensitive): vendor, item count (names in an ⓘ), Out date + Pickup/Postage, Back date +
+    Return/Postage, Note.
+    - A new vendor adds a row, and the line hints "Add pickup and return dates ↓".
+    - Renaming a vendor's only item renames the rental, and a rental with no items goes.
+    - With no equipment: "Gear you hire shows here, grouped by vendor."
+  - **Saving:** `payload()` sends `rentals`, the unsaved guard covers them, and they round-trip.
+  - **The collapsed head** adds "· N rentals" and "· N off-day lines".
+  - **The estimate detail** shows Item (and the vendor, muted) in Equipment.
+
+  **Done when** two vendors across two days make two rentals, dates save and reload, emptying a
+  vendor removes its rental, and an old estimate is unchanged.
+
+- [ ] **B2-8. Rental bars on the calendar** (frontend — Opus/high). _Depends on: B2-2, B2-7. A
+  change to the shared `web/js/calendar.js`._
+  - **A bar layer** spanning out → back across week rows, labelled vendor · UPID. A one-date
+    rental is a one-day marker. Other estimates' bars are faded, and this estimate's come from live
+    editor state (as its days do).
+  - **Dots mode** draws a thin bar under each covered date. The selected date's list (the keyboard
+    and phone route) gains its rentals.
+  - **Clicking this estimate's bar** focuses its rental row. Clicking another's names it (UPID,
+    vendor, dates). No clash rules (D84).
+  - **Task 12 (Home)** must draw them too. Add that line to task 12 when this lands.
+
+  **Done when** bars draw correctly across a month boundary and a week wrap, at 1280 and 375,
+  against a second scratch project's rental.
+
+- [ ] **B2-9. Rate Card: the Capture tick and Deliverable Types** (frontend — Opus/high).
+  _Depends on: B2-1._
+  - **Capture:** a column beside Custom on `prod` rows only, with an ⓘ in its head. It's saved with
+    the card and the existing outdated-card guard still holds.
+  - **The Deliverable Types block,** after Travel and before Surcharges, saved by "Save Services".
+    Rows have:
+    - Name and Description;
+    - Post services as chips: "+ Add" is a select of Post-Production rows, × removes a chip, and a
+      service no longer on the card shows struck through as "missing";
+    - Multiplier "[ N ] × 1 capture hour" (step 0.25, 2 dp, ≥ 0);
+    - ×.
+    "+ Add Deliverable Type" sits underneath, with an empty state. Validation goes through
+    `LSCUtil.showFieldErrors`.
+  - **Reset Defaults** clears types only after its existing confirm.
+
+  **Done when** types and capture ticks save and reload, an old build is refused by the shape
+  guard, and nothing in the existing tables moves at ≥1100 except the new column (Desktop
+  Preservation Law, the brief's exception).
+
+- [ ] **B2-10. The post-production planner in the editor** (money math — Opus/high). _Depends on:
+  B2-1, B2-3, B2-9._
+  - **Picking a type** adds its post services to Post-Production at 0 hrs, each carrying
+    `deliverableId`. A missing service is skipped with a toast naming it.
+  - **Changing the type or removing the deliverable** removes its tagged lines, with a confirm
+    naming the count when any has hours.
+  - **Tags:** a tagged line shows a "· <deliverable name>" chip that follows renames. A tag whose
+    deliverable is gone is dropped on save.
+  - **The planner cell** heads Post-Production: [Production Capture Hours N] [Recommended Post
+    Production Hours N], and "On post lines: X of Y recommended". It's hidden with no capture hours
+    and no typed deliverables. Each deliverable's row shows its share. All of it comes from
+    `postPlan`, live.
+  - **Capture snapshot:** a `prod` line added from the menu takes `capture` from its card row.
+  - **Elsewhere:** the detail screen shows the tag. The client PDF's tag is checked (B2-2). Lines at
+    0 hrs stay off documents.
+
+  **Done when:**
+  - the brief's worked example reproduces in the browser (10 capture → 35, then 20 → 70 after
+    Duplicate day);
+  - a rename follows to the PDF;
+  - an untyped deliverable adds nothing;
+  - mutations: rounding down, qty ignored.
+
+- [ ] **B2-11. The surcharge box and the Totals row** (money math — Opus/high). _Independent of
+  B2-4 to B2-10; can be built any time after B2-2._
+  - **The box** replaces `#sur-line`. Its rows come from `calc.js` `costBreakdown()` surcharge
+    entries (day, kind, multiplier, hours covered, $, carry-overs), then the total and "already
+    folded into each production line's price". The ⓘ text carries over.
+    - With days but no surcharge: "No surcharges apply." With no days: hidden.
+  - **The Totals row:** the figures step up in Delight, with Total (inc GST) the largest. The
+    take-home sentence moves into an `LSCInfo` ⓘ on its label, which opens on hover.
+
+  **Done when** the box's rows sum to `surchargeTotal` and match the Cost Breakdown PDF for Audit A
+  to the cent, all three states show, and the larger figures fit at 375 without overflow.
+
+- [ ] **B2-12. B2 responsive and accessibility pass** (frontend — Opus/high). Breakpoints 1280,
+  800, 375. _Depends on: B2-3 to B2-11._
+  - **Check and fix:**
+    - the menu's swap at ≥768 and its sheet at <768;
+    - no drag handle on touch;
+    - Move to as the full alternative (WCAG 2.5.7);
+    - focus on open, close, move and duplicate;
+    - every announcement;
+    - targets ≥44px under 768;
+    - the tint's contrast;
+    - reduced motion (the swap and the drop);
+    - no document overflow;
+    - nothing moved at 1280 outside B2's blocks.
+  - **Record** the measurements in its Done note. A real VoiceOver pass stays for a person.
+
+- [ ] **B2-13. Deploy B2** (deploy — Sonnet/medium). **Ask first.** NAS before Pages:
+  1. back up;
+  2. NAS v12 (check the boot log);
+  3. check that `/api/calendar` returns `rentals`;
+  4. Pages.
+
+  `PRICING_SHAPE` changes, so Pages must not go before NAS. After deploy, the user ticks Capture on
+  their real capture services and adds their Deliverable Types.
+
 ## Stage C — Home: the production calendar (no migration)
 
 - [ ] **11. Hash router** (frontend — Opus/high). _New `web/js/router.js`._ The foundation for C
@@ -930,6 +1256,8 @@ State the bucket out loud and pause for the user to switch before starting a tas
     Until stage D that opens the estimate.
   - **"Coming up"**: the next 14 days, all three statuses, labelled.
   - **Phones:** dots plus a tapped-date list, and the week view as a list (D29).
+  - **Rental bars** (D84, from B2-8): all estimates' bars at equal strength, in month view; in
+    week view, as a strip above the untimed tiles.
 
   **Done when** it's verified against the scratch DB with days across two months and three
   statuses.
@@ -938,7 +1266,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   - The accessibility pass on Home (the keyboard grid, pop-up focus return) and responsive checks.
   - Then Pages only: no migration, but Pages must go after NAS v11.
 
-## Stage D — Projects and invoices (migration v12)
+## Stage D — Projects and invoices (migration v13)
 
 - [ ] **14. Invoice maths** (money math — Opus/high). _Pure functions in both `calc.js` copies._
   - `depositAmount(estimateTotals, pct)`: on the total inc GST, `round2`, with GST split
@@ -955,7 +1283,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   plus extras exactly. Mutations: pct as a whole number, deposit not subtracted, extras skipped, GST
   split rounding.
 
-- [ ] **15. Schema v12: projects, statuses, invoices, activity** (money math — Opus/high).
+- [ ] **15. Schema v13: projects, statuses, invoices, activity** (money math — Opus/high).
   _Depends on: 14._
   - **`projects`** (IA Data Model). One per distinct non-blank UPID; shared or blank UPIDs become
     projects with `upid` NULL and `needs_upid` (D61). Also `estimates.project_id`.
@@ -1065,11 +1393,11 @@ State the bucket out loud and pause for the user to switch before starting a tas
 - [ ] **23. D polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium).
   - **Accessibility:** the folder, Projects, Settings and fix-up screens.
   - **Responsive:** 1280, 800 and 375.
-  - **Deploy:** ask first, then NAS v12 (back up first; read the boot log's project counts and
+  - **Deploy:** ask first, then NAS v13 (back up first; read the boot log's project counts and
     `needs_upid` count), then Pages.
   - **The user** then runs the fix-up if the banner shows.
 
-## Stage E — Client pages, signing, sending and payment (migration v13)
+## Stage E — Client pages, signing, sending and payment (migration v14)
 
 **Inputs needed from the user before tasks 27–31 can be finished:**
 
@@ -1098,7 +1426,7 @@ Tasks 24–26 can be built with placeholders.
 
 - [ ] **25. Sent versions and the public estimate route** (auth/security — Opus/high).
   _Depends on: 19, 24._
-  - **Migration v13:**
+  - **Migration v14:**
     - `estimate_versions`;
     - `estimates.public_token`;
     - `signatures` (with `pdf_blob`, D66);
@@ -1204,7 +1532,7 @@ Tasks 24–26 can be built with placeholders.
   - **Client pages, phone-first:** 16px body, 44px targets, Sign & submit reachable, reduced
     motion.
   - **Accessibility:** the signing dialog's focus and scroll box.
-  - **Deploy (ask first):** add the `.env` secrets on the NAS; NAS v13; check the boot log and the
+  - **Deploy (ask first):** add the `.env` secrets on the NAS; NAS v14; check the boot log and the
     scheduler; then Pages.
   - **An end-to-end run with the user:** send a real estimate to their own address, sign it,
     confirm the email, the invoices, the calendar and the signed PDF, then pay a deposit by card in
@@ -1213,7 +1541,7 @@ Tasks 24–26 can be built with placeholders.
 ## Review
 
 - [ ] **33. Money-math and security review, then design review** (review).
-  - **A `/code-review` (xhigh) of the whole track's diff**, hunting for:
+  - **A `/code-review` (xhigh) of the whole track's diff, Stage B2 included**, hunting for:
     - a field that prices but doesn't print, or the reverse;
     - a line saved before a change that now totals differently;
     - `calc.js` drift;
@@ -1229,5 +1557,7 @@ Tasks 24–26 can be built with placeholders.
   **10 (discount)** must say whether it applies before or after surcharges, and **12 (minimum
   call)** whether it applies per booked day.
 - **The Client Hub integration** is out of scope (D53).
+- **Post-production days on the calendar** (D97): a formula from the deliverables, deferred until
+  after A–E by the user. Grill it then; `postPlan` is its input.
 - **Removing the committed Delight `.woff2` from git history** is the user's call (D57), and a
   separate job.

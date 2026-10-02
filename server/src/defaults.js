@@ -63,6 +63,11 @@ const { PRICING_SHAPE, SURCHARGE_DEFAULTS } = require('./calc');
  * SURCHARGE_DEFAULTS, copied rather than shared so nothing can mutate the
  * constant through the card. As above, only a fresh database and Reset
  * Defaults read either: the user moves Overtime on a live card themselves.
+ *
+ * DELIVERABLE TYPES (2026-10-03, production-booking B2-1). An empty list, and
+ * no Capture tick on any Production row (D89, D91): which services count as
+ * capture, and what each kind of deliverable needs in the edit, are the
+ * user's to say.
  */
 const DEFAULT_PRICING = {
   pricingShape: PRICING_SHAPE,
@@ -124,6 +129,9 @@ const DEFAULT_PRICING = {
   // the fake "Save Rates" button could never change.
   taxSetAsideRate: 0.35,
   surcharges: Object.assign({}, SURCHARGE_DEFAULTS, { workingWeekdays: SURCHARGE_DEFAULTS.workingWeekdays.slice() }),
+  // The post-production planner's types (B2-1, D91). None to start, and no
+  // `prod` row is ticked Capture: the user sets up their own.
+  deliverableTypes: [],
 };
 
 /**

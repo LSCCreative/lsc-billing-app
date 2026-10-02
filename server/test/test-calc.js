@@ -2103,7 +2103,9 @@ test('travelFloorComparison: no floor yet is "can\'t tell", not fine and not bel
 });
 
 test('a card without this build\'s shape marker is outdated', () => {
-  assert.equal(PRICING_SHAPE, 'production-days');
+  assert.equal(PRICING_SHAPE, 'deliverable-types');
+  // Task 2's build, whose Rate Card would drop deliverable types and Capture ticks (B2-1).
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'production-days' }), true);
   // 6a's build, which would save a km row as a resold $0 row (task 6b).
   assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'travel-auto' }), true);
   // 6b's build, whose Rate Card would drop the surcharge settings (production-booking task 2).
@@ -2814,4 +2816,196 @@ test('costBreakdown: a sweep of prices, days, modes and GST cards always adds up
     }
   }
   assert.equal(checked, 3 * 2 * 3 * 11);
+});
+
+/* ── The post-production planner (production-booking B2-1) ────────────────
+   The brief's B2 Key Interactions 3. Suggests only: postPlan never reaches
+   computeTotals, so these figures guide the owner's typed post hours and
+   price nothing. */
+const { postPlan } = require('../src/calc');
+
+const PLAN_CARD = {
+  serviceDay: { fullHours: 8, halfHours: 4 },
+  labourSections: [
+    {
+      id: 'prod',
+      label: 'Production',
+      rows: [
+        { id: 'r_vc', name: 'Video Capture', prices: { hour: 140, half: 640, full: 1120 }, capture: true },
+        { id: 'r_dr', name: 'Drone Aerial Capture', prices: { hour: 84, half: null, full: null }, capture: true },
+        { id: 'r_ph', name: 'Photo Capture', prices: { hour: 112, half: null, full: null } },
+      ],
+    },
+    {
+      id: 'post',
+      label: 'Post-Production',
+      rows: [{ id: 'r_ed', name: 'Video Editor — B-Roll Offline Edit', prices: { hour: 63, half: null, full: null } }],
+    },
+  ],
+  travelRows: [],
+  taxSetAsideRate: 0.3,
+};
+// Lines as the editor adds them: a price snapshot, and the capture flag of the row they came from.
+const vcDay = (extra) => ({ name: 'Video Capture', rowId: 'r_vc', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8, capture: true, ...extra });
+const drone = (extra) => ({ name: 'Drone Aerial Capture', rowId: 'r_dr', qty: 2, mu: 84, hoursPerUnit: 1, capture: true, ...extra });
+const photo = (extra) => ({ name: 'Photo Capture', rowId: 'r_ph', qty: 3, mu: 112, hoursPerUnit: 1, capture: false, ...extra });
+const edit = (extra) => ({ name: 'Video Editor — B-Roll Offline Edit', rowId: 'r_ed', qty: 0, mu: 63, hoursPerUnit: 1, ...extra });
+const deliverable = (id, multiplier, qty, extra) =>
+  ({ id, name: id, format: '', duration: '', qty, typeId: 't_' + id, typeName: id, multiplier, ...extra });
+const WORKED = {
+  prod: [vcDay({ dayId: 'd_sat' }), drone(), photo()],
+  deliverables: [deliverable('brand', 2, 1), deliverable('socials', 0.5, 3)],
+};
+
+test('postPlan worked example: 10 capture hours, Brand Story ×2 is 20 and Socials ×0.5 × 3 is 15, so 35', () => {
+  assert.deepEqual(postPlan(WORKED, PLAN_CARD), {
+    captureHours: 10, // the full day's 8 + the drone's 2; Photo Capture isn't ticked
+    shares: [{ deliverableId: 'brand', hours: 20 }, { deliverableId: 'socials', hours: 15 }],
+    recommended: 35,
+    onPostLines: 0,
+  });
+});
+
+test('postPlan: each share rounds UP to the half hour, and float error is not a half hour', () => {
+  const share = (prod, multiplier, qty) =>
+    postPlan({ prod, deliverables: [deliverable('d', multiplier, qty)] }, PLAN_CARD).shares[0].hours;
+  // 10 × 0.33 = 3.3 → 3.5, never 3.
+  assert.equal(share(WORKED.prod, 0.33, 1), 3.5);
+  // 3 × 0.1 × 5 is 1.5000000000000002 in floating point: still 1.5, not 2.
+  assert.equal(share([drone({ qty: 3 })], 0.1, 5), 1.5);
+  // Exactly on a half hour stays put; just over it goes up.
+  assert.equal(share(WORKED.prod, 0.25, 1), 2.5);
+  assert.equal(share(WORKED.prod, 0.26, 1), 3);
+  // Recommended is the sum of the ROUNDED shares, so the rows add up to it.
+  const plan = postPlan({ prod: WORKED.prod, deliverables: [deliverable('a', 0.33, 1), deliverable('b', 0.33, 1)] }, PLAN_CARD);
+  assert.deepEqual([plan.shares[0].hours, plan.shares[1].hours, plan.recommended], [3.5, 3.5, 7]);
+});
+
+test('postPlan edge cases: no capture lines, an untyped deliverable and qty 0 all recommend 0', () => {
+  // No capture lines: 0 / 0.
+  assert.deepEqual(postPlan({ prod: [photo()], deliverables: [deliverable('brand', 2, 1)] }, PLAN_CARD),
+    { captureHours: 0, shares: [{ deliverableId: 'brand', hours: 0 }], recommended: 0, onPostLines: 0 });
+  // Untyped: no typeId, whatever multiplier it carries. Saved before B2: no id either.
+  const untyped = postPlan({ prod: WORKED.prod, deliverables: [deliverable('u', 2, 1, { typeId: undefined }), { name: 'Old', qty: 1 }] }, PLAN_CARD);
+  assert.deepEqual(untyped.shares, [{ deliverableId: 'u', hours: 0 }, { deliverableId: null, hours: 0 }]);
+  assert.equal(untyped.recommended, 0);
+  // qty 0, and a qty or multiplier that isn't a usable number, add 0, never a negative.
+  const odd = postPlan({ prod: WORKED.prod, deliverables: [deliverable('z', 2, 0), deliverable('n', 2, -1), deliverable('m', -2, 1), deliverable('s', 'x', 1)] }, PLAN_CARD);
+  assert.deepEqual(odd.shares.map((s) => s.hours), [0, 0, 0, 0]);
+  // Nothing at all.
+  assert.deepEqual(postPlan(undefined, undefined), { captureHours: 0, shares: [], recommended: 0, onPostLines: 0 });
+  assert.deepEqual(postPlan({ prod: 'x', deliverables: [null] }, PLAN_CARD), { captureHours: 0, shares: [], recommended: 0, onPostLines: 0 });
+});
+
+test('postPlan: a Full Day counts the Service Day it bills, so a 7-hour card gives 7', () => {
+  const card7 = { ...PLAN_CARD, serviceDay: { fullHours: 7, halfHours: 3.5 } };
+  // Added on the 7-hour card: its snapshot says 7.
+  assert.equal(postPlan({ prod: [vcDay({ hoursPerUnit: 7 })] }, card7).captureHours, 7);
+  // Saved before snapshots: it resolves through the live card's Service Day, as computeTotals does.
+  assert.equal(postPlan({ prod: [{ name: 'Video Capture', qty: 1, dayUnit: 'full' }] }, card7).captureHours, 7);
+  assert.equal(postPlan({ prod: [{ name: 'Video Capture', qty: 2, dayUnit: 'half' }] }, card7).captureHours, 7);
+  // Added at 8 before the card moved to 7: it still bills 8 hours, so it captures 8.
+  const added8 = { prod: [vcDay()] };
+  assert.equal(postPlan(added8, card7).captureHours, 8);
+  assert.equal(postPlan(added8, card7).captureHours, computeTotals(added8, card7, UNREG).totalHours);
+});
+
+test('postPlan: a line\'s own capture flag wins; a line saved before B2 falls back to its card row', () => {
+  const hours = (line, card) => postPlan({ prod: [line] }, card || PLAN_CARD).captureHours;
+  // Snapshotted either way, whatever the card says now.
+  assert.equal(hours(drone({ capture: false })), 0);
+  assert.equal(hours(photo({ capture: true })), 3);
+  // No flag: the live row's tick, by id first (a renamed service), then by name.
+  assert.equal(hours(drone({ capture: undefined })), 2);
+  assert.equal(hours(photo({ capture: undefined })), 0);
+  assert.equal(hours(drone({ capture: undefined, name: 'Drone (renamed on the card)' })), 2);
+  assert.equal(hours({ name: 'Drone Aerial Capture', qty: 2, mu: 84, hoursPerUnit: 1 }), 2);
+  // A row ticked with anything but true is not ticked, and a service gone from the card captures nothing.
+  const truthy = { ...PLAN_CARD, labourSections: [{ id: 'prod', rows: [{ id: 'r_dr', name: 'Drone Aerial Capture', prices: { hour: 84, half: null, full: null }, capture: 'yes' }] }] };
+  assert.equal(hours(drone({ capture: undefined }), truthy), 0);
+  assert.equal(hours({ name: 'Gone', qty: 4, dayUnit: 'full', capture: undefined }), 0);
+});
+
+test('postPlan: only Production lines are capture, on a day, a TBC day or none', () => {
+  const plan = postPlan({
+    prod: [vcDay({ dayId: 'd_sat' }), vcDay({ dayId: 'd_tbc' }), vcDay()],
+    post: [edit({ qty: 5, capture: true })],
+    additional: [{ name: 'Overtime — per hour', qty: 3, mu: 210, hoursPerUnit: 1, capture: true }],
+  }, PLAN_CARD);
+  assert.equal(plan.captureHours, 24);
+});
+
+test('postPlan: "on post lines" is every post line\'s hours, tagged or not, and changes no recommendation', () => {
+  const rows = { ...WORKED, post: [edit({ qty: 4, deliverableId: 'brand' }), edit({ qty: 2.5 }), edit({ qty: 0, deliverableId: 'socials' })] };
+  const plan = postPlan(rows, PLAN_CARD);
+  assert.equal(plan.onPostLines, 6.5);
+  assert.equal(plan.recommended, 35);
+  // Hours, not quantities: a post service sold by the day counts its day.
+  const dayEdit = edit({ qty: 1, dayUnit: 'full', hoursPerUnit: 8 });
+  assert.equal(postPlan({ post: [dayEdit] }, PLAN_CARD).onPostLines, 8);
+});
+
+test('the B2 fields price nothing: an estimate without them totals exactly as one with them', () => {
+  const strip = (l) => { const { capture: _c, deliverableId: _d, ...rest } = l; return rest; };
+  const withB2 = {
+    ...WORKED,
+    post: [edit({ qty: 4, deliverableId: 'brand' })],
+    travel: [{ name: 'Crew Meals', qty: 2, mu: 30, rate: 30, dayId: 'd_sat' }],
+    crew: [{ role: 'Gaffer', days: 1, cost: 600, dayId: 'd_sat' }],
+    equip: [{ vendor: 'Lensworks', item: 'Cine zoom kit', days: 2, cost: 150, dayId: 'd_sat' }],
+  };
+  const before = {
+    prod: withB2.prod.map(strip),
+    post: withB2.post.map(strip),
+    deliverables: withB2.deliverables.map(({ id: _i, typeId: _t, typeName: _n, multiplier: _m, ...rest }) => rest),
+    travel: [{ name: 'Crew Meals', qty: 2, mu: 30, rate: 30 }],
+    crew: [{ role: 'Gaffer', days: 1, cost: 600 }],
+    equip: [{ vendor: 'Lensworks', days: 2, cost: 150 }],
+  };
+  assert.deepEqual(computeTotals(withB2, PLAN_CARD, UNREG), computeTotals(before, PLAN_CARD, UNREG));
+});
+
+/* D3, pinned for B2: travel, crew and equipment may now sit on a day (D74),
+   but only Production is on set (D24). Not even the worst day there is — a
+   Saturday, after hours, with short notice ticked — surcharges them. */
+test('a travel, crew or equipment line on a Saturday after-hours short-notice day is never surcharged', () => {
+  const NIGHT_SAT = { id: 'd_sat', date: SAT, status: 'confirmed', startTime: '18:00', endTime: '23:00' };
+  const offSet = (dayId) => ({
+    travel: [
+      { name: 'Transport & Logistics Hrs', qty: 3, mu: 35, rate: 25, ownTime: true, dayId },
+      { name: 'Vehicle — per km', qty: 80, mu: 0.9, perKm: true, dayId },
+      { name: 'Tolls & Parking', qty: 40, mu: 1, rate: 1, directCost: true, dayId },
+      { name: 'Crew Meals', qty: 4, mu: 30, rate: 25, dayId },
+    ],
+    crew: [{ role: 'Gaffer', days: 1, cost: 600, dayId }],
+    equip: [{ vendor: 'Lensworks', item: 'Cine zoom kit', days: 2, cost: 150, dayId }],
+  });
+  const card = { ...DAY_CARD_PB, travelRows: [] };
+  const opts = booked([NIGHT_SAT], { shortNotice: true });
+  const plain = computeTotals(offSet(undefined), card, UNREG);
+  const onDay = computeTotals(offSet('d_sat'), card, UNREG, opts);
+  assert.deepEqual(onDay, plain);
+  assert.equal(onDay.surchargeTotal, 0);
+  assert.equal(onDay.totalHours, 3); // the own-time hours, carried as they always were
+  assert.equal(onDay.clientPriceExGst, 105 + 72 + 40 + 120 + 600 + 300);
+
+  // With a production line on the same day, only it moves.
+  const rows = { ...offSet('d_sat'), prod: [capture({ dayId: 'd_sat' })] };
+  const both = computeTotals(rows, card, UNREG, opts);
+  const prodOnly = computeTotals({ prod: rows.prod }, card, UNREG, opts);
+  assert.ok(prodOnly.surchargeTotal > 0);
+  assert.equal(both.surchargeTotal, prodOnly.surchargeTotal);
+  assert.equal(both.labourTotal, prodOnly.labourTotal);
+  assert.equal(both.expenseTotal, plain.expenseTotal);
+
+  // Stored lines carry no surcharged price, and the Cost Breakdown lists them at base, on no day.
+  const stamped = stampSurchargedPrices(rows, card, opts);
+  ['travel', 'crew', 'equip'].forEach((key) => stamped[key].forEach((l) => assert.equal(l.surchargedPrice, undefined)));
+  assert.ok(stamped.prod[0].surchargedPrice > 0);
+  const b = costBreakdown(offSet('d_sat'), card, opts);
+  assert.equal(b.surchargeTotal, 0);
+  assert.equal(b.shortNotice, null);
+  assert.deepEqual(b.days.map((d) => d.lines.length), [0]);
+  assert.deepEqual(b.travel.map((l) => l.amount), [105, 72, 40, 120]);
+  assert.deepEqual([b.crew[0].amount, b.equip[0].amount], [600, 300]);
 });

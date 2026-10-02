@@ -596,7 +596,7 @@ const MIGRATIONS = [
       //    active_rows_json. ON DELETE CASCADE: deleting an estimate removes
       //    its days (D22).
       //
-      //    TRAP FOR v12: rebuilding `estimates` (its status CHECK) by
+      //    TRAP FOR STAGE D'S MIGRATION (v13, after B2 took v12): rebuilding `estimates` (its status CHECK) by
       //    DROP TABLE with foreign_keys = ON would cascade-delete every
       //    production day. Turn foreign keys off for that rebuild, or copy
       //    the days out and back.

@@ -1,7 +1,7 @@
 # Handover: Production Booking
 
 Read this first, then [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md) and [`DECISIONS.md`](DECISIONS.md) (the
-user's answers, D1–D72; don't re-ask), then
+user's answers, D1–D99; don't re-ask), then
 [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md) (routes, screens, data model). This track replaces
 `estimate-accuracy` task 8 (expected booking rate, scrapped) and task 11 (loadings, superseded). It
 sits on top of every earlier track, and those stay the authority for anything this one doesn't
@@ -60,8 +60,8 @@ times.
 - [x] **Tasks**: done 2026-10-02 (`TASKS.md`), 33 tasks, each tagged with its bucket:
       - A+B: 1–10 (migration v11);
       - C: 11–13;
-      - D: 14–23 (migration v12);
-      - E: 24–32 (migration v13);
+      - D: 14–23 (migration v13, was v12 until B2 took v12 on 2026-10-03);
+      - E: 24–32 (migration v14, was v13);
       - review: 33.
 - [ ] **Build A → E.** In progress on branch `production-booking`. It was branched 2026-10-02 from
       `estimate-accuracy` at `e83533a`, where that track's work through v10 is committed but **not
@@ -172,7 +172,34 @@ times.
       task 10's Done note. The live card had no Overtime row, so the v11 move was a no-op.
       **Still for the user:** check the Public holidays list, set the surcharge multipliers.
 
-**Exact next item: TASKS.md task 11, the hash router** (Stage C; frontend, Opus/high).
+- [ ] **Stage B2, day-built estimates and the post-production planner** (added 2026-10-03, to be
+      built **before** task 11, D73). It's going through the design flow:
+      - [x] **Grill Me**: done 2026-10-03 (D73–D97 in `DECISIONS.md`).
+      - [x] **Design brief**: done 2026-10-03 (the "Stage B2" section at the end of
+            `DESIGN_BRIEF.md`). The user confirmed its six interpretations the same day (recorded
+            under D99).
+      - [x] **Information architecture**: done 2026-10-03 (the "Stage B2 addendum" at the end of
+            `INFORMATION_ARCHITECTURE.md`, D98–D99). **B2 takes migration v12** (the `rentals`
+            table), so Stage D is now v13 and E v14. TASKS.md, the IA and the `db.js` trap comment
+            were renumbered. The tokens phase is skipped by choice.
+      - [x] **Tasks**: done 2026-10-03. TASKS.md's "Stage B2" section has **B2-1 … B2-13**, between
+            Stage A+B and Stage C, each tagged with its bucket. Task 12 gained rental bars, task 33's
+            review covers B2, and D97 (post days on the calendar) is under "Not in this list".
+      - [ ] **Build B2-1 → B2-13**, then deploy (NAS v12 before Pages).
+        - [x] **B2-1, `postPlan` and the card shape**: done 2026-10-03, **uncommitted** (387/387).
+          - **What exists now:** `calc.js` `postPlan`, and `PRICING_SHAPE` `'deliverable-types'`.
+            `DEFAULT_PRICING.deliverableTypes` is `[]`. `PUT /api/pricing` checks `capture` and
+            `deliverableTypes`. The Rate Card carries both through a save; there's no UI for them
+            yet (B2-9).
+          - **Read its Done note before B2-2 and B2-10.** It has three interpretations to show the
+            user, two seams, and the mutations. In short: capture counts the hours a line bills;
+            the fallback matches by row id, then name; untyped means no `typeId`.
+          - **Not deployed, and it can't go alone:** the shape bump means Pages must follow NAS.
+            It ships with B2-13.
+
+**Exact next item: TASKS.md B2-2, schema v12, rentals, and the server's line rules** (money math,
+Opus/high). After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
+Opus/high).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the

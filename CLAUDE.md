@@ -86,7 +86,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    agreement, scheduled sending through Google Workspace, and Stripe card payment. **Grill Me done
    2026-09-30 and `DESIGN_BRIEF.md` written the same day (66 decisions in its `DECISIONS.md`);
    IA written 2026-10-02 (D58–D66: "Projects" replaces "Estimates" in the nav, hash routes, unique
-   UPIDs, Settings becomes a screen, the data model across migrations v11–v13).
+   UPIDs, Settings becomes a screen, the data model across migrations v11–v14 after B2's renumbering).
    `TASKS.md` written 2026-10-02 (33 tasks: A+B 1–10, C 11–13, D 14–23, E 24–32, review 33).
    On branch `production-booking` (from estimate-accuracy at `e83533a`): task 1 (surcharge
    maths) committed 2026-10-02; task 2 (schema v11: production days, holidays table, surcharged
@@ -103,7 +103,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    accessibility pass: a polite surcharge announcement, the Short notice tick at 44px on phones,
    everything else measured) and task 9a (money review fixes: after hours per item over its own
    hours, a midnight split with carry-over rows, short notice on items not on a day, Overtime
-   moved off set by v11, decisions D67–D72) done the same day, uncommitted. Tasks 9/9a committed `6074c3e`; **task 10 deployed 2026-10-02 (NAS v10+v11, then Pages; `main` at `6074c3e`).** Next is task 11 (hash router, Stage C). Client pages are light, in the
+   moved off set by v11, decisions D67–D72) done the same day, uncommitted. Tasks 9/9a committed `6074c3e`; **task 10 deployed 2026-10-02 (NAS v10+v11, then Pages; `main` at `6074c3e`).** **Stage B2 added 2026-10-03 and built next, before task 11** (D73–D99): day cards take travel, crew and gear through a service menu, lines drag between days, gear rentals by vendor (migration **v12**, so D is now v13 and E v14), deliverables moved and restyled, a surcharge box, larger totals, and a post-production planner (Capture tick + Rate Card Deliverable Types). Design flow done (brief, IA addenda, tasks B2-1…B2-13). B2-1 (`calc.js` `postPlan`, `PRICING_SHAPE` `'deliverable-types'`) done 2026-10-03, uncommitted. Next is B2-2. Client pages are light, in the
    colours of the user's site **lsccreative.studio** (formerly creativelsc.com). Read its `HANDOVER.md` first. Build bucket: Opus, effort high.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes

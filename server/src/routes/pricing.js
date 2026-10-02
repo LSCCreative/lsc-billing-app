@@ -53,6 +53,8 @@ function pricingProblem(body) {
       if (p < 0) return 'labour_price_negative';
     }
     if (!nonNeg(r.rate)) return 'labour_price_negative';
+    // The Capture tick (B2-1, D89): a flag or nothing, never "yes" or 1.
+    if (r.capture !== undefined && typeof r.capture !== 'boolean') return 'labour_capture_not_a_flag';
   }
   for (const r of Array.isArray(body.travelRows) ? body.travelRows : []) {
     if (!nonNeg(r.mu) || !nonNeg(r.rate)) return 'travel_price_negative';
@@ -70,7 +72,27 @@ function pricingProblem(body) {
     const problem = surchargesProblem(body.surcharges);
     if (problem) return problem;
   }
+  if (body.deliverableTypes !== undefined && !deliverableTypesOk(body.deliverableTypes)) return 'deliverable_types_invalid';
   return null;
+}
+
+/**
+ * The card's Deliverable Types (production-booking B2-1, D91): a list of
+ * `{ id, name, description, services: [post row name…], multiplier }`. Only
+ * what the planner would otherwise have to guess at is checked: an id to tag
+ * deliverables by, services as names, and a multiplier that is a real number
+ * of capture hours, not below 0 (calc.js postPlan reads it). A service no
+ * longer on the card is allowed; the editor skips it (the IA's B2 data model).
+ * @returns {boolean}
+ */
+function deliverableTypesOk(types) {
+  if (!Array.isArray(types)) return false;
+  return types.every((t) =>
+    t && typeof t === 'object' && !Array.isArray(t) &&
+    typeof t.id === 'string' && t.id !== '' &&
+    (t.services === undefined || (Array.isArray(t.services) && t.services.every((n) => typeof n === 'string'))) &&
+    typeof t.multiplier === 'number' && Number.isFinite(t.multiplier) && t.multiplier >= 0
+  );
 }
 
 /**

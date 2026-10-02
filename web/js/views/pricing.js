@@ -189,6 +189,8 @@ const PricingView = (() => {
       labourSections: pricing.labourSections || [],
       travelRows: pricing.travelRows || [],
       surcharges: LSCCalc.surchargeSettings(pricing),
+      // No screen edits these until B2-9; carried so a save never drops them.
+      deliverableTypes: Array.isArray(pricing.deliverableTypes) ? pricing.deliverableTypes : [],
     });
   }
 
@@ -1737,6 +1739,8 @@ const PricingView = (() => {
             prices: { hour: price(row, 'hour'), half: price(row, 'half'), full: price(row, 'full') },
           };
           if (row.customBill) out.customBill = true;
+          // Counts toward Production Capture Hours (calc.js postPlan, B2-1).
+          if (row.capture === true) out.capture = true;
           if (row.unit) out.unit = row.unit;
           return out;
         }),
@@ -1764,6 +1768,9 @@ const PricingView = (() => {
         workingWeekdays: card.surcharges.workingWeekdays.slice(),
         mode: card.surcharges.mode,
       },
+      deliverableTypes: card.deliverableTypes.map((t) => Object.assign({}, t, {
+        services: Array.isArray(t.services) ? t.services.slice() : [],
+      })),
       // Without it the server refuses the card as outdated (calc.js PRICING_SHAPE).
       pricingShape: LSCCalc.PRICING_SHAPE,
     };
@@ -1837,6 +1844,8 @@ const PricingView = (() => {
     surcharge_office_hours_invalid: 'office hours must end after they start.',
     surcharge_weekdays_invalid: 'pick at least one day in your working week.',
     surcharge_mode_invalid: 'pick how surcharges combine.',
+    labour_capture_not_a_flag: 'a Capture tick is malformed. Reload the page and try again.',
+    deliverable_types_invalid: 'a deliverable type’s multiplier must be 0 or more.',
   };
 
   async function reset() {

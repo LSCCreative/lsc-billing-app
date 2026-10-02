@@ -1488,3 +1488,50 @@ test('pricing: surcharge settings are checked when a card carries them', async (
   assert.equal(await put({ shortNoticeHintDays: -1 }), 'surcharge_hint_days_out_of_range');
   assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
 });
+
+test('pricing: deliverable types and Capture ticks round-trip, and a malformed one is refused (B2-1)', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  // A fresh card has no types and no ticks: the user sets up their own.
+  assert.deepEqual(card.deliverableTypes, []);
+  assert.ok(card.labourSections.every((s) => s.rows.every((r) => r.capture === undefined)));
+
+  const ticked = card.labourSections.map((s) => s.id !== 'prod' ? s : { ...s, rows: s.rows.map((r, i) => (i < 2 ? { ...r, capture: true } : r)) });
+  const types = [
+    { id: 'dt_brand', name: 'Brand Story', description: 'Hero film', services: ['Video Editor — A-Roll Offline Edit', 'Video Editor — Longform Colour'], multiplier: 2 },
+    { id: 'dt_socials', name: 'Socials', description: '', services: [], multiplier: 0.5 },
+  ];
+  const put = async (body) => {
+    const res = await api('/api/pricing', { method: 'PUT', bare: true, body: JSON.stringify({ ...card, ...body }) });
+    return { status: res.status, body: await res.json() };
+  };
+  const saved = await put({ labourSections: ticked, deliverableTypes: types });
+  assert.equal(saved.status, 200);
+  const reread = (await api('/api/pricing').then((r) => r.json())).pricing;
+  assert.deepEqual(reread.deliverableTypes, types);
+  assert.deepEqual(reread.labourSections.find((s) => s.id === 'prod').rows.map((r) => r.capture), [true, true, undefined]);
+
+  // A card that leaves them out is still fine (calc.js reads nothing as none).
+  const { deliverableTypes: _dt, ...noTypes } = card;
+  assert.equal((await api('/api/pricing', { method: 'PUT', bare: true, body: JSON.stringify(noTypes) })).status, 200);
+
+  for (const bad of [
+    { deliverableTypes: {} },
+    { deliverableTypes: [{ ...types[0], multiplier: -1 }] },
+    { deliverableTypes: [{ ...types[0], multiplier: '2' }] },
+    { deliverableTypes: [{ ...types[0], id: '' }] },
+    { deliverableTypes: [{ ...types[0], services: 'Video Editor — Socials' }] },
+    { deliverableTypes: [null] },
+  ]) {
+    const res = await put(bad);
+    assert.equal(res.status, 400, JSON.stringify(bad));
+    assert.equal(res.body.error, 'deliverable_types_invalid');
+  }
+  const flag = await put({ labourSections: card.labourSections.map((s) => ({ ...s, rows: s.rows.map((r) => ({ ...r, capture: 'yes' })) })) });
+  assert.equal(flag.body.error, 'labour_capture_not_a_flag');
+
+  // A build from before B2 is refused, so its Rate Card can't drop either field.
+  const old = await put({ pricingShape: 'production-days' });
+  assert.equal(old.body.error, 'pricing_shape_outdated');
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+});

@@ -1401,8 +1401,12 @@ const SERVICE_UNITS = ['hour', 'half', 'full'];
 
    'production-days' since production-booking task 2 (v11): a 'travel-km'
    build's editor knows nothing of booked days, and its Rate Card rebuilds the
-   card field by field and would drop `surcharges`. */
-const PRICING_SHAPE = 'production-days';
+   card field by field and would drop `surcharges`.
+
+   'deliverable-types' since production-booking B2-1 (v12): a 'production-days'
+   build's Rate Card would drop `deliverableTypes` and every `prod` row's
+   `capture` tick, which postPlan reads. */
+const PRICING_SHAPE = 'deliverable-types';
 
 /**
  * Is a rate card in a shape this build can't write? True when it doesn't carry
@@ -2508,6 +2512,81 @@ function costBreakdown(activeRows, pricing, options) {
   };
 }
 
+/* ── The post-production planner (production-booking B2-1) ──────────────────
+   Suggests, never prices (the brief's B2 principle 2): nothing here reaches
+   computeTotals, a stored line or a client document. The owner types the post
+   hours; these figures are the guide beside them (D89–D96). */
+
+/* A share is rounded UP to the half hour. Float error such as 10 × 0.15 =
+   1.5000000000000002 is 1.5, not 2. */
+const PLAN_NOISE = 1e-9;
+const upToHalfHour = (h) => Math.max(0, Math.ceil(h * 2 - PLAN_NOISE) / 2);
+
+/**
+ * Production Capture Hours, each deliverable's share of the edit, and how much
+ * of it the Post-Production lines already hold.
+ *
+ *   captureHours = Σ hours of every `prod` line whose capture flag is set,
+ *                  on a day, a Date TBC day or no day (they're all in `prod`)
+ *   share        = captureHours × the deliverable's multiplier × its qty,
+ *                  rounded up to the nearest 0.5
+ *   recommended  = Σ shares, so the rows add up to it
+ *   onPostLines  = Σ hours of every `post` line, tagged or not
+ *
+ * A line's hours are the hours it bills — qty × the hours per unit of the
+ * definition computeTotals prices it from (lineDef) — so a Full Day counts
+ * the Service Day it was added on, and capture can never disagree with the
+ * job's totalHours. A line that prices at nothing (its service gone from the
+ * card, with no snapshot) counts nothing, as it does there.
+ *
+ * The capture flag is the line's own `capture`, snapshotted when it was added.
+ * A line saved before B2 has none and falls back to the live card's `prod` row
+ * with its id, then its name, as lineDef does. A deliverable is untyped until
+ * it has a `typeId`; an untyped one recommends 0 whatever else it carries.
+ *
+ * @param {object} activeRows — the estimate's rows: `prod`, `post`, `deliverables`.
+ * @param {object} pricing — the rate card.
+ * @returns {{ captureHours: number, shares: Array<{deliverableId: string|null, hours: number}>,
+ *   recommended: number, onPostLines: number }} — one share per deliverable, in
+ *   order; `deliverableId` is null on one saved before B2.
+ */
+function postPlan(activeRows, pricing) {
+  const rows = activeRows || {};
+  const sectionRows = (id) => {
+    const sec = ((pricing && pricing.labourSections) || []).find((s) => s && s.id === id);
+    return sec && Array.isArray(sec.rows) ? sec.rows : [];
+  };
+  const lineHours = (defs, line) => {
+    const def = lineDef(defs, line, pricing);
+    return def ? nonNeg(line.qty) * hoursPerUnitOf(def) : 0;
+  };
+  const lines = (key) => (Array.isArray(rows[key]) ? rows[key] : []).filter((l) => l && typeof l === 'object');
+
+  const prodDefs = sectionRows('prod');
+  const captures = (line) => {
+    if (typeof line.capture === 'boolean') return line.capture;
+    const row = (line.rowId && prodDefs.find((r) => r && r.id === line.rowId)) ||
+      prodDefs.find((r) => r && r.name === line.name);
+    return Boolean(row && row.capture === true);
+  };
+  let capture = 0;
+  lines('prod').forEach((line) => {
+    if (captures(line)) capture += lineHours(prodDefs, line);
+  });
+  const captureHours = round2(capture);
+
+  const shares = lines('deliverables').map((d) => ({
+    deliverableId: d.id ? String(d.id) : null,
+    hours: d.typeId ? upToHalfHour(captureHours * nonNeg(d.multiplier) * nonNeg(d.qty)) : 0,
+  }));
+  const recommended = shares.reduce((sum, s) => sum + s.hours, 0);
+
+  const postDefs = sectionRows('post');
+  const onPostLines = round2(lines('post').reduce((sum, line) => sum + lineHours(postDefs, line), 0));
+
+  return { captureHours, shares, recommended, onPostLines };
+}
+
 /** Statuses that mean the work was won. Draft and sent are still quotes. */
 const WON_STATUSES = ['approved', 'invoiced', 'paid'];
 
@@ -2696,6 +2775,7 @@ if (typeof module === 'object' && module.exports) {
     stampSurchargedPrices,
     costBreakdown,
     bookedHoursOf,
+    postPlan,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -2754,6 +2834,7 @@ if (typeof module === 'object' && module.exports) {
     stampSurchargedPrices,
     costBreakdown,
     bookedHoursOf,
+    postPlan,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,

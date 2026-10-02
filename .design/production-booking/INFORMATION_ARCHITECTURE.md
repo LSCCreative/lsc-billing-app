@@ -2,6 +2,8 @@
 
 Date: 2 October 2026. Read after [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md). Decisions are cited
 **D1–D66** from [`DECISIONS.md`](DECISIONS.md); D58–D66 were made while writing this file.
+**Stage B2's addendum** (2026-10-03, D73–D99) is at the end. It takes migration v12, so Stage D
+is now v13 and Stage E v14.
 
 This track turns a list of estimates into a **project-centred app with a calendar at the front and
 public pages for clients**. Three structural changes come first, because everything else hangs off
@@ -365,7 +367,7 @@ deploys before Pages** for each stage.
 ### Stage C (no migration)
 Home reads `/api/calendar`. The router lands here (D59). Recent activity waits for D.
 
-### Stage D (v12, plus the fix-up)
+### Stage D (v13, plus the fix-up)
 - **`projects`**:
   - Columns: `id`, `upid` UNIQUE (NULL only while awaiting fix-up), `client_id`,
     `invoicing` (`pair` | `single`), `deposit_pct`, `accepted_at`, `declined_at`, `created_at`,
@@ -401,11 +403,11 @@ Home reads `/api/calendar`. The router lands here (D59). Recent activity waits f
   - `POST /api/invoices/:id/paid`.
   - `GET /api/setup/upids`, plus `POST /api/setup/upids` (assign or keep together).
 
-### Stage E (v13)
+### Stage E (v14)
 - **`estimate_versions`**: `id`, `estimate_id`, `n`, `snapshot_json` (the whole estimate,
   including its days and the surcharge-folded client lines), `client_totals_json`, `sent_at`,
   `valid_until`, `superseded_at`. The client token is **not** here: `estimates.public_token` (added
-  in v13) is one token per estimate, resolved to its latest sent version, so a re-send keeps the
+  in v14) is one token per estimate, resolved to its latest sent version, so a re-send keeps the
   link.
 - **`sends`**: `id`, `doc_kind` (`estimate` | `invoice`), `doc_id`, `version_id`, `to_email`,
   `message`, `scheduled_for`, `status` (`scheduled` | `sending` | `sent` | `failed` |
@@ -452,3 +454,229 @@ Home reads `/api/calendar`. The router lands here (D59). Recent activity waits f
   then continue to the route.
 - **Never** put a token, an email address or a name in a query string (it would reach logs), and
   never use UPIDs in public URLs.
+
+---
+
+# Stage B2 addendum: day-built estimates and the post-production planner
+
+Added 3 October 2026. Read after the brief's "Stage B2" section. It cites **D73–D99**; D98–D99 were
+decided while writing this. **B2 adds no route and no nav item.** It restructures the editor, adds
+one Rate Card block, extends the calendar, and takes migration **v12**. That moves Stage D to
+**v13** and Stage E to **v14**, and the sections above are renumbered to match.
+
+## Site Map (B2 changes only)
+
+- **Estimate editor**: today's screen; `#/projects/<id>/estimate` once Stage C/D's router exists.
+  It's restructured (below), with no new screen.
+- **Rate Card** (Finance & Price → Pricing; `#/finance/pricing` later): a new **Deliverable Types**
+  block, and a **Capture** column on Production rows.
+- **Home calendar** (Stage C): it draws rental bars from day one (D84). Task 12 picks this up.
+- **Server**: no new route. `GET /api/calendar` also returns rentals. The estimate write routes
+  take and return `rentals`.
+
+## Navigation Model (B2)
+
+Unchanged. Inside the editor, the movement is:
+- **day card ↔ service menu**: the menu swaps in where the calendar is;
+- **summary group → its day card**: a link that scrolls to and focuses the card;
+- **rental bar → its rentals-panel row**.
+
+None of these change the URL.
+
+## Content Hierarchy (B2)
+
+### Estimate editor (D98)
+1. **Header fields**, then the **Short notice** row (tick, hint, GST-free), then the **Prices
+   bar** ("Each line keeps the price it was added at" · Use rates from last project · Update to
+   current rates). The Prices bar moves up from below the booking block, because it governs every
+   line below it.
+2. **Deliverables** (D86): the tinted headline block, which says what's being made before when it's
+   shot. Columns: Type ▾ · Name · Format · Length · Qty · Post hrs (rec.) · ×.
+3. **Production Booking**:
+   - **Left column (420px at ≥1100), one of:**
+     - the **calendar**, or
+     - the **service menu**: head "Adding to Sat 3 Oct" + Done; groups Production (open) ·
+       Travel · External Crew · Equipment Hire.
+   - **Right column, the cards in date order**, Date TBC days last, then **Not on a day**. Each
+     card:
+     1. **Head**: date or "Date TBC", status, start/end times, specification note (when needed),
+        and the actions **Duplicate day** and **Remove**.
+     2. **"Add Production Service Items"** (on Not on a day: **"Add items"**).
+     3. **Line groups**, shown only when they have lines, in this order: Production · Travel ·
+        Crew · Equipment. Each line has a handle, its fields, Move to ▾, and ×.
+     4. **Day total** (everything on the day), plus D26's hours hint.
+   - **Under both columns: Gear rentals.** One row per vendor: Vendor · items (count, names on
+     hover/ⓘ) · Out date + Pickup/Postage · Back date + Return/Postage · Note. When there's no
+     equipment, it says "Gear you hire shows here, grouped by vendor."
+   - **The collapsed head summary** adds "· N off-day lines" and "· N rentals" when they're
+     non-zero.
+4. **Pre-Production**: unchanged, editable.
+5. **Post-Production**, editable, in this order:
+   1. **the planner cell**: [Production Capture Hours N] [Recommended Post Production Hours N], and
+      "On post lines: X of Y recommended". The cell is hidden when there are no capture hours and
+      no typed deliverables;
+   2. the lines, tagged ones carrying "· <deliverable>";
+   3. Add Service, as today;
+   4. the subtotal.
+6. **Additional work**: unchanged, editable.
+7. **"On set, by day"**: a quiet divider heading, then four read-only summaries: **Production ·
+   Travel · External Crew & Contracts · Equipment Hire**. Each one shows:
+   - one group per day (title, status chip, its lines, the group total, "Edit on the day ↑");
+   - Date TBC days, then "Not on a day";
+   - the subtotal;
+   - **"Add to a day ▾"** in its head, which opens that day's menu at this category.
+   An empty summary collapses to its head and "Nothing on set yet."
+8. **Surcharge box** (D87), under the overhead switch's advisory lines' current spot.
+9. **Totals**: the first bar as today, then the **Totals row**, enlarged (D88). Total (inc GST) ·
+   Tax Set-Aside · Est. Take-Home ⓘ.
+10. Error area, then Delete · Cancel · Save.
+
+### Rate Card (D99)
+1. The existing tables. Production rows gain a **Capture** tick column, beside Custom, on `prod`
+   only (D89).
+2. **Deliverable Types** (new block, saved with the card). One row per type:
+   - **Name**;
+   - **Description** (a textarea that grows);
+   - **Post services**: chips from the Post-Production section, + Add (a select of its rows), and
+     × per chip;
+   - **Multiplier**: "[ N ] × 1 capture hour", step 0.25, two decimals allowed;
+   - × to remove the type.
+   "+ Add Deliverable Type" sits under the rows. With no types: "Add the kinds of deliverable you
+   make, like Brand Story or Socials, and the post services each needs."
+3. Surcharges → save bar → Public holidays, as today.
+
+## User Flows (B2)
+
+### 1. Build a two-day shoot
+1. The owner fills in the header and adds **Deliverables**: picks type Brand Story (the name
+   prefills, and post lines are added at 0 hrs, tagged), then Socials, qty 3.
+2. They open **Production Booking**, click Sat 3 Oct → **+ Confirmed day**, and set its times.
+3. **Add Production Service Items** → the calendar becomes the menu. They add Video Capture **Day**,
+   Drone **Hr** (qty to 2 on the card), Vehicle per km (type 80 km), and Crew Meals. Then **+ Add
+   crew member**: "Gaffer", 1 day, $600. Then **+ Add hire item**: vendor "Lensworks", item "Cine
+   zoom kit".
+   - Lensworks is new, so a row appears in **Gear rentals**: "Add pickup and return dates ↓".
+4. **Done** → the calendar returns. They fill Lensworks: Out Fri 2 Oct (Pickup), Back Mon 5 Oct
+   (Return). A bar appears across 2–5 Oct.
+5. **Duplicate day** on Sat → Day 2 is Date TBC with the same lines. They set its date to Sun 4
+   Oct, and its production lines re-price at weekend ×1.5. Lensworks still holds both days' items.
+6. **Post-Production** now reads Capture 20 hrs (2 × [8 + 2]) and Recommended 70 (Brand Story ×2 =
+   40, Socials ×0.5 × 3 = 30). The owner types hours on the tagged lines until "On post lines: 68 of
+   70".
+7. They check the **surcharge box** and the **Totals row**, then Save.
+
+### 2. Reschedule
+1. The client moves the shoot. On Sat's card the owner drags Video Capture onto Mon 5 Oct, or uses
+   **Move to ▾ → Mon 5 Oct**.
+2. The price drops from weekend to normal, live, and the move is announced. The surcharge box and
+   totals update.
+3. A day whose lines have all gone stays as an empty card, until it's removed.
+
+### 3. Open an estimate saved before B2
+- Its old unassigned production lines, and every travel, crew and equipment line, sit in **Not on
+  a day**. Each summary shows them as one "Not on a day" group.
+- Equipment shows the old text as the Item, with no vendor and no rental.
+- Deliverables have no type, and the planner cell is hidden unless capture lines exist.
+- **The totals are identical.** Nothing is marked unsaved until the owner changes something.
+
+### 4. Change a deliverable
+- **Change Brand Story's type, or remove it:** its tagged lines go. If any has hours, a confirm
+  names the count first.
+- **Rename it:** its tags follow the new name, in the editor and on the PDF.
+
+## Naming Conventions (B2)
+
+| Concept | Label in UI | Notes |
+|---|---|---|
+| Open the day menu | **Add Production Service Items** | The user's words. On the off-day card: **Add items** |
+| The off-day card | **Not on a day** | Also the last group in every summary |
+| Copy a day | **Duplicate day** | Makes a Date TBC day |
+| Move a line | **Move to** | Menu: each day's title, then "Not on a day" |
+| One vendor's hire on one estimate | **Gear rental** (panel: **Gear rentals**) | Never "booking", which is the day's word |
+| Rental dates | **Out** / **Back** | Out methods **Pickup**, **Postage**; back methods **Return**, **Postage** |
+| The Rate Card tick | **Capture** | ⓘ: "Counts toward Production Capture Hours, which plan post-production." |
+| Planner figures | **Production Capture Hours**, **Recommended Post Production Hours** | The user's words; "On post lines: X of Y recommended" |
+| Rate Card block | **Deliverable Types** | Row button "+ Add Deliverable Type" |
+| The multiplier | **"N × 1 capture hour"** | Never "ratio" or "factor" |
+| A tagged post line | "Service · *Deliverable name*" | The same on the client PDF (D95) |
+| The read-only group | **On set, by day** | The divider above the four summaries |
+
+## Component Reuse Map (B2)
+
+| Component | Used on | Behavior differences |
+|---|---|---|
+| **Service menu** (new) | Editor booking block | ≥768: an inline region in the calendar's column. <768: a `Modal` bottom sheet |
+| **Line move control** (new: handle + Move to) | Day cards, Not on a day | No handle below 768 (D80, confirmed) |
+| Month calendar + **rental bar** (new layer) | Editor; Home (C) | The editor fades other projects' bars; Home shows all at equal strength |
+| `Info` ⓘ | Take-home label, Capture column head, planner cell | — |
+| Typeahead pattern | Equipment line's Vendor | Suggests this estimate's vendors only |
+| Day-grouped summary (new, one builder) | The four "On set" summaries | Only the category differs |
+| Surcharge box | Editor | Rows from `costBreakdown`, the PDF's source too |
+| Status chip, `Modal`, `Unsaved`, live regions | As in A+B | — |
+
+## Content Growth Plan (B2)
+
+- **Deliverable types**: tens at most. It's a plain list, with no search or paging. The Type select
+  lists them alphabetically, with "— None —" first.
+- **Lines per day**: typically 3–10. The groups keep a long card scannable. There's no inner
+  scrolling, because the page scrolls.
+- **Rentals**: a few per estimate. The calendar range-queries them like days, so a calendar never
+  loads them all.
+- **The menu's Production group** grows with the Rate Card. Groups collapse, and with more than 12
+  rows a filter field appears at the menu's top.
+
+## Data Model: Stage B2 (v12)
+
+Additive and null-safe, and **NAS before Pages**. An estimate saved before B2 must total
+identically (a pinned test).
+
+- **`rentals`**:
+  - **Columns:** `id` (made by the browser, like day ids), `estimate_id` (FK, `ON DELETE
+    CASCADE`), `vendor`, `out_date`, `out_method` (`pickup` | `postage` | NULL), `back_date`,
+    `back_method` (`return` | `postage` | NULL), `note`, `sort`, `created_at`, `updated_at`.
+  - **Indexes:** `(estimate_id)`, `(out_date)`, `(back_date)`.
+  - **Writes:** replaced wholesale on each estimate save, like days. A rental belongs to the
+    estimate's equipment lines **by vendor name** (trimmed, case-insensitive). Lines carry no
+    rental id.
+  - **On save,** the server refuses two rentals with the same vendor, and drops a rental whose
+    vendor is on no equipment line.
+  - **Stage D's estimates rebuild has the same trap** as `production_days`: with foreign keys on,
+    the cascade would delete every rental (see the v11 comment in `db.js`).
+- **Estimate JSON** (`active_rows_json`), all optional:
+  - **`travel`, `crew`, `equip` lines** gain `dayId`.
+  - **`equip` lines** gain `item`. An old line's `vendor` text is shown as the Item, and the PDF
+    prints `item || vendor`.
+  - **`prod` lines** gain `capture` (a boolean, snapshotted when added).
+  - **`deliverables`** gain `id` (made by the browser), `typeId`, `typeName` and `multiplier` (a
+    snapshot).
+  - **`post` lines** gain `deliverableId`.
+- **Server checks** (`days.js` and the estimate routes):
+  - `lineDayProblem` allows `dayId` on `prod`, `travel`, `crew` and `equip`, and still refuses it
+    elsewhere.
+  - A `deliverableId` naming no deliverable is refused (`line_deliverable_unknown`), and so is one
+    outside `post`.
+- **Rate card JSON**:
+  - **`deliverableTypes`**: `[{ id, name, description, services: [postRowName…], multiplier }]`.
+    Services are named by Post-Production row name, as lines already are. A renamed or removed
+    service shows as a struck-through "missing" chip on the type, and is skipped when the type is
+    picked.
+  - **`prod` rows** gain `capture`.
+  - **`PRICING_SHAPE` moves on** (e.g. `'deliverable-types'`), with the card marker, the v9/6a/v11
+    pattern, so an old build can't strip either field.
+- **`calc.js`** (both copies; money math):
+  - **`postPlan(activeRows, pricing)`** returns `{ captureHours, shares: [{ deliverableId, hours }],
+    recommended, onPostLines }`, per the brief's worked examples.
+  - **`computeTotals`** gains no new maths. Pin the rule that a `dayId` on a non-`prod` line never
+    surcharges.
+- **API:**
+  - The estimate `GET`/`POST`/`PUT` routes carry `rentals`.
+  - `GET /api/calendar?from=&to=` adds `rentals: [{ id, estimateId, upid, projectName, vendor,
+    outDate, outMethod, backDate, backMethod }]`, overlapping the range. A rental with only one date
+    is a one-day marker, and one with neither is left out. Declined estimates' rentals are excluded
+    once D adds Declined.
+- **The client PDF** (`pdf.js`): equipment prints `item || vendor`, and post lines print the tag
+  from the deliverable's current name. Nothing else changes (D85).
+
+## URL Strategy (B2)
+
+Unchanged. No query parameters are added, and the menu and drag state are never in the URL.

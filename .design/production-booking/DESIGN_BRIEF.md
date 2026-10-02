@@ -8,6 +8,8 @@ codebase. This track replaces `estimate-accuracy` task 8 (booking rate, scrapped
 **Five stages, built in order (D1):** **A** surcharges, **B** Production Booking in the editor
 (A and B ship together), **C** the home dashboard, **D** projects and the deposit/final invoice
 pair, **E** client pages, signing, sending and payment. Each stage must be usable on its own.
+**Stage B2** (day-built estimates and the post-production planner, D73–D97) was added on
+2026-10-03, to be built after A+B and before C. Its section is at the end of this file.
 
 ## Problem
 
@@ -378,3 +380,264 @@ E (D38–D52) and brief (D53–D57) and IA (D58–D66). The ones a fresh agent i
   lsccreative.studio (D55), maintained there, not in this app.
 - `estimate-accuracy` tasks 9, 10, 12–14. They're un-grilled. Tasks 10 and 12 must say how they
   interact with booked days and surcharges when they are.
+
+---
+
+# Stage B2: Day-built estimates and the post-production planner
+
+Added 3 October 2026, from the user's request after using the live A+B build, settled in
+`/grill-me` the same day as **D73–D97** ([`DECISIONS.md`](DECISIONS.md)). **Built next, before
+Stage C** (D73). Everything above still holds unless a D-number here overturns it. The one thing
+it overturns is task 7's "a line moves one way only" (D80).
+
+## Problem (B2)
+
+**A shoot day is more than its camera work, but the day card only holds Production.** The owner
+books Saturday, then has to scroll down to Travel, Crew and Equipment and add that day's car, meals,
+gaffer and lens hire into flat lists that don't know which day they belong to. When a shoot moves
+from day 1 to day 2, nothing moves with it. To move a line today, the owner removes it and adds it
+again.
+
+**Gear logistics live in the owner's head.** When the hire is picked up or posted, and when it goes
+back, appears nowhere, so a Friday pickup for a Saturday shoot is easy to forget.
+
+**Post-production is guessed.** The edit is usually the biggest cost on a job, yet the owner works
+out its hours from memory each time. Nothing connects how much is filmed to how long the edit
+takes, or to which deliverable each edit line is for.
+
+**The totals area hides what matters.** The surcharges worked into the price are one line. The
+three figures the owner actually reads (total, tax set-aside, take-home) are no bigger than the
+rest, and a long sentence clutters the take-home cell. Deliverables, the thing the client is
+buying, look like just another table.
+
+## Solution (B2)
+
+The estimate reads top-down the way a job is planned. **What the client receives** (Deliverables,
+now visually the headline block) → **when and where it's shot** (the booking calendar and its day
+cards) → **the edit** → **what it all comes to**.
+
+**A day card is a whole shoot day.** "Add Production Service Items" swaps the calendar for a menu of
+Production, Travel, External Crew and Equipment Hire. The owner taps through it, and each item lands
+on that day. When the schedule changes, lines are dragged from one day to another and their prices
+follow the new day's surcharges. "Duplicate day" makes the near-identical second day in one click.
+Anything not tied to a shoot day goes in a "Not on a day" card. The sections further down become
+read-only summaries of the days.
+
+**Gear hire knows its dates.** All the items from one vendor form one rental with an out date and a
+back date, and that rental shows as a bar on the calendar.
+
+**Post-production plans itself from the shoot.** Capture-ticked production items add up to Capture
+Hours. Each deliverable picks a type from the Rate Card, which brings in its post services and a
+multiplier, so the Post-Production section shows **[Production Capture Hours 10] [Recommended
+Post Production Hours 35]**. The owner types the hours against that guide, and every edit line
+says which deliverable it's for.
+
+## Experience Principles (B2)
+
+1. **One place to add, many places to read.** Every on-set line is added in a day card. The
+   summaries below, the calendar and the PDFs only read the days. There is never a second picker
+   that could disagree with the first.
+2. **Suggest, don't price.** The planner recommends hours and lays out post lines at 0 hrs. It never
+   writes a billable number. The owner's typed hours are the price. Prices move when a line moves
+   day (D80), since the brief's rule is that a surcharge follows its day. They never move behind
+   the owner's back.
+3. **The client's document doesn't change shape** (D85). B2 is an owner-side rework. The only new
+   thing a client sees is the deliverable tag on post lines (D95).
+
+## Aesthetic Direction (B2)
+
+The existing dark editorial system, extended (see above). Two deliberate shifts in emphasis:
+
+- **Deliverables are the headline block** (D86). A soft accent tint (the Total box's
+  `rgba(184,84,68,.08)` fill and `.3` border, made heavier), a larger Delight heading, and a 2px
+  border. It's the one block on the page that isn't neutral. Not cards. Not a coloured badge per
+  row.
+- **The Totals row is the page's last word** (D88). Its figures step up in Delight, with Total (inc
+  GST) the largest on the screen, then Tax Set-Aside and Est. Take-Home, both larger than the
+  first bar's figures.
+
+The service menu should feel like a **call-sheet checklist, not a shop**: plain rows, the service
+name left, unit buttons right, categories as quiet uppercase heads. No product tiles, icons or
+prices in big type. The prices sit muted beside each unit button.
+
+## Existing Patterns (B2)
+
+Everything listed above, plus what A+B built:
+
+- `BookingBlock` (`web/js/views/booking-block.js`, `web/css/booking.css`): day cards, `itemsFor(dayId)`
+  (one items element per day, *moved* into its card on repaint, never rebuilt), `list()`,
+  `showDay(id)`, `addTbc()`, and the polite live region.
+- **The calendar** (`web/js/calendar.js`, `LSCCalendar.mount`). It draws per-date tiles only today,
+  with no spanning bar.
+- **The day card's service → unit → Add picker**, scoped to `prod`. The menu replaces it.
+- **The Production section's "Add to a day ▾"**, its per-day list and the "Unassigned — pick a
+  day" group (task 7).
+- **The rate card's labour-row table** (`pricing.js`): it already has a per-row "Custom" tick
+  column. "Capture" is a sibling column, shown on `prod` rows only.
+- **`calc.js`**: `unitHours`, `labourHoursBreakdown`, `surchargeAttribution` and `costBreakdown`,
+  which give the surcharge box's rows.
+- **`Info`** (the ⓘ disclosure; it opens on mouse hover as well as click and keyboard), `Modal`
+  (the bottom sheet below 768), `Unsaved`, and the typeahead pattern (`web/js/typeahead.js`).
+- **Line shapes today:** crew `{ role, days, cost }`, equipment `{ vendor, days, cost }`
+  (`vendor` holds "vendor / item" as one field), deliverables `{ name, format, duration, qty }`
+  (no id), and labour lines carrying `dayId` (on `prod` only).
+- **The server refuses `dayId` outside `prod`** (`days.js` `lineDayProblem` →
+  `day_on_non_production_line`). B2 has to relax this for travel, crew and equip, and keep it for
+  every other section.
+
+## Component Inventory (B2)
+
+| Component | Status | Notes |
+|---|---|---|
+| Day card → **"Add Production Service Items"** button | New | Replaces the card's service → unit → Add picker. Also on Date TBC days and the Not on a day card (D74) |
+| **Service menu** | New | Swaps in where the calendar is (D74). Header "Adding to Sat 3 Oct" + Done. Four expandable groups: Production (open by default), Travel, External Crew, Equipment Hire. Production rows: service name + unit buttons with muted prices (D76). Travel rows: name + Add. Crew: "+ Add crew member" (D77). Equipment: "+ Add hire item". Shows a running "3 added" count |
+| Day card lines | Modify | Production, travel, crew and equipment lines, each in its own small group inside the card, with a drag handle and "Move to ▾" (D80). Day total = everything on the day |
+| **"Not on a day" card** | New | Last card. Same menu, drag and Move to. Holds legacy unassigned lines from every on-set section (D79). Production lines in it price as unassigned lines do today |
+| **"Duplicate day"** | New | On each day card's actions (D81) |
+| **Gear rentals panel** | New | In the booking block, under the cards. One row per vendor on this estimate: vendor, item count, out date + Pickup/Postage, back date + Return/Postage, note (D82) |
+| Equipment line | Modify | Vendor (typeahead from this estimate's vendors) + Item + Days + Cost/Day (D82, D83) |
+| Calendar **rental bar** | New | Spans out → back date across week rows. Label: vendor · UPID. Faded for other projects. Dots mode (narrow) shows a small bar under the date (D84) |
+| Production / Travel / Crew / Equipment sections | Modify | Read-only summaries grouped by day, each group linking to its card, then a "Not on a day" group, then the subtotal (D78). "Add to a day ▾" opens that day's menu at the section's category |
+| **Deliverables block** | Modify | Moves above the booking block. Tinted, heavier, larger heading (D86). Columns: Type ▾ · Name · Format · Length · Qty · Post hrs (rec.) · × |
+| Post-Production section | Modify | A head cell [Production Capture Hours N] [Recommended Post Production Hours N], plus "On post lines: X of Y recommended" (D93). Tagged lines show a "· Brand Story" chip (D95) |
+| **Surcharge box** | New (replaces the line) | Itemised rows, total, "already folded into the prices", or "No surcharges apply" (D87). The ⓘ text carries over |
+| Totals row | Modify | Larger figures (D88). The take-home sentence moves into an `Info` ⓘ |
+| Rate Card → **Capture** tick | New | A column on `prod` rows only (D89) |
+| Rate Card → **Deliverable Types** block | New | Rows: name, description, post services (multi-pick from the Post-Production section, as chips), multiplier "N × 1 capture hour" (D91) |
+| Client PDF | Modify | Equipment prints the Item (old lines print their old text). Post lines print "· deliverable name" (D95). Nothing else changes (D85) |
+
+## Key Interactions (B2)
+
+### 1. Adding to a day (D74–D77)
+
+1. The owner clicks **Add Production Service Items** on a day card (or on Date TBC, or Not on a
+   day).
+2. The calendar's column is replaced by the menu. Focus moves to the menu's heading, "Adding to Sat
+   3 Oct", and the day card gets a highlighted edge so the target is obvious.
+3. The owner clicks **½ Day** on Video Capture. A line appears on the card straight away, priced
+   with that day's surcharges, and the menu says "Added Video Capture — Half Day". It's announced
+   politely, and the count goes up. The menu stays open.
+4. **Travel** items add one line each, at qty 1 (Vehicle per km at 0 km, focused, so the owner
+   types the distance). **+ Add crew member** adds an empty crew row on the day, focused on Role.
+   **+ Add hire item** adds an equipment row, focused on Vendor.
+5. **Done**, Escape, or the card's button again returns the calendar, with focus back on the
+   card's button. Opening another card's menu just retargets the menu.
+
+**Equipment and rentals:** when a hire item's Vendor is filled with a name new to this estimate
+(trimmed, case-insensitive), the rentals panel gets a row for it with the dates empty, and the
+line hints "Add pickup and return dates ↓". Another item with the same vendor joins that rental.
+Renaming the vendor on a vendor's only item renames the rental. A rental with no items left is
+removed. Old equipment lines open with their text as the **Item** and no vendor, so they join no
+rental.
+
+### 2. Moving lines (D80, D81)
+
+- **Drag:** a handle on each line (mouse and pen). While dragging, valid drop zones (every card's
+  line group of the same kind, and Not on a day) outline, and the drop point shows a rule. Dropping
+  on another card moves the line there. Dropping inside its own card reorders it.
+- **Move to ▾** on every line: lists each day ("Sat 3 Oct", "Day 3 — date TBC"), then "Not on a
+  day". Picking one moves the line and keeps focus on it in its new place.
+- **Either way, the price re-prices live** for the new day (weekend, holiday, after hours from its
+  times, short notice). The line's note updates, and a polite announcement says "Moved Video
+  Capture — Full Day to Sun 4 Oct: $1,680, weekend ×1.5." A moved line keeps its quantity, unit,
+  override and rate marks, as task 7's move does today.
+- **Duplicate day** makes a new Date TBC day (Proposed, as TBC days start) after the source, copying
+  every line. Production lines re-price as TBC. Equipment copies keep their vendor, so they stay
+  in the same rental. The new card scrolls into view with focus on its date field.
+
+### 3. Post-production planner (D89–D96) (money math: pure function in `calc.js`, pin with tests)
+
+- **Capture Hours** = Σ over capture lines of `unitHours(pricing, line.unit) × qty`, in every
+  section key that holds `prod` lines (every day, TBC and Not on a day). A line's capture flag is
+  **snapshotted when it's added** (`capture: true`). Lines saved before B2 fall back to the live
+  card's row of the same name.
+- **Each deliverable's share** = Capture Hours × its snapshotted multiplier × qty, **rounded up to
+  the nearest 0.5**. The **Recommended** total is the sum of the rounded shares, so the rows add
+  up to it.
+- **"On post lines"** = the hours of every Post-Production line, tagged or not.
+- **Worked examples** (for `test-calc.js`):
+  - **Capture Hours:** Video Capture Full Day ×1 (8 hrs, capture) + Drone 2 hrs (capture) + Photo
+    Capture 3 hrs (not ticked) → **10**.
+  - **Shares:** Brand Story ×2, qty 1 → 20. Socials ×0.5, qty 3 → 15. **Recommended 35.**
+  - **Rounding:** a ×0.33 deliverable, qty 1, on 10 capture hrs → 3.3 → **3.5**.
+  - **Edge cases:** no capture lines → 0 / 0. An untyped deliverable adds 0. A deliverable at qty 0
+    adds 0.
+- **Picking a type** on a deliverable: its name prefills the deliverable's Name if blank. The
+  deliverable stores `{ id, typeId, typeName, multiplier }`, and each of the type's post services
+  is added to Post-Production at 0 hrs, carrying `deliverableId`.
+  - A post service no longer on the Rate Card is skipped, with a toast naming it.
+- **Changing the type or removing the deliverable** removes its tagged lines, after a confirm
+  ("2 of its post lines have hours — remove them?") when any has qty > 0. Removing a tagged line
+  on its own is just a delete.
+- **The tag** shows the deliverable's *current* name (the editor and the PDF read it through
+  `deliverableId`). A tag whose deliverable is gone prints no tag.
+- Lines at 0 hrs are already left off the documents (the 9a rule), so an un-filled plan never
+  prints.
+
+### 4. Surcharge box and totals (D87, D88)
+
+- **Rows** come from `calc.js` `costBreakdown()`'s surcharge entries, the same figures as the PDF:
+  "Sat 3 Oct · Weekend ×1.5 · +$560", "Wed 21 Oct · After hours ×1.25 on 2 of 10 hrs · +$56",
+  "Fri 9 → Sat 10 Oct · carry-over · …", "Short notice ×2 · +$2,240". Then "Total surcharges
+  +$X — already folded into each production line's price."
+- **States:** hidden with no days. With days but nothing surcharged: "No surcharges apply." It
+  isn't under the overhead switch (as today).
+- **Totals:** the figures are larger. The take-home's "(income ex GST, less the overhead…)" becomes
+  an ⓘ beside the label, with the same words.
+
+### 5. Server and data (exact shapes are in the IA)
+
+- `lineDayProblem` allows `dayId` on `travel`, `crew` and `equip` lines, and still refuses it on
+  every other non-`prod` key. `computeTotals` **never surcharges a non-`prod` line**, wherever it
+  sits (D3). Pin that with a test that puts travel, crew and equipment on a Saturday after-hours
+  short-notice day, including own-time Transport hrs.
+- **Rentals** are stored per estimate, and `GET /api/calendar` returns the rentals overlapping the
+  range.
+- **Fields saved estimates gain:** deliverable `id` / `typeId` / `typeName` / `multiplier`, the
+  post line's `deliverableId`, the prod line's `capture`, and the equipment line's `item`. All are
+  optional and null-safe. An estimate without them totals exactly as before (a pinned test).
+- **The card gains** `deliverableTypes[]` and `capture` on `prod` rows. `PRICING_SHAPE` moves on so
+  an old build can't strip them.
+
+## Responsive Behavior (B2)
+
+- **≥1100:** the menu takes the calendar's 420px column, beside the cards, so the target card stays
+  in view. The rentals panel spans the block under both columns. Above the booking block, nothing
+  moves except the deliverables block's new place and treatment.
+- **768–1099:** the calendar sits above the cards, so the menu does too. On open it scrolls so its
+  header and the target card's head are both visible where they fit.
+- **<768: the menu is a bottom sheet** (`Modal`, like the add-day pop-up), full width, with 44px
+  unit buttons and a sticky Done. Behind it, the card updates. **No drag on touch:** the handle is
+  hidden and Move to ▾ is the route (D80's alternative). Deliverables and rentals stack as the
+  other tables do (`data-label` rows).
+- **Rental bars** wrap across week rows on the month grid. In dots mode they're a thin bar under
+  each covered date.
+
+## Accessibility Requirements (B2)
+
+- **Dragging has a single-pointer alternative** (WCAG 2.5.7): Move to ▾ on every line, a real
+  `<select>` (or a menu button with a list). The drag handle is a `<button>` named "Move Video
+  Capture — Full Day" that opens the same menu, so keyboard users never need to drag.
+- **The menu is a labelled region, not a dialog,** at ≥768. Focus goes to its heading on open and
+  back to the trigger on Done/Escape. Below 768 it's a `Modal`, with its focus trap. Each group head
+  is a disclosure button (`aria-expanded`). Unit buttons are named in full ("Add Video Capture,
+  half day, $640").
+- **Announcements** (the existing polite regions): each add, each move with its new price, a
+  duplicate, a removed tagged line.
+- **The surcharge box** is a list with a heading. **The planner cell** is two labelled figures,
+  plus the comparison as text, not colour alone.
+- **The deliverables tint** keeps text at ≥4.5:1 on the tinted surface. Check it at build time.
+- Targets are ≥44px below 768. Reduced motion turns off the menu's swap transition and the drop
+  animation.
+
+## Out of Scope (B2)
+
+- **Post-production days on the calendar** (D97). Deferred until after A–E.
+- **A Rate Card crew list** (D77) and pre-set equipment items. Both stay typed.
+- **Rental clash warnings, times, or billing from the rental dates** (D83, D84).
+- **Auto-filling post hours** (D93): the split by %, or evenly, was offered and not picked.
+- **Printing a deliverable type's description** (D91), or the planner's figures, on any client
+  document.
+- **Pre-Production and Additional work** stay where they are, editable as today. They don't go in
+  the day menu.
+- **Changes to the Cost Breakdown PDF.** Pass-throughs are listed as now, wherever they sit.

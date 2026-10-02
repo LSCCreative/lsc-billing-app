@@ -328,6 +328,118 @@ estimate whose saved total no longer matches its items, rather than calling the 
 items with no quantity and no price are left off the documents; and a duplicate says how many
 items came off their days.
 
+## 2026-10-03 — Stage B2: day-built estimates and the post-production planner
+
+The user's 2026-10-03 request after using the live A+B build. They found that a day card can only
+take Production services, and asked for travel, crew and gear on days, drag and drop, a new
+deliverables treatment, a surcharge summary, larger totals, and a post-production planner.
+Settled in `/grill-me` the same day. The brief's "Stage B2" section is the design.
+
+**Placement**
+
+73. **A new stage, B2, is built next**, before Stage C's hash router (task 11). It lives in this
+    track's files, not in a new folder.
+
+**Day cards and the service menu**
+
+74. **Each day card gets an "Add Production Service Items" button.** It swaps the calendar for a
+    menu of four expandable categories: **Production, Travel, External Crew, Equipment Hire**,
+    each with its services underneath. Items added from it land on that day. It works the same
+    for Date TBC days.
+75. **The menu stays open until Done.** Its header names the day it's adding to. Done, Escape, or
+    opening another day's menu brings the calendar back.
+76. **Production services show unit buttons** (Hr / ½ Day / Day, only the priced ones). Every click
+    adds a new line, so two Video Capture lines on one day are allowed. The unit can still be
+    switched on the line.
+77. **External Crew stays typed by hand.** The Crew category is one "+ Add crew member". There is no
+    Rate Card crew list.
+78. **Production, Travel, External Crew and Equipment Hire become read-only summaries** in the main
+    estimate, grouped by day with subtotals. All adding happens in the cards.
+79. **A "Not on a day" card** sits after the day cards. It has the same menu and drag, and holds
+    old unassigned lines (production and pass-through) plus anything that isn't tied to a shoot
+    day, such as flights or a contract colourist. The summaries show it as their last group.
+80. **Lines drag between cards (Not on a day included) and up and down within one.** Each line also
+    has a "Move to ▾" menu as the keyboard and phone alternative. A moved production line's price
+    follows its new day's surcharges. *This overturns task 7's confirmed interpretation that a line
+    moves one way only, from Unassigned onto a day.*
+81. **"Duplicate day" on each card** copies its lines to a new Date TBC day, which the owner then
+    dates.
+
+**Gear rentals**
+
+82. **Equipment lines split into Vendor and Item.** All the hire from one vendor on an estimate is
+    **one rental**. It holds an out date with Pickup or Postage, a back date with Return or
+    Postage, and an optional note (booking ref, tracking no.). There are no times. The first item
+    from a vendor asks for its dates; later items from that vendor, on any day, join the same
+    rental. The dates are optional. A rental is owner-only and never on the client PDF.
+83. **Hire is still billed on typed days × cost per day.** The rental dates are logistics only,
+    because rental houses often charge one day for a weekend.
+84. **Each rental with dates is a bar on the calendars**, from out date to back date, labelled with
+    the vendor and UPID: on the editor's calendar and on Stage C's home calendar. Other projects'
+    bars are faded, as their days are. There are no clash rules, because gear isn't the owner's
+    time.
+85. **The client PDF keeps its shape.** Production Days lists each day's production items, and
+    Travel, Crew and Equipment keep their own sections at cost.
+
+**Deliverables and totals**
+
+86. **Deliverables move above the booking block**, as a table with a soft accent tint, a larger
+    heading and a heavier border, one step above the service sections. Cards were offered and not
+    picked.
+87. **An itemised surcharge box replaces the "Surcharges +$X" line.** It has one row per surcharge
+    applied (day, kind, multiplier, hours covered where it applies, $), then the total, already
+    folded into the prices. It reads "No surcharges apply" when the estimate has days but nothing
+    is surcharged, and is hidden when there are no days. Its figures are the Cost Breakdown's.
+88. **The Totals row's text is larger**, with Total (inc GST) the largest. The take-home
+    explanation moves into an ⓘ that opens on hover (the shared `Info` control, which also opens
+    on click and keyboard).
+
+**Post-production planner**
+
+89. **Production services on the Rate Card get a "Capture" tick.** It only appears on the
+    Production (`prod`) section.
+90. **Production Capture Hours = the hours on capture-ticked lines**: unit hours (Hr = 1, ½ Day and
+    Day from the Service Day) × qty, summed over every day, Date TBC and Not on a day. Two shooters
+    count twice.
+91. **The Rate Card gets "Deliverable Types".** Each type has a name, a description (the owner's
+    reference only, never printed), one or more Post-Production services, and a multiplier: post
+    hours per capture hour, any number to 2 decimals.
+92. **Recommended Post Production Hours** = Capture Hours × multiplier × qty, per deliverable, summed
+    across deliverables. Each deliverable's share shows on its row, and the total shows in the
+    Post-Production section's cell, rounded up to the nearest 0.5 hr. *Qty multiplying was the
+    user's pick over the recommendation.*
+93. **A deliverable's post services arrive at 0 hrs**, tagged with the deliverable. The owner types
+    the hours. Beside the guide, "On post lines: X of Y recommended" compares them. Nothing is
+    priced until a number is typed.
+94. **Post services are added once, when a type is picked.** Removing the deliverable or changing
+    its type removes its tagged lines, asking first if any has hours typed. A later Rate Card edit
+    to a type never touches a saved estimate. Tagged lines can be deleted, and untagged ones added,
+    freely.
+95. **The tag prints on the client PDF**, e.g. "Video Editor — A-Roll Offline Edit · Brand Story".
+96. **A deliverable's type is optional.** Old and untyped deliverables keep working, and add no
+    recommended hours and no post lines.
+97. **Deferred: post-production days on the calendar.** A formula that plans post days from the
+    deliverables comes after the main build (A–E). It isn't part of B2.
+
+**From the B2 information architecture (2026-10-03)**
+
+98. **The editor puts what you edit first and the summaries last.** The order is: header fields →
+    Short notice row → Prices bar → **Deliverables** → **Production Booking** (with Not on a day
+    and Gear rentals) → Pre-Production → **Post-Production** (with the planner) → Additional work →
+    "On set, by day": the four read-only summaries (Production, Travel, Crew, Equipment) →
+    surcharge box → totals. Today's order was offered and not picked.
+99. **"Deliverable Types" is a Rate Card block** after Travel and before Surcharges, saved with
+    "Save Services" as part of the card. A separate Finance & Price tab was offered and not picked.
+
+The six interpretations in the brief's B2 Key Interactions were confirmed by the user on
+2026-10-03:
+- no drag on touch;
+- the Gear rentals panel under the cards;
+- old equipment text becoming the Item;
+- per-deliverable rounding to 0.5 hr;
+- "Add to a day ▾" kept on the summaries;
+- "On post lines" counting every Post-Production line.
+
 ## Left for the user to supply (not decisions, inputs)
 
 - The **service agreement text** (decision 39), ideally checked by a lawyer.
