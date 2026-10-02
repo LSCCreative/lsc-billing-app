@@ -642,7 +642,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   containing the other's forbidden words. _Modifies: `pdf.js`, `routes/pdf.js`,
   `estimate-detail.js`._
 
-  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is 366/366: 8 new tests in
+  **Done 2026-10-02** on `production-booking`, committed `0d82f73`. The suite is 366/366: 8 new tests in
   `test-calc.js` and 9 in `test-pdf.js` (one renders through real Chromium). Changed: both
   `calc.js` copies, `pdf.js`, `routes/pdf.js`, `estimate-detail.js`, `rows.js`,
   `estimate-editor.js` and `booking.css`.
