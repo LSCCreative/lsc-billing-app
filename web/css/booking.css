@@ -470,67 +470,6 @@
   display: none;
 }
 
-/* ── The Production section ───────────────────────────────────────────────── */
-
-.prod-add-label {
-  flex-shrink: 0;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-}
-.prod-days {
-  list-style: none;
-}
-.prod-day,
-.prod-days-empty {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 8px 14px;
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
-  font-size: 12px;
-}
-.prod-days-empty {
-  color: var(--muted);
-  font-size: 11px;
-}
-.prod-days > :last-child {
-  border-bottom: none;
-}
-.prod-day-link {
-  min-height: 44px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--text);
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-  text-decoration-color: var(--muted2);
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-.prod-day-link:hover {
-  text-decoration-color: var(--text);
-}
-@media (min-width: 768px) {
-  .prod-day-link {
-    min-height: 0;
-  }
-}
-.prod-day-items {
-  flex: 1 1 12em;
-  min-width: 0;
-  color: var(--muted);
-}
-.prod-day-total {
-  margin-left: auto;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── Short notice, in the doc-type bar (D19) ──────────────────────────────── */
 
 .sn-group {
@@ -687,12 +626,145 @@
   color: var(--muted);
 }
 
-/* The flat Travel / Crew / Equipment sections: a head and subtotal until
-   B2-6's summaries. */
-.onset-note {
+/* ── "On set, by day" (B2-6, D78, D98) ──────────────────────────────────────
+   A quiet divider, then four read-only summaries of the day cards: a group per
+   card with its lines and total, plain text like the estimate detail, so they
+   don't read as more fields to fill in. */
+.onset-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+.onset-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.onset-head-r {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 14px;
+}
+.onset-empty {
   padding: 10px 16px;
   font-size: 11px;
   color: var(--muted);
+}
+.onset-group {
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+}
+.onset-group:last-child {
+  border-bottom: none;
+}
+.onset-ghead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  font-size: 12px;
+}
+.onset-gtitle {
+  font-weight: 600;
+  color: var(--text);
+}
+.onset-edit {
+  min-height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  text-decoration-color: var(--muted2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.onset-edit:hover {
+  color: var(--text);
+  text-decoration-color: var(--text);
+}
+.onset-gtotal {
+  margin-left: auto;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.onset-lines {
+  list-style: none;
+  margin-top: 4px;
+}
+.onset-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 110px;
+  gap: 2px 16px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.onset-name.is-muted {
+  color: var(--muted);
+  font-style: italic;
+}
+/* The surcharge a production line carries, as on its card (owner-only, D8). */
+.onset-note {
+  display: block;
+  font-size: 10px;
+  font-style: normal;
+  color: var(--muted);
+}
+.onset-qty {
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.onset-amt {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (min-width: 768px) {
+  .onset-edit {
+    min-height: 0;
+  }
+}
+/* A phone: the group's total stays on its title's row, with "Edit on the day"
+   under them, and each line's quantity goes under its name, so the name keeps
+   the width. */
+@media (max-width: 767px) {
+  .onset-ghead {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .onset-ghead .status-chip {
+    justify-self: start;
+  }
+  .onset-gtotal {
+    grid-row: 1;
+    grid-column: 3;
+  }
+  .onset-edit {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .onset-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .onset-qty {
+    grid-row: 2;
+    text-align: left;
+  }
+  .onset-amt {
+    grid-row: 1;
+    grid-column: 2;
+  }
 }
 
 /* ── The menu ──────────────────────────────────────────────────────────────
@@ -707,9 +779,11 @@
   padding: 10px 14px 12px;
 }
 /* Brought into view under the sticky page header (52px), not behind it: the
-   menu on open, a card on showDay(). */
+   menu on open, a card on showDay(), a card's group from a summary's "Edit on
+   the day". */
 .day-menu,
-.day-card {
+.day-card,
+.day-group {
   scroll-margin-top: 64px;
 }
 .day-menu-head {

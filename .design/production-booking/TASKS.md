@@ -1311,7 +1311,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
       `vehicleCostPerKm` 0.92, and the scratch card has a "Vehicle — per km" row.
 
 - [x] **B2-5. Moving lines: drag, Move to, Duplicate day** (money math — Opus/high, because a move
-  re-prices). _Depends on: B2-4._ **Done 2026-10-03, uncommitted.**
+  re-prices). _Depends on: B2-4._ **Done 2026-10-03, committed `333c897`.**
   - **Drag (mouse and pen, pointer events):** a handle `<button>` on each line. Drop targets are
     the same kind's group on any card, and Not on a day. A drop rule shows the insert point.
     Dropping in its own card reorders. There's no handle below 768.
@@ -1393,8 +1393,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
       nothing to turn off, since there's no animation.
     - **Scratch data:** "B2-4 old flat" now has Sat 10, Sun 11 and Mon 12 Oct.
 
-- [ ] **B2-6. "On set, by day": the four read-only summaries, and the editor order** (money math —
-  Opus/high, because it renders day totals). _Depends on: B2-4._
+- [x] **B2-6. "On set, by day": the four read-only summaries, and the editor order** (money math —
+  Opus/high, because it renders day totals). _Depends on: B2-4._ **Done 2026-10-03, committed (see git log).**
   - **One builder for four summaries** (Production, Travel, External Crew & Contracts, Equipment
     Hire). Each has:
     - groups per day in card order (title, status chip, lines, group total, "Edit on the day ↑"
@@ -1410,6 +1410,70 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   **Done when** each summary's subtotal equals the matching figure in `computeTotals`, legacy
   estimates show one "Not on a day" group per summary, and the order matches D98 at 1280, 800 and
   375.
+
+  **Done note (2026-10-03).** Changed `estimate-editor.js` and `booking.css`. No server change;
+  396/396. **B2-4 and B2-5 are now deployable** (with B2-13's deploy).
+  - **One builder:** `onSetSummaryMarkup(kind)` makes each block: the head (name, tag, "Add to a
+    day ▾", the subtotal `#sum-<kind>`) and a body `#onset-<kind>`. `onSetMarkup()` puts the
+    "On set, by day" divider (an `h2`; the summaries' names are `h3`) before the four. `recalc`
+    gathers each summary's lines as it prices the cards (`tally(kind, dayId, amount, lineHtml)`),
+    so a summary line is the very figure on its card. `paintOnSet` then writes each body in card
+    order (`booking.list()`, then Not on a day), only when its HTML changed.
+  - **A group** is a card with lines of that kind: its title and status chip, "Edit on the day ↑"
+    (on Not on a day, "Edit ↑"), the group total, then one line each: name (production adds its
+    surcharge note, as on the card), quantity ("1 full day", "× 3", "80 km", "at cost",
+    "2 days × $600.00"), and price. A crew or gear line with no name yet reads "Crew member, no
+    name yet" in muted italics. An empty summary reads "Nothing on set yet."
+  - **"Edit on the day ↑"** (`editOnDay`) opens the block, brings the card (and its group of that
+    kind) into view, and focuses the card's group (`.day-card-in`, `tabindex=-1`).
+  - **"Add to a day ▾"** (`openAddPop`) lists the cards by short name, then "Not on a day" and
+    "A new Date TBC day". Picking one opens that card's service menu (`openMenu(key, trigger,
+    kind)`) **with only that category expanded**. The Move to list and this one now share
+    `openCardPop`; its outside-press check uses `contains`, so pressing a button's ▾ no longer
+    closes and reopens it.
+  - **The order (D98):** the labour sections other than production, in the Rate Card's order
+    (Pre-Production, Post-Production, Additional work), then the divider and the four
+    summaries, then the summary bar. **An archived production section** has no day cards, so it
+    stays an ordinary editable section among the others, and there's no Production summary.
+  - **Removed:** task 7's Production day list, its "Add to a day" select and "+ Add Items"
+    (`prodSectionMarkup`, `#prod-day-sel`, `#prod-days`, the `.prod-day*` CSS) and B2-4's
+    head-only `onSetSectionMarkup`. `perDay` lost `prodTotal`, `count` and `names`.
+  - **In the browser against `api-scratch`** ("B2-4 old flat": three dated days, a TBC day and
+    lines on Not on a day):
+    - **The figures:** each summary's subtotal, the sum of its group totals and the sum of its
+      lines all equal `computeTotals` run on that kind's lines alone (Production's
+      `labourTotal`; the others' `expenseTotal`): $5,920 / $342.20 / $1,800 / $900 on opening.
+    - **Live:** a hire item added from Equipment Hire's "Add to a day ▾" → Sun 11 Oct
+      (Lensworks cine zoom, 2 × $175.50) showed at once ($1,251 subtotal). "A new Date TBC day"
+      from Production opened its menu at Production; a Video Capture Day there showed as
+      "Day 4 — date TBC $1,600". Moving Saturday's $2,400 line to Monday showed $1,600 there,
+      and Saturday left the Production summary.
+    - **The save** matched the server to the cent: $10,617.20 total, and the four kinds $6,720 /
+      $342.20 / $1,800 / $1,251 by `computeTotals` on the stored lines.
+    - **The mutation:** Production summary lines at the unsurcharged price (`base` for `bill`)
+      gave lines summing to $5,920 against $6,720, and the figure check failed. Restored, it
+      passes.
+    - **Legacy** ("B2-3 old shape", no days): Production is one "Not on a day" group of $1,120;
+      the other three read "Nothing on set yet."; the total is unchanged; nothing is unsaved.
+    - **Order and layout:** D98's order at 1280, 800 and 375; no page or line overflow at any of
+      them. At 375, "Add to a day" and "Edit on the day" are 44px, and a group's total sits on
+      its title's row with "Edit on the day" under it. On a phone, "Add to a day" opens the
+      bottom sheet at the category, and Escape returns focus to the card's button.
+  - **Interpretations to show the user:**
+    1. **A summary shows only the cards with lines of its kind.** A day with no travel isn't in
+       Travel (task 7's list showed every day, "No items yet").
+    2. **"Add to a day" opens the menu with only that category expanded**, so it's right under
+       the menu's head. The menu then remembers that, as it remembers any group you open.
+    3. **"Add to a day" also offers "A new Date TBC day"**, as task 7's select did.
+    4. **Closing that menu returns focus to the card's "Add Production Service Items"**, not to
+       the summary's button, since the lines were added on the card.
+  - **Seams for later tasks:**
+    - **B2-7:** the Equipment summary prints the old one-field "Vendor / Item" text; it should
+      print the Item (and the vendor, muted) once the line splits.
+    - **B2-12:** the summaries are plain lists inside `role=group` per card; a screen-reader pass
+      should confirm they read well.
+    - **Scratch data:** "B2-4 old flat" now has a Day 4 (TBC) with a $1,600 Video Capture, its
+      Saturday Video Capture moved to Monday, and a "Lensworks cine zoom" hire on Sunday.
 
 - [ ] **B2-7. Gear rentals** (frontend — Opus/high). _Depends on: B2-4._
   - **Equipment rows:** split into **Vendor** (a typeahead from this estimate's vendors) and

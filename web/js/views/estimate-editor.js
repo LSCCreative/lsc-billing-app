@@ -126,7 +126,7 @@ const EstimateEditor = (() => {
      list. Sent as refreshSurcharges on the next save, so the server does the
      same. */
   let refreshSurcharges = false;
-  let daysSig = ''; // the day titles the day selects were last built from
+  let daysSig = ''; // the day titles the cards were last labelled from
 
   /* The two Finance figures the advisory floor is built from, resolved once at
      mount. Same reasoning as pricing.js's computedRate: nothing reachable from
@@ -713,26 +713,6 @@ const EstimateEditor = (() => {
     '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
     '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>';
 
-  /* The Production section, in its usual place: the subtotal of every
-     production line, surcharges included; "Add to a day", which opens a day
-     card's service menu (or makes a Date TBC day); and one line per day.
-     paintDays() fills the day parts. Lines with no day sit in the booking
-     block's Not on a day card since B2-4. */
-  function prodSectionMarkup(section) {
-    return (
-      '<div class="billing-block" id="block-prod">' +
-      '<div class="bb-head"><div><h2 class="bb-label">' + esc(section.label) + '</h2>' +
-      '<span class="bb-label-tag">On set</span></div>' +
-      '<span class="bb-sum">Subtotal <b id="sum-prod">$0.00</b></span></div>' +
-      '<div class="bb-picker prod-add">' +
-      '<label class="prod-add-label" for="prod-day-sel">Add to a day</label>' +
-      '<select class="svc-select" id="prod-day-sel"></select>' +
-      '<button type="button" class="btn btn-accent btn-sm" id="prod-day-go">+ Add Items</button></div>' +
-      '<ol class="prod-days" id="prod-days"></ol>' +
-      '</div>'
-    );
-  }
-
   const prodSection = () => sections.find((s) => s.id === 'prod' && !s.archived) || null;
 
   /* A day card's line groups (B2-4, the IA's card order): each with the
@@ -929,9 +909,12 @@ const EstimateEditor = (() => {
     LSCModal.trapTab(overlay, event);
   }
 
-  function openMenu(dayKey, trigger) {
+  /* `kind`, from a summary's "Add to a day" (B2-6), opens the menu at that
+     category: it alone is expanded, so it sits right under the head. */
+  function openMenu(dayKey, trigger, kind) {
     if (!booking) return;
     closeMenu(false);
+    if (kind) menu.open = { [kind]: true };
     menu.target = dayKey;
     menu.trigger = trigger || null;
     menu.count = 0;
@@ -1139,8 +1122,11 @@ const EstimateEditor = (() => {
       'Moved ' + lineLabel(tr) + ' to ' + cardName(key) + ': ' + price + (carries ? ', ' + carries : '') + '.');
   }
 
-  // ── The Move to list ──
-  const pop = { el: null, tr: null, opener: null };
+  // ── The card lists: Move to, and the summaries' Add to a day (B2-6) ──
+  /* One small menu of cards under the button that opened it. `owner` is what
+     it's for (a line, or the summary's button): the same owner again closes
+     it. Picking an item closes it, then calls onPick(key). */
+  const pop = { el: null, owner: null, opener: null };
 
   function closeMovePop(returnFocus) {
     if (!pop.el) return;
@@ -1149,65 +1135,73 @@ const EstimateEditor = (() => {
     if (pop.opener) pop.opener.setAttribute('aria-expanded', 'false');
     if (returnFocus && pop.opener && pop.opener.isConnected) pop.opener.focus();
     pop.el = null;
-    pop.tr = null;
+    pop.owner = null;
     pop.opener = null;
   }
 
   function onPopOutside(event) {
-    if (pop.el && !pop.el.contains(event.target) && event.target !== pop.opener) closeMovePop(false);
+    if (pop.el && !pop.el.contains(event.target) && !pop.opener.contains(event.target)) closeMovePop(false);
   }
 
   function openMovePop(tr, opener) {
-    const reopen = pop.el && pop.tr === tr;
-    closeMovePop(false);
-    if (reopen) return; // the same button again closes it
     const here = keyOf(tr);
     const cards = (booking ? booking.list() : []).map((d) => d.id).concat([OFF_DAY]).filter((k) => k !== here);
+    openCardPop(opener, tr, 'Move ' + lineLabel(tr) + ' to',
+      cards.map((k) => ({ key: k, text: cardName(k) })),
+      (key) => {
+        moveLine(tr, groupBody(panelFor(key), kindOf(tr)), null);
+        // Focus follows the line (the brief's B2 Key Interactions 2).
+        const again = tr.querySelector('.line-move');
+        if (again) again.focus();
+      },
+      'No other day yet. Book one in Production Booking.');
+  }
+
+  function openCardPop(opener, owner, label, items, onPick, emptyText) {
+    const reopen = pop.el && pop.owner === owner;
+    closeMovePop(false);
+    if (reopen) return; // the same button again closes it
     const el = document.createElement('div');
     el.className = 'move-pop';
     el.setAttribute('role', 'menu');
-    el.setAttribute('aria-label', 'Move ' + lineLabel(tr) + ' to');
-    el.innerHTML = cards.length
-      ? cards.map((k) => '<button type="button" role="menuitem" tabindex="-1" data-key="' + esc(k) + '">' + esc(cardName(k)) + '</button>').join('')
-      : '<p class="move-pop-none">No other day yet. Book one in Production Booking.</p>';
+    el.setAttribute('aria-label', label);
+    el.innerHTML = items.length
+      ? items.map((it) => '<button type="button" role="menuitem" tabindex="-1" data-key="' + esc(it.key) + '">' + esc(it.text) + '</button>').join('')
+      : '<p class="move-pop-none">' + esc(emptyText) + '</p>';
     document.body.appendChild(el);
     const r = opener.getBoundingClientRect();
     const w = el.offsetWidth;
     el.style.top = Math.round(r.bottom + window.scrollY + 4) + 'px';
     el.style.left = Math.round(Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8)) + window.scrollX) + 'px';
     pop.el = el;
-    pop.tr = tr;
+    pop.owner = owner;
     pop.opener = opener;
     opener.setAttribute('aria-expanded', 'true');
     document.addEventListener('pointerdown', onPopOutside, true);
 
-    const items = Array.from(el.querySelectorAll('[role="menuitem"]'));
+    const buttons = Array.from(el.querySelectorAll('[role="menuitem"]'));
     el.addEventListener('keydown', (e) => {
-      const i = items.indexOf(document.activeElement);
+      const i = buttons.indexOf(document.activeElement);
       if (e.key === 'Escape') {
         e.preventDefault();
         closeMovePop(true);
       } else if (e.key === 'Tab') {
         closeMovePop(false);
-      } else if (items.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End')) {
+      } else if (buttons.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End')) {
         e.preventDefault();
-        const n = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
-          : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-        items[n].focus();
+        const n = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1
+          : (i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[n].focus();
       }
     });
     el.addEventListener('click', (e) => {
       const item = e.target.closest('[data-key]');
       if (!item) return;
-      const line = pop.tr;
       closeMovePop(false);
-      moveLine(line, groupBody(panelFor(item.dataset.key), kindOf(line)), null);
-      // Focus follows the line (the brief's B2 Key Interactions 2).
-      const again = line.querySelector('.line-move');
-      if (again) again.focus();
+      onPick(item.dataset.key);
     });
-    if (items.length) {
-      items[0].focus();
+    if (buttons.length) {
+      buttons[0].focus();
     } else {
       el.setAttribute('tabindex', '-1');
       el.focus();
@@ -1359,13 +1353,11 @@ const EstimateEditor = (() => {
      times, when they're longer than its items' hours. Never a price. */
   const { bookedHours, hrsText } = LSCRows;
 
-  /* Everything about the days that isn't a price: the Production section's
-     day list and "Add to a day" select, each unassigned line's day select,
-     each day card's labels, dropped days' items. Selects are only rebuilt when
-     the days themselves change, so one being used is never pulled from under
-     the pointer. `perDay` is recalc's { dayId → { total, prodTotal, hours,
-     count, names } }: `total` is everything on the card (B2-4), the others its
-     production lines only. */
+  /* Everything about the cards that isn't a line's price: each card's total,
+     which groups show, its labels and hours hint, and dropped days' items.
+     The labels are only rewritten when the days themselves change. `perDay`
+     is recalc's { card key → { total, hours } }: `total` is everything on the
+     card (B2-4), `hours` its production lines' only (D26). */
   function paintDays(perDay) {
     // Mid-mount (restoreRows runs before the booking block exists): nothing to paint yet.
     if (!booking) return;
@@ -1379,14 +1371,6 @@ const EstimateEditor = (() => {
     const sig = days.map((d) => d.id + '|' + d.title + '|' + d.status).join('\n');
     if (sig !== daysSig) {
       daysSig = sig;
-      const sel = $('prod-day-sel');
-      if (sel) {
-        const was = sel.value;
-        sel.innerHTML =
-          days.map((d) => '<option value="' + esc(d.id) + '">' + esc(d.title) + '</option>').join('') +
-          '<option value="' + NEW_TBC + '">A new Date TBC day</option>';
-        sel.value = live.has(was) ? was : days.length ? days[0].id : NEW_TBC;
-      }
       days.forEach((d) => {
         const panel = dayPanels.get(d.id);
         if (!panel) return;
@@ -1417,24 +1401,6 @@ const EstimateEditor = (() => {
       hint.hidden = !long;
       hint.textContent = long ? 'Booked ' + hrsText(booked) + ', items cover ' + hrsText(p.hours).replace(/ hrs?$/, '') + '.' : '';
     });
-
-    const list = $('prod-days');
-    if (list) {
-      const html = days.length
-        ? days.map((d) => {
-            const p = perDay.get(d.id) || { prodTotal: 0, count: 0, names: [] };
-            return (
-              '<li class="prod-day"><button type="button" class="prod-day-link" data-day="' + esc(d.id) + '">' +
-              esc(d.title) + '</button>' + LSCCalendar.statusChip(d.status) +
-              '<span class="prod-day-items">' +
-              (p.count ? esc(p.names.join(', ')) : 'No items yet') + '</span>' +
-              '<b class="prod-day-total">' + fmt(p.prodTotal) + '</b></li>'
-            );
-          }).join('')
-        : '<li class="prod-days-empty">No production days yet. Book one in Production Booking above, or add ' +
-          'a Date TBC day here.</li>';
-      if (list.innerHTML !== html) list.innerHTML = html;
-    }
   }
 
   /* "incl. weekend ×1.5" under a surcharged line's price: the rows of
@@ -1443,18 +1409,117 @@ const EstimateEditor = (() => {
   // Shared with the estimate detail, so both screens word a surcharge alike.
   const surNote = LSCRows.surchargeNote;
 
-  /* Travel, External Crew and Equipment Hire (B2-4). Their lines are added on
-     each day's card, or on Not on a day, so the section here is its head and
-     subtotal; B2-6 fills it with a read-only summary by day. */
-  function onSetSectionMarkup(kind, label) {
+  /* ── "On set, by day" (B2-6, D78, D98) ─────────────────────────────────
+     Production, Travel, External Crew & Contracts and Equipment Hire, read
+     only: every one of their lines is added and edited on a day card (the
+     brief's B2 principle 1), so down here each is one builder's summary of
+     the cards. A group per card that has lines of its kind, in card order
+     (dated days, Date TBC days, then Not on a day), each with its lines, its
+     total and a way back to the card; then the subtotal, in the head. The
+     figures are the ones recalc() just painted on the cards, so the two
+     can't disagree. "Add to a day ▾" opens a card's service menu at this
+     category. */
+  const ON_SET = [
+    ['prod', null, 'On set'], // labelled with the Rate Card's own name for the section
+    ['travel', 'Travel &amp; Accommodation', 'Expenses'],
+    ['crew', 'External Crew &amp; Contracts', 'Expenses'],
+    ['equip', 'Equipment Hire', 'Expenses'],
+  ];
+  const ON_SET_MENU = { prod: 'Production', travel: 'Travel', crew: 'External Crew', equip: 'Equipment Hire' };
+
+  function onSetSummaryMarkup(kind, label, tag) {
     return (
-      '<div class="billing-block onset-block" id="block-' + kind + '">' +
-      '<div class="bb-head"><div><h2 class="bb-label">' + label + '</h2>' +
-      '<span class="bb-label-tag">Expenses</span></div>' +
-      '<span class="bb-sum">Subtotal <b id="sum-' + kind + '">$0.00</b></span></div>' +
-      '<p class="onset-note">Added on each production day, or under Not on a day, in Production Booking above.</p>' +
+      '<div class="billing-block onset-block" id="block-' + kind + '" data-onset="' + kind + '">' +
+      '<div class="bb-head"><div><h3 class="bb-label" id="onset-h-' + kind + '">' + label + '</h3>' +
+      '<span class="bb-label-tag">' + tag + '</span></div>' +
+      '<div class="onset-head-r">' +
+      '<button type="button" class="btn btn-ghost btn-sm onset-add" aria-haspopup="menu" aria-expanded="false">' +
+      'Add to a day<span class="sr-only">, ' + esc(ON_SET_MENU[kind]) + '</span> <span aria-hidden="true">▾</span></button>' +
+      '<span class="bb-sum">Subtotal <b id="sum-' + kind + '">$0.00</b></span></div></div>' +
+      '<div class="onset-body" id="onset-' + kind + '"><p class="onset-empty">Nothing on set yet.</p></div>' +
       '</div>'
     );
+  }
+
+  function onSetMarkup() {
+    const prod = prodSection();
+    return (
+      '<h2 class="onset-divider">On set, by day</h2>' +
+      ON_SET.filter(([kind]) => kind !== 'prod' || prod)
+        .map(([kind, label, tag]) => onSetSummaryMarkup(kind, label || esc(prod.label), tag)).join('')
+    );
+  }
+
+  /* One summary line: what the card's row says, as text. `amount` null is a
+     line with no price (its service left the card), shown as "—". */
+  function onSetLine(name, qty, amount, note, muted) {
+    return (
+      '<li class="onset-line"><span class="onset-name' + (muted ? ' is-muted' : '') + '">' + esc(name) +
+      (note ? '<span class="onset-note">' + esc(note) + '</span>' : '') + '</span>' +
+      '<span class="onset-qty">' + esc(qty) + '</span>' +
+      '<span class="onset-amt">' + (amount === null ? '—' : fmt(amount)) + '</span></li>'
+    );
+  }
+
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+
+  /* `onSet` is recalc's { kind → Map(card key → { html, total }) }. */
+  function paintOnSet(onSet) {
+    if (!booking) return; // mid-mount, as paintDays
+    const days = booking.list();
+    const order = days.map((d) => d.id).concat([OFF_DAY]);
+    const byId = new Map(days.map((d) => [d.id, d]));
+    Object.keys(onSet).forEach((kind) => {
+      const body = $('onset-' + kind);
+      if (!body) return;
+      const cards = onSet[kind];
+      const html = order.filter((key) => cards.has(key)).map((key) => {
+        const g = cards.get(key);
+        const d = byId.get(key);
+        const title = d ? d.title : 'Not on a day';
+        return (
+          '<div class="onset-group" role="group" aria-label="' + esc(title) + '">' +
+          '<div class="onset-ghead"><span class="onset-gtitle">' + esc(title) + '</span>' +
+          (d ? LSCCalendar.statusChip(d.status) : '') +
+          '<button type="button" class="onset-edit" data-key="' + esc(key) + '">' +
+          (d ? 'Edit on the day' : 'Edit') + '<span class="sr-only">, ' + esc(title) + '</span> <span aria-hidden="true">↑</span></button>' +
+          '<b class="onset-gtotal">' + fmt(g.total) + '</b></div>' +
+          '<ul class="onset-lines">' + g.html + '</ul></div>'
+        );
+      }).join('') || '<p class="onset-empty">Nothing on set yet.</p>';
+      if (body.innerHTML !== html) body.innerHTML = html;
+      body.closest('.onset-block').classList.toggle('is-empty', cards.size === 0);
+    });
+  }
+
+  /* "Edit on the day ↑": the card, in view and focused, with its group of
+     this kind brought into view when the card is taller than the screen. */
+  function editOnDay(key, kind) {
+    if (!booking) return;
+    const card = key === OFF_DAY ? booking.showOff() : booking.showDay(key);
+    if (!card) return;
+    const group = card.querySelector('.day-group[data-group="' + kind + '"]');
+    if (group && !group.hidden) group.scrollIntoView({ block: 'nearest' });
+    const box = card.querySelector('.day-card-in');
+    box.setAttribute('tabindex', '-1');
+    box.focus({ preventScroll: true });
+  }
+
+  /* "Add to a day ▾" → a card (or a new Date TBC day) → its service menu,
+     opened at this summary's category. */
+  function openDayMenuAt(key, kind) {
+    if (!booking) return;
+    if (key === NEW_TBC) key = booking.addTbc();
+    if (key === OFF_DAY) booking.showOff();
+    else booking.showDay(key);
+    openMenu(key, panelFor(key).querySelector('.day-menu-btn'), kind);
+  }
+
+  function openAddPop(opener, kind) {
+    const keys = (booking ? booking.list() : []).map((d) => d.id).concat([OFF_DAY]);
+    openCardPop(opener, opener, 'Add ' + ON_SET_MENU[kind] + ' to',
+      keys.map((k) => ({ key: k, text: cardName(k) })).concat([{ key: NEW_TBC, text: 'A new Date TBC day' }]),
+      (key) => openDayMenuAt(key, kind), '');
   }
 
   /* The headline block (D86): what the client is buying, above when it's shot
@@ -1675,12 +1740,14 @@ const EstimateEditor = (() => {
       // Where a day's surcharge changing is announced (announceSurcharges).
       '<p class="sr-only" id="sur-live" aria-live="polite"></p>';
 
+    /* D98: the editable sections in the Rate Card's order (Pre-Production,
+       Post-Production, Additional work), then the read-only "On set, by
+       day". An archived production section has no day cards to summarise,
+       so it stays an ordinary section among them. */
     sections.forEach((section) => {
-      html += section.id === 'prod' && !section.archived ? prodSectionMarkup(section) : labourSectionMarkup(section);
+      if (section.id !== 'prod' || section.archived) html += labourSectionMarkup(section);
     });
-    html += onSetSectionMarkup('travel', 'Travel &amp; Accommodation');
-    html += onSetSectionMarkup('crew', 'External Crew &amp; Contracts');
-    html += onSetSectionMarkup('equip', 'Equipment Hire');
+    html += onSetMarkup();
 
     html += summaryMarkup();
 
@@ -1699,9 +1766,9 @@ const EstimateEditor = (() => {
   // ── Reading the form back ─────────────────────────────────────────────────
 
   /* Production rows sit in several bodies — each day card's, in date order,
-     then the Production section's unassigned ones — so they are every
-     Production row in the form, in page order. A removed day's rows have left
-     the page with its card. */
+     then Not on a day's — so they are every Production row in the form, in
+     page order. A removed day's rows have left the page with its card. The
+     "On set, by day" summaries hold no rows, only text. */
   function rowsIn(id) {
     if (id === 'prod') return Array.from(root.querySelectorAll('.gt-row[data-rid][data-section="prod"]'));
     // Since B2-4 travel, crew and gear live in the day cards too, in the same page order.
@@ -1847,14 +1914,20 @@ const EstimateEditor = (() => {
       nextKind: (surcharges.nextDays || {})[d.id],
     })]));
     /* Per card (a day id, or OFF_DAY): `total` is everything on it, production
-       at its surcharged price and the rest as billed (B2-4); `prodTotal`,
-       `hours`, `count` and `names` are its production lines only. */
+       at its surcharged price and the rest as billed (B2-4); `hours` is its
+       production lines' only. And per kind, per card, the "On set, by day"
+       summaries' lines and group totals (B2-6), from the same figures. */
     const perDay = new Map();
-    const tally = (dayId, amount) => {
+    const onSet = { prod: new Map(), travel: new Map(), crew: new Map(), equip: new Map() };
+    const tally = (kind, dayId, amount, lineHtml) => {
       const key = dayId || OFF_DAY;
-      const p = perDay.get(key) || { total: 0, prodTotal: 0, hours: 0, count: 0, names: [] };
+      const p = perDay.get(key) || { total: 0, hours: 0 };
       p.total += amount || 0;
       perDay.set(key, p);
+      const g = onSet[kind].get(key) || { html: '', total: 0 };
+      g.html += lineHtml;
+      g.total += amount || 0;
+      onSet[kind].set(key, g);
       return p;
     };
 
@@ -1882,12 +1955,15 @@ const EstimateEditor = (() => {
           note.textContent = text;
           note.hidden = !text;
         }
-        const p = tally(day ? day.id : null, bill);
-        if (!day) return;
-        p.prodTotal += bill || 0;
-        p.hours += def ? num(line.qty) * LSCCalc.hoursPerUnitOf(def) : 0;
-        p.count += 1;
-        p.names.push(line.name);
+        /* An archived production section's lines are on no card (restoreRows):
+           its own block lists them, so they are in no summary. */
+        if (section.archived) return;
+        const unit = LSCRows.labourUnit(def);
+        const qty = num(line.qty);
+        const p = tally('prod', day ? day.id : null, bill,
+          onSetLine(line.name, def ? qty + ' ' + LSCRows.unitWord(unit.kind, qty) : String(qty),
+            bill, note && !note.hidden ? note.textContent : ''));
+        if (day) p.hours += def ? qty * LSCCalc.hoursPerUnitOf(def) : 0;
       });
       setText('sum-' + section.id, fmt(subtotal));
     });
@@ -1897,9 +1973,14 @@ const EstimateEditor = (() => {
     let travelSubtotal = 0;
     rowsIn('travel').forEach((tr) => {
       const line = lineFrom(tr, false);
-      const bill = paintRow(tr, travelBill(travelDef(line, pricing), line));
+      const def = travelDef(line, pricing);
+      const billed = travelBill(def, line);
+      const bill = paintRow(tr, billed);
       travelSubtotal += bill;
-      tally(line.dayId, bill);
+      const qty = num(line.qty);
+      // The car is by the km; a direct cost's quantity is its amount; the rest are counted.
+      const qtyText = !def ? String(qty) : def.perKm ? qty + ' km' : def.directCost ? 'at cost' : '× ' + qty;
+      tally('travel', line.dayId, bill, onSetLine(line.name, qtyText, billed, ''));
     });
     setText('sum-travel', fmt(travelSubtotal));
 
@@ -1912,11 +1993,15 @@ const EstimateEditor = (() => {
         };
         const bill = paintRow(tr, costBill(line));
         subtotal += bill;
-        tally(rowDayId(tr), bill);
+        const name = inputValue(tr, kind === 'crew' ? '.role-inp' : '.vendor-inp').trim();
+        tally(kind, rowDayId(tr), bill, onSetLine(
+          name || (kind === 'crew' ? 'Crew member, no name yet' : 'Hire item, no name yet'),
+          plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, '', !name));
       });
       setText('sum-' + kind, fmt(subtotal));
     });
     paintDays(perDay);
+    paintOnSet(onSet);
     paintShortNotice(days);
 
     // The headline figures, from the same code the server will run on save.
@@ -2740,13 +2825,10 @@ const EstimateEditor = (() => {
 
   // ── Wiring ────────────────────────────────────────────────────────────────
 
-  /* A Production line goes to its day's items when it has a day this estimate
-     still has, and to "Unassigned — pick a day" otherwise (every line saved
-     before task 7). Its stored surchargedPrice isn't read: the server stamps
-     it again on save, and recalc shows what that will be. */
   /* Every on-set line goes on its day's card, or on Not on a day when it has
      none (B2-4, D79) — every line saved before B2, and production lines saved
-     before days. */
+     before days. A production line's stored surchargedPrice isn't read: the
+     server stamps it again on save, and recalc shows what that will be. */
   function restoreRows(activeRows, pricing, days) {
     const dayIds = new Set((days || []).map((d) => String(d.id)));
     const cardFor = (line) => panelFor(line.dayId && dayIds.has(String(line.dayId)) ? String(line.dayId) : OFF_DAY);
@@ -2809,26 +2891,20 @@ const EstimateEditor = (() => {
     if (gstFreeBox) gstFreeBox.addEventListener('change', recalc);
     $('f-shortnotice').addEventListener('change', recalc);
 
-    /* "Add to a day": that day's service menu, or a new Date TBC day's. The
-       menu does the adding, so there is one way to add an item (the brief's
-       B2 principle 1). */
-    const goToDay = (dayId) => {
-      if (!booking) return;
-      booking.showDay(dayId);
-      const panel = dayPanels.get(dayId);
-      if (panel) openMenu(dayId, panel.querySelector('.day-menu-btn'));
-    };
-    const dayGo = $('prod-day-go');
-    if (dayGo) {
-      dayGo.addEventListener('click', () => {
-        const value = $('prod-day-sel').value;
-        goToDay(value === NEW_TBC ? booking.addTbc() : value);
+    /* The "On set, by day" summaries (B2-6): "Add to a day ▾" opens a card's
+       service menu at the summary's category, so there is still one way to
+       add an item (the brief's B2 principle 1); "Edit on the day ↑" goes to
+       the card. The groups are repainted by recalc, so this listens on the
+       block. */
+    root.querySelectorAll('[data-onset]').forEach((block) => {
+      const kind = block.dataset.onset;
+      block.addEventListener('click', (e) => {
+        const add = e.target.closest('.onset-add');
+        if (add) return openAddPop(add, kind);
+        const edit = e.target.closest('.onset-edit');
+        if (edit) editOnDay(edit.dataset.key, kind);
       });
-      $('prod-days').addEventListener('click', (e) => {
-        const link = e.target.closest('.prod-day-link');
-        if (link) goToDay(link.dataset.day);
-      });
-    }
+    });
 
     /* Straight to recalc() like any other input that feeds the bar — not a
        lighter show/hide path. The toggle changes nothing computeTotals reads,
@@ -2909,7 +2985,7 @@ const EstimateEditor = (() => {
     holidays = null;
     holidaysLoading = null;
     refreshSurcharges = false;
-    daysSig = null; // so the first paint builds the day selects
+    daysSig = null; // so the first paint labels the cards
 
     root.innerHTML = formMarkup(estimate, pricing);
     restoreRows(activeRows, pricing, estimate && estimate.days);

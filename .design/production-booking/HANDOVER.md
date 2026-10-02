@@ -234,7 +234,7 @@ times.
             on a day have no way onto a day until then.
 
         - [x] **B2-5, moving lines: drag, Move to, Duplicate day**: done 2026-10-03,
-          **uncommitted**. Changed `estimate-editor.js`, `booking-block.js` and `booking.css`.
+          committed `333c897`. Changed `estimate-editor.js`, `booking-block.js` and `booking.css`.
           - **What exists now:** every on-set line has a drag handle (mouse and pen, ≥768) and
             "Move to ▾" (any pointer, the keyboard). A move is the row moved into another card,
             then a recalc, so its price follows the new day. Each card has "Duplicate day".
@@ -244,9 +244,23 @@ times.
             (the copy keeps the times; the handle isn't a tab stop; list names) and the
             `login.css` `[hidden] !important` trap.
 
-**Exact next item: TASKS.md B2-6, "On set, by day": the four read-only summaries, and the editor
-order** (money math, Opus/high). It is what makes B2-4/B2-5 deployable. After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
-Opus/high).
+        - [x] **B2-6, "On set, by day": the four read-only summaries and the editor order**:
+          done 2026-10-03, **uncommitted**. Changed `estimate-editor.js` and `booking.css`.
+          - **What exists now:** under Additional work, an "On set, by day" divider and four
+            read-only summaries (Production, Travel, External Crew & Contracts, Equipment Hire),
+            each grouped by card with "Edit on the day ↑", a group total and the subtotal, and
+            "Add to a day ▾" opening a card's menu at that category. Task 7's Production day
+            list and select are gone. **B2-4 and B2-5 are deployable now.**
+          - **Verified:** every summary's subtotal, group totals and lines equal `computeTotals`
+            on that kind's lines, before and after a save that matched the server to the cent; a
+            summary line at the unsurcharged price was caught; legacy estimates show one Not on
+            a day group; D98's order at 1280/800/375.
+          - **Read its Done note before B2-7.** It has four interpretations to show the user and
+            the Equipment summary's seam.
+
+**Exact next item: TASKS.md B2-7, Gear rentals** (frontend, Opus/high): Vendor and Item on
+equipment lines, the Gear rentals panel, and `rentals` in the save. After B2 is built and
+deployed, task 11, the hash router (Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
