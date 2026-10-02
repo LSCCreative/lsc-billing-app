@@ -103,9 +103,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    accessibility pass: a polite surcharge announcement, the Short notice tick at 44px on phones,
    everything else measured) and task 9a (money review fixes: after hours per item over its own
    hours, a midnight split with carry-over rows, short notice on items not on a day, Overtime
-   moved off set by v11, decisions D67–D72) done the same day, uncommitted. None of it is
-   deployed.** Next is task 10 (deploy A+B: NAS v11 then Pages, after estimate-accuracy's v10;
-   Sonnet/medium, ask the user first). Client pages are light, in the
+   moved off set by v11, decisions D67–D72) done the same day, uncommitted. Tasks 9/9a committed `6074c3e`; **task 10 deployed 2026-10-02 (NAS v10+v11, then Pages; `main` at `6074c3e`).** Next is task 11 (hash router, Stage C). Client pages are light, in the
    colours of the user's site **lsccreative.studio** (formerly creativelsc.com). Read its `HANDOVER.md` first. Build bucket: Opus, effort high.
 
 **Superseded docs are deleted, not kept around.** A brief or task list that no longer describes

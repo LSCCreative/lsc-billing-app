@@ -881,7 +881,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   - **Scratch DB state:** Audit A now has Sat 3 Oct, Fri 16 Oct 8pm–2am, Thu 22 Oct 9–7 and a TBC
     day, with short notice. Total $11,627.
 
-- [ ] **10. Deploy A+B** (deploy — Sonnet/medium). **Ask the user first.**
+- [x] **10. Deploy A+B** (deploy — Sonnet/medium). **Deployed 2026-10-02 with the user's go-ahead** (see the Done note below).
   - **NAS:** back up the live DB, deploy NAS v11 (watch the boot log for the migration and the
     holiday fetch), check `healthy`.
   - **Pages:** then push Pages, back to back (the shape bump refuses the old tab in between, as at
@@ -892,6 +892,17 @@ State the bucket out loud and pause for the user to switch before starting a tas
     list; sets their multipliers.
 
   Record the run ids in `HANDOVER.md`.
+
+  - **Done 2026-10-02.** Backup (`sqlite3 ".backup"`, integrity ok, schema v9) to
+    `/volume4/lsc-billing/data/backups/pre-v11-20261002-1558.db`. `server/` tar-copied over the
+    `lsc-nas` key alias, excluding `node_modules`, `data`, `.env` and `docker-compose.yml` (the last
+    two md5-identical after, volume still `/volume4/lsc-billing/data:/data`). `docker compose up -d
+    --build`: `healthy`, 0 restarts, boot log `migrated to v10` then `migrated to v11`, then
+    `[holidays] fetched, 22 new date(s)`; live DB at v11. **No `moved 1 Overtime row(s)` line:** the live
+    card has no Overtime row, so the migration had nothing to move. Container carries
+    `production-days`; `/health` 200 and `/api/calendar`, `/api/holidays`, `/api/estimates` 401 signed out.
+  - **Pages:** `main` fast-forwarded to `6074c3e` and pushed, run 36971522863 success; live
+    `index.html` carries `calendar.js?v=6074c3e0` and `js/views/booking-block.js` serves 200.
 
 ## Stage C — Home: the production calendar (no migration)
 

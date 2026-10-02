@@ -167,11 +167,12 @@ times.
         - **Brief:** its surcharge maths and worked examples are updated (the 9–7 full day is now
           $1,120).
 
-**Exact next item: TASKS.md task 10, deploy A+B** (**deploy, Sonnet/medium; ask the user first**).
-Commit tasks 9 and 9a first.
-- **Deploy order** (in the task): estimate-accuracy's v10 must be live first, then NAS v11, then
-  Pages back to back.
-- **Watch the NAS boot log** for v11's Overtime move.
+- [x] **Tasks 9 and 9a committed** (`6074c3e`) and **task 10 deployed 2026-10-02**: NAS at v11
+      (v10 ran with it), Pages run 36971522863 success, `main` at `6074c3e`. Details in TASKS.md
+      task 10's Done note. The live card had no Overtime row, so the v11 move was a no-op.
+      **Still for the user:** check the Public holidays list, set the surcharge multipliers.
+
+**Exact next item: TASKS.md task 11, the hash router** (Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
