@@ -1000,7 +1000,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
       there.
 
 - [x] **B2-2. Schema v12, rentals, and the server's line rules** (money math — Opus/high, because
-  it governs which lines can carry a day). _Depends on: B2-1._ **Done 2026-10-03, uncommitted.**
+  it governs which lines can carry a day). _Depends on: B2-1._ **Done 2026-10-03, committed `26e4e75`.**
   - **Migration v12:** the `rentals` table, per the IA (columns, indexes, `ON DELETE CASCADE`).
     Write a `test-db.js` migration test. Extend `db.js`'s v11 trap comment to name `rentals` too.
   - **`days.js` `lineDayProblem`** allows `dayId` on `prod`, `travel`, `crew` and `equip`.
@@ -1116,8 +1116,9 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **B2-10:** the editor should drop a tag whose deliverable is gone before saving, or the
       save is refused with `line_deliverable_unknown`.
 
-- [ ] **B2-3. Deliverables block: moved, restyled, typed; the Prices bar moved** (frontend —
+- [x] **B2-3. Deliverables block: moved, restyled, typed; the Prices bar moved** (frontend —
   Opus/high). _Depends on: B2-1._ This is the first visible B2 slice, to confirm the look early.
+  **Done 2026-10-03, uncommitted.**
   - **Placement:** Deliverables moves above the booking block, and the Prices bar moves above
     Deliverables (D98).
   - **The treatment (D86):** the Total box's tint (`rgba(184,84,68,.08)` fill, a stronger accent
@@ -1134,6 +1135,58 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   **Done when** an old estimate opens with its deliverables intact and unsaved-clean; the Type
   saves and reloads; and nothing outside the moved blocks shifts at 1280 except by the blocks' own
   height change. _Reuses: `.billing-block`, the deliverable row builder._
+
+  **Done note (2026-10-03).** Changed only `estimate-editor.js` and `estimates.css`; no server
+  change (396/396 unchanged).
+  - **Order:** document-type bar → Prices bar → Deliverables → booking block → the sections.
+    The rest of D98's order (Post-Production before the "On set, by day" summaries) is B2-5's.
+  - **Rows:** `buildDeliverableRow` makes Type ▾ · Name · Format · Length · Qty · Post hrs (rec.) ·
+    ×, with phone `data-label`s.
+    - **Each row's id** is `dv` plus a random UUID. A row saved without one gets one when
+      it's built, which is before the baseline, so an old estimate opens unsaved-clean
+      (verified).
+    - **Picking a type** snapshots `typeId`/`typeName`/`multiplier` onto the row, and its name
+      fills a blank Name. "— None —" clears it. `collect()` writes the snapshot only on typed
+      rows.
+    - **Post hrs (rec.)** is a `.deliv-rec` cell showing "—", for B2-10.
+  - **Look (`estimates.css`, additive):**
+    - `.deliv-block`: a 2px border at `rgba(184,84,68,.6)`, the `.08` fill, a `.14` head and a
+      15px Delight label.
+    - `.deliv-grid.deliv-typed`: `150px 2.4fr 1fr 1fr 70px 116px 32px`. The read-only screens'
+      `.deliv-grid` is untouched.
+    - `.deliv-type-sel`: the `.lab-unit-sel` chrome, 44px tall on phones.
+  - **Measured:**
+    - **1280:** the doc-type bar, Prices bar (47.5), booking block (739) and every block below
+      kept their heights. Everything after the booking block moved down by exactly the
+      Deliverables block's own change (142 → 150 for two rows: the border, head padding and
+      larger heading).
+    - **800:** columns 150/199/83/83/70/116/32, no scroll inside the block, no page overflow.
+    - **375:** stacked rows with all six labels, every control 44px, the select at 16px, no
+      page overflow.
+    - **Contrast on the tint:** text ≥ 12:1, and `--muted` (a11y.css 0.6) ≥ 5.4:1 on the
+      block, head and row hover.
+  - **In the browser against `api-scratch`:**
+    - an estimate saved in the old shape ("B2-3 old shape", two untyped deliverables, no ids)
+      opened clean;
+    - Brand Story on a named row kept its name, and Socials on a blank row filled it;
+    - the save stored ids and snapshots;
+    - **after the card changed** (Brand Story ×2 → ×3, Socials removed), it reopened clean,
+      with Brand Story still ×2 and Socials shown as "Socials (removed)";
+    - None → Socials restored its snapshot and left the form clean.
+    - That estimate and a one-type card (Brand Story ×3) are left on `api-scratch` for B2-10.
+  - **Interpretations to show the user:**
+    1. **A type removed from the Rate Card stays on the row** as "<name> (removed)", with its
+       saved multiplier. A tooltip says why.
+    2. **Re-picking the same type keeps the saved multiplier.** To take the card's new one, pick
+       "— None —" and then the type. Whether "Update to current rates" should refresh it is open
+       for B2-10.
+    3. **On phones, Type is the first (full-width) field** of each stacked row, as the IA's
+       column order has it.
+  - **Seams for later tasks:**
+    - **B2-10:** the multiplier refresh above. The detail screen shows no type yet; add it with
+      the tag.
+    - **Equipment's `item` and `dayId` on travel, crew and equip** are still dropped by
+      `collect()`. That's B2-4 and B2-7.
 
 - [ ] **B2-4. The service menu, and every on-set kind on a day** (money math — Opus/high, because
   production lines price live). _Depends on: B2-2._ This is the riskiest slice.

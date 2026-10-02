@@ -197,7 +197,7 @@ times.
           - **Not deployed, and it can't go alone:** the shape bump means Pages must follow NAS.
             It ships with B2-13.
         - [x] **B2-2, schema v12, rentals, and the server's line rules**: done 2026-10-03,
-          **uncommitted** (396/396).
+          committed `26e4e75` (396/396).
           - **What exists now:** migration v12 (`rentals`), `src/rentals.js`, `dayId` allowed on
             travel/crew/equip, the deliverable-tag checks, `rentals` on the estimate routes and
             `/api/calendar`, and the PDF printing Item and tags. `api-scratch` is at v12.
@@ -205,8 +205,20 @@ times.
             interpretations to show the user, and two seams. The main one: the editor has no
             wording for the new codes yet.
 
-**Exact next item: TASKS.md B2-3, the Deliverables block moved, restyled and typed, and the Prices
-bar moved** (frontend, Opus/high). After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
+        - [x] **B2-3, the Deliverables block and the Prices bar**: done 2026-10-03,
+          **uncommitted**. Only `estimate-editor.js` and `estimates.css` changed.
+          - **What exists now:**
+            - the order is Prices bar → Deliverables → booking;
+            - the tinted headline block;
+            - the Type ▾ column, snapshotting `typeId`/`typeName`/`multiplier`;
+            - every deliverable gets an id;
+            - a "Post hrs (rec.)" cell showing "—".
+          - **Read its Done note before B2-10.** It has three interpretations to show the user
+            (a removed type keeps its snapshot; re-picking keeps the old multiplier; Type first
+            on phones), the 1280/800/375 measurements, and the scratch data left for B2-10.
+
+**Exact next item: TASKS.md B2-4, the service menu and every on-set kind on a day** (money math,
+Opus/high). After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
 Opus/high).
 
 **Seams left for later tasks:**

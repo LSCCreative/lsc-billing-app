@@ -517,21 +517,95 @@ const EstimateEditor = (() => {
     return tr;
   }
 
+  /* ── Deliverables: typed, for the post-production planner (B2-3) ────────
+     Each deliverable has an id, made here, that its post lines will point at
+     (`deliverableId`, B2-10). Ids are [A-Za-z0-9_-]{1,64} and unique on the
+     estimate (the server's deliverable_id_* checks); a row saved before B2
+     gets one when it's built, which is before the unsaved-edit baseline is
+     taken, so opening an old estimate doesn't read as an edit.
+
+     A type is picked from the Rate Card's Deliverable Types (D91). Picking one
+     SNAPSHOTS its id, name and multiplier on the row: like a line's price, a
+     saved deliverable keeps the multiplier it was typed with when the card
+     changes later. A type since removed from the card stays on the row,
+     offered under its saved name, until another is picked. */
+  function newDeliverableId() {
+    if (window.crypto && typeof crypto.randomUUID === 'function') {
+      return 'dv' + crypto.randomUUID().replace(/-/g, '');
+    }
+    return 'dv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+
+  /* The card's types, A–Z, as the Type select lists them after "— None —". */
+  function deliverableTypes() {
+    const types = (LSCData.pricing() || {}).deliverableTypes;
+    return (Array.isArray(types) ? types : [])
+      .filter((t) => t && t.id)
+      .slice()
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+  }
+
+  const DELIV_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
   function buildDeliverableRow(line) {
     const tr = document.createElement('div');
-    tr.className = 'gt-row deliv-grid';
+    tr.className = 'gt-row deliv-grid deliv-typed';
     tr.dataset.rid = rid();
+    tr.dataset.did = typeof line.id === 'string' && DELIV_ID.test(line.id) ? line.id : newDeliverableId();
+
+    /* What the row was saved with, so re-picking a removed type restores it. */
+    const saved = line.typeId
+      ? { typeId: String(line.typeId), typeName: String(line.typeName || ''), multiplier: Number(line.multiplier) || 0 }
+      : null;
+    const types = deliverableTypes();
+    const savedGone = saved && !types.some((t) => t.id === saved.typeId);
+    const option = (value, label, selected) =>
+      '<option value="' + esc(value) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
+    const options =
+      option('', '— None —', !saved) +
+      types.map((t) => option(t.id, t.name || 'Untitled type', saved && saved.typeId === t.id)).join('') +
+      (savedGone ? option(saved.typeId, (saved.typeName || 'Type') + ' (removed)', true) : '');
 
     tr.innerHTML =
-      '<div data-label="Deliverable Name"><input class="deliv-name-inp text-inp" type="text" placeholder="e.g. Hero Video" value="' +
+      '<div data-label="Type"><select class="deliv-type-sel" aria-label="Deliverable type"' +
+      (savedGone ? ' title="This type has been removed from the Rate Card. The row keeps what it was saved with."'
+        : types.length ? '' : ' title="Add Deliverable Types on the Rate Card"') + '>' + options + '</select></div>' +
+      '<div data-label="Name"><input class="deliv-name-inp text-inp" type="text" placeholder="e.g. Hero Video" value="' +
       esc(line.name || '') + '" aria-label="Deliverable name"></div>' +
-      '<div data-label="Format / Aspect Ratio"><input class="deliv-fmt-inp text-inp" type="text" placeholder="e.g. 16:9 4K" value="' +
+      '<div data-label="Format"><input class="deliv-fmt-inp text-inp" type="text" placeholder="e.g. 16:9 4K" value="' +
       esc(line.format || '') + '" aria-label="Format"></div>' +
-      '<div data-label="Duration / Length"><input class="deliv-dur-inp text-inp" type="text" placeholder="e.g. 60 sec" value="' +
-      esc(line.duration || '') + '" aria-label="Duration"></div>' +
+      '<div data-label="Length"><input class="deliv-dur-inp text-inp" type="text" placeholder="e.g. 60 sec" value="' +
+      esc(line.duration || '') + '" aria-label="Length"></div>' +
       '<div class="right" data-label="Qty"><input class="deliv-qty-inp num-inp" type="number" min="0" value="' +
       (line.qty || 1) + '" aria-label="Quantity"></div>' +
+      // The planner's share for this deliverable (calc.js postPlan); filled by B2-10.
+      '<div class="right muted-td deliv-rec" data-label="Post hrs (rec.)">—</div>' +
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove" aria-label="Remove deliverable">×</button></div>';
+
+    const setType = (snap) => {
+      if (snap) {
+        tr.dataset.typeId = snap.typeId;
+        tr.dataset.typeName = snap.typeName;
+        tr.dataset.multiplier = String(snap.multiplier);
+      } else {
+        delete tr.dataset.typeId;
+        delete tr.dataset.typeName;
+        delete tr.dataset.multiplier;
+      }
+    };
+    setType(saved);
+
+    tr.querySelector('.deliv-type-sel').addEventListener('change', (e) => {
+      const value = e.target.value;
+      if (!value) return setType(null);
+      if (savedGone && value === saved.typeId) return setType(saved);
+      const t = types.find((x) => x.id === value);
+      if (!t) return setType(null);
+      setType({ typeId: t.id, typeName: String(t.name || ''), multiplier: Number(t.multiplier) || 0 });
+      // The type's name fills a blank Name; a name already typed is the owner's.
+      const name = tr.querySelector('.deliv-name-inp');
+      if (!name.value.trim()) name.value = String(t.name || '');
+    });
 
     bindRow(tr, []);
     return tr;
@@ -879,14 +953,16 @@ const EstimateEditor = (() => {
     );
   }
 
+  /* The headline block (D86): what the client is buying, above when it's shot
+     (D98). Tinted and heavier than the service sections — estimates.css. */
   function deliverablesSectionMarkup() {
     return (
-      '<div class="billing-block" id="block-deliverables">' +
+      '<div class="billing-block deliv-block" id="block-deliverables">' +
       '<div class="bb-head"><div><h2 class="bb-label">Deliverables</h2>' +
       '<span class="bb-label-tag">PROJECT OUTPUT</span></div>' +
       '<button type="button" class="btn btn-accent btn-sm" id="add-deliverables">+ Add Deliverable</button></div>' +
-      '<div class="gt-head deliv-grid"><div>Deliverable Name</div><div>Format / Aspect Ratio</div>' +
-      '<div>Duration / Length</div><div class="right">Qty</div><div></div></div>' +
+      '<div class="gt-head deliv-grid deliv-typed"><div>Type</div><div>Name</div><div>Format</div>' +
+      '<div>Length</div><div class="right">Qty</div><div class="right">Post hrs (rec.)</div><div></div></div>' +
       bodyMarkup('deliverables', 'No deliverables added yet — click “+ Add Deliverable” above.') +
       '</div>'
     );
@@ -1083,15 +1159,18 @@ const EstimateEditor = (() => {
           (estimate && estimate.gstFree ? ' checked' : '') + '><span>GST-free job</span></label>'
         : '') +
       '</div>' +
+      /* D98: what you edit first. The Prices bar governs every line below it,
+         so it heads them; then what's being made (Deliverables); then when
+         it's shot (the booking block). */
+      ratesBarMarkup() +
+      deliverablesSectionMarkup() +
       // The Production Booking block (production-booking task 6), filled by BookingBlock.mount.
       '<div id="booking-slot"></div>' +
-      ratesBarMarkup() +
       // Where a line's unit switch is announced (switchUnit).
       '<p class="sr-only" id="editor-live" aria-live="polite"></p>' +
       // Where a day's surcharge changing is announced (announceSurcharges).
       '<p class="sr-only" id="sur-live" aria-live="polite"></p>';
 
-    html += deliverablesSectionMarkup();
     sections.forEach((section) => {
       html += section.id === 'prod' && !section.archived ? prodSectionMarkup(section) : labourSectionMarkup(section);
     });
@@ -1153,12 +1232,22 @@ const EstimateEditor = (() => {
       cost: num(inputValue(tr, '.cost-inp')),
     }));
 
-    activeRows.deliverables = rowsIn('deliverables').map((tr) => ({
-      name: inputValue(tr, '.deliv-name-inp'),
-      format: inputValue(tr, '.deliv-fmt-inp'),
-      duration: inputValue(tr, '.deliv-dur-inp'),
-      qty: num(inputValue(tr, '.deliv-qty-inp')) || 1,
-    }));
+    activeRows.deliverables = rowsIn('deliverables').map((tr) => {
+      const out = {
+        id: tr.dataset.did,
+        name: inputValue(tr, '.deliv-name-inp'),
+        format: inputValue(tr, '.deliv-fmt-inp'),
+        duration: inputValue(tr, '.deliv-dur-inp'),
+        qty: num(inputValue(tr, '.deliv-qty-inp')) || 1,
+      };
+      // The type's snapshot (buildDeliverableRow); an untyped row carries none.
+      if (tr.dataset.typeId) {
+        out.typeId = tr.dataset.typeId;
+        out.typeName = tr.dataset.typeName || '';
+        out.multiplier = Number(tr.dataset.multiplier) || 0;
+      }
+      return out;
+    });
 
     return activeRows;
   }

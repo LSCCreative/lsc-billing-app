@@ -539,3 +539,63 @@
 .mjp-line:not([hidden]) + .mjp-income {
   margin-top: -25px;
 }
+
+/* ── Deliverables, the headline block (production-booking B2-3, D86) ────────
+   What the client is buying, so it's the one block on the editor that isn't
+   neutral: the Total box's accent tint, a 2px accent border and a larger
+   Delight heading. Not cards, and no badge per row (the brief's B2 Aesthetic
+   Direction). Additive: .billing-block and .deliv-grid in app.css are as
+   they were; these win by specificity. */
+.billing-block.deliv-block {
+  border: 2px solid rgba(184, 84, 68, 0.6);
+  background: rgba(184, 84, 68, 0.08);
+}
+.billing-block.deliv-block .bb-head {
+  background: rgba(184, 84, 68, 0.14);
+  border-bottom-color: rgba(184, 84, 68, 0.45);
+  padding: 12px 16px;
+}
+.billing-block.deliv-block .bb-label {
+  font-size: 15px;
+  letter-spacing: 0.1em;
+}
+.billing-block.deliv-block .gt-head {
+  border-bottom-color: rgba(184, 84, 68, 0.35);
+}
+/* Type · Name · Format · Length · Qty · Post hrs (rec.) · ×. The editor's
+   only; the read-only screens keep app.css's four-column .deliv-grid. */
+.deliv-grid.deliv-typed {
+  grid-template-columns: 150px 2.4fr 1fr 1fr 70px 116px 32px;
+}
+/* The Type picker: .lab-unit-sel's chrome, at the row's text size and the
+   cell's full width. */
+.deliv-type-sel {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1a1c20;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 12px;
+  padding: 4px 6px;
+  outline: none;
+  cursor: pointer;
+}
+.deliv-type-sel:focus {
+  border-color: var(--accent);
+}
+.deliv-type-sel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.deliv-type-sel option {
+  background: #1e2228;
+  color: var(--text);
+}
+/* Phones: the stacked label/value rows of responsive.css, with the picker
+   as tall as the inputs beside it (its 16px text is responsive.css's). */
+@media (max-width: 767px) {
+  .deliv-type-sel {
+    min-height: 44px;
+  }
+}
