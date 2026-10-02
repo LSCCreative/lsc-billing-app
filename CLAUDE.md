@@ -99,7 +99,7 @@ memoryless Electron desktop app into a real website. Read before touching anythi
    (production items on days, live surcharged prices, short notice, matching the server to the
    cent) committed `5261323`; task 8 (estimate detail by day, the client PDF's Production
    Days with folded prices and the proposed-days disclaimer, the owner's Cost Breakdown PDF and
-   calc.js `costBreakdown`) done the same day, uncommitted. None of it is deployed.** Next is task
+   calc.js `costBreakdown`) committed `0d82f73`. None of it is deployed.** Next is task
    9 (the A+B responsive and accessibility pass; frontend, Opus/high). Client pages are light, in the
    colours of the user's site **lsccreative.studio** (formerly creativelsc.com). Read its `HANDOVER.md` first. Build bucket: Opus, effort high.
 

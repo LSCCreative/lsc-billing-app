@@ -127,8 +127,8 @@ times.
           task 7's Done note.
         - **The user confirmed all five interpretations on 2026-10-02**: the four in that Done note,
           and task 2's custom-bill line being surcharged on its custom amount.
-      - [x] **Task 8, the estimate detail, the client PDF and the Cost Breakdown PDF**: done
-        2026-10-02, **uncommitted**. The suite is 366/366.
+      - [x] **Task 8, the estimate detail, the client PDF and the Cost Breakdown PDF**: committed
+        2026-10-02 (`0d82f73`). The suite is 366/366.
         - **What exists now:**
           - `calc.js` `costBreakdown()`, the figures;
           - the client PDF's "Production Days" block, with folded prices and the proposed-days
