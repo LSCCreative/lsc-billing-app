@@ -922,7 +922,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 - from Stage E, the public serializer.
 
 - [x] **B2-1. `postPlan` and the card shape** (money math — Opus/high). _Pure functions in both
-  `calc.js` copies._ **Done 2026-10-03, uncommitted.**
+  `calc.js` copies._ **Done 2026-10-03, committed `33af089`.**
   - **`postPlan(activeRows, pricing)`** → `{ captureHours, shares: [{ deliverableId, hours }],
     recommended, onPostLines }`, per the brief's B2 Key Interactions 3:
     - Capture hours = Σ `unitHours × qty` over `prod` lines with `capture` (falling back to the
@@ -999,8 +999,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
       For the Cost Breakdown PDF to print `item || vendor` as the client PDF will, change it
       there.
 
-- [ ] **B2-2. Schema v12, rentals, and the server's line rules** (money math — Opus/high, because
-  it governs which lines can carry a day). _Depends on: B2-1._
+- [x] **B2-2. Schema v12, rentals, and the server's line rules** (money math — Opus/high, because
+  it governs which lines can carry a day). _Depends on: B2-1._ **Done 2026-10-03, uncommitted.**
   - **Migration v12:** the `rentals` table, per the IA (columns, indexes, `ON DELETE CASCADE`).
     Write a `test-db.js` migration test. Extend `db.js`'s v11 trap comment to name `rentals` too.
   - **`days.js` `lineDayProblem`** allows `dayId` on `prod`, `travel`, `crew` and `equip`.
@@ -1026,6 +1026,95 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** `npm test` is green with the new tests, and a raw-API save of travel, crew and equip
   on days plus two rentals round-trips and shows on `/api/calendar`.
+
+  **Done note (2026-10-03).** `npm test` 396/396 (was 387). `calc.js` copies identical.
+  - **What exists now:**
+    - **Migration v12:** the `rentals` table, as the IA has it, with CHECKs on the two methods and
+      the three indexes. The v11 trap comment in `db.js` now names rentals too, and v12 repeats it.
+    - **New `src/rentals.js`**, modelled on `days.js`: `parseRentals`, `rentalsWithGear` (the
+      vendor match, trimmed and case-insensitive), `rentalIdTakenElsewhere`, `replaceRentals`,
+      and the readers.
+    - **`days.js`:** `ON_SET_KEYS` (`prod`, `travel`, `crew`, `equip`) for `lineDayProblem`, plus
+      a new `lineDeliverableProblem`.
+    - **The estimate routes:**
+      - `GET` (one and list) returns `rentals`.
+      - `POST`/`PUT` replace them in the same transaction as days.
+      - **A PUT without `rentals` keeps the stored ones**, as days do. Either way, a rental
+        whose vendor is on none of the equipment lines being saved is dropped. The editor
+        doesn't send rentals until B2-7, so its saves keep them.
+    - **`GET /api/calendar`** returns `rentals` overlapping the range, both ends inclusive.
+      - A one-date rental is a marker on that date; one with no dates is left out.
+      - Ordered by start date, then UPID.
+      - Day tiles' `items` stay production only.
+    - **Duplicate:** it already took every line off its day, so travel, crew and equip now count
+      in `unbooked` with no code change. The copy gets no rentals. Its comment is updated.
+    - **PDF:**
+      - equipment prints `item || vendor` (a blank Item falls back);
+      - a post line prints " · <deliverable>" from the deliverable's current name, and nothing
+        when the id resolves to nothing or to a blank name;
+      - `daysWithItems` is unchanged (production only).
+    - **Cost Breakdown:** `calc.js` `costBreakdown` names equipment by `item || vendor` too. That
+      closes B2-1's seam.
+  - **Refusal codes** (all 400):
+    - **Rentals:**
+      - `rentals_not_a_list`, `too_many_rentals` (>100), `rental_invalid`;
+      - `rental_id_invalid`, `rental_id_duplicate`, `rental_id_taken`;
+      - `rental_vendor_duplicate`, `rental_vendor_too_long` (>200);
+      - `rental_date_invalid`, `rental_dates_reversed` (back before out);
+      - `rental_method_invalid`, `rental_note_too_long` (>500).
+    - **Deliverables:** `deliverable_id_invalid` (the day-id pattern), `deliverable_id_duplicate`,
+      `deliverable_on_non_post_line`, `line_deliverable_unknown`.
+    - **`day_on_non_production_line` keeps its name.** It now means "not an on-set line"
+      (`preprod`, `post`, `additional`, `deliverables`).
+  - **Tests:**
+    - **`test-db.js`:** the v12 upgrade, re-run, CHECKs and cascade. The v11 tests count to
+      `LATEST_VERSION`.
+    - **`test-api.js`:** 5 new tests:
+      - the full round trip on days with two rentals, priced unsurcharged, on the calendar,
+        kept, dropped, removed and cascaded;
+      - a pre-B2 estimate re-saving at the same totals;
+      - every refusal;
+      - one-date and no-date rentals;
+      - the duplicate (`unbooked` 8, no rentals, deliverables, tags and capture copied).
+    - **`test-pdf.js`:** 3 new tests: Item vs old text (and the Cost Breakdown), tags with rename
+      and unresolved, and on-set extras kept out of Production Days.
+  - **Mutations, each failing a test:**
+    - **Day and deliverable rules:** `dayId` allowed on `post`; refused on `equip`;
+      `deliverableId` allowed outside post; unknown deliverable allowed; duplicate deliverable ids
+      allowed.
+    - **Rentals:**
+      - the vendor duplicate check made case-sensitive;
+      - vendor-less rentals kept (rentals with no gear left, or a blank-vendor rental beside a
+        blank-vendor line — the latter caught only after its own test was added);
+      - reversed dates allowed;
+      - a PUT without rentals wiping them;
+      - the vendor match skipped;
+      - a PUT not storing them.
+    - **Calendar:** the back date exclusive; one-date rentals dropped.
+    - **PDF:** vendor printed instead of the Item; the tag dropped; the Cost Breakdown naming by
+      vendor.
+    - **One harness note:** the first mutation run hung inside `npm test` on "deliverableId
+      allowed outside post". Re-run alone, the same mutation fails cleanly, so the later runs
+      were wrapped in an alarm.
+  - **Raw API against `api-scratch`** (migrated to v12, "migrated to v12 — gear rentals" in the
+    boot log):
+    - travel, crew and equip on two days plus two rentals round-tripped;
+    - the calendar showed Lensworks 13→16 Nov and Grip Co as a one-date marker;
+    - the surcharge was $560 of $2,890, production only;
+    - the delete cascaded.
+    - The test estimate was deleted.
+  - **Interpretations to show the user:**
+    1. **A PUT without `rentals` keeps them**, as days do. Orphaned rentals are still dropped.
+    2. **A rental with no vendor is dropped, not refused.** It can't join any line.
+    3. **A rental whose back date is before its out date is refused** (`rental_dates_reversed`).
+       The brief only said "bad dates".
+    4. **A deliverable with a blank name prints no tag** on its post lines.
+  - **Seams for later tasks:**
+    - **B2-4/B2-7:** the editor has no wording for the new refusal codes. It shows
+      `err.message`, and the server sends none for them. Map them where the editor first sends
+      rentals or tags.
+    - **B2-10:** the editor should drop a tag whose deliverable is gone before saving, or the
+      save is refused with `line_deliverable_unknown`.
 
 - [ ] **B2-3. Deliverables block: moved, restyled, typed; the Prices bar moved** (frontend —
   Opus/high). _Depends on: B2-1._ This is the first visible B2 slice, to confirm the look early.

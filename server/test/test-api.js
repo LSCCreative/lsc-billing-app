@@ -1535,3 +1535,199 @@ test('pricing: deliverable types and Capture ticks round-trip, and a malformed o
   assert.equal(old.body.error, 'pricing_shape_outdated');
   assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
 });
+
+/* ── Day-built estimates and gear rentals (production-booking B2-2) ─────────
+   Travel, crew and gear sit on days; rentals are stored per estimate and
+   shown on the calendar. Dates: Fri 2 – Mon 5 Oct 2026. */
+const rental = (id, vendor, extra) => ({ id, vendor, outDate: null, outMethod: null, backDate: null, backMethod: null, note: '', ...(extra || {}) });
+const B2_ROWS = (sat, sun) => ({
+  deliverables: [
+    { id: 'dv_brand', name: 'Brand Story', format: '16:9', duration: '2 min', qty: 1, typeId: 'dt_brand', typeName: 'Brand Story', multiplier: 2 },
+    { id: 'dv_soc', name: 'Socials', format: '9:16', duration: '30 s', qty: 3, typeId: 'dt_soc', typeName: 'Socials', multiplier: 0.5 },
+  ],
+  prod: [capture(sat, { capture: true }), capture(sun, { capture: true })],
+  post: [
+    { name: 'Video Editor — A-Roll Offline Edit', qty: 6, mu: 63, hoursPerUnit: 1, deliverableId: 'dv_brand' },
+    { name: 'Video Editor — Socials', qty: 4, mu: 126, hoursPerUnit: 1, deliverableId: 'dv_soc' },
+    { name: 'Video Editor — Project Setup', qty: 1, mu: 49, hoursPerUnit: 1 },
+  ],
+  travel: [
+    { name: 'Transport & Logistics Hrs', qty: 2, mu: 35, rate: 25, ownTime: true, ...(sat ? { dayId: sat } : {}) },
+    { name: 'Crew Meals', qty: 3, mu: 30, rate: 30, unit: 'meals', ...(sun ? { dayId: sun } : {}) },
+  ],
+  crew: [{ role: 'Gaffer', days: 1, cost: 600, ...(sat ? { dayId: sat } : {}) }],
+  equip: [
+    { vendor: 'Lensworks', item: 'Cine zoom kit', days: 2, cost: 150, ...(sat ? { dayId: sat } : {}) },
+    { vendor: 'lensworks ', item: 'Matte box', days: 1, cost: 40, ...(sun ? { dayId: sun } : {}) },
+    { vendor: 'Grip Co', item: 'Dolly', days: 1, cost: 220, ...(sun ? { dayId: sun } : {}) },
+  ],
+});
+
+test('estimates: travel, crew and gear on days and two rentals round-trip, price unsurcharged, and show on the calendar', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const days = [pbDay('b2_sat', '2026-10-03', 'pencilled', { startTime: '18:00', endTime: '23:00' }), pbDay('b2_sun', '2026-10-04', 'proposed')];
+  const rentals = [
+    rental('rn_lens', 'Lensworks', { outDate: '2026-10-02', outMethod: 'pickup', backDate: '2026-10-05', backMethod: 'return', note: 'Ask for the 18–35' }),
+    rental('rn_grip', 'Grip Co', { outDate: '2026-10-04', outMethod: 'postage' }),
+  ];
+  const activeRows = B2_ROWS('b2_sat', 'b2_sun');
+  const e = await saveEstimate({ upid: 'UP-B2', name: 'Two-day shoot', activeRows, days, rentals, shortNotice: true });
+  assert.equal(e.status, 201, JSON.stringify(e.body));
+  const saved = e.body.estimate;
+  assert.deepEqual(saved.rentals, rentals);
+
+  // Every new field comes back as sent; only production lines carry a surcharged price.
+  const { prod: savedProd, ...rest } = saved.activeRows;
+  const { prod: sentProd, ...sentRest } = activeRows;
+  assert.deepEqual(rest, sentRest);
+  assert.deepEqual(savedProd.map(({ surchargedPrice, ...l }) => l), sentProd);
+  assert.ok(savedProd.every((l) => l.surchargedPrice > l.mu));
+
+  // The on-set extras total exactly as they would on no day: only production moved.
+  const offDays = await saveEstimate({ activeRows: { ...B2_ROWS(null, null), prod: [] } });
+  const days2 = [pbDay('b2_sat2', '2026-10-03', 'pencilled', { startTime: '18:00', endTime: '23:00' }), pbDay('b2_sun2', '2026-10-04', 'proposed')];
+  const onDays = await saveEstimate({ activeRows: { ...B2_ROWS('b2_sat2', 'b2_sun2'), prod: [] }, days: days2, shortNotice: true });
+  assert.equal(onDays.body.estimate.totals.surchargeTotal, 0);
+  assert.equal(onDays.body.estimate.totals.totalIncGst, offDays.body.estimate.totals.totalIncGst);
+  assert.equal(onDays.body.estimate.totals.expenseTotal, 70 + 90 + 600 + 300 + 40 + 220);
+
+  // GET, and the list, carry them.
+  const read = (await api(`/api/estimates/${saved.id}`).then((r) => r.json())).estimate;
+  assert.deepEqual([read.rentals, read.activeRows], [rentals, saved.activeRows]);
+  const listed = (await api('/api/estimates').then((r) => r.json())).estimates.find((x) => x.id === saved.id);
+  assert.deepEqual(listed.rentals, rentals);
+
+  // The calendar: both rentals overlap October; a range after Grip Co's one date holds only Lensworks.
+  const cal = async (q) => (await api('/api/calendar' + q).then((r) => r.json())).rentals.filter((r) => r.estimateId === saved.id);
+  assert.deepEqual(await cal('?from=2026-10-01&to=2026-10-31'), [
+    { id: 'rn_lens', estimateId: saved.id, upid: 'UP-B2', projectName: 'Two-day shoot', vendor: 'Lensworks', outDate: '2026-10-02', outMethod: 'pickup', backDate: '2026-10-05', backMethod: 'return' },
+    { id: 'rn_grip', estimateId: saved.id, upid: 'UP-B2', projectName: 'Two-day shoot', vendor: 'Grip Co', outDate: '2026-10-04', outMethod: 'postage', backDate: null, backMethod: null },
+  ]);
+  assert.deepEqual((await cal('?from=2026-10-05&to=2026-10-31')).map((r) => r.id), ['rn_lens']); // the back date, inclusive
+  assert.deepEqual((await cal('?from=2026-10-04&to=2026-10-04')).map((r) => r.id), ['rn_lens', 'rn_grip']);
+  assert.deepEqual((await cal('?from=2026-09-01&to=2026-10-01')).map((r) => r.id), []);
+  assert.deepEqual((await cal('?from=2026-10-06&to=2026-10-31')).map((r) => r.id), []);
+  // The days' tiles still list production items only.
+  const calDays = (await api('/api/calendar?from=2026-10-01&to=2026-10-31').then((r) => r.json())).days.filter((d) => d.estimateId === saved.id);
+  assert.deepEqual(calDays.map((d) => d.items), [['Video Capture'], ['Video Capture']]);
+
+  // A PUT without `rentals` keeps them…
+  const kept = await saveEstimate({ upid: 'UP-B2', name: 'Two-day shoot', activeRows, days }, saved.id);
+  assert.deepEqual(kept.body.estimate.rentals, rentals);
+  // …a vendor with no gear left loses its rental, sent or kept…
+  const noGrip = { ...activeRows, equip: activeRows.equip.filter((l) => l.vendor !== 'Grip Co') };
+  assert.deepEqual((await saveEstimate({ activeRows: noGrip, days }, saved.id)).body.estimate.rentals.map((r) => r.id), ['rn_lens']);
+  // A rental with no vendor joins nothing, not even a hire line whose vendor is blank too.
+  const blankLine = { ...activeRows, equip: [...activeRows.equip, { vendor: ' ', item: 'Gaffer tape', days: 1, cost: 5 }] };
+  assert.deepEqual((await saveEstimate({ activeRows: blankLine, days, rentals: [...rentals, rental('rn_none', '')] }, saved.id)).body.estimate.rentals.map((r) => r.id), ['rn_lens', 'rn_grip']);
+  // …and an empty list removes them all.
+  assert.deepEqual((await saveEstimate({ activeRows, days, rentals: [] }, saved.id)).body.estimate.rentals, []);
+
+  // Deleting the estimate takes its rentals off the calendar.
+  await saveEstimate({ activeRows, days, rentals }, saved.id);
+  await dropEstimates(saved.id, offDays.body.estimate.id, onDays.body.estimate.id);
+  assert.deepEqual(await cal('?from=2026-10-01&to=2026-10-31'), []);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals WHERE estimate_id = ?').get(saved.id).n, 0);
+});
+
+test('estimates: one saved before B2 re-saves at the same totals, with no rentals', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  // The shape a pre-B2 build wrote: no ids, types, tags, capture or items, and nothing but production on a day.
+  const rows = {
+    deliverables: [{ name: 'Brand Story', format: '16:9', duration: '2 min', qty: 1 }],
+    prod: [capture(null)],
+    post: [{ name: 'Video Editor — Socials', qty: 4, mu: 126, hoursPerUnit: 1 }],
+    travel: [{ name: 'Crew Meals', qty: 3, mu: 30, rate: 30 }],
+    crew: [{ role: 'Gaffer', days: 1, cost: 600 }],
+    equip: [{ vendor: 'Lens hire / Cine zoom', days: 2, cost: 150 }],
+  };
+  const e = await saveEstimate({ activeRows: rows });
+  const first = e.body.estimate;
+  assert.deepEqual(first.rentals, []);
+  for (const extra of [{}, { rentals: [] }]) {
+    const again = (await saveEstimate({ activeRows: rows, ...extra }, first.id)).body.estimate;
+    assert.deepEqual([again.totals, again.activeRows, again.rentals], [first.totals, rows, []]);
+  }
+  await dropEstimates(first.id);
+});
+
+test('estimates: rentals, on-set days and deliverable tags are checked before anything is stored', async () => {
+  const equip = [{ vendor: 'Lensworks', item: 'Kit', days: 1, cost: 100 }, { vendor: 'Grip Co', item: 'Dolly', days: 1, cost: 100 }];
+  const bad = async (body) => (await saveEstimate({ activeRows: { equip }, ...body })).body.error;
+  assert.equal(await bad({ rentals: {} }), 'rentals_not_a_list');
+  assert.equal(await bad({ rentals: [null] }), 'rental_invalid');
+  assert.equal(await bad({ rentals: [rental('a b', 'Lensworks')] }), 'rental_id_invalid');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks'), rental('r1', 'Grip Co')] }), 'rental_id_duplicate');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks'), rental('r2', ' LENSWORKS ')] }), 'rental_vendor_duplicate');
+  assert.equal(await bad({ rentals: [rental('r1', 'L'.repeat(201))] }), 'rental_vendor_too_long');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks', { outDate: '2026-02-30' })] }), 'rental_date_invalid');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks', { backDate: 'Monday' })] }), 'rental_date_invalid');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks', { outDate: '2026-10-05', backDate: '2026-10-02' })] }), 'rental_dates_reversed');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks', { outMethod: 'return' })] }), 'rental_method_invalid');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks', { backMethod: 'pickup' })] }), 'rental_method_invalid');
+  assert.equal(await bad({ rentals: [rental('r1', 'Lensworks', { note: 'x'.repeat(501) })] }), 'rental_note_too_long');
+  assert.equal(await bad({ rentals: Array.from({ length: 101 }, (_, i) => rental('r' + i, 'V' + i)) }), 'too_many_rentals');
+  const owner = await saveEstimate({ activeRows: { equip }, rentals: [rental('rn_owned', 'Lensworks')] });
+  assert.equal(await bad({ rentals: [rental('rn_owned', 'Lensworks')] }), 'rental_id_taken');
+  await dropEstimates(owner.body.estimate.id);
+
+  // Days: travel, crew and equipment may sit on one; every other section still may not.
+  const day = [pbDay('x', null, 'proposed')];
+  for (const key of ['travel', 'crew', 'equip']) {
+    assert.equal(await bad({ days: day, activeRows: { [key]: [{ name: 'A', role: 'A', vendor: 'A', qty: 1, days: 1, cost: 1, dayId: 'nope' }] } }), 'line_day_unknown', key);
+  }
+  for (const key of ['preprod', 'post', 'additional', 'deliverables']) {
+    assert.equal(await bad({ days: day, activeRows: { [key]: [{ name: 'A', qty: 1, dayId: 'x' }] } }), 'day_on_non_production_line', key);
+  }
+
+  // Deliverable ids and the post lines that name them.
+  const dv = (id) => ({ id, name: 'D', qty: 1 });
+  const tagged = (key, id) => ({ [key]: [{ name: 'Edit', qty: 1, mu: 63, deliverableId: id }] });
+  assert.equal(await bad({ activeRows: { deliverables: [dv('d 1')] } }), 'deliverable_id_invalid');
+  assert.equal(await bad({ activeRows: { deliverables: [dv(7)] } }), 'deliverable_id_invalid');
+  assert.equal(await bad({ activeRows: { deliverables: [dv('d1'), dv('d1')] } }), 'deliverable_id_duplicate');
+  assert.equal(await bad({ activeRows: { deliverables: [dv('d1')], ...tagged('post', 'd2') } }), 'line_deliverable_unknown');
+  assert.equal(await bad({ activeRows: { deliverables: [dv('d1')], ...tagged('prod', 'd1') } }), 'deliverable_on_non_post_line');
+  assert.equal(await bad({ activeRows: { deliverables: [dv('d1')], ...tagged('travel', 'd1') } }), 'deliverable_on_non_post_line');
+  assert.equal(await bad({ activeRows: tagged('post', 'd1') }), 'line_deliverable_unknown');
+  // An untagged line and a deliverable with no id (saved before B2) are fine.
+  const ok = await saveEstimate({ activeRows: { deliverables: [{ name: 'Old', qty: 1 }, dv('d1')], ...tagged('post', 'd1') } });
+  assert.equal(ok.status, 201);
+  await dropEstimates(ok.body.estimate.id);
+});
+
+test('calendar: a rental with one date is a one-day marker, and one with no dates is on no calendar', async () => {
+  const equip = ['Back Only', 'No Dates', 'Long Hire'].map((vendor) => ({ vendor, item: 'Kit', days: 1, cost: 1 }));
+  const e = await saveEstimate({
+    activeRows: { equip },
+    rentals: [
+      rental('rn_back', 'Back Only', { backDate: '2026-10-09', backMethod: 'postage' }),
+      rental('rn_none', 'No Dates'),
+      rental('rn_long', 'Long Hire', { outDate: '2026-09-28', backDate: '2026-11-02' }),
+    ],
+  });
+  assert.equal(e.status, 201);
+  const ids = async (from, to) => (await api(`/api/calendar?from=${from}&to=${to}`).then((r) => r.json())).rentals
+    .filter((r) => r.estimateId === e.body.estimate.id).map((r) => r.id);
+  assert.deepEqual(await ids('2026-10-01', '2026-10-31'), ['rn_long', 'rn_back']);
+  assert.deepEqual(await ids('2026-10-09', '2026-10-09'), ['rn_long', 'rn_back']);
+  assert.deepEqual(await ids('2026-10-10', '2026-10-20'), ['rn_long']); // a span covering the whole range
+  assert.deepEqual(await ids('2026-11-03', '2026-11-30'), []);
+  await dropEstimates(e.body.estimate.id);
+});
+
+test('estimates: a duplicate takes its travel, crew and gear off their days, and no rentals', async () => {
+  const days = [pbDay('dup_sat', '2026-10-03', 'pencilled'), pbDay('dup_sun', '2026-10-04', 'proposed')];
+  const activeRows = B2_ROWS('dup_sat', 'dup_sun');
+  const e = await saveEstimate({ activeRows, days, rentals: [rental('rn_dup', 'Lensworks', { outDate: '2026-10-02' })] });
+  assert.equal(e.status, 201);
+  const reply = await api(`/api/estimates/${e.body.estimate.id}/duplicate`, { method: 'POST' }).then((r) => r.json());
+  const copy = reply.estimate;
+  // 2 production + 2 travel + 1 crew + 3 equipment lines came off a day.
+  assert.equal(reply.unbooked, 8);
+  assert.deepEqual([copy.days, copy.rentals], [[], []]);
+  assert.deepEqual(copy.activeRows, B2_ROWS(null, null)); // deliverables, tags and capture as they were
+  // Only production lost a surcharge, so the copy is the original less it.
+  assert.equal(copy.totals.totalIncGst, e.body.estimate.totals.totalIncGst - e.body.estimate.totals.surchargeTotal);
+  await dropEstimates(e.body.estimate.id, copy.id);
+});

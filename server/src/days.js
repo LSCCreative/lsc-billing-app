@@ -92,10 +92,16 @@ function parseDays(raw) {
   return { days };
 }
 
+/* The sections whose lines may sit on a day (D74): Production, and since B2
+   the travel, crew and gear booked for it. Only `prod` is ever surcharged
+   (D3, D24; calc.js computeTotals), wherever the others sit. */
+const ON_SET_KEYS = ['prod', 'travel', 'crew', 'equip'];
+
 /**
- * Lines pointing at days that don't fit: a `dayId` outside the production
- * section (only `prod` is on set, D24), or one naming no day of this estimate.
- * Either would be a line whose stored price and printed day disagree.
+ * Lines pointing at days that don't fit: a `dayId` outside the on-set
+ * sections (ON_SET_KEYS), or one naming no day of this estimate. Either would
+ * be a line whose stored price and printed day disagree. The first code keeps
+ * its pre-B2 name: it now means "not an on-set line".
  * @returns {string|null} an error code.
  */
 function lineDayProblem(activeRows, days) {
@@ -105,8 +111,37 @@ function lineDayProblem(activeRows, days) {
     if (!Array.isArray(rows[key])) continue;
     for (const line of rows[key]) {
       if (!line || line.dayId === undefined || line.dayId === null || line.dayId === '') continue;
-      if (key !== 'prod') return 'day_on_non_production_line';
+      if (ON_SET_KEYS.indexOf(key) === -1) return 'day_on_non_production_line';
       if (!ids.has(String(line.dayId))) return 'line_day_unknown';
+    }
+  }
+  return null;
+}
+
+/**
+ * The post-production planner's links (B2-2, D95): each deliverable's `id`,
+ * and the post line that names it with `deliverableId`. A deliverable saved
+ * before B2 has no id and is fine. One with an id must have a usable, unique
+ * one, and a `deliverableId` must sit on a `post` line and name one of them —
+ * otherwise the line's tag on the client's document would name nothing, or the
+ * wrong thing.
+ * @returns {string|null} an error code.
+ */
+function lineDeliverableProblem(activeRows) {
+  const rows = activeRows || {};
+  const ids = new Set();
+  for (const d of Array.isArray(rows.deliverables) ? rows.deliverables : []) {
+    if (!d || d.id === undefined || d.id === null || d.id === '') continue;
+    if (typeof d.id !== 'string' || !DAY_ID.test(d.id)) return 'deliverable_id_invalid';
+    if (ids.has(d.id)) return 'deliverable_id_duplicate';
+    ids.add(d.id);
+  }
+  for (const key of Object.keys(rows)) {
+    if (!Array.isArray(rows[key])) continue;
+    for (const line of rows[key]) {
+      if (!line || line.deliverableId === undefined || line.deliverableId === null || line.deliverableId === '') continue;
+      if (key !== 'post') return 'deliverable_on_non_post_line';
+      if (!ids.has(String(line.deliverableId))) return 'line_deliverable_unknown';
     }
   }
   return null;
@@ -183,7 +218,9 @@ module.exports = {
   readDaysByEstimate,
   readHolidays,
   parseDays,
+  ON_SET_KEYS,
   lineDayProblem,
+  lineDeliverableProblem,
   dayIdTakenElsewhere,
   lockedDay,
   replaceDays,

@@ -596,10 +596,11 @@ const MIGRATIONS = [
       //    active_rows_json. ON DELETE CASCADE: deleting an estimate removes
       //    its days (D22).
       //
-      //    TRAP FOR STAGE D'S MIGRATION (v13, after B2 took v12): rebuilding `estimates` (its status CHECK) by
-      //    DROP TABLE with foreign_keys = ON would cascade-delete every
-      //    production day. Turn foreign keys off for that rebuild, or copy
-      //    the days out and back.
+      //    TRAP FOR STAGE D'S MIGRATION (v13, after B2 took v12): rebuilding
+      //    `estimates` (its status CHECK) by DROP TABLE with foreign_keys = ON
+      //    would cascade-delete every production day, and every rental (v12)
+      //    too. Turn foreign keys off for that rebuild, or copy both tables
+      //    out and back.
       //
       // 2. holidays — national + NSW public holidays (D6, D7). `hidden` is a
       //    fetched date the owner removed, kept so a re-fetch never brings it
@@ -646,6 +647,45 @@ const MIGRATIONS = [
         db.exec("ALTER TABLE estimates ADD COLUMN surcharges_json TEXT NOT NULL DEFAULT '{}';");
       }
       moveOvertimeOffSet(db);
+    },
+  },
+  {
+    version: 12,
+    name: 'gear rentals',
+    up(db) {
+      // .design/production-booking/ B2-2 (2026-10-03; IA "Data Model: Stage
+      // B2"). One new table, so nothing already stored moves. Safe to run
+      // twice (the upgrade tests rewind schema_version past it).
+      //
+      // rentals — when one vendor's hire on an estimate goes out and comes
+      // back (D82, D84). A TABLE, like production_days, because the calendar
+      // range-queries it across every estimate. It belongs to the estimate's
+      // equipment lines by vendor name (trimmed, case-insensitive; rentals.js),
+      // never by id, and prices nothing (D83). Either date may be blank; one
+      // with neither is on no calendar. ON DELETE CASCADE: deleting an
+      // estimate removes its rentals.
+      //
+      // The same TRAP FOR STAGE D'S MIGRATION as production_days (v11 above):
+      // rebuilding `estimates` by DROP TABLE with foreign_keys = ON would
+      // cascade-delete every rental too.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS rentals (
+          id          TEXT PRIMARY KEY,
+          estimate_id TEXT NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+          vendor      TEXT NOT NULL,
+          out_date    TEXT,
+          out_method  TEXT CHECK (out_method IN ('pickup', 'postage')),
+          back_date   TEXT,
+          back_method TEXT CHECK (back_method IN ('return', 'postage')),
+          note        TEXT NOT NULL DEFAULT '',
+          sort        INTEGER NOT NULL DEFAULT 0,
+          created_at  TEXT NOT NULL,
+          updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_rentals_estimate ON rentals (estimate_id);
+        CREATE INDEX IF NOT EXISTS idx_rentals_out_date ON rentals (out_date);
+        CREATE INDEX IF NOT EXISTS idx_rentals_back_date ON rentals (back_date);
+      `);
     },
   },
 ];

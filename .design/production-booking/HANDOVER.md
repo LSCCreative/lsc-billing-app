@@ -186,7 +186,7 @@ times.
             Stage A+B and Stage C, each tagged with its bucket. Task 12 gained rental bars, task 33's
             review covers B2, and D97 (post days on the calendar) is under "Not in this list".
       - [ ] **Build B2-1 → B2-13**, then deploy (NAS v12 before Pages).
-        - [x] **B2-1, `postPlan` and the card shape**: done 2026-10-03, **uncommitted** (387/387).
+        - [x] **B2-1, `postPlan` and the card shape**: done 2026-10-03, committed `33af089` (387/387).
           - **What exists now:** `calc.js` `postPlan`, and `PRICING_SHAPE` `'deliverable-types'`.
             `DEFAULT_PRICING.deliverableTypes` is `[]`. `PUT /api/pricing` checks `capture` and
             `deliverableTypes`. The Rate Card carries both through a save; there's no UI for them
@@ -196,9 +196,17 @@ times.
             the fallback matches by row id, then name; untyped means no `typeId`.
           - **Not deployed, and it can't go alone:** the shape bump means Pages must follow NAS.
             It ships with B2-13.
+        - [x] **B2-2, schema v12, rentals, and the server's line rules**: done 2026-10-03,
+          **uncommitted** (396/396).
+          - **What exists now:** migration v12 (`rentals`), `src/rentals.js`, `dayId` allowed on
+            travel/crew/equip, the deliverable-tag checks, `rentals` on the estimate routes and
+            `/api/calendar`, and the PDF printing Item and tags. `api-scratch` is at v12.
+          - **Read its Done note before B2-4, B2-7 and B2-10.** It has every refusal code, four
+            interpretations to show the user, and two seams. The main one: the editor has no
+            wording for the new codes yet.
 
-**Exact next item: TASKS.md B2-2, schema v12, rentals, and the server's line rules** (money math,
-Opus/high). After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
+**Exact next item: TASKS.md B2-3, the Deliverables block moved, restyled and typed, and the Prices
+bar moved** (frontend, Opus/high). After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
 Opus/high).
 
 **Seams left for later tasks:**

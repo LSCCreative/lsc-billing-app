@@ -5,8 +5,12 @@ const { computeTotals, surchargeSnapshot, stampSurchargedPrices, PRICING_SHAPE }
 const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeLineField } = require('../ratecard');
 const { loadEstimate } = require('../estimate');
 const {
-  readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, dayIdTakenElsewhere, lockedDay, replaceDays,
+  readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, lineDeliverableProblem, dayIdTakenElsewhere,
+  lockedDay, replaceDays,
 } = require('../days');
+const {
+  readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
+} = require('../rentals');
 
 /**
  * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
@@ -51,6 +55,11 @@ const outdated = (body) => body.pricingShape !== PRICING_SHAPE;
  * notice stores '{}': nothing was surcharged, so nothing is pinned, and its
  * first day takes today's settings.
  *
+ * RENTALS (B2-2). `rentals` replaces the estimate's gear rentals whole, in the
+ * same transaction as its days; a PUT without it keeps the ones it has, for
+ * the same reason as days. Either way a rental whose vendor is on none of the
+ * equipment lines being saved is dropped (rentals.js rentalsWithGear).
+ *
  * @returns {{status:number, body:object}|{fields:object}} a refusal, or the fields.
  */
 function prepareWrite(db, body, existing) {
@@ -66,10 +75,20 @@ function prepareWrite(db, body, existing) {
     if (parsed.error) return { status: 400, body: { error: parsed.error } };
     days = parsed.days;
   }
-  const lineProblem = lineDayProblem(body.activeRows, days);
+  const lineProblem = lineDayProblem(body.activeRows, days) || lineDeliverableProblem(body.activeRows);
   if (lineProblem) return { status: 400, body: { error: lineProblem } };
   const taken = dayIdTakenElsewhere(db, estimateId, days);
   if (taken) return { status: 400, body: { error: 'day_id_taken', dayId: taken } };
+
+  let rentals = existing ? readRentals(db, existing.id) : [];
+  if (body.rentals !== undefined) {
+    const parsed = parseRentals(body.rentals);
+    if (parsed.error) return { status: 400, body: { error: parsed.error } };
+    rentals = parsed.rentals;
+  }
+  rentals = rentalsWithGear(rentals, body.activeRows);
+  const rentalTaken = rentalIdTakenElsewhere(db, estimateId, rentals);
+  if (rentalTaken) return { status: 400, body: { error: 'rental_id_taken', rentalId: rentalTaken } };
   const lock = lockedDay(db, estimateId, days, storedDays);
   if (lock) {
     return {
@@ -104,16 +123,17 @@ function prepareWrite(db, body, existing) {
     pricing,
     existing ? JSON.parse(existing.section_labels_json || '{}') : null
   );
-  return { fields: { days, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } };
+  return { fields: { days, rentals, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } };
 }
 
 function registerEstimateRoutes(app, db) {
-  const loadJson = (row) => loadEstimate(row, readDays(db, row.id));
+  const loadJson = (row) => loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
 
   app.get('/api/estimates', (_req, res) => {
     const rows = db.prepare('SELECT * FROM estimates ORDER BY updated_at DESC').all();
     const days = readDaysByEstimate(db);
-    res.json({ ok: true, estimates: rows.map((row) => loadEstimate(row, days.get(row.id))) });
+    const rentals = readRentalsByEstimate(db);
+    res.json({ ok: true, estimates: rows.map((row) => loadEstimate(row, days.get(row.id), rentals.get(row.id))) });
   });
 
   app.get('/api/estimates/:id', (req, res) => {
@@ -128,7 +148,7 @@ function registerEstimateRoutes(app, db) {
     const now = nowIso();
     const prepared = prepareWrite(db, body, null);
     if (!prepared.fields) return res.status(prepared.status).json(prepared.body);
-    const { days, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
+    const { days, rentals, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
 
     db.transaction(() => {
       db.prepare(`
@@ -145,6 +165,7 @@ function registerEstimateRoutes(app, db) {
         gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges), JSON.stringify(totals), now, now
       );
       replaceDays(db, id, days, now);
+      replaceRentals(db, id, rentals, now);
     })();
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(id);
@@ -162,7 +183,7 @@ function registerEstimateRoutes(app, db) {
     // from a screen that decided the estimate is GST-bearing.
     const prepared = prepareWrite(db, body, existing);
     if (!prepared.fields) return res.status(prepared.status).json(prepared.body);
-    const { days, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
+    const { days, rentals, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
 
     db.transaction(() => {
       db.prepare(`
@@ -182,6 +203,7 @@ function registerEstimateRoutes(app, db) {
         req.params.id
       );
       replaceDays(db, req.params.id, days, now);
+      replaceRentals(db, req.params.id, rentals, now);
     })();
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
@@ -219,6 +241,13 @@ function registerEstimateRoutes(app, db) {
     // says how many items came off a day (`unbooked`) and the detail screen
     // tells the owner, rather than the copy quietly quoting less (money
     // review, 2026-10-02).
+    //
+    // SINCE B2 (B2-2) the travel, crew and gear booked for a day come off it
+    // too, and count in `unbooked`; they price the same on or off a day. The
+    // copy gets no gear rentals: its dates are the original's, and a new
+    // project has none (D60). Deliverables, their post-line tags and each
+    // line's Capture flag are copied as they are — they say what's being
+    // made, not when.
     const rows = JSON.parse(existing.active_rows_json || '{}');
     let unbooked = false;
     let offDays = 0;

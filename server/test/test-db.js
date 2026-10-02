@@ -23,7 +23,7 @@ test('creates a fresh database with every table the app needs', () => {
 
   for (const expected of
     ['account', 'clients', 'depreciation_assets', 'depreciation_locks', 'estimates', 'goals',
-      'holidays', 'overhead_items', 'overhead_snapshots', 'pricing', 'production_days',
+      'holidays', 'overhead_items', 'overhead_snapshots', 'pricing', 'production_days', 'rentals',
       'schema_version', 'sessions', 'settings']) {
     assert.ok(tables.includes(expected), `missing table: ${expected}`);
   }
@@ -816,8 +816,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v11', () => {
-  assert.equal(LATEST_VERSION, 11);
+test('the schema knows it is at v12', () => {
+  assert.equal(LATEST_VERSION, 12);
 });
 
 /**
@@ -874,7 +874,7 @@ test('v11 leaves every estimate as it was, with no days and nothing surcharged',
   `);
   db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
   const result = migrate(db);
-  assert.deepEqual([result.from, result.to, result.applied], [10, 11, 1]);
+  assert.deepEqual([result.from, result.to, result.applied], [10, LATEST_VERSION, LATEST_VERSION - 10]);
 
   const after = db.prepare('SELECT * FROM estimates').get();
   assert.deepEqual(after, { ...before, short_notice: 0, surcharges_json: '{}' });
@@ -883,7 +883,7 @@ test('v11 leaves every estimate as it was, with no days and nothing surcharged',
   // Again, with everything already there: it runs, and nothing moves.
   db.prepare("INSERT INTO holidays (date, name, source) VALUES ('2026-10-05', 'Labour Day', 'fetched')").run();
   db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db).applied, LATEST_VERSION - 10);
   assert.deepEqual(db.prepare('SELECT * FROM estimates').get(), after);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM holidays').get().n, 1);
   db.close();
@@ -955,7 +955,7 @@ test('v11 gives a holidays table made before task 3 its fetched_at column, keepi
     INSERT INTO holidays (date, name, source) VALUES ('2026-10-05', 'Labour Day', 'fetched');
   `);
   db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db).applied, LATEST_VERSION - 10);
   assert.deepEqual(db.prepare('SELECT date, name, source, hidden, fetched_at FROM holidays').all(),
     [{ date: '2026-10-05', name: 'Labour Day', source: 'fetched', hidden: 0, fetched_at: null }]);
   db.close();
@@ -976,5 +976,50 @@ test('v11: a day belongs to one estimate, has a known status, and goes when its 
 
   db.prepare("DELETE FROM estimates WHERE id = 'est_a'").run();
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_days').get().n, 0);
+  db.close();
+});
+
+/**
+ * MIGRATION v12 — gear rentals (production-booking B2-2). One new table:
+ * every estimate keeps every value, running it again changes nothing, and
+ * deleting an estimate takes its rentals with it.
+ */
+test('v12 adds the rentals table and leaves every estimate as it was', () => {
+  const db = openDatabase(tempDbPath('v12-upgrade'));
+  const now = nowIso();
+  db.prepare(`
+    INSERT INTO estimates (id, upid, name, active_rows_json, totals_json, created_at, updated_at)
+    VALUES ('est_old', 'UP-1', 'Old job', ?, ?, ?, ?)
+  `).run(JSON.stringify({ equip: [{ vendor: 'Lens hire / Cine zoom', days: 2, cost: 150 }] }),
+    JSON.stringify({ totalIncGst: 300 }), now, now);
+  const before = db.prepare('SELECT * FROM estimates').get();
+
+  db.exec('DROP TABLE rentals;');
+  db.prepare('DELETE FROM schema_version WHERE version >= 12').run();
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [11, 12, 1]);
+  assert.deepEqual(db.prepare('SELECT * FROM estimates').get(), before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 0);
+  const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'rentals'").all().map((r) => r.name);
+  for (const name of ['idx_rentals_estimate', 'idx_rentals_out_date', 'idx_rentals_back_date']) assert.ok(indexes.includes(name), name);
+
+  const add = db.prepare(`
+    INSERT INTO rentals (id, estimate_id, vendor, out_date, out_method, back_date, back_method, created_at, updated_at)
+    VALUES (?, 'est_old', 'Lensworks', ?, ?, ?, ?, ?, ?)
+  `);
+  add.run('rn_1', '2026-10-02', 'pickup', '2026-10-05', 'return', now, now);
+  // Blank dates and methods are allowed; a method off the list is not.
+  add.run('rn_2', null, null, null, null, now, now);
+  assert.throws(() => add.run('rn_3', null, 'courier', null, null, now, now), /CHECK/);
+  assert.throws(() => add.run('rn_4', null, null, null, 'pickup', now, now), /CHECK/);
+
+  // Again, with the table already there: it runs, and nothing moves.
+  db.prepare('DELETE FROM schema_version WHERE version >= 12').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 2);
+
+  // Deleting the estimate takes its rentals.
+  db.prepare("DELETE FROM estimates WHERE id = 'est_old'").run();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 0);
   db.close();
 });

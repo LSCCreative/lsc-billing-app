@@ -16,9 +16,10 @@
  *
  * `days` are its production days (days.js readDays), which live in their own
  * table; a caller that has none to pass gets `days: []`, which is also what
- * every estimate saved before v11 reads.
+ * every estimate saved before v11 reads. `rentals` (v12, rentals.js
+ * readRentals) are the same: their own table, and `[]` when none are passed.
  */
-function loadEstimate(row, days) {
+function loadEstimate(row, days, rentals) {
   return {
     id: row.id,
     upid: row.upid,
@@ -46,6 +47,8 @@ function loadEstimate(row, days) {
     shortNotice: row.short_notice === 1,
     surcharges: JSON.parse(row.surcharges_json || '{}'),
     days: Array.isArray(days) ? days : [],
+    // Gear rentals (v12): when each vendor's hire goes out and comes back.
+    rentals: Array.isArray(rentals) ? rentals : [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

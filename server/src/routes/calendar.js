@@ -24,6 +24,11 @@ function epochDay(ymd) {
  *
  * Declined estimates are excluded once task 15 adds that status; until then
  * every estimate's days are returned.
+ *
+ * GEAR RENTALS (B2-2, D84) come back beside the days: each one whose out → back
+ * span overlaps the range, for the calendar's bars. A rental with only one date
+ * is a one-day marker on it; one with neither is on no calendar. A bar is by
+ * vendor and project, so a rental carries no client or items.
  */
 function registerCalendarRoutes(app, db) {
   app.get('/api/calendar', (req, res) => {
@@ -63,7 +68,28 @@ function registerCalendarRoutes(app, db) {
         items,
       };
     });
-    res.json({ ok: true, days });
+
+    /* A rental spans out → back; with one date blank it spans the other. */
+    const rentals = db.prepare(`
+      SELECT r.id, r.estimate_id, r.vendor, r.out_date, r.out_method, r.back_date, r.back_method,
+             e.upid, e.name
+        FROM rentals r JOIN estimates e ON e.id = r.estimate_id
+       WHERE COALESCE(r.out_date, r.back_date) IS NOT NULL
+         AND COALESCE(r.out_date, r.back_date) <= ?
+         AND COALESCE(r.back_date, r.out_date) >= ?
+       ORDER BY COALESCE(r.out_date, r.back_date), e.upid, r.sort, r.id
+    `).all(to, from).map((r) => ({
+      id: r.id,
+      estimateId: r.estimate_id,
+      upid: r.upid,
+      projectName: r.name,
+      vendor: r.vendor,
+      outDate: r.out_date || null,
+      outMethod: r.out_method || null,
+      backDate: r.back_date || null,
+      backMethod: r.back_method || null,
+    }));
+    res.json({ ok: true, days, rentals });
   });
 }
 

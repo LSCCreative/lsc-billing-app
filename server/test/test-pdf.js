@@ -441,3 +441,71 @@ test('POST /api/estimates/:id/pdf renders a real PDF and writes a copy to export
     db.close();
   }
 });
+
+/* ── Day-built estimates (production-booking B2-2) ────────────────────────── */
+
+test('client PDF: a hire line prints its Item; one saved before B2 prints its old text', () => {
+  const est = {
+    ...QUOTE,
+    activeRows: {
+      equip: [
+        { vendor: 'Lensworks', item: 'Cine zoom kit', days: 2, cost: 150 },
+        { vendor: 'Lens hire / Matte box', days: 1, cost: 90 },
+        { vendor: 'Grip Co', item: '  ', days: 1, cost: 10 },
+      ],
+    },
+  };
+  const html = buildEstimateHtml(est, DAY_PRICING, {});
+  const hire = html.slice(html.indexOf('Equipment Hire'));
+  assert.match(hire, /Cine zoom kit.*Lens hire \/ Matte box.*Grip Co/s);
+  assert.doesNotMatch(html, /Lensworks/);
+  // The Cost Breakdown names it the same way.
+  const cb = cbFigures(buildCostBreakdownHtml(bookedEstimate({ rows: est.activeRows, days: [] }), DAY_PRICING, {}));
+  assert.deepEqual(cb.text.filter((t) => / days? at /.test(t)).map((t) => t.split(' · ')[0]), ['Cine zoom kit', 'Lens hire / Matte box', 'Grip Co']);
+});
+
+test('client PDF: an edit line prints its deliverable\'s current name, and a tag naming nothing prints none', () => {
+  const edit = (name, extra) => ({ name, qty: 2, mu: 63, hoursPerUnit: 1, ...extra });
+  const rows = (brandName) => ({
+    deliverables: [{ id: 'dv1', name: brandName, qty: 1 }, { id: 'dv2', name: '', qty: 1 }],
+    post: [
+      edit('A-Roll Offline Edit', { deliverableId: 'dv1' }),
+      edit('Project Setup', { deliverableId: 'dv_gone' }),
+      edit('Socials Edit', { deliverableId: 'dv2' }),
+      edit('Colour', { deliverableId: 'dv1', qty: 0 }),
+      edit('Sound Mix'),
+    ],
+  });
+  const tag = (name) => '<span style="font-weight:400;color:#888">&middot; ' + name + '</span>';
+  const html = buildEstimateHtml({ ...QUOTE, activeRows: rows('Brand Story') }, DAY_PRICING, {});
+  assert.ok(html.includes('A-Roll Offline Edit ' + tag('Brand Story') + '</div>'));
+  assert.ok(html.includes('>Project Setup</div>'));
+  assert.ok(html.includes('>Socials Edit</div>')); // its deliverable has no name to print
+  assert.ok(html.includes('>Sound Mix</div>'));
+  assert.doesNotMatch(html, /Colour/); // 0 hrs: off the document, tag and all
+  // A rename follows to the document.
+  const renamed = buildEstimateHtml({ ...QUOTE, activeRows: rows('Hero Film') }, DAY_PRICING, {});
+  assert.ok(renamed.includes('A-Roll Offline Edit ' + tag('Hero Film') + '</div>'));
+  assert.doesNotMatch(renamed, /Brand Story/);
+});
+
+test('client PDF: travel, crew and gear on a day stay in their own blocks; Production Days lists production only (D85)', () => {
+  const est = bookedEstimate({
+    rows: {
+      prod: [cap({ dayId: 'd_sat' })],
+      travel: [{ name: 'Crew Meals', qty: 3, mu: 30, rate: 30, dayId: 'd_sat' }],
+      crew: [{ role: 'Gaffer', days: 1, cost: 600, dayId: 'd_sat' }],
+      equip: [{ vendor: 'Lensworks', item: 'Cine zoom kit', days: 1, cost: 150, dayId: 'd_sat' }],
+    },
+    days: [SAT],
+  });
+  const html = buildEstimateHtml(est, DAY_PRICING, {});
+  const days = html.slice(html.indexOf('Production Days'), html.indexOf('What Goes Into This Project'));
+  assert.match(days, /Video Capture/);
+  assert.doesNotMatch(days, /Crew Meals|Gaffer|Cine zoom kit/);
+  const services = html.slice(html.indexOf('What Goes Into This Project'));
+  assert.match(services, /Equipment Hire.*Cine zoom kit.*Travel &amp; Accommodation.*Crew Meals.*External Crew &amp; Contracts.*Gaffer/s);
+  assert.doesNotMatch(services, /Video Capture/);
+  // Only the production line is surcharged: $1,680 + 90 + 600 + 150.
+  assert.equal(est.totals.totalIncGst, 2520);
+});

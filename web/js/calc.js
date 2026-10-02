@@ -2462,20 +2462,23 @@ function costBreakdown(activeRows, pricing, options) {
     lineCount += 1;
   });
 
-  const atCost = (key, nameKey, fallback) => {
+  const atCost = (key, nameOf, fallback) => {
     const out = [];
     (rows[key] || []).forEach((line, index) => {
       if (!line || typeof line !== 'object') return;
       const amount = round2(nonNeg(line.days) * nonNeg(line.cost));
-      if (!(amount > 0) && !line[nameKey]) return;
-      out.push({ index, name: line[nameKey] || fallback, days: nonNeg(line.days), cost: nonNeg(line.cost), amount });
+      const name = nameOf(line);
+      if (!(amount > 0) && !name) return;
+      out.push({ index, name: name || fallback, days: nonNeg(line.days), cost: nonNeg(line.cost), amount });
       itemsCents += centsOf(amount);
       lineCount += 1;
     });
     return out;
   };
-  const equip = atCost('equip', 'vendor', 'Equipment');
-  const crew = atCost('crew', 'role', 'Crew');
+  /* A hire line is named by its Item since B2 (D82), as on the client's PDF;
+     one saved before has its "vendor / item" text in `vendor` only. */
+  const equip = atCost('equip', (l) => String(l.item || '').trim() || l.vendor, 'Equipment');
+  const crew = atCost('crew', (l) => l.role, 'Crew');
 
   /* What the lines should add up to. A document with no stored totals (never
      saved) has nothing to reconcile against. */

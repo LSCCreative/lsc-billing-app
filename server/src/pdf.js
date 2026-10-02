@@ -45,9 +45,28 @@ function sectionsFor(activeRows, labourSections, sectionLabels) {
   return out;
 }
 
+/**
+ * A post line's deliverable tag (B2-2, D95): the CURRENT name of the
+ * deliverable its `deliverableId` names, so a rename follows to the document.
+ * Nothing when it names none, or one with no name — a tag that would print
+ * blank, or something stale, prints no tag.
+ */
+function deliverableNames(activeRows) {
+  const out = new Map();
+  ((activeRows && activeRows.deliverables) || []).forEach((d) => {
+    if (d && d.id && String(d.name || '').trim()) out.set(String(d.id), String(d.name).trim());
+  });
+  return out;
+}
+
 function serviceItemsHtml(activeRows, labourSections, sectionLabels, dayIds) {
   const ar = activeRows || {};
   const onDay = (s) => Boolean(dayIds && s.dayId && dayIds.has(String(s.dayId)));
+  const tags = deliverableNames(ar);
+  const tagOf = (secId, s) => {
+    const name = secId === 'post' && s.deliverableId ? tags.get(String(s.deliverableId)) : '';
+    return name ? ' <span style="font-weight:400;color:#888">&middot; ' + esc(name) + '</span>' : '';
+  };
   let html = '';
 
   sectionsFor(ar, labourSections, sectionLabels).forEach((sec) => {
@@ -57,15 +76,19 @@ function serviceItemsHtml(activeRows, labourSections, sectionLabels, dayIds) {
     html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0">' +
       '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">' + esc(sec.label) + '</div>';
     rows.forEach((s) => {
-      html += '<div style="font-size:10.5pt;font-weight:600;color:#181818;margin-bottom:3px">' + esc(s.name) + '</div>';
+      html += '<div style="font-size:10.5pt;font-weight:600;color:#181818;margin-bottom:3px">' + esc(s.name) + tagOf(sec.id, s) + '</div>';
     });
     html += '</div>';
   });
 
-  const eqActive = (ar.equip || []).filter((e) => e.vendor || (e.days && e.cost));
+  /* Since B2 a hire line has a vendor and an Item (D82). The client sees the
+     Item; a line saved before B2 has its "vendor / item" text in `vendor`
+     only, and prints it as it always did. */
+  const eqName = (e) => String(e.item || '').trim() || e.vendor;
+  const eqActive = (ar.equip || []).filter((e) => eqName(e) || (e.days && e.cost));
   if (eqActive.length) {
     html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0"><div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">Equipment Hire</div>' +
-      eqActive.map((e) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(e.vendor || 'Equipment') + '</div>').join('') + '</div>';
+      eqActive.map((e) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(eqName(e) || 'Equipment') + '</div>').join('') + '</div>';
   }
 
   const tvActive = (ar.travel || []).filter((t) => (t.qty || 0) > 0);
