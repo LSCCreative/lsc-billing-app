@@ -11,7 +11,7 @@
  */
 
 const { RESERVED_SECTION_IDS } = require('./ratecard');
-const { gstTreatment } = require('./calc');
+const { gstTreatment, costBreakdown, lineDef, round2 } = require('./calc');
 
 function fmt(n) {
   return '$' + (parseFloat(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -45,12 +45,14 @@ function sectionsFor(activeRows, labourSections, sectionLabels) {
   return out;
 }
 
-function serviceItemsHtml(activeRows, labourSections, sectionLabels) {
+function serviceItemsHtml(activeRows, labourSections, sectionLabels, dayIds) {
   const ar = activeRows || {};
+  const onDay = (s) => Boolean(dayIds && s.dayId && dayIds.has(String(s.dayId)));
   let html = '';
 
   sectionsFor(ar, labourSections, sectionLabels).forEach((sec) => {
-    const rows = (ar[sec.id] || []).filter((s) => (s.qty || 0) > 0);
+    // A production item on a booked day is listed under its day instead.
+    const rows = (ar[sec.id] || []).filter((s) => (s.qty || 0) > 0 && !(sec.id === 'prod' && onDay(s)));
     if (!rows.length) return;
     html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0">' +
       '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">' + esc(sec.label) + '</div>';
@@ -79,6 +81,121 @@ function serviceItemsHtml(activeRows, labourSections, sectionLabels) {
   }
 
   return html;
+}
+
+/* ── Production days (production-booking task 8) ─────────────────────────────
+   The client's copy lists each booked day with its status word and times, and
+   that day's items at the price the client pays: the surcharge is folded into
+   the price and never named (D8, D12). The owner's clash note is not printed —
+   it is about other projects. */
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const STATUS_WORD = { confirmed: 'Confirmed', pencilled: 'Pencilled', proposed: 'Proposed' };
+const UNIT_WORDS = {
+  hour: ['hour', 'hours'],
+  full: ['full day', 'full days'],
+  half: ['half day', 'half days'],
+  unit: ['unit', 'units'],
+};
+const PROPOSED_DISCLAIMER =
+  'The proposed dates are not locked in and other project bookings may happen before this estimate is agreed upon.';
+
+/** "Saturday 3 October 2026", or "Date TBC". Read as text: no timezone moves it. */
+function dayDate(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return 'Date TBC';
+  const wd = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
+  return WEEKDAYS[wd] + ' ' + Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] + ' ' + m[1];
+}
+
+/* '13:00' → '1:00pm'. */
+function clock12(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+  if (!m) return '';
+  const h = Number(m[1]);
+  return (h % 12 || 12) + ':' + m[2] + (h < 12 ? 'am' : 'pm');
+}
+
+/** "1:00pm–9:00pm", "6:00pm–2:00am (ends next day)", or '' with no times. */
+function dayTimes(day) {
+  const a = clock12(day.startTime);
+  const b = clock12(day.endTime);
+  if (a && b) return a + '–' + b + (String(day.endTime) < String(day.startTime) ? ' (ends next day)' : '');
+  if (a) return 'From ' + a;
+  if (b) return 'Until ' + b;
+  return '';
+}
+
+function qtyText(qty, unit) {
+  const words = UNIT_WORDS[unit] || UNIT_WORDS.unit;
+  return qty + ' ' + (Number(qty) === 1 ? words[0] : words[1]);
+}
+
+function unitOfLine(line, def) {
+  const dayUnit = (def && def.dayUnit) || line.dayUnit;
+  if (dayUnit === 'full' || dayUnit === 'half') return dayUnit;
+  const h = parseFloat(def && def.hoursPerUnit);
+  return !Number.isFinite(h) || h <= 0 || h === 1 ? 'hour' : 'unit';
+}
+
+/** The estimate's day ids, for "is this production line on a day". */
+function dayIdsOf(estimate) {
+  return new Set((estimate.days || []).filter((d) => d && d.id).map((d) => String(d.id)));
+}
+
+const hasProposedDay = (estimate) => (estimate.days || []).some((d) => d && d.status === 'proposed');
+
+/**
+ * Each booked day with its production items at their stored client price
+ * (`surchargedPrice`, which the server stamps on every save and which is what
+ * the totals contain). Nothing is re-priced here. A line saved without one —
+ * none should exist — falls back to its base price.
+ */
+function daysWithItems(estimate, pricing) {
+  const prodSection = ((pricing && pricing.labourSections) || []).find((s) => s.id === 'prod');
+  const lines = ((estimate.activeRows && estimate.activeRows.prod) || []);
+  return (estimate.days || []).filter((d) => d && d.id).map((day) => {
+    const items = lines.filter((l) => l && String(l.dayId || '') === String(day.id)).map((line) => {
+      const def = lineDef(prodSection ? prodSection.rows : [], line, pricing);
+      const override = parseFloat(line.override) > 0 ? parseFloat(line.override) : 0;
+      const base = def ? (override || (parseFloat(line.qty) || 0) * (parseFloat(def.mu) || 0)) : 0;
+      const price = typeof line.surchargedPrice === 'number' ? line.surchargedPrice : round2(base);
+      return { name: line.name, qty: line.qty, unit: unitOfLine(line, def), price };
+    });
+    return { day, items };
+  });
+}
+
+/* The existing services block. Printed as it always was, empty or not, unless
+   every item is already listed under a production day. */
+function whatGoesInHtml(serviceItems, estimate) {
+  if (!serviceItems && dayIdsOf(estimate).size) return '';
+  return '<div style="margin-bottom:28px"><div class="sh">What Goes Into This Project</div>' + serviceItems + '</div>';
+}
+
+function productionDaysHtml(estimate, pricing, withDisclaimer) {
+  const days = daysWithItems(estimate, pricing);
+  if (!days.length) return '';
+  const body = days.map(({ day, items }) => {
+    const meta = [STATUS_WORD[day.status] || 'Proposed', dayTimes(day)].filter(Boolean).join(' &middot; ');
+    return '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:5px">' +
+        '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700">' + esc(dayDate(day.date)) + '</div>' +
+        '<div style="font-size:8.5pt;color:#555">' + meta + '</div></div>' +
+      items.map((it) =>
+        '<div style="display:flex;justify-content:space-between;gap:16px;font-size:10.5pt;font-weight:600;color:#181818;margin-bottom:3px">' +
+          '<span>' + esc(it.name) + ' <span style="font-weight:400;color:#888">&middot; ' + esc(qtyText(it.qty, it.unit)) + '</span></span>' +
+          '<span style="white-space:nowrap">' + fmt(it.price) + '</span></div>'
+      ).join('') +
+    '</div>';
+  }).join('');
+  const disclaimer = withDisclaimer && hasProposedDay(estimate)
+    ? '<div style="margin-top:8px;padding:10px 14px;background:#f7f7f7;border-left:3px solid #B85444;font-size:9pt;color:#555;line-height:1.5">' +
+      PROPOSED_DISCLAIMER + '</div>'
+    : '';
+  return '<div style="margin-bottom:28px"><div class="sh">Production Days</div>' + body + disclaimer + '</div>';
 }
 
 function deliverablesTableHtml(activeRows) {
@@ -148,9 +265,10 @@ function gstNote(treatment, docWord) {
 
 const PDF_STYLE = '*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#181818;background:#fff}.sh{font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #181818}';
 
-function buildQuoteHtml(estimate, labourSections, business) {
+function buildQuoteHtml(estimate, pricing, business) {
   const client = estimate.client || {};
-  const serviceItems = serviceItemsHtml(estimate.activeRows, labourSections, estimate.sectionLabels);
+  const labourSections = (pricing && pricing.labourSections) || [];
+  const serviceItems = serviceItemsHtml(estimate.activeRows, labourSections, estimate.sectionLabels, dayIdsOf(estimate));
   const treatment = gstTreatment(estimate.totals, estimate);
 
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + PDF_STYLE + '</style></head><body>' +
@@ -165,7 +283,8 @@ function buildQuoteHtml(estimate, labourSections, business) {
       (client.contactName ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">' + esc(client.contactName) + (client.email ? ' &middot; ' + esc(client.email) : '') + '</div>' : '') +
       '</div></div>' +
     deliverablesTableHtml(estimate.activeRows) +
-    '<div style="margin-bottom:28px"><div class="sh">What Goes Into This Project</div>' + serviceItems + '</div>' +
+    productionDaysHtml(estimate, pricing, true) +
+    whatGoesInHtml(serviceItems, estimate) +
     '<div style="margin-bottom:28px"><div class="sh">Your Investment</div>' +
       totalsBoxHtml('Total Investment', estimate.totals, treatment) +
       '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'quote') + ' Quote valid for 30 days from issue date.</div></div>' +
@@ -175,9 +294,10 @@ function buildQuoteHtml(estimate, labourSections, business) {
     '</div></body></html>';
 }
 
-function buildInvoiceHtml(estimate, labourSections, settings) {
+function buildInvoiceHtml(estimate, pricing, settings) {
   const client = estimate.client || {};
-  const serviceItems = serviceItemsHtml(estimate.activeRows, labourSections, estimate.sectionLabels);
+  const labourSections = (pricing && pricing.labourSections) || [];
+  const serviceItems = serviceItemsHtml(estimate.activeRows, labourSections, estimate.sectionLabels, dayIdsOf(estimate));
   const payment = (settings && settings.payment) || {};
   const business = (settings && settings.business) || {};
   // Only a document that charges GST is a tax invoice. A GST-free job, or one
@@ -213,7 +333,8 @@ function buildInvoiceHtml(estimate, labourSections, settings) {
       (client.abn ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">ABN ' + esc(formatAbn(client.abn)) + '</div>' : '') +
       '</div></div>' +
     deliverablesTableHtml(estimate.activeRows) +
-    '<div style="margin-bottom:28px"><div class="sh">What Goes Into This Project</div>' + serviceItems + '</div>' +
+    productionDaysHtml(estimate, pricing, false) +
+    whatGoesInHtml(serviceItems, estimate) +
     '<div style="margin-bottom:0"><div class="sh">Invoice Total</div>' +
       totalsBoxHtml('Total Due', estimate.totals, treatment) +
       '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'invoice') + '</div></div>' +
@@ -221,12 +342,153 @@ function buildInvoiceHtml(estimate, labourSections, settings) {
     '</body></html>';
 }
 
+/* ── The Cost Breakdown (D8, D13) ─────────────────────────────────────────────
+   The owner's download that explains the price. Client-safe, so it can be
+   forwarded: base prices, each surcharge, short notice, the other lines,
+   GST and the total. It never carries a floor, the Minimum Job Price, the tax
+   set-aside, take-home or overhead — the figures come from calc.js
+   costBreakdown, which doesn't produce them, and nothing here reads totals
+   beyond the three client figures. */
+
+const SURCHARGE_WORD = {
+  weekend: 'Weekend rate',
+  holiday: 'Public holiday rate',
+  afterHours: 'After hours',
+  shortNotice: 'Short notice',
+};
+
+const hrs = (n) => {
+  const r = Math.round(n * 100) / 100;
+  return r + (r === 1 ? ' hr' : ' hrs');
+};
+
+/* "whole day", "2 of 10 hrs" — the part of the day's booked hours a row covered. */
+function coverText(row, bookedHours) {
+  if (row.share >= 1 - 1e-9) return 'whole day';
+  if (!(bookedHours > 0)) return Math.round(row.share * 100) + '% of the day';
+  return hrs(row.hours).replace(/ hrs?$/, '') + ' of ' + hrs(bookedHours);
+}
+
+const multText = (m) => '&times;' + String(Math.round(m * 1000) / 1000);
+
+function cbRow(label, detail, amount, opts) {
+  const o = opts || {};
+  const weight = o.strong ? 700 : o.muted ? 400 : 600;
+  const colour = o.muted ? '#555' : '#181818';
+  /* data-cb says what a row is to anyone adding the page up (the tests do):
+     'item' rows sum to the 'total' row; a 'subtotal' repeats items above it. */
+  return '<tr data-cb="' + (o.kind || 'item') + '">' +
+    '<td style="padding:6px 0 6px ' + (o.indent ? '14px' : '0') + ';font-size:10pt;font-weight:' + weight + ';color:' + colour + ';border-bottom:1px solid #f0f0f0">' +
+      label + (detail ? ' <span style="font-weight:400;color:#888">&middot; ' + detail + '</span>' : '') + '</td>' +
+    '<td style="padding:6px 0;font-size:10pt;text-align:right;white-space:nowrap;font-weight:' + weight + ';color:' + colour + ';border-bottom:1px solid #f0f0f0">' +
+      (amount < 0 ? '-' + fmt(-amount) : (o.plus ? '+' : '') + fmt(amount)) + '</td></tr>';
+}
+
+function cbBlock(title, rowsHtml) {
+  if (!rowsHtml) return '';
+  return '<div style="margin-bottom:22px"><div class="sh">' + title + '</div>' +
+    '<table style="width:100%;border-collapse:collapse"><tbody>' + rowsHtml + '</tbody></table></div>';
+}
+
+function buildCostBreakdownHtml(estimate, pricing, settings) {
+  const client = estimate.client || {};
+  const business = (settings && settings.business) || {};
+  const labourSections = (pricing && pricing.labourSections) || [];
+  const treatment = gstTreatment(estimate.totals, estimate);
+  const b = costBreakdown(estimate.activeRows, pricing, {
+    days: estimate.days,
+    surcharges: estimate.surcharges,
+    shortNotice: estimate.shortNotice === true,
+    totals: estimate.totals,
+    gstFree: estimate.gstFree === true,
+  });
+
+  let daysHtml = '';
+  b.days.forEach((day) => {
+    const meta = [STATUS_WORD[day.status] || 'Proposed', dayTimes(day)].filter(Boolean).join(' &middot; ');
+    daysHtml +=
+      '<tr><td colspan="2" style="padding:12px 0 4px;font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700">' +
+        esc(dayDate(day.date)) + ' <span style="text-transform:none;letter-spacing:0;font-weight:400;color:#555">&middot; ' + meta + '</span></td></tr>' +
+      (day.lines.length
+        ? day.lines.map((l) => cbRow(esc(l.name), esc(qtyText(l.qty, l.unit)) + ', standard rate', l.base)).join('')
+        : cbRow('No items on this day', '', 0, { muted: true })) +
+      day.surcharges.map((r) =>
+        cbRow(SURCHARGE_WORD[r.type] + ' ' + multText(r.multiplier), coverText(r, day.bookedHours), r.amount, { indent: true, muted: true, plus: true })
+      ).join('') +
+      (day.surcharges.length ? cbRow('Day total', '', dayTotalBeforeShortNotice(day), { strong: true, kind: 'subtotal' }) : '');
+  });
+
+  const shortNoticeHtml = b.shortNotice
+    ? cbRow(SURCHARGE_WORD.shortNotice + ' ' + multText(b.shortNotice.multiplier),
+      'on the production items of ' + b.shortNotice.dayIds.length +
+        (b.shortNotice.dayIds.length === 1 ? ' day' : ' days'),
+      b.shortNotice.amount, { plus: true })
+    : '';
+
+  const labels = {};
+  sectionsFor(estimate.activeRows, labourSections, estimate.sectionLabels).forEach((sec) => { labels[sec.id] = sec.label; });
+  const sectionsHtml = b.sections.map((sec) =>
+    cbBlock(esc(labels[sec.id] || 'Archived Services') + (sec.id === 'prod' && b.days.length ? ' (not on a day)' : ''),
+      sec.lines.map((l) => cbRow(esc(l.name), esc(qtyText(l.qty, l.unit)), l.amount)).join(''))
+  ).join('');
+
+  const travelHtml = cbBlock('Travel &amp; Accommodation', b.travel.map((l) =>
+    cbRow(esc(l.name), l.directCost ? '' : l.perKm ? esc(l.qty + ' km') : esc(String(l.qty)), l.amount)).join(''));
+  const atCost = (title, list) => cbBlock(title, list.map((l) =>
+    cbRow(esc(l.name), esc(l.days + (Number(l.days) === 1 ? ' day' : ' days') + ' at ') + fmt(l.cost), l.amount)).join(''));
+
+  const itemsLabel = treatment === 'taxable'
+    ? (b.linesIncludeGst ? 'Items total (inc. GST)' : 'Items total (ex GST)')
+    : 'Items total';
+  const roundingHtml = b.adjustment !== 0
+    ? cbRow('Rounding', 'each line above is shown to the cent', b.adjustment, { muted: true })
+    : '';
+
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + PDF_STYLE + '</style></head><body>' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:16px;border-bottom:3px solid #181818">' +
+      '<div><div style="font-size:22pt;font-weight:900;letter-spacing:.02em">LSC CREATIVE<span style="color:#B85444">.</span></div>' +
+      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-top:4px">Motion Productions</div>' +
+      sellerHtml(business) + '</div>' +
+      '<div style="text-align:right"><div style="font-size:16pt;font-weight:900;color:#181818;letter-spacing:.02em">COST BREAKDOWN</div>' +
+      '<div style="font-size:13pt;font-weight:700;color:#B85444;letter-spacing:.04em;margin-top:2px">' + esc(estimate.upid || '—') + '</div>' +
+      '<div style="font-size:9pt;color:#888;margin-top:2px">' + esc(estimate.date || '') + '</div>' +
+      '<div style="font-size:15pt;font-weight:800;color:#181818;margin-top:6px">' + esc(estimate.name) + '</div>' +
+      (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
+      '</div></div>' +
+    '<div style="font-size:10pt;color:#555;margin-bottom:22px;line-height:1.6">How the price of this estimate is made up: each production day&rsquo;s items at the standard rate, then any rate for the day or time they&rsquo;re booked, then everything else.</div>' +
+    cbBlock('Production Days', daysHtml) +
+    cbBlock('Short Notice', shortNoticeHtml) +
+    sectionsHtml +
+    travelHtml +
+    atCost('Equipment Hire', b.equip) +
+    atCost('External Crew &amp; Contracts', b.crew) +
+    '<div style="margin-bottom:22px"><table style="width:100%;border-collapse:collapse"><tbody>' +
+      roundingHtml +
+      cbRow(itemsLabel, '', b.target, { strong: true, kind: 'total' }) +
+    '</tbody></table></div>' +
+    '<div style="margin-bottom:28px">' +
+      totalsBoxHtml('Total', estimate.totals, treatment) +
+      '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'estimate') + '</div></div>' +
+    '</body></html>';
+}
+
+/* "Day total": the day's items at the standard rate plus its own surcharges.
+   Short notice is one row for the whole estimate, so it isn't in here. */
+function dayTotalBeforeShortNotice(day) {
+  return round2(day.surcharges.reduce((sum, r) => sum + r.amount, day.base));
+}
+
+/** `Cost Breakdown_<UPID>_<ProjectName>.pdf` (D8), filesystem-safe. */
+function costBreakdownFilename(estimate) {
+  const base = 'Cost Breakdown_' + (estimate.upid || 'EST') + '_' + (estimate.name || 'Estimate');
+  return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
+}
+
 /** Picks the quote or invoice template by the estimate's `docType`. */
 function buildEstimateHtml(estimate, pricing, settings) {
-  const labourSections = (pricing && pricing.labourSections) || [];
   return estimate.docType === 'invoice'
-    ? buildInvoiceHtml(estimate, labourSections, settings)
-    : buildQuoteHtml(estimate, labourSections, (settings && settings.business) || {});
+    ? buildInvoiceHtml(estimate, pricing, settings)
+    : buildQuoteHtml(estimate, pricing, (settings && settings.business) || {});
 }
 
 /**
@@ -303,4 +565,13 @@ async function renderPdfBuffer(html) {
   }
 }
 
-module.exports = { buildEstimateHtml, exportBlocker, exportFilename, renderPdfBuffer, resolveExecutablePath };
+module.exports = {
+  buildEstimateHtml,
+  buildCostBreakdownHtml,
+  exportBlocker,
+  exportFilename,
+  costBreakdownFilename,
+  renderPdfBuffer,
+  resolveExecutablePath,
+  PROPOSED_DISCLAIMER,
+};

@@ -125,18 +125,31 @@ times.
         - **Verified to the cent against the server** on every worked example, all three modes,
           and the five task 1 mutations re-checked through the editor. Details are in TASKS.md
           task 7's Done note.
-        - **Show the user before task 8** the interpretations listed in that Done note, and the one
-          task 2 flagged: a custom-bill production line on a surcharged day is surcharged on its
-          custom amount.
+        - **The user confirmed all five interpretations on 2026-10-02**: the four in that Done note,
+          and task 2's custom-bill line being surcharged on its custom amount.
+      - [x] **Task 8, the estimate detail, the client PDF and the Cost Breakdown PDF**: done
+        2026-10-02, **uncommitted**. The suite is 366/366.
+        - **What exists now:**
+          - `calc.js` `costBreakdown()`, the figures;
+          - the client PDF's "Production Days" block, with folded prices and the proposed-days
+            disclaimer;
+          - `POST /api/estimates/:id/cost-breakdown`;
+          - the detail's Production grouped by day, an "incl. Surcharges" total, and a
+            "↓ Cost Breakdown" button.
+        - **Bug fixed:** the PDF route never loaded the estimate's days.
+        - **The user saw a sample Cost Breakdown and client PDF on 2026-10-02** and asked for the
+          commit with no changes. That settles the attribution question below and the five
+          interpretations in TASKS.md task 8's Done note.
 
-**Exact next item: TASKS.md task 8, estimate detail, client PDF and Cost Breakdown PDF**
-(**money math, Opus/high**).
+**Exact next item: TASKS.md task 9, the A+B responsive and accessibility pass**
+(**frontend, Opus/high**).
 
 **Seams left for later tasks:**
-- **Detail and PDF (task 8):** read each `prod` line's stored `surchargedPrice` and `dayId`; don't
-  re-price. A line without `dayId` is an unassigned legacy line: list it as today, not under a day.
-  The editor's `surNote()` (`estimate-editor.js`) shows how to word an attribution row, for the
-  Cost Breakdown.
+- **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
+  two readers of a booked estimate. The client page lists days as the client PDF does, with
+  stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.
+- **Task 9 on the detail screen:** the day groups are `<tbody>` with a `scope="rowgroup"` head.
+  Check how VoiceOver reads them.
 - **Announcing a surcharge recompute (task 9):** not done. The editor updates figures silently.
   The brief wants one polite announcement per recompute. Debounce it, because every keystroke in a
   quantity recalculates.
@@ -147,7 +160,7 @@ times.
   deletes every production day. Also exclude declined estimates in `lockedDay` (`days.js`) and in
   `routes/calendar.js`.
 
-**For review at task 8 (Cost Breakdown):** how attribution splits money between surcharges is an
+**For review at task 8 (Cost Breakdown); settled 2026-10-02, the user approved the sample:** how attribution splits money between surcharges is an
 implementation choice, not a user decision. For example, under "multiply", after hours is charged
 on the weekend price. The totals are fixed by the brief; only the row labels depend on it. Show the
 user one Cost Breakdown before calling it done.

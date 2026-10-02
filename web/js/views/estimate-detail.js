@@ -51,6 +51,21 @@ const EstimateDetail = (() => {
       '<button class="btn btn-ghost btn-sm" id="js-edit">Edit</button>' +
       '<button class="btn btn-ghost btn-sm" id="js-duplicate" data-write>' +
       '<span class="spinner" id="dup-spin"></span>Duplicate</button>' +
+      '<span class="cb-wrap"><button class="btn btn-ghost btn-sm" id="js-cost-breakdown">' +
+      '<span class="spinner" id="cb-spin"></span>↓ Cost Breakdown</button>' +
+      LSCInfo.markup({
+        id: 'cost-breakdown',
+        label: 'What the Cost Breakdown is',
+        title: 'Cost Breakdown',
+        paragraphs: [
+          'A PDF for you that shows how this price is made up: each production day’s items at the standard ' +
+            'rate, each surcharge with its multiplier and the hours it covered, short notice, then everything ' +
+            'else, GST and the total.',
+          'It has none of your internal figures (no floors, Minimum Job Price, tax set-aside or take-home), ' +
+            'so you can forward it if a client asks why a day costs more. The client’s own quote never ' +
+            'mentions a surcharge.',
+        ],
+      }) + '</span>' +
       '<button class="btn btn-accent btn-sm" id="js-export">' +
       '<span class="spinner" id="exp-spin"></span>↑ ' +
       (estimate.docType === 'invoice' ? 'Export Client Invoice' : 'Export Quote PDF') +
@@ -82,6 +97,10 @@ const EstimateDetail = (() => {
     // asDocument: this screen is the read of what was quoted, so it uses the
     // headings the estimate carries — the same ones its PDF prints.
     sectionsFor(activeRows, pricing, estimate.sectionLabels, { asDocument: true }).forEach((section) => {
+      if (section.id === 'prod' && (estimate.days || []).length) {
+        html += productionByDay(estimate, section, pricing);
+        return;
+      }
       const lines = (activeRows[section.id] || []).filter((line) => (line.qty || 0) > 0);
       if (!lines.length) return;
 
@@ -96,14 +115,7 @@ const EstimateDetail = (() => {
           const def = labourDef(section, line, pricing);
           const bill = labourBill(def, line);
           if (bill !== null) subtotal += bill;
-          const unit = LSCRows.labourUnit(def);
-          const qty = def ? line.qty + ' ' + LSCRows.unitWord(unit.kind, line.qty) : line.qty;
-          return (
-            '<tr><td data-label="Service">' + esc(line.name) + '</td>' +
-            '<td class="right muted-td" data-label="Qty">' + esc(qty) + '</td>' +
-            '<td class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</td>' +
-            '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
-          );
+          return labourRow(line, def, bill, '');
         })
         .join('');
 
@@ -111,12 +123,99 @@ const EstimateDetail = (() => {
         '<div class="est-block"><div class="est-block-head">' +
         '<h2 class="est-block-label">' + esc(section.label) + '</h2>' +
         '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
-        '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">Qty</th>' +
-        '<th class="right">Mark-Up</th><th class="right">Bill</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        '<table class="est-table est-table-4">' + LABOUR_HEAD + '<tbody>' + rows + '</tbody></table></div>';
     });
 
     return html;
+  }
+
+  const LABOUR_HEAD =
+    '<thead><tr><th>Service</th><th class="right">Qty</th>' +
+    '<th class="right">Mark-Up</th><th class="right">Bill</th></tr></thead>';
+
+  function labourRow(line, def, bill, note) {
+    const unit = LSCRows.labourUnit(def);
+    const qty = def ? line.qty + ' ' + LSCRows.unitWord(unit.kind, line.qty) : line.qty;
+    return (
+      '<tr><td data-label="Service">' + esc(line.name) +
+      (note ? '<span class="sur-note est-sur-note">' + esc(note) + '</span>' : '') + '</td>' +
+      '<td class="right muted-td" data-label="Qty">' + esc(qty) + '</td>' +
+      '<td class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</td>' +
+      '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
+    );
+  }
+
+  /* Production on an estimate with booked days (production-booking task 8):
+     one group per day, in the estimate's order (by date, Date TBC last), with
+     its status, times and any clash note, then its items at the price the
+     client pays — the stored `surchargedPrice`, never re-priced here — with
+     the owner-only "incl. weekend ×1.5" note beneath. Lines saved before days
+     existed follow under "Not on a day" at their base price, as they total. */
+  function productionByDay(estimate, section, pricing) {
+    const lines = (estimate.activeRows || {}).prod || [];
+    const days = estimate.days || [];
+    const snap = estimate.surcharges || {};
+    const kinds = snap.days || {};
+    const dayIds = new Set(days.map((d) => d.id));
+    const today = LSCUtil.today();
+    let subtotal = 0;
+
+    const priced = (line) => {
+      const def = labourDef(section, line, pricing);
+      const base = labourBill(def, line);
+      const onDay = line.dayId && dayIds.has(line.dayId);
+      const bill = base === null ? null : onDay && typeof line.surchargedPrice === 'number' ? line.surchargedPrice : base;
+      if (bill !== null) subtotal += bill;
+      return { def, base, bill };
+    };
+
+    const groups = days.map((day) => {
+      const own = lines.filter((line) => line.dayId === day.id);
+      const withKind = Object.assign({}, day, { kind: kinds[day.id] });
+      const rows = own.map((line) => {
+        const { def, base, bill } = priced(line);
+        const note = base !== null && bill > base
+          ? LSCRows.surchargeNote(base, withKind, snap, estimate.shortNotice === true)
+          : '';
+        return labourRow(line, def, bill, note);
+      }).join('');
+      const when = day.date ? LSCCalendar.longDate(day.date, today) : 'Date TBC';
+      const times = day.startTime || day.endTime ? LSCCalendar.timeText(day) : '';
+      return (
+        '<tbody class="est-day">' +
+        '<tr class="est-day-head"><th colspan="4" scope="rowgroup">' +
+        '<span class="est-day-date">' + esc(when) + '</span>' + LSCCalendar.statusChip(day.status) +
+        (times ? '<span class="est-day-time">' + esc(times) + '</span>' : '') +
+        (day.overrideNote ? '<span class="est-day-note">Note: ' + esc(day.overrideNote) + '</span>' : '') +
+        '</th></tr>' +
+        (rows || '<tr class="est-day-empty"><td colspan="4">No production items on this day.</td></tr>') +
+        '</tbody>'
+      );
+    }).join('');
+
+    const loose = lines.filter((line) => !(line.dayId && dayIds.has(line.dayId)) && (line.qty || 0) > 0);
+    const looseRows = loose.map((line) => {
+      const { def, bill } = priced(line);
+      return labourRow(line, def, bill, '');
+    }).join('');
+    const unassigned = looseRows
+      ? '<tbody class="est-day"><tr class="est-day-head"><th colspan="4" scope="rowgroup">' +
+        '<span class="est-day-date">Not on a day</span></th></tr>' + looseRows + '</tbody>'
+      : '';
+
+    const disclaimer = days.some((d) => d.status === 'proposed')
+      ? '<p class="est-day-disclaimer"><span class="est-day-disclaimer-k">On the client’s copy:</span> ' +
+        'The proposed dates are not locked in and other project bookings may happen before this estimate is ' +
+        'agreed upon.</p>'
+      : '';
+
+    return (
+      '<div class="est-block est-block-days"><div class="est-block-head">' +
+      '<h2 class="est-block-label">' + esc(section.label) + '</h2>' +
+      '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
+      '<table class="est-table est-table-4">' + LABOUR_HEAD + groups + unassigned + '</table>' +
+      disclaimer + '</div>'
+    );
   }
 
   function costBlock(label, lines, nameKey, nameFallback, columns) {
@@ -206,6 +305,11 @@ const EstimateDetail = (() => {
       '<div class="est-totals">' +
       '<div class="totals-card"><table>' +
       '<tr><td class="tl">Labour Subtotal</td><td class="tv">' + fmt(t.labourTotal) + '</td></tr>' +
+      /* Owner-only, like the rest of this card: what surcharges added, already
+         inside Labour Subtotal (production-booking task 8). */
+      (t.surchargeTotal > 0
+        ? '<tr class="sur-total-row"><td class="tl">incl. Surcharges</td><td class="tv">' + fmt(t.surchargeTotal) + '</td></tr>'
+        : '') +
       '<tr><td class="tl">Expenses Subtotal</td><td class="tv">' + fmt(t.expenseTotal) + '</td></tr>' +
       /* Ex-GST whenever GST was charged, unlike the as-billed subtotals above
          it: on a GST-exclusive card costs are typed ex-GST, and on an inclusive
@@ -313,6 +417,37 @@ const EstimateDetail = (() => {
     }
   }
 
+  /* The owner's Cost Breakdown PDF (D8, D13). Fails the way the quote's
+     export does, inline under the header. */
+  async function exportCostBreakdown(estimate, els, handlers) {
+    els.costBreakdown.disabled = true;
+    els.cbSpinner.style.display = 'inline-block';
+    els.exportError.classList.remove('show');
+    els.exportError.textContent = '';
+    Toast.working('Generating the Cost Breakdown…');
+    try {
+      const reply = await LSCApi.postPdf('/api/estimates/' + encodeURIComponent(estimate.id) + '/cost-breakdown');
+      LSCUtil.saveFile(reply.blob, reply.filename || 'Cost Breakdown_' + (estimate.upid || 'EST') + '.pdf');
+      Toast.ok('Cost Breakdown downloaded.');
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      Toast.hide();
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      if (err.code === 'pdf_unavailable') {
+        showExportError(els, 'Couldn’t make the Cost Breakdown — the server has no PDF renderer. Check Chromium is installed in the container.');
+      } else if (err.status === 404) {
+        showExportError(els, 'Couldn’t make the Cost Breakdown — this estimate no longer exists on the server.');
+      } else if (err.kind === 'network') {
+        showExportError(els, 'Couldn’t make the Cost Breakdown — the server is unreachable. Try again once it’s back.');
+      } else {
+        showExportError(els, 'Couldn’t make the Cost Breakdown: ' + (err.message || 'the server refused.'));
+      }
+    } finally {
+      els.costBreakdown.disabled = false;
+      els.cbSpinner.style.display = 'none';
+    }
+  }
+
   function mount(root, estimate, handlers) {
     root.innerHTML = markup(estimate, LSCData.pricing());
 
@@ -322,12 +457,15 @@ const EstimateDetail = (() => {
       export: root.querySelector('#js-export'),
       expSpinner: root.querySelector('#exp-spin'),
       exportError: root.querySelector('#export-error'),
+      costBreakdown: root.querySelector('#js-cost-breakdown'),
+      cbSpinner: root.querySelector('#cb-spin'),
     };
 
     root.querySelector('#js-back').addEventListener('click', () => handlers.onBack());
     root.querySelector('#js-edit').addEventListener('click', () => handlers.onEdit(estimate));
     els.duplicate.addEventListener('click', () => duplicate(estimate, els, handlers));
     els.export.addEventListener('click', () => exportPdf(estimate, els, handlers));
+    els.costBreakdown.addEventListener('click', () => exportCostBreakdown(estimate, els, handlers));
   }
 
   return { mount };

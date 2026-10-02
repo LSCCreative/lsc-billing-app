@@ -750,21 +750,7 @@ const EstimateEditor = (() => {
 
   /* "Booked 12 hrs, items cover 8" (D26): the day's booked hours, from its
      times, when they're longer than its items' hours. Never a price. */
-  function bookedHours(day) {
-    const toMin = (t) => {
-      const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
-      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-    };
-    const a = toMin(day.startTime);
-    const b = toMin(day.endTime);
-    if (a === null || b === null || a === b) return 0;
-    return ((b < a ? b + 1440 : b) - a) / 60;
-  }
-
-  const hrsText = (n) => {
-    const r = Math.round(n * 100) / 100;
-    return r + (r === 1 ? ' hr' : ' hrs');
-  };
+  const { bookedHours, hrsText } = LSCRows;
 
   /* Everything about the days that isn't a price: the Production section's
      day list and "Add to a day" select, each unassigned line's day select,
@@ -842,19 +828,8 @@ const EstimateEditor = (() => {
   /* "incl. weekend ×1.5" under a surcharged line's price: the rows of
      calc.js surchargeAttribution, in its order, with the hours a partial
      share covered. Empty when nothing applied. */
-  const SUR_WORD = { weekend: 'weekend', holiday: 'public holiday', afterHours: 'after hours', shortNotice: 'short notice' };
-  function surNote(base, day, surcharges, shortNotice) {
-    const att = LSCCalc.surchargeAttribution(base, day, { surcharges: surcharges.settings }, shortNotice);
-    if (!(att.surcharge > 0)) return '';
-    const booked = bookedHours(day);
-    const parts = att.rows.map((r) => {
-      const part = r.share < 1 - 1e-9 && booked > 0
-        ? ' on ' + hrsText(r.share * booked).replace(/ hrs?$/, '') + ' of ' + hrsText(booked)
-        : '';
-      return SUR_WORD[r.type] + ' ×' + r.multiplier + part;
-    });
-    return 'incl. ' + parts.join(', ');
-  }
+  // Shared with the estimate detail, so both screens word a surcharge alike.
+  const surNote = LSCRows.surchargeNote;
 
   /* An own-time item on auto has no price until the income floor exists, and
      the car's km row none until Overhead has its per-km cost (task 6b), so

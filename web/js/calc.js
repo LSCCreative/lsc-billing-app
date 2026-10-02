@@ -2139,6 +2139,217 @@ function stampSurchargedPrices(activeRows, pricing, options) {
   return out;
 }
 
+/* ── The Cost Breakdown (production-booking task 8) ─────────────────────────
+   The owner's document that explains a price (D8, D13). It is client-safe —
+   it can be forwarded — so it carries line prices and surcharges, and never
+   a floor, the Minimum Job Price, the tax set-aside or take-home. */
+
+/* A day's booked hours, from its times; 0 when either is missing or they're
+   equal, as afterHoursShare reads them. */
+function bookedHoursOf(day) {
+  const a = clockMinutes(field(day, 'startTime', 'start_time'));
+  const b = clockMinutes(field(day, 'endTime', 'end_time'));
+  if (a === null || b === null || a === b) return 0;
+  return ((b < a ? b + 1440 : b) - a) / 60;
+}
+
+/* Whole cents, so the breakdown's sums are integer additions. */
+function centsOf(n) {
+  return Math.round(round2(n) * 100);
+}
+
+/**
+ * The Cost Breakdown as figures: production items at their base price under
+ * their day, each day's weekend / holiday / after-hours surcharges, short
+ * notice once for the whole estimate, then every other line, adding up to the
+ * estimate's stored total.
+ *
+ * It reads the estimate as saved — the lines' own snapshots, its days and its
+ * surcharge snapshot — never the live card's surcharge settings, so it
+ * explains the price the client was given, not today's. A line's price is the
+ * one computeTotals charged (surchargeAttribution prices it the same way), and
+ * each line's surcharge rows add up to the cent to price − base, so the day
+ * rows, the short-notice row and the bases add up to the folded prices.
+ *
+ * Each line is shown to the cent. computeTotals rounds once, on the sum, so
+ * a line priced in fractions of a cent can leave the shown lines a cent or so
+ * off the stored total; `adjustment` is that difference, for a "Rounding" row,
+ * and is 0 whenever every line is in whole cents. It is measured against the
+ * figure the lines add up to: the total inc GST when the card's prices
+ * included GST, otherwise the client price ex GST. Which one is read from the
+ * stored totals (whichever the lines are nearer), not today's settings, as
+ * gstTreatment reads GST.
+ *
+ * @param {object} activeRows — the estimate's stored lines.
+ * @param {object} pricing — the rate card, for a legacy line with no snapshot.
+ * @param {object} options — { days, surcharges, shortNotice, totals, gstFree },
+ *   as loadEstimate gives them.
+ * @returns {object} { days, shortNotice, sections, travel, equip, crew,
+ *   surchargeTotal, itemsTotal, linesIncludeGst, target, adjustment } — see
+ *   the code below for each shape; every money figure is in dollars to the cent.
+ */
+function costBreakdown(activeRows, pricing, options) {
+  const rows = activeRows || {};
+  const o = options || {};
+  const labourSections = (pricing && pricing.labourSections) || [];
+  const travelDefs = (pricing && pricing.travelRows) || [];
+  const ctx = surchargeContext(o);
+
+  const days = [];
+  const dayById = new Map();
+  if (ctx) {
+    o.days.forEach((d) => {
+      if (!d || !d.id || dayById.has(String(d.id))) return;
+      const day = ctx.byId.get(String(d.id));
+      const out = {
+        id: String(d.id),
+        date: day.date || null,
+        status: day.status,
+        startTime: field(day, 'startTime', 'start_time') || null,
+        endTime: field(day, 'endTime', 'end_time') || null,
+        kind: surchargeParts(day, ctx.card, false).kind,
+        bookedHours: bookedHoursOf(day),
+        lines: [],
+        surcharges: [],
+        base: 0,
+        price: 0,
+      };
+      days.push(out);
+      dayById.set(out.id, out);
+    });
+  }
+
+  let shortNoticeCents = 0;
+  let shortNoticeMultiplier = 1;
+  const shortNoticeDays = [];
+  let itemsCents = 0;
+  let surchargeCents = 0;
+
+  const unitOf = (def, line) => {
+    const dayUnit = def.dayUnit || line.dayUnit;
+    if (dayUnit === 'full' || dayUnit === 'half') return dayUnit;
+    return hoursPerUnitOf(def) === 1 ? 'hour' : 'unit';
+  };
+
+  const sections = [];
+  for (const section of labourSectionsOf(rows, labourSections)) {
+    const lines = [];
+    (rows[section.id] || []).forEach((line, index) => {
+      if (!line || typeof line !== 'object') return;
+      const def = lineDef(section.rows, line, pricing);
+      if (!def) return; // prices at nothing in computeTotals too
+      const qty = nonNeg(line.qty);
+      const override = nonNeg(line.override);
+      const base = override > 0 ? override : qty * nonNeg(def.mu);
+      const day = section.id === 'prod' && line.dayId ? dayById.get(String(line.dayId)) : null;
+
+      if (day) {
+        const att = surchargeAttribution(base, ctx.byId.get(day.id), ctx.card, ctx.shortNotice);
+        day.lines.push({ index, name: line.name || '', qty, unit: unitOf(def, line), base: att.base, price: att.price });
+        day.base = (centsOf(day.base) + centsOf(att.base)) / 100;
+        day.price = (centsOf(day.price) + centsOf(att.price)) / 100;
+        itemsCents += centsOf(att.price);
+        surchargeCents += centsOf(att.price) - centsOf(att.base);
+        att.rows.forEach((r) => {
+          if (r.type === 'shortNotice') {
+            shortNoticeCents += centsOf(r.amount);
+            shortNoticeMultiplier = r.multiplier;
+            if (shortNoticeDays.indexOf(day.id) === -1) shortNoticeDays.push(day.id);
+            return;
+          }
+          let row = day.surcharges.find((s) => s.type === r.type);
+          if (!row) {
+            row = { type: r.type, multiplier: r.multiplier, share: r.share, cents: 0 };
+            day.surcharges.push(row);
+          }
+          row.share = Math.max(row.share, r.share);
+          row.cents += centsOf(r.amount);
+        });
+        return;
+      }
+
+      if (!(qty > 0) && !(base > 0)) return;
+      const amount = round2(base);
+      lines.push({ index, name: line.name || '', qty, unit: unitOf(def, line), amount });
+      itemsCents += centsOf(amount);
+    });
+    if (lines.length) {
+      const total = lines.reduce((sum, l) => sum + centsOf(l.amount), 0) / 100;
+      sections.push({ id: section.id, lines, total });
+    }
+  }
+
+  const ORDER = ['weekend', 'holiday', 'afterHours'];
+  days.forEach((day) => {
+    day.surcharges = day.surcharges
+      .filter((s) => s.cents !== 0)
+      .sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type))
+      .map((s) => ({
+        type: s.type,
+        multiplier: s.multiplier,
+        share: s.share,
+        hours: round2(s.share * day.bookedHours),
+        amount: s.cents / 100,
+      }));
+  });
+
+  const travel = [];
+  (rows.travel || []).forEach((line, index) => {
+    if (!line || typeof line !== 'object') return;
+    const def = lineDef(travelDefs, line);
+    if (!def) return;
+    const qty = nonNeg(line.qty);
+    const amount = round2(def.directCost ? qty : qty * nonNeg(def.mu));
+    if (!(qty > 0) && !(amount > 0)) return;
+    travel.push({ index, name: line.name || '', qty, perKm: Boolean(def.perKm), directCost: Boolean(def.directCost), amount });
+    itemsCents += centsOf(amount);
+  });
+
+  const atCost = (key, nameKey, fallback) => {
+    const out = [];
+    (rows[key] || []).forEach((line, index) => {
+      if (!line || typeof line !== 'object') return;
+      const amount = round2(nonNeg(line.days) * nonNeg(line.cost));
+      if (!(amount > 0) && !line[nameKey]) return;
+      out.push({ index, name: line[nameKey] || fallback, days: nonNeg(line.days), cost: nonNeg(line.cost), amount });
+      itemsCents += centsOf(amount);
+    });
+    return out;
+  };
+  const equip = atCost('equip', 'vendor', 'Equipment');
+  const crew = atCost('crew', 'role', 'Crew');
+
+  /* What the lines should add up to. A document with no stored totals (never
+     saved) has nothing to reconcile against. */
+  const t = o.totals || {};
+  let linesIncludeGst = false;
+  let targetCents = itemsCents;
+  if (Number.isFinite(parseFloat(t.totalIncGst))) {
+    const ex = centsOf(num(t.clientPriceExGst));
+    const inc = centsOf(num(t.totalIncGst));
+    if (gstTreatment(t, { gstFree: o.gstFree === true }) === 'taxable') {
+      linesIncludeGst = Math.abs(itemsCents - inc) < Math.abs(itemsCents - ex);
+    }
+    targetCents = linesIncludeGst ? inc : ex;
+  }
+
+  return {
+    days,
+    shortNotice: shortNoticeCents !== 0
+      ? { multiplier: shortNoticeMultiplier, amount: shortNoticeCents / 100, dayIds: shortNoticeDays }
+      : null,
+    sections,
+    travel,
+    equip,
+    crew,
+    surchargeTotal: surchargeCents / 100,
+    itemsTotal: itemsCents / 100,
+    linesIncludeGst,
+    target: targetCents / 100,
+    adjustment: (targetCents - itemsCents) / 100,
+  };
+}
+
 /** Statuses that mean the work was won. Draft and sent are still quotes. */
 const WON_STATUSES = ['approved', 'invoiced', 'paid'];
 
@@ -2325,6 +2536,7 @@ if (typeof module === 'object' && module.exports) {
     surchargeAttribution,
     surchargeSnapshot,
     stampSurchargedPrices,
+    costBreakdown,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -2381,6 +2593,7 @@ if (typeof module === 'object' && module.exports) {
     surchargeAttribution,
     surchargeSnapshot,
     stampSurchargedPrices,
+    costBreakdown,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,

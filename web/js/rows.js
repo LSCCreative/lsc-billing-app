@@ -129,6 +129,51 @@ const LSCRows = (() => {
     return num(qty) === 1 ? words[0] : words[1];
   }
 
+  /* ── Why a production line costs more (production-booking tasks 7–8) ──────
+     The owner-only note under a surcharged line's price — "incl. weekend ×1.5",
+     "after hours ×1.25 on 2 of 10 hrs", "short notice ×2" — in the editor and
+     the estimate detail alike. Worded from calc.js surchargeAttribution under
+     the estimate's own snapshot; nothing here multiplies. Never on anything a
+     client sees (D8, D12). */
+  const SUR_WORD = { weekend: 'weekend', holiday: 'public holiday', afterHours: 'after hours', shortNotice: 'short notice' };
+
+  // A day's booked hours from its times; an end before the start runs past midnight.
+  function bookedHours(day) {
+    const toMin = (t) => {
+      const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    };
+    const a = toMin(day.startTime);
+    const b = toMin(day.endTime);
+    if (a === null || b === null || a === b) return 0;
+    return ((b < a ? b + 1440 : b) - a) / 60;
+  }
+
+  const hrsText = (n) => {
+    const r = Math.round(n * 100) / 100;
+    return r + (r === 1 ? ' hr' : ' hrs');
+  };
+
+  /**
+   * @param {number} base — the line's price before surcharges.
+   * @param {object} day — the line's day, with its snapshotted `kind`.
+   * @param {object} surcharges — the estimate's snapshot ({ settings, days }).
+   * @param {boolean} shortNotice — the estimate's tick.
+   * @returns {string} '' when nothing applies.
+   */
+  function surchargeNote(base, day, surcharges, shortNotice) {
+    const att = LSCCalc.surchargeAttribution(base, day, { surcharges: (surcharges || {}).settings }, shortNotice);
+    if (!(att.surcharge > 0)) return '';
+    const booked = bookedHours(day);
+    const parts = att.rows.map((r) => {
+      const part = r.share < 1 - 1e-9 && booked > 0
+        ? ' on ' + hrsText(r.share * booked).replace(/ hrs?$/, '') + ' of ' + hrsText(booked)
+        : '';
+      return SUR_WORD[r.type] + ' ×' + r.multiplier + part;
+    });
+    return 'incl. ' + parts.join(', ');
+  }
+
   return {
     RESERVED_SECTION_IDS,
     sectionsFor,
@@ -140,5 +185,8 @@ const LSCRows = (() => {
     labourUnit,
     unitWord,
     qtyLabel,
+    bookedHours,
+    hrsText,
+    surchargeNote,
   };
 })();

@@ -565,7 +565,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
   - **Booking block additions:** `itemsFor`, `list()`, `showDay(id)` and `addTbc()`. Focus inside a
     day's items survives a repaint. The remove confirm counts the day's items ("Its production item
     is removed too.").
-  - **Interpretations to show the user:**
+  - **Interpretations shown to the user, all five confirmed 2026-10-02:**
     - **"Add to a day" goes to the day, not straight to a line.** Adding happens in the day card's
       picker, so the Production section doesn't carry a second service/unit picker.
     - **A line moves one way only,** from Unassigned onto a day. Moving between days means removing
@@ -573,8 +573,8 @@ State the bucket out loud and pause for the user to switch before starting a tas
     - **The short notice hint** counts any status and hides once the box is ticked.
     - **"Surcharges +$X" stays visible** with the overhead switch off, because it's part of the
       price, not an advisory floor.
-    - **From task 2, still to confirm:** a custom-bill production line on a surcharged day is
-      surcharged on its custom amount.
+    - **From task 2:** a custom-bill production line on a surcharged day is surcharged on its
+      custom amount.
   - **Verified** headless against `api-scratch` (dispatched events, puppeteer):
     - **Worked examples,** all on Audit A with Video Capture — Full Day at $1,120:
       - Sat, no times: $1,680, "incl. weekend ×1.5".
@@ -623,7 +623,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
       still unassigned. Total $11,152.
     - "Test draft" (`TST-001`) had its 100 hrs of Video Capture moved onto Sat 3 Oct ($30,000).
 
-- [ ] **8. Estimate detail, client PDF and Cost Breakdown PDF** (money math — Opus/high).
+- [x] **8. Estimate detail, client PDF and Cost Breakdown PDF** (money math — Opus/high).
   _Depends on: 7._
   - **The estimate detail and client PDF** list production days by date with Confirmed / Pencilled
     / Proposed (D63), times, and items at their **surcharge-folded** prices. No surcharge wording
@@ -641,6 +641,91 @@ State the bucket out loud and pause for the user to switch before starting a tas
   only with a proposed day; the Cost Breakdown's rows adding up to the total; and neither PDF
   containing the other's forbidden words. _Modifies: `pdf.js`, `routes/pdf.js`,
   `estimate-detail.js`._
+
+  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is 366/366: 8 new tests in
+  `test-calc.js` and 9 in `test-pdf.js` (one renders through real Chromium). Changed: both
+  `calc.js` copies, `pdf.js`, `routes/pdf.js`, `estimate-detail.js`, `rows.js`,
+  `estimate-editor.js` and `booking.css`.
+  - **A bug fixed on the way:** `POST /api/estimates/:id/pdf` called `loadEstimate(row)` without
+    the days, so every PDF would have read `days: []`. Both PDF routes now load them (`readDays`).
+  - **`calc.js` `costBreakdown(activeRows, pricing, { days, surcharges, shortNotice, totals,
+    gstFree })`** returns the Cost Breakdown as figures. Only the PDF uses it today; it's in
+    `calc.js` because it is money maths, and stage E's pages can reuse it.
+    - **Days:** each day's lines at base, with `price` = what computeTotals charged. Its weekend /
+      holiday / after-hours rows are summed across the day's lines. Each row has `multiplier`,
+      `share` and `hours` (share × booked hours).
+    - **Short notice is one estimate-wide row** (`shortNotice: { multiplier, amount, dayIds }`), not
+      a row under each day. D13 lists it after the day surcharges.
+    - **Everything else:** unassigned `prod` lines and the other labour sections at their bills,
+      then travel, equipment and crew.
+    - **Reconciliation, in whole cents:** `itemsTotal` is the sum of the lines as shown. `target` is
+      the stored figure the lines add up to: the total inc GST when the card's prices included
+      GST, otherwise the ex-GST price. Which one is read from the stored totals (whichever the
+      lines are nearer), not today's settings, as `gstTreatment` does. `adjustment` = target −
+      items. It is non-zero only when a line is priced in fractions of a cent, and then the PDF
+      prints it as a "Rounding" row.
+    - **Reads the estimate's snapshot, never the live card's surcharge settings.** A test pins
+      this: the live card at ×3 still explains a ×1.5 estimate.
+  - **The client PDF** (quote and invoice): a "Production Days" block before "What Goes Into This
+    Project". It shows each day in the estimate's order (date, or "Date TBC"), the status word,
+    12-hour times with "(ends next day)", and the items with qty and unit at their **stored
+    `surchargedPrice`**. Nothing is re-priced.
+    - **The services list skips lines that sit on a day,** so each item is listed once. The
+      services block is dropped only when every item is on a day. An estimate with no days prints
+      byte-identically to before (pinned).
+    - **The disclaimer** prints under the days on a quote with any proposed day, and never on an
+      invoice (an invoice comes after agreement).
+    - **Owner-only data stays off it:** no surcharge wording in any mode, and no clash note
+      (`overrideNote` is about other projects).
+  - **The Cost Breakdown PDF** comes from `POST /api/estimates/:id/cost-breakdown` (behind
+    sign-in), named `Cost Breakdown_<UPID>_<ProjectName>.pdf`, with a copy in `exportDir` like the
+    quote.
+    - **Layout:** the quote's header with "COST BREAKDOWN", and one line on what it is. Then
+      Production Days: per day, its items "at the standard rate", each surcharge row ("Weekend
+      rate ×1.5 · whole day +$560.00", "After hours ×1.25 · 2 of 10 hrs +$56.00"), and a "Day
+      total" when the day has surcharges.
+    - **Then:** Short Notice; the other sections; Travel; Equipment Hire and External Crew
+      ("2 days at $650.00"); "Items total"; and the quote's totals box and GST note.
+    - Each row carries `data-cb` (`item` / `subtotal` / `total`), so the tests add up exactly what
+      is printed.
+  - **The estimate detail:**
+    - **Production by day:** with days, it groups one `<tbody>` per day. Each has a head row (date,
+      the shared status chip, times, the clash note), its items at the stored price, and the
+      owner-only "incl. weekend ×1.5" note. The note is now `LSCRows.surchargeNote`, moved out of
+      the editor so both screens word it alike. Then come "Not on a day" lines.
+    - **The disclaimer** shows as "On the client's copy: …".
+    - **Totals:** a muted "incl. Surcharges $X" row under Labour Subtotal when it's above zero.
+    - **Header:** "↓ Cost Breakdown" with an ⓘ that says what it is, beside Export. Its failures
+      show inline, as Export's do.
+    - **No days, no change:** an estimate without days renders the old markup.
+  - **Interpretations, approved by the user 2026-10-02 (they saw sample PDFs and asked to commit):**
+    - **Prices on the client PDF appear only on production-day items.** D12 asks for folded
+      prices. The brief rules out changing the PDF's look beyond adding the days, so the other
+      sections stay names only, as before.
+    - **Short notice is one row** for the estimate, with the number of days it covered.
+    - **"Day total"** is the day before short notice: items plus its own surcharges.
+    - **The client PDF shows times in 12-hour format** (the app shows 24-hour).
+  - **Mutations,** 12 in all, each caught by `test-calc.js` and `test-pdf.js` (both `calc.js`
+    copies mutated together), then restored:
+    - **calc.js:** short notice left in the day rows; the adjustment's sign flipped; the GST side
+      inverted; hours ignoring share; a day line totalled at base; the surcharge rows dropped.
+    - **pdf.js:** the client price re-priced at base; the disclaimer on the invoice; day lines
+      repeated under the services; crew dropped from the breakdown; no rounding row; the
+      disclaimer whatever the status.
+  - **Verified** headless against `api-scratch` (restarted for the new routes):
+    - **Folded prices match the totals.** On Audit A ($11,152, short notice, four days, one
+      unassigned line) and TST-001 ($30,000), the detail's prices add up to the stored totals to
+      the cent.
+    - **Both PDFs download** with the right filenames. Audit A's Cost Breakdown adds up: 4 × $1,120
+      + $560 + $280 + $56 + $5,376 short notice + $400 = $11,152.
+    - **Nothing moved at 1280:** for two estimates without days, the old build (HEAD's files,
+      served by request interception) and the new one gave identical rects for all ~60 elements
+      outside the header's button group.
+    - **No overflow** at 1280, 800 or 375. At 375 the header buttons are 44px tall, and the ⓘ keeps
+      its 44px hit area.
+    - **The editor, after the `surchargeNote` move,** shows Audit A exactly as in task 7: $11,152,
+      +$6,272, the same five notes and the same hours hint.
+    - **Console:** no errors (only the harness's 401 before sign-in).
 
 - [ ] **9. A+B responsive and accessibility pass** (frontend — Opus/high). Breakpoints 1280, 800
   and 375.

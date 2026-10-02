@@ -605,3 +605,68 @@
 .sn-hint:empty {
   display: none;
 }
+
+/* ── The estimate detail: Production by day (task 8) ─────────────────────────
+   Production on an estimate with booked days reads as one group per day: a
+   head row (date, status chip, times, clash note) over that day's items. The
+   chip carries its word, so status is never colour alone. Inert on any
+   estimate without days, which renders exactly as before. */
+.est-day-head th {
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+}
+.est-day-head th > * {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+.est-day-date {
+  font-weight: 600;
+}
+.est-day-time,
+.est-day-note {
+  color: var(--muted);
+}
+.est-day-empty td {
+  color: var(--muted);
+}
+/* The owner-only "incl. weekend ×1.5", under the service's name. */
+.est-sur-note {
+  display: block;
+  margin-top: 2px;
+  text-align: left;
+}
+.est-day-disclaimer {
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.est-day-disclaimer-k {
+  color: var(--text);
+}
+.sur-total-row .tl,
+.sur-total-row .tv {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+@media (max-width: 767px) {
+  /* The tables stack below 768 (responsive.css); the day's head row goes with
+     them, as a full-width line rather than an anonymous table cell. */
+  .est-day-head th {
+    display: block;
+    padding: 10px 14px 4px;
+    line-height: 1.9;
+    border-bottom: none; /* the stacked row draws its own rule */
+  }
+}

@@ -15,8 +15,11 @@ process.env.NODE_ENV = 'test';
 const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
-const { buildEstimateHtml, exportBlocker, exportFilename, resolveExecutablePath } = require('../src/pdf');
-const { PRICING_SHAPE } = require('../src/calc');
+const {
+  buildEstimateHtml, buildCostBreakdownHtml, exportBlocker, exportFilename, costBreakdownFilename,
+  resolveExecutablePath, PROPOSED_DISCLAIMER,
+} = require('../src/pdf');
+const { PRICING_SHAPE, computeTotals, surchargeSnapshot, stampSurchargedPrices } = require('../src/calc');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -136,6 +139,202 @@ test('exportFilename: strips filesystem-unsafe characters', () => {
   assert.match(name, /\.pdf$/);
 });
 
+/* ── Production days and the Cost Breakdown (production-booking task 8) ────── */
+
+const DAY_PRICING = {
+  serviceDay: { fullHours: 8, halfHours: 4 },
+  labourSections: [
+    { id: 'prod', label: 'Production', rows: [] },
+    { id: 'post', label: 'Post-Production', rows: [] },
+  ],
+  travelRows: [],
+  taxSetAsideRate: 0.35,
+};
+const UNREG = { gst: { registered: false } };
+const EXCL = { gst: { registered: true, rate: 0.1, pricesIncludeGst: false } };
+const INCL = { gst: { registered: true, rate: 0.1, pricesIncludeGst: true } };
+const cap = (extra) => ({ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8, ...extra });
+const SAT = { id: 'd_sat', date: '2026-10-03', status: 'confirmed', startTime: '13:00', endTime: '21:00', overrideNote: 'Subcontractor shooting' };
+const FRI = { id: 'd_fri', date: '2026-10-02', status: 'pencilled', startTime: '09:00', endTime: '19:00', overrideNote: '' };
+const TBC = { id: 'd_tbc', date: null, status: 'proposed', startTime: null, endTime: null, overrideNote: '' };
+
+/* An estimate as the server stores it: lines stamped, totals computed, the
+   surcharge snapshot pinned — the shape loadEstimate hands the PDF. */
+function bookedEstimate({ rows, days, shortNotice = false, settings = UNREG, mode, gstFree = false }) {
+  const surcharges = surchargeSnapshot(days, DAY_PRICING, [], null);
+  if (mode) surcharges.settings.mode = mode;
+  const opts = { days, surcharges, shortNotice, gstFree };
+  return {
+    ...QUOTE,
+    activeRows: stampSurchargedPrices(rows, DAY_PRICING, opts),
+    totals: computeTotals(rows, DAY_PRICING, settings, opts),
+    days, surcharges, shortNotice, gstFree,
+  };
+}
+
+const ALL_ON_DAYS = () => bookedEstimate({
+  rows: { prod: [cap({ dayId: 'd_sat' }), cap({ dayId: 'd_fri' }), cap({ dayId: 'd_tbc', name: 'Drone', mu: 600, dayUnit: 'half', hoursPerUnit: 4 })] },
+  days: [SAT, FRI, TBC],
+  shortNotice: true,
+});
+
+const moneyIn = (html) => [...html.matchAll(/\$([\d,]+\.\d\d)/g)].map((m) => Math.round(parseFloat(m[1].replace(/,/g, '')) * 100));
+
+/* Words that would tell the client a surcharge exists (D8, D12), and the
+   owner's internal figures the Cost Breakdown must never carry (D13). */
+const SURCHARGE_WORDS = /surcharge|weekend|after hours|short notice|holiday rate|standard rate|&times;|×|Cost Breakdown|Subcontractor/i;
+const INTERNAL_WORDS = /floor|minimum job|set-aside|set aside|take-home|take home|overhead|markup|mark-up|Subcontractor/i;
+
+test('client PDF: production days by date with status and times, items at their folded prices', () => {
+  const est = ALL_ON_DAYS();
+  const html = buildEstimateHtml(est, DAY_PRICING, {});
+  assert.match(html, /Production Days/);
+  assert.match(html, /Saturday 3 October 2026.*Confirmed &middot; 1:00pm–9:00pm.*Video Capture.*1 full day.*\$3,360\.00/s);
+  assert.match(html, /Friday 2 October 2026.*Pencilled &middot; 9:00am–7:00pm.*\$2,352\.00/s);
+  assert.match(html, /Date TBC.*Proposed.*Drone.*1 half day.*\$1,200\.00/s);
+  // Days print in the estimate's own order (the editor saves them by date, TBC last).
+  assert.ok(html.indexOf('Saturday 3 October') < html.indexOf('Friday 2 October'));
+  // Each item is listed once: under its day, not again under the services.
+  assert.equal(html.match(/Video Capture/g).length, 2);
+  assert.doesNotMatch(html, /What Goes Into This Project/);
+});
+
+test('client PDF: the folded prices add up to the total', () => {
+  const est = ALL_ON_DAYS();
+  const html = buildEstimateHtml(est, DAY_PRICING, {});
+  const days = html.slice(html.indexOf('Production Days'), html.indexOf('Your Investment'));
+  const lines = moneyIn(days);
+  assert.deepEqual(lines, [336000, 235200, 120000]);
+  assert.equal(lines.reduce((a, b) => a + b, 0), Math.round(est.totals.totalIncGst * 100));
+  assert.match(html, /Total Investment.*\$6,912\.00/s);
+
+  // On a GST-exclusive card they add up to the ex-GST subtotal shown above GST.
+  const ex = bookedEstimate({ rows: { prod: [cap({ dayId: 'd_sat' })] }, days: [SAT], settings: EXCL });
+  const exHtml = buildEstimateHtml(ex, DAY_PRICING, {});
+  assert.match(exHtml, /Production Days.*\$1,680\.00.*Subtotal \(ex GST\).*\$1,680\.00.*GST.*\$168\.00.*\$1,848\.00/s);
+});
+
+test('client PDF: no surcharge wording, and the owner\'s clash note stays off it', () => {
+  for (const mode of ['higher', 'multiply', 'highest']) {
+    const est = bookedEstimate({ rows: { prod: [cap({ dayId: 'd_sat' })] }, days: [SAT], shortNotice: true, mode });
+    for (const docType of ['estimate', 'invoice']) {
+      const html = buildEstimateHtml({ ...est, docType, invoiceNumber: 'INV-1' }, DAY_PRICING, {});
+      assert.doesNotMatch(html, SURCHARGE_WORDS, mode + ' ' + docType);
+      assert.match(html, /Saturday 3 October 2026/);
+    }
+  }
+});
+
+test('client PDF: the proposed-dates disclaimer prints only on a quote with a proposed day', () => {
+  const withProposed = ALL_ON_DAYS();
+  assert.ok(buildEstimateHtml(withProposed, DAY_PRICING, {}).includes(PROPOSED_DISCLAIMER));
+  assert.equal(PROPOSED_DISCLAIMER,
+    'The proposed dates are not locked in and other project bookings may happen before this estimate is agreed upon.');
+  const none = bookedEstimate({ rows: { prod: [cap({ dayId: 'd_sat' })] }, days: [SAT, FRI] });
+  assert.ok(!buildEstimateHtml(none, DAY_PRICING, {}).includes(PROPOSED_DISCLAIMER));
+  // An invoice is past agreement: no disclaimer even with a proposed day.
+  assert.ok(!buildEstimateHtml({ ...withProposed, docType: 'invoice' }, DAY_PRICING, {}).includes(PROPOSED_DISCLAIMER));
+});
+
+test('client PDF: unassigned production lines and an estimate with no days print as before', () => {
+  const mixed = bookedEstimate({ rows: { prod: [cap({ dayId: 'd_sat' }), cap({ name: 'Interview Setup' })] }, days: [SAT] });
+  const html = buildEstimateHtml(mixed, DAY_PRICING, {});
+  assert.match(html, /Production Days.*Video Capture.*What Goes Into This Project.*Production.*Interview Setup/s);
+  assert.doesNotMatch(html.slice(html.indexOf('What Goes Into')), /Video Capture/);
+
+  const plain = buildEstimateHtml({ ...QUOTE, days: [] }, PRICING, {});
+  assert.doesNotMatch(plain, /Production Days/);
+  assert.match(plain, /What Goes Into This Project.*Video Capture/s);
+  assert.equal(plain, buildEstimateHtml(QUOTE, PRICING, {})); // no `days` reads as none
+});
+
+/* The Cost Breakdown's printed rows: every 'item' row, and the 'total'. */
+function cbFigures(html) {
+  const rows = [...html.matchAll(/<tr data-cb="(\w+)">(.*?)<\/tr>/gs)];
+  const amount = (cells) => {
+    const m = /([+-]?)\$([\d,]+\.\d\d)<\/td>$/.exec(cells);
+    return Math.round(parseFloat(m[2].replace(/,/g, '')) * 100) * (m[1] === '-' ? -1 : 1);
+  };
+  return {
+    items: rows.filter((r) => r[1] === 'item').map((r) => amount(r[2])),
+    total: rows.filter((r) => r[1] === 'total').map((r) => amount(r[2])),
+    text: rows.map((r) => r[2].replace(/<[^>]+>/g, '').replace(/&middot;/g, '·').replace(/&times;/g, '×').replace(/&amp;/g, '&')),
+  };
+}
+
+test('Cost Breakdown: base prices, each surcharge with its multiplier and hours, short notice, adding up to the total', () => {
+  const est = bookedEstimate({
+    rows: {
+      prod: [cap({ dayId: 'd_sat' }), cap({ dayId: 'd_fri' }), cap({ dayId: 'd_tbc' })],
+      post: [cap({ name: 'Edit', dayUnit: undefined, hoursPerUnit: undefined, mu: 150, qty: 6 })],
+      crew: [{ role: 'Gaffer', days: 2, cost: 650 }],
+      equip: [{ vendor: 'Lens hire', days: 1, cost: 180 }],
+    },
+    days: [SAT, FRI, TBC],
+    shortNotice: true,
+  });
+  const html = buildCostBreakdownHtml(est, DAY_PRICING, {});
+  const f = cbFigures(html);
+  assert.ok(f.text.some((t) => /Video Capture · 1 full day, standard rate\$1,120\.00/.test(t)));
+  assert.ok(f.text.some((t) => /Weekend rate ×1\.5 · whole day\+\$560\.00/.test(t)));
+  assert.ok(f.text.some((t) => /After hours ×1\.25 · 2 of 10 hrs\+\$56\.00/.test(t)));
+  assert.ok(f.text.some((t) => /Short notice ×2 · .*3 days\+\$3,976\.00/.test(t)));
+  assert.ok(f.text.some((t) => /Edit · 6 hours\$900\.00/.test(t)));
+  assert.ok(f.text.some((t) => /Gaffer · 2 days at \$650\.00\$1,300\.00/.test(t)));
+  assert.ok(f.text.some((t) => /Day total\$1,680\.00/.test(t)));
+  // The rows add up to the total, which is the estimate's own.
+  const sum = f.items.reduce((a, b) => a + b, 0);
+  assert.deepEqual(f.total, [sum]);
+  assert.equal(sum, Math.round(est.totals.totalIncGst * 100));
+  assert.match(html, /Total <span[^>]*>inc\. all services<\/span><\/td><td[^>]*>\$10,332\.00/);
+  // Its header names it, and none of the owner's internal figures appear.
+  assert.match(html, /COST BREAKDOWN.*UP-042.*Brand film/s);
+  assert.doesNotMatch(html, INTERNAL_WORDS);
+});
+
+test('Cost Breakdown: adds up on GST-inclusive and exclusive cards, in every mode', () => {
+  for (const settings of [UNREG, INCL, EXCL]) {
+    for (const mode of ['higher', 'multiply', 'highest']) {
+      const est = bookedEstimate({
+        rows: {
+          prod: [cap({ dayId: 'd_sat', mu: 1337 }), cap({ dayId: 'd_fri', qty: 1.5, mu: 241 }), cap({ name: 'Unassigned', mu: 99.5 })],
+          crew: [{ role: 'Grip', days: 1, cost: 412.5 }],
+        },
+        days: [SAT, FRI],
+        shortNotice: mode !== 'highest',
+        settings,
+        mode,
+      });
+      const html = buildCostBreakdownHtml(est, DAY_PRICING, {});
+      const f = cbFigures(html);
+      const sum = f.items.reduce((a, b) => a + b, 0);
+      assert.deepEqual(f.total, [sum], mode);
+      const target = settings === INCL ? est.totals.totalIncGst : est.totals.clientPriceExGst;
+      assert.equal(sum, Math.round(target * 100), mode);
+      assert.doesNotMatch(html, INTERNAL_WORDS);
+      if (settings === EXCL) assert.match(html, /Items total \(ex GST\)/);
+      if (settings === INCL) assert.match(html, /Items total \(inc\. GST\)/);
+    }
+  }
+});
+
+test('Cost Breakdown: a rounding row only when lines are in fractions of a cent', () => {
+  const rows = { post: [cap({ name: 'Grade', mu: 33.33, qty: 1.5, dayUnit: undefined, hoursPerUnit: undefined }),
+    cap({ name: 'Mix', mu: 33.33, qty: 1.5, dayUnit: undefined, hoursPerUnit: undefined })] };
+  const est = { ...QUOTE, activeRows: rows, totals: computeTotals(rows, DAY_PRICING, UNREG), days: [] };
+  const f = cbFigures(buildCostBreakdownHtml(est, DAY_PRICING, {}));
+  assert.ok(f.text.some((t) => /^Rounding/.test(t)));
+  assert.deepEqual(f.total, [9999]);
+  assert.equal(f.items.reduce((a, b) => a + b, 0), 9999);
+  assert.ok(!cbFigures(buildCostBreakdownHtml(ALL_ON_DAYS(), DAY_PRICING, {})).text.some((t) => /^Rounding/.test(t)));
+});
+
+test('costBreakdownFilename: Cost Breakdown_<UPID>_<ProjectName>.pdf, filesystem-safe', () => {
+  assert.equal(costBreakdownFilename(QUOTE), 'Cost Breakdown_UP-042_Brand film.pdf');
+  assert.doesNotMatch(costBreakdownFilename({ ...QUOTE, name: 'Q3/Q4: "Recap"' }), /[/\\:*?"<>|]/);
+  assert.equal(costBreakdownFilename({ name: 'X' }), 'Cost Breakdown_EST_X.pdf');
+});
+
 test('POST /api/estimates/:id/pdf renders a real PDF and writes a copy to exportDir', async (t) => {
   if (!resolveExecutablePath()) {
     t.skip('no headless Chromium available on this machine');
@@ -188,6 +387,24 @@ test('POST /api/estimates/:id/pdf renders a real PDF and writes a copy to export
     const exported = fs.readdirSync(path.join(TMP, 'exports'));
     assert.equal(exported.length, 1);
     assert.match(exported[0], /^UP-042 - Acme Pty Ltd - Brand film\.pdf$/);
+
+    // The Cost Breakdown: its own route and filename, for an estimate with a day.
+    const booked = await api(`/api/estimates/${created.estimate.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: QUOTE.name, upid: QUOTE.upid, date: QUOTE.date, client: QUOTE.client, pricingShape: PRICING_SHAPE,
+        activeRows: { prod: [{ ...QUOTE.activeRows.prod[0], dayId: 'd_sat' }] },
+        days: [{ id: 'd_sat', date: '2026-10-03', status: 'proposed', startTime: '13:00', endTime: '21:00' }],
+      }),
+    });
+    assert.equal(booked.status, 200);
+    const cbRes = await api(`/api/estimates/${created.estimate.id}/cost-breakdown`, { method: 'POST' });
+    assert.equal(cbRes.status, 200);
+    assert.equal(cbRes.headers.get('content-type'), 'application/pdf');
+    assert.match(cbRes.headers.get('content-disposition'), /Cost Breakdown_UP-042_Brand film\.pdf/);
+    assert.equal(Buffer.from(await cbRes.arrayBuffer()).subarray(0, 5).toString('ascii'), '%PDF-');
+    assert.ok(fs.readdirSync(path.join(TMP, 'exports')).includes('Cost Breakdown_UP-042_Brand film.pdf'));
+    assert.equal((await api('/api/estimates/est_nope/cost-breakdown', { method: 'POST' })).status, 404);
   } finally {
     server.close();
     db.close();
