@@ -23,13 +23,23 @@
  * Day ids are made here, in the browser, because production lines point at
  * their day (`dayId`) before the estimate has ever been saved.
  *
- * PRODUCTION ITEMS (task 7)
- * A day's items are the editor's own labour rows, so the editor builds them:
- * `itemsFor(dayId)` returns one element per day, the same element every time,
- * and each paint moves it into that day's card. Cards are re-rendered whole,
- * but the items element is only ever moved, never rebuilt, so what is typed in
- * it survives a re-sort, a month fetch or a status change. A removed day's
- * element is simply not put back; the editor drops it on the next onChange.
+ * A DAY'S ITEMS (task 7; every on-set kind since B2-4)
+ * A day's items are the editor's own rows — production, travel, crew and
+ * gear — so the editor builds them: `itemsFor(dayId)` returns one element per
+ * day, the same element every time, and each paint moves it into that day's
+ * card. Cards are re-rendered whole, but the items element is only ever
+ * moved, never rebuilt, so what is typed in it survives a re-sort, a month
+ * fetch or a status change. A removed day's element is simply not put back;
+ * the editor drops it on the next onChange.
+ *
+ * NOT ON A DAY (B2-4, D79). The last card, after the Date TBC days, holds
+ * everything not tied to a shoot day. It is not a day: it is never in
+ * payloadDays(). Its items element is `offItems()`, put in once at mount.
+ *
+ * THE SERVICE MENU (B2-4, D74). The editor's menu swaps in for the calendar,
+ * in its column: menuHost() is that column, and a `.is-menu` class on it hides
+ * the calendar. setTarget(id) edges the card being added to (BookingBlock.OFF
+ * for Not on a day). onToggle(open) tells the editor the block was folded.
  *
  * THE LOCK MIRRORS THE SERVER
  * server/src/days.js lockedDay refuses a day whose date another estimate has
@@ -226,7 +236,7 @@ const BookingBlock = (() => {
     const ownId = (estimate && estimate.id) || 'this-estimate';
     const stored = new Map(((estimate && estimate.days) || []).map((d) => [String(d.id), norm(d)]));
     let days = sortDays(((estimate && estimate.days) || []).map(norm));
-    let open = days.length > 0 || Boolean(opts.hasProductionItems);
+    let open = days.length > 0 || Boolean(opts.hasItems);
     let cal = null;
     let loadFailed = false;
     const others = new Map(); // date → other estimates' days, as /api/calendar returns them
@@ -235,6 +245,8 @@ const BookingBlock = (() => {
     const announced = new Set(); // `${id}|${date}` locks already announced
     const onChange = typeof opts.onChange === 'function' ? opts.onChange : () => {};
     const itemsFor = typeof opts.itemsFor === 'function' ? opts.itemsFor : () => null;
+    const onToggle = typeof opts.onToggle === 'function' ? opts.onToggle : () => {};
+    let targetId = null; // the card the service menu is adding to, edged
 
     slot.innerHTML =
       '<div class="billing-block booking-block" id="block-booking">' +
@@ -255,6 +267,13 @@ const BookingBlock = (() => {
       '<ol class="day-cards" id="booking-cards" aria-labelledby="booking-days-label"></ol>' +
       '<p class="booking-empty" id="booking-empty">No production days yet. Choose a date on the calendar to book ' +
       'one, or add a Date TBC day for work without a date.</p>' +
+      // Not a day (D79): what isn't tied to a shoot day. Never re-rendered; its items are put in below.
+      '<div class="day-card off-day-card" id="booking-off">' +
+      '<div class="day-card-in" role="group" aria-labelledby="booking-off-t">' +
+      '<div class="day-card-head"><span class="day-card-title" id="booking-off-t">Not on a day</span></div>' +
+      '<p class="day-hint off-day-hint">Anything not tied to a shoot day.</p>' +
+      '<div class="day-items-slot"></div>' +
+      '</div></div>' +
       '</div>' +
       '<p class="sr-only" id="booking-live" aria-live="polite"></p>' +
       '</div>' +
@@ -362,7 +381,7 @@ const BookingBlock = (() => {
       const field = (label, control, extra) =>
         '<div class="day-field' + (extra || '') + '"><label for="' + k + '-' + label.toLowerCase() + '">' + label + '</label>' + control + '</div>';
       return (
-        '<li class="day-card is-' + day.status + '" data-day-id="' + esc(day.id) + '">' +
+        '<li class="day-card is-' + day.status + (day.id === targetId ? ' is-target' : '') + '" data-day-id="' + esc(day.id) + '">' +
         '<div class="day-card-in" role="group" aria-labelledby="' + k + '-t">' +
         '<div class="day-card-head">' +
         '<span class="day-card-title" id="' + k + '-t">' + esc(title) + '</span>' +
@@ -402,7 +421,7 @@ const BookingBlock = (() => {
        keystroke never re-renders the field it is typed in. */
     function updateCard(li, day) {
       const k = 'bd-' + day.id;
-      li.className = 'day-card is-' + day.status;
+      li.className = 'day-card is-' + day.status + (day.id === targetId ? ' is-target' : '');
       const chip = li.querySelector('.status-chip');
       if (chip) chip.outerHTML = C.statusChip(day.status);
 
@@ -521,6 +540,7 @@ const BookingBlock = (() => {
       open = next;
       if (open) ensureCalendar();
       paint();
+      onToggle(open);
     }
 
     $('booking-toggle').addEventListener('click', () => setOpen(!open));
@@ -615,10 +635,10 @@ const BookingBlock = (() => {
       const li = btn.closest('[data-day-id]');
       const i = days.findIndex((d) => d.id === li.dataset.dayId);
       const title = titleOf(days[i], i + 1);
-      // Its production items go with it, so the question says how many.
+      // Its items go with it — production, travel, crew and gear — so the question says how many.
       const items = itemsFor(li.dataset.dayId);
       const n = items ? items.querySelectorAll('[data-rid]').length : 0;
-      const what = n ? ' Its ' + (n === 1 ? 'production item is' : n + ' production items are') + ' removed too.' : '';
+      const what = n ? ' Its ' + (n === 1 ? 'item is' : n + ' items are') + ' removed too.' : '';
       if (!window.confirm('Remove ' + title + '?' + what)) return;
       days.splice(i, 1);
       paint();
@@ -633,6 +653,9 @@ const BookingBlock = (() => {
     function reveal() {
       if (!open) setOpen(true);
     }
+
+    const off = typeof opts.offItems === 'function' ? opts.offItems() : null;
+    if (off) $('booking-off').querySelector('.day-items-slot').appendChild(off);
 
     paint();
     if (open) ensureCalendar();
@@ -696,8 +719,32 @@ const BookingBlock = (() => {
       refreshIdentity() {
         if (cal) cal.setDays(calendarDays());
       },
+
+      /** The calendar's column, where the editor's service menu swaps in (B2-4). */
+      menuHost: () => slot.querySelector('.booking-cal-col'),
+
+      /** Edge the card the menu is adding to: a day id, BookingBlock.OFF, or null for none. */
+      setTarget(id) {
+        targetId = id && id !== OFF ? String(id) : null;
+        $('booking-cards').querySelectorAll('[data-day-id]').forEach((li) => {
+          li.classList.toggle('is-target', li.dataset.dayId === targetId);
+        });
+        $('booking-off').classList.toggle('is-target', id === OFF);
+      },
+
+      /** Open the block and bring Not on a day into view. */
+      showOff() {
+        reveal();
+        const card = $('booking-off');
+        card.scrollIntoView({ block: 'nearest' });
+        return card;
+      },
     };
   }
 
-  return { mount, closeDialog };
+  /* Not on a day's key wherever a day id would go (the editor's panels, setTarget).
+     A space: no day id can hold one (days.js DAY_ID). */
+  const OFF = 'not on a day';
+
+  return { mount, closeDialog, OFF };
 })();

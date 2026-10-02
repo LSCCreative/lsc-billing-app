@@ -64,13 +64,21 @@
  *
  * PRODUCTION ITEMS LIVE ON DAYS (2026-10-02, .design/production-booking/ task 7)
  * A Production line (section id `prod`, D24) belongs to a booked day (D4): it
- * is built inside that day's card in the Production Booking block, which has
- * its own service → unit → Add picker, and it saves with that day's `dayId`
- * (read from where the row sits, never stored on the row). The Production
- * section further down keeps its place and subtotal; it lists the days, and
- * its "Add to a day" select takes you to a day's picker. A Production line
- * saved before days existed has no day: it is shown there, under
- * "Unassigned — pick a day", priced exactly as before until it is moved.
+ * is built inside that day's card in the Production Booking block and saves
+ * with that day's `dayId` (read from where the row sits, never stored on the
+ * row). The Production section further down keeps its place and subtotal; it
+ * lists the days, and its "Add to a day" opens a day's service menu.
+ *
+ * A DAY CARD IS A WHOLE SHOOT DAY (B2-4, D74–D79). Travel, crew and gear sit
+ * on the cards too, each kind in its own group, and carry their card's
+ * `dayId` the same way — but only production is ever surcharged (D3), so
+ * they bill exactly as they would on no day. Every on-set line is added
+ * through one service menu ("Add Production Service Items"). A line on no
+ * day — every line saved before B2, and production saved before days — sits
+ * on the last card, "Not on a day", priced exactly as before; a production
+ * line there keeps a "Pick a day…" select until B2-5's Move to. The flat
+ * Travel, Crew and Equipment sections keep only their heads and subtotals
+ * until B2-6's summaries.
  *
  * Surcharges are priced by calc.js, as the server prices them: the snapshot
  * (surchargeSnapshot, kept from the stored estimate unless "Update to current
@@ -331,8 +339,8 @@ const EstimateEditor = (() => {
         if (row && row.prices) sel.innerHTML = unitOptions(section.id, row, unitKey(snap), true);
       });
       paintPicker(section, true);
-      if (section.id === 'prod') dayPanels.forEach((panel) => paintPicker(section, true, pickerEls(panel)));
     });
+    repaintMenu();
   }
 
   /* Switching a line's unit: a fresh snapshot from the card at the new unit
@@ -375,11 +383,12 @@ const EstimateEditor = (() => {
     return line;
   }
 
-  /* A Production row's day is the card it sits in. */
+  /* An on-set row's day is the card it sits in (B2-4: production, travel,
+     crew and gear). Not on a day's panel has an empty data-items-day. */
   function rowDayId(tr) {
-    if (tr.dataset.section !== 'prod') return null;
+    if (tr.dataset.section !== 'prod' && !tr.dataset.kind) return null;
     const panel = tr.closest('[data-items-day]');
-    return panel ? panel.dataset.itemsDay : null;
+    return panel && panel.dataset.itemsDay ? panel.dataset.itemsDay : null;
   }
 
   // ── Row builders ──────────────────────────────────────────────────────────
@@ -460,6 +469,9 @@ const EstimateEditor = (() => {
     const tr = document.createElement('div');
     tr.className = 'gt-row expense-grid';
     tr.dataset.rid = rid();
+    /* `kind`, not `section`: a row with no data-section is how the rates code
+       tells travel from labour (priceRows, samePrice, lastRateFor). */
+    tr.dataset.kind = 'travel';
     tr.dataset.name = line.name;
     const snap = snapFor(def, line);
     if (snap) tr.dataset.snap = JSON.stringify(snap);
@@ -493,7 +505,7 @@ const EstimateEditor = (() => {
     const placeholder = isEquip ? 'Vendor / item name' : 'Role / contractor name';
     const label = isEquip ? 'Vendor or item' : 'Role or contractor';
     const value = isEquip ? line.vendor : line.role;
-    // Must match costSectionMarkup's `columns` for this kind — the stacked
+    // Must match the day card's group heads (DAY_GROUPS) for this kind — the stacked
     // mobile row prints these in place of the headings it hides.
     const nameCol = isEquip ? 'Vendor / Item' : 'Role / Name';
     const costCol = isEquip ? 'Cost/Day' : 'Day Rate';
@@ -501,6 +513,7 @@ const EstimateEditor = (() => {
     const tr = document.createElement('div');
     tr.className = 'gt-row expense-grid';
     tr.dataset.rid = rid();
+    tr.dataset.kind = kind;
 
     tr.innerHTML =
       '<div data-label="' + nameCol + '"><input class="text-inp ' + nameClass + '" type="text" value="' + esc(value || '') +
@@ -630,7 +643,7 @@ const EstimateEditor = (() => {
     if (!body) return;
     const emptyText = body.dataset.emptyText;
     tr.remove();
-    if (!body.querySelector('[data-rid]')) {
+    if (emptyText && !body.querySelector('[data-rid]')) {
       const empty = document.createElement('div');
       empty.className = 'empty-row';
       empty.textContent = emptyText;
@@ -698,9 +711,10 @@ const EstimateEditor = (() => {
     '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>';
 
   /* The Production section, in its usual place: the subtotal of every
-     production line, surcharges included; "Add to a day", which takes you to
-     a day card's picker (or makes a Date TBC day); one line per day; and the
-     lines that have no day yet. paintDays() fills the day parts. */
+     production line, surcharges included; "Add to a day", which opens a day
+     card's service menu (or makes a Date TBC day); and one line per day.
+     paintDays() fills the day parts. Lines with no day sit in the booking
+     block's Not on a day card since B2-4. */
   function prodSectionMarkup(section) {
     return (
       '<div class="billing-block" id="block-prod">' +
@@ -712,72 +726,335 @@ const EstimateEditor = (() => {
       '<select class="svc-select" id="prod-day-sel"></select>' +
       '<button type="button" class="btn btn-accent btn-sm" id="prod-day-go">+ Add Items</button></div>' +
       '<ol class="prod-days" id="prod-days"></ol>' +
-      '<div class="prod-unassigned" id="prod-unassigned" hidden>' +
-      '<p class="prod-unassigned-head" id="prod-unassigned-head">Unassigned — pick a day</p>' +
-      '<p class="prod-unassigned-note">Added before production days. Each prices as it always has until you ' +
-      'move it onto a day, where that day’s surcharges apply.</p>' +
-      labourHead +
-      bodyMarkup('prod', 'No unassigned production items.') +
-      '</div>' +
       '</div>'
     );
   }
 
-  const pickerEls = (panel) => ({
-    svc: panel.querySelector('.day-svc'),
-    unitSel: panel.querySelector('.unit-select'),
-    add: panel.querySelector('.day-add'),
-  });
-
   const prodSection = () => sections.find((s) => s.id === 'prod' && !s.archived) || null;
 
-  /* One day's items: its own picker, the labour grid, and the D26 hours
+  /* A day card's line groups (B2-4, the IA's card order): each with the
+     column heads of the section it belongs to, shown only when it has lines. */
+  const DAY_GROUPS = [
+    ['prod', 'Production', labourHead],
+    ['travel', 'Travel', '<div class="gt-head expense-grid"><div>Service</div><div class="right">Qty / Cost</div>' +
+      '<div class="right">Rate</div><div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>'],
+    ['crew', 'Crew', '<div class="gt-head expense-grid"><div>Role / Name</div><div class="right">Days</div>' +
+      '<div class="right">Day Rate</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
+    ['equip', 'Equipment', '<div class="gt-head expense-grid"><div>Vendor / Item</div><div class="right">Days</div>' +
+      '<div class="right">Cost/Day</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
+  ];
+
+  const OFF_DAY = BookingBlock.OFF;
+  const groupBody = (panel, kind) => panel.querySelector('.gt-body[data-group="' + kind + '"]');
+
+  /* One card's items: "Add Production Service Items", which opens the service
+     menu on this card (B2-4, D74), then its line groups, then the D26 hours
      hint. Built once per day and kept (dayPanels); the booking block moves it
-     into the day's card on every paint. */
+     into the day's card on every paint. Not on a day's (OFF_DAY) is put in
+     its card once; its data-items-day is empty, so its lines carry no day. */
   function panelFor(dayId) {
     if (dayPanels.has(dayId)) return dayPanels.get(dayId);
-    const section = prodSection();
+    const off = dayId === OFF_DAY;
     const panel = document.createElement('div');
     panel.className = 'day-items';
-    panel.dataset.itemsDay = dayId;
-    const k = 'di-' + dayId;
-    const options = section && section.rows.length
-      ? section.rows.map((r) => '<option value="' + esc(r.name) + '">' + esc(r.name) + '</option>').join('')
-      : '';
+    panel.dataset.itemsDay = off ? '' : dayId;
     panel.innerHTML =
-      '<div class="day-items-bar"><span class="day-items-label" id="' + k + '-l">Production items</span>' +
-      '<span class="day-items-sum">Day total <b class="day-items-total">$0.00</b></span></div>' +
-      (options
-        ? '<div class="bb-picker day-picker">' +
-          '<select class="svc-select day-svc" aria-label="Production service to add"></select>' +
-          '<select class="svc-select unit-select" aria-label="Unit to add"></select>' +
-          '<button type="button" class="btn btn-accent btn-sm day-add">+ Add</button></div>'
-        : '<p class="day-items-none">No Production services on the rate card to add.</p>') +
-      labourHead +
-      '<div class="gt-body" data-empty-text="No production items on this day yet.">' +
-      '<div class="empty-row">No production items on this day yet.</div></div>' +
+      '<div class="day-items-bar">' +
+      '<button type="button" class="btn btn-ghost btn-sm day-menu-btn" aria-expanded="false">' +
+      (off ? 'Add items' : 'Add Production Service Items') + '</button>' +
+      '<span class="day-items-sum">' + (off ? 'Total' : 'Day total') + ' <b class="day-items-total">$0.00</b></span></div>' +
+      '<p class="day-items-empty">' + (off ? 'Nothing here.' : 'Nothing on this day yet.') + '</p>' +
+      DAY_GROUPS.map(([kind, label, head]) =>
+        '<div class="day-group" data-group="' + kind + '" hidden>' +
+        '<p class="day-group-label">' + label + '</p>' + head +
+        '<div class="gt-body" data-group="' + kind + '" data-empty-text=""></div></div>'
+      ).join('') +
       '<p class="day-hours" hidden></p>';
+    panel.querySelector('.day-menu-btn').addEventListener('click', (e) => toggleMenu(dayId, e.currentTarget));
     dayPanels.set(dayId, panel);
-    if (!options) return panel;
-
-    const els = pickerEls(panel);
-    els.svc.innerHTML = options;
-    els.svc.addEventListener('change', () => paintPicker(section, false, els));
-    paintPicker(section, false, els);
-    /* As the section pickers do (bind): snapshotted at the picked unit there
-       and then, at last time's price while that toggle is on. */
-    els.add.addEventListener('click', () => {
-      const row = section.rows.find((r) => r.name === els.svc.value);
-      if (!row) return;
-      const picked = unitSnap(section.id, row, row.prices ? els.unitSel.value : 'hour');
-      if (!picked.snap) return;
-      const tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 0 }, picked.snap));
-      markOwn(tr, picked);
-      injectRow(panel.querySelector('.gt-body'), tr);
-      const qty = tr.querySelector('.qty-inp');
-      if (qty) qty.focus();
-    });
     return panel;
+  }
+
+  // ── The service menu (B2-4, D74–D77) ──────────────────────────────────────
+  /* "Add Production Service Items" on a card opens one menu, the editor's
+     only way to add an on-set line (the brief's B2 principle 1). At ≥768 it
+     swaps in for the calendar, in its column (BookingBlock.menuHost) — a
+     labelled region, not a dialog, so the card it adds to stays in view and
+     usable beside it. Below 768 it is a bottom sheet over the page, with the
+     app's focus trap (LSCModal), and the card updates behind it.
+
+     A call-sheet checklist, not a shop: the service name left, unit buttons
+     right with their price muted, categories as quiet disclosure heads. Each
+     add lands on the target card straight away at that card's day's prices;
+     the menu stays open and counts what was added. Done, Escape, or the
+     card's own button again closes it, with focus back on that button;
+     another card's button retargets it. */
+  const MENU_FILTER_AT = 12; // Production rows past which the filter field appears (IA Content Growth)
+  const UNIT_SHORT = { hour: 'Hr', half: '½ Day', full: 'Day' };
+  const UNIT_SPOKEN = { hour: 'hour', half: 'half day', full: 'full day' };
+  const UNIT_ADDED = { hour: 'Hour', half: 'Half Day', full: 'Full Day' };
+  const MENU_GROUPS = [
+    ['prod', 'Production'],
+    ['travel', 'Travel'],
+    ['crew', 'External Crew'],
+    ['equip', 'Equipment Hire'],
+  ];
+  const menu = { el: null, target: null, trigger: null, sheet: false, count: 0, filter: '', open: { prod: true } };
+  const narrow = () => window.matchMedia('(max-width: 767px)').matches;
+
+  function toggleMenu(dayKey, trigger) {
+    if (menu.el && menu.target === dayKey) return closeMenu(true);
+    openMenu(dayKey, trigger);
+  }
+
+  /* What the menu's heading names: "Sat 3 Oct", "Day 3 — date TBC", "Not on a day". */
+  function menuTargetName() {
+    if (menu.target === OFF_DAY) return 'Not on a day';
+    const d = (booking ? booking.list() : []).find((x) => x.id === menu.target);
+    if (!d) return 'this day';
+    return d.date ? LSCCalendar.shortDate(d.date) : d.title;
+  }
+
+  function paintMenuTitle() {
+    if (!menu.el) return;
+    menu.el.querySelector('#day-menu-h').textContent = 'Adding to ' + menuTargetName();
+  }
+
+  function paintMenuCount() {
+    const c = menu.el && menu.el.querySelector('#day-menu-count');
+    if (c) c.textContent = menu.count ? menu.count + ' added' : '';
+  }
+
+  /* Each group's body. Prices are today's card (or the last project's while
+     that toggle is on: unitSnap), as the line would be snapshotted; a unit
+     with no price yet is disabled and says what it needs, as the old picker's
+     options did. */
+  function menuGroupBody(kind) {
+    const pricing = LSCData.pricing();
+    const needs = LSCData.autoPriceBlocker().screen;
+    if (kind === 'prod') {
+      const section = prodSection();
+      const rows = section ? section.rows : [];
+      if (!rows.length) return '<p class="dm-none">No Production services on the Rate Card.</p>';
+      return rows.map((row) => {
+        const units = row.prices ? LSCCalc.SERVICE_UNITS : ['hour'];
+        const buttons = units.map((u) => {
+          const { snap } = unitSnap('prod', row, u);
+          const label = snap
+            ? 'Add ' + row.name + ', ' + UNIT_SPOKEN[u] + ', ' + money(snap.mu)
+            : row.name + ', ' + UNIT_SPOKEN[u] + ': no price yet, needs ' + needs;
+          return '<button type="button" class="dm-unit" data-add="prod" data-name="' + esc(row.name) + '" data-unit="' + u + '"' +
+            (snap ? '' : ' disabled') + ' aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
+            UNIT_SHORT[u] + ' <span class="dm-price">' + (snap ? money(snap.mu) : '—') + '</span></button>';
+        }).join('');
+        return '<div class="dm-row" data-filter="' + esc(row.name.toLowerCase()) + '"><span class="dm-name">' + esc(row.name) +
+          '</span><span class="dm-units">' + buttons + '</span></div>';
+      }).join('') + '<p class="dm-none dm-nomatch" hidden>No service matches.</p>';
+    }
+    if (kind === 'travel') {
+      const defs = (pricing && pricing.travelRows) || [];
+      if (!defs.length) return '<p class="dm-none">No travel items on the Rate Card.</p>';
+      return defs.map((row) => {
+        const { snap } = unitSnap('', row, 'hour');
+        const price = !snap ? '' : snap.perKm ? LSCUtil.perKm(snap.mu) : snap.directCost ? 'at cost' : money(snap.mu);
+        const label = snap ? 'Add ' + row.name : row.name + ': no price yet, needs ' + (row.perKm ? 'Overhead' : needs);
+        return '<div class="dm-row"><span class="dm-name">' + esc(row.name) + '</span><span class="dm-units">' +
+          '<button type="button" class="dm-unit" data-add="travel" data-name="' + esc(row.name) + '"' + (snap ? '' : ' disabled') +
+          ' aria-label="' + esc(label) + '" title="' + esc(label) + '">Add <span class="dm-price">' + esc(price || '—') + '</span></button>' +
+          '</span></div>';
+      }).join('');
+    }
+    // No Rate Card list for crew or gear (D77): a typed row each.
+    return kind === 'crew'
+      ? '<button type="button" class="btn btn-ghost btn-sm dm-blank" data-add="crew">+ Add crew member</button>'
+      : '<button type="button" class="btn btn-ghost btn-sm dm-blank" data-add="equip">+ Add hire item</button>';
+  }
+
+  function menuMarkup() {
+    const prodRows = (prodSection() || { rows: [] }).rows.length;
+    return (
+      '<section class="day-menu' + (menu.sheet ? ' is-sheet' : '') + '" id="day-menu" aria-labelledby="day-menu-h">' +
+      '<div class="day-menu-head">' +
+      '<h3 class="day-menu-title" id="day-menu-h" tabindex="-1"></h3>' +
+      '<span class="day-menu-count" id="day-menu-count"></span>' +
+      '<button type="button" class="btn btn-accent btn-sm day-menu-done">Done</button></div>' +
+      '<p class="day-menu-status" id="day-menu-status" role="status"></p>' +
+      (prodRows > MENU_FILTER_AT
+        ? '<input type="search" class="text-inp dm-filter" placeholder="Filter Production services" aria-label="Filter Production services" value="' +
+          esc(menu.filter) + '">'
+        : '') +
+      MENU_GROUPS.map(([kind, label]) => {
+        const isOpen = Boolean(menu.open[kind]);
+        return '<div class="dm-group" data-group="' + kind + '">' +
+          '<button type="button" class="dm-ghead" aria-expanded="' + isOpen + '" aria-controls="dm-g-' + kind + '">' +
+          '<span class="bb-chevron" aria-hidden="true">▶</span>' + label + '</button>' +
+          '<div class="dm-gbody" id="dm-g-' + kind + '"' + (isOpen ? '' : ' hidden') + '>' + menuGroupBody(kind) + '</div></div>';
+      }).join('') +
+      '</section>'
+    );
+  }
+
+  function applyMenuFilter() {
+    if (!menu.el) return;
+    const q = menu.filter.trim().toLowerCase();
+    let shown = 0;
+    menu.el.querySelectorAll('#dm-g-prod .dm-row').forEach((r) => {
+      const hit = !q || r.dataset.filter.indexOf(q) !== -1;
+      r.hidden = !hit;
+      if (hit) shown += 1;
+    });
+    const none = menu.el.querySelector('.dm-nomatch');
+    if (none) none.hidden = shown > 0;
+  }
+
+  /* The prices can move under an open menu (the rates toggle, the Invoice
+     Settings modal): its group bodies are rebuilt, the rest kept. */
+  function repaintMenu() {
+    if (!menu.el) return;
+    MENU_GROUPS.forEach(([kind]) => {
+      const body = menu.el.querySelector('#dm-g-' + kind);
+      if (body) body.innerHTML = menuGroupBody(kind);
+    });
+    applyMenuFilter();
+  }
+
+  function onMenuSheetKeydown(event) {
+    const overlay = document.getElementById('modal-day-menu');
+    if (!overlay || overlay.closest('[hidden]')) return;
+    if (event.key === 'Escape') return closeMenu(true);
+    LSCModal.trapTab(overlay, event);
+  }
+
+  function openMenu(dayKey, trigger) {
+    if (!booking) return;
+    closeMenu(false);
+    menu.target = dayKey;
+    menu.trigger = trigger || null;
+    menu.count = 0;
+    menu.sheet = narrow();
+
+    const holder = document.createElement('div');
+    holder.innerHTML = menuMarkup();
+    menu.el = holder.firstElementChild;
+    if (menu.sheet) {
+      const overlay = document.getElementById('modal-day-menu');
+      overlay.innerHTML = '<div class="modal-box dm-sheet" role="dialog" aria-modal="true" aria-labelledby="day-menu-h"></div>';
+      overlay.firstElementChild.appendChild(menu.el);
+      overlay.classList.add('open');
+      document.addEventListener('keydown', onMenuSheetKeydown);
+      overlay.addEventListener('click', onMenuOverlayClick);
+    } else {
+      const host = booking.menuHost();
+      host.classList.add('is-menu');
+      host.appendChild(menu.el);
+      menu.el.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMenu(true);
+      });
+    }
+    bindMenu(menu.el);
+    paintMenuTitle();
+    applyMenuFilter();
+    booking.setTarget(dayKey);
+    if (menu.trigger) menu.trigger.setAttribute('aria-expanded', 'true');
+    // 768–1099 the column sits above the cards: bring the menu's head into view.
+    if (!menu.sheet) menu.el.scrollIntoView({ block: 'nearest' });
+    menu.el.querySelector('#day-menu-h').focus({ preventScroll: !menu.sheet });
+  }
+
+  function onMenuOverlayClick(event) {
+    if (event.target === document.getElementById('modal-day-menu')) closeMenu(true);
+  }
+
+  function closeMenu(returnFocus) {
+    if (!menu.el) return;
+    const trigger = menu.trigger;
+    if (menu.sheet) {
+      const overlay = document.getElementById('modal-day-menu');
+      overlay.classList.remove('open');
+      overlay.innerHTML = '';
+      document.removeEventListener('keydown', onMenuSheetKeydown);
+      overlay.removeEventListener('click', onMenuOverlayClick);
+    } else {
+      const host = menu.el.parentNode;
+      menu.el.remove();
+      if (host) host.classList.remove('is-menu');
+    }
+    if (booking) booking.setTarget(null);
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    menu.el = null;
+    menu.target = null;
+    menu.trigger = null;
+    if (returnFocus && trigger && trigger.isConnected) trigger.focus();
+  }
+
+  function bindMenu(el) {
+    el.querySelector('.day-menu-done').addEventListener('click', () => closeMenu(true));
+    const filter = el.querySelector('.dm-filter');
+    if (filter) {
+      filter.addEventListener('input', () => {
+        menu.filter = filter.value;
+        applyMenuFilter();
+      });
+    }
+    el.addEventListener('click', (e) => {
+      const head = e.target.closest('.dm-ghead');
+      if (head) {
+        const kind = head.parentNode.dataset.group;
+        menu.open[kind] = head.getAttribute('aria-expanded') !== 'true';
+        head.setAttribute('aria-expanded', String(menu.open[kind]));
+        el.querySelector('#dm-g-' + kind).hidden = !menu.open[kind];
+        return;
+      }
+      const btn = e.target.closest('[data-add]');
+      if (btn && !btn.disabled) addFromMenu(btn.dataset.add, btn.dataset.name, btn.dataset.unit);
+    });
+  }
+
+  /* One line onto the target card, priced as a new line always is (unitSnap,
+     markOwn). Production arrives at qty 1, so it is priced at once at its
+     day's surcharges; travel at 1, but the car per km at 0 km, focused for
+     the distance; crew and gear empty, focused on their name (D76, D77). A
+     field that needs typing closes the sheet on a phone, where it can't be
+     reached behind it. */
+  function addFromMenu(kind, name, unit) {
+    const panel = panelFor(menu.target);
+    let tr = null;
+    let focusSel = null;
+    let said = '';
+    if (kind === 'prod') {
+      const section = prodSection();
+      const row = section && section.rows.find((r) => r.name === name);
+      if (!row) return;
+      const picked = unitSnap('prod', row, row.prices ? unit : 'hour');
+      if (!picked.snap) return;
+      tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 1 }, picked.snap));
+      markOwn(tr, picked);
+      if (menu.target === OFF_DAY) addMoveControl(tr);
+      said = row.name + ' — ' + UNIT_ADDED[row.prices ? unit : 'hour'];
+    } else if (kind === 'travel') {
+      const def = ((LSCData.pricing() || {}).travelRows || []).find((r) => r.name === name);
+      if (!def) return;
+      const picked = unitSnap('', def, 'hour');
+      if (!picked.snap) return;
+      const perKm = Boolean(picked.snap.perKm);
+      tr = buildTravelRow(null, Object.assign({ name: def.name, qty: perKm ? 0 : 1 }, picked.snap));
+      markOwn(tr, picked);
+      if (perKm) focusSel = '.qty-inp';
+      said = def.name;
+    } else {
+      tr = buildCostRow(kind, {});
+      focusSel = kind === 'crew' ? '.role-inp' : '.vendor-inp';
+      said = kind === 'crew' ? 'a crew member' : 'a hire item';
+    }
+    injectRow(groupBody(panel, kind), tr);
+    menu.count += 1;
+    paintMenuCount();
+    const status = menu.el && menu.el.querySelector('#day-menu-status');
+    if (status) status.textContent = 'Added ' + said + '.';
+    if (!focusSel) return;
+    if (menu.sheet) closeMenu(false);
+    const field = tr.querySelector(focusSel);
+    if (field) field.focus();
   }
 
   /* An unassigned line's way onto a day: a select under its name. */
@@ -815,7 +1092,7 @@ const EstimateEditor = (() => {
     if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
     const day = (booking ? booking.list() : []).find((d) => d.id === dayId);
     tr.remove();
-    injectRow(panelFor(dayId).querySelector('.gt-body'), fresh);
+    injectRow(groupBody(panelFor(dayId), 'prod'), fresh);
     if (booking) booking.showDay(dayId);
     const qty = fresh.querySelector('.qty-inp');
     if (qty) qty.focus();
@@ -830,15 +1107,18 @@ const EstimateEditor = (() => {
      day list and "Add to a day" select, each unassigned line's day select,
      each day card's labels, dropped days' items. Selects are only rebuilt when
      the days themselves change, so one being used is never pulled from under
-     the pointer. `perDay` is recalc's { dayId → { total, hours, count, names } }. */
-  function paintDays(perDay, unassigned) {
+     the pointer. `perDay` is recalc's { dayId → { total, prodTotal, hours,
+     count, names } }: `total` is everything on the card (B2-4), the others its
+     production lines only. */
+  function paintDays(perDay) {
     // Mid-mount (restoreRows runs before the booking block exists): nothing to paint yet.
     if (!booking) return;
     const days = booking.list();
     const live = new Set(days.map((d) => d.id));
     Array.from(dayPanels.keys()).forEach((id) => {
-      if (!live.has(id)) dayPanels.delete(id);
+      if (id !== OFF_DAY && !live.has(id)) dayPanels.delete(id);
     });
+    if (menu.target && menu.target !== OFF_DAY && !live.has(menu.target)) closeMenu(false); // its day went
 
     const sig = days.map((d) => d.id + '|' + d.title + '|' + d.status).join('\n');
     if (sig !== daysSig) {
@@ -858,19 +1138,27 @@ const EstimateEditor = (() => {
       days.forEach((d) => {
         const panel = dayPanels.get(d.id);
         if (!panel) return;
-        panel.querySelector('.day-items-label').textContent = 'Production items, ' + d.title;
-        const els = pickerEls(panel);
-        if (els.svc) els.svc.setAttribute('aria-label', 'Production service to add to ' + d.title);
-        if (els.unitSel) els.unitSel.setAttribute('aria-label', 'Unit to add to ' + d.title);
-        if (els.add) els.add.setAttribute('aria-label', 'Add to ' + d.title);
+        panel.querySelector('.day-menu-btn').setAttribute('aria-label', 'Add Production Service Items to ' + d.title);
       });
+      if (menu.target) paintMenuTitle();
     }
 
+    dayPanels.forEach((panel, id) => {
+      const p = perDay.get(id) || { total: 0, hours: 0 };
+      panel.querySelector('.day-items-total').textContent = fmt(p.total);
+      // Each group shows only with lines, and the card says so when it has none.
+      let any = false;
+      panel.querySelectorAll('.day-group').forEach((g) => {
+        const has = Boolean(g.querySelector('[data-rid]'));
+        g.hidden = !has;
+        any = any || has;
+      });
+      panel.querySelector('.day-items-empty').hidden = any;
+    });
     days.forEach((d) => {
       const panel = dayPanels.get(d.id);
       if (!panel) return;
       const p = perDay.get(d.id) || { total: 0, hours: 0 };
-      panel.querySelector('.day-items-total').textContent = fmt(p.total);
       const booked = bookedHours(d);
       const hint = panel.querySelector('.day-hours');
       const long = booked > 0 && booked - p.hours > 1e-9;
@@ -882,21 +1170,19 @@ const EstimateEditor = (() => {
     if (list) {
       const html = days.length
         ? days.map((d) => {
-            const p = perDay.get(d.id) || { total: 0, count: 0, names: [] };
+            const p = perDay.get(d.id) || { prodTotal: 0, count: 0, names: [] };
             return (
               '<li class="prod-day"><button type="button" class="prod-day-link" data-day="' + esc(d.id) + '">' +
               esc(d.title) + '</button>' + LSCCalendar.statusChip(d.status) +
               '<span class="prod-day-items">' +
               (p.count ? esc(p.names.join(', ')) : 'No items yet') + '</span>' +
-              '<b class="prod-day-total">' + fmt(p.total) + '</b></li>'
+              '<b class="prod-day-total">' + fmt(p.prodTotal) + '</b></li>'
             );
           }).join('')
         : '<li class="prod-days-empty">No production days yet. Book one in Production Booking above, or add ' +
           'a Date TBC day here.</li>';
       if (list.innerHTML !== html) list.innerHTML = html;
     }
-    const group = $('prod-unassigned');
-    if (group) group.hidden = unassigned === 0;
   }
 
   /* "incl. weekend ×1.5" under a surcharged line's price: the rows of
@@ -905,50 +1191,16 @@ const EstimateEditor = (() => {
   // Shared with the estimate detail, so both screens word a surcharge alike.
   const surNote = LSCRows.surchargeNote;
 
-  /* An own-time item on auto has no price until the income floor exists, and
-     the car's km row none until Overhead has its per-km cost (task 6b), so
-     their options are disabled and say why, as a service unit's is
-     (unitOptions). The browser selects the first option that isn't; with
-     none, Add is off. */
-  function travelSectionMarkup(pricing) {
-    const defs = (pricing && pricing.travelRows) || [];
-    const needs = LSCData.autoPriceBlocker().screen;
-    const priced = defs.map((r) => cardSnap(r, 'hour') !== null);
-    const options = defs.length
-      ? defs.map((r, i) =>
-          '<option value="' + esc(r.name) + '"' + (priced[i] ? '' : ' disabled') + '>' + esc(r.name) +
-          (priced[i] ? '' : ' · no price yet, needs ' + esc(r.perKm ? 'Overhead' : needs)) + '</option>'
-        ).join('')
-      : '<option value="">No items — add one under Pricing</option>';
-    const canAdd = priced.some(Boolean);
-
+  /* Travel, External Crew and Equipment Hire (B2-4). Their lines are added on
+     each day's card, or on Not on a day, so the section here is its head and
+     subtotal; B2-6 fills it with a read-only summary by day. */
+  function onSetSectionMarkup(kind, label) {
     return (
-      '<div class="billing-block">' +
-      '<div class="bb-head"><div><h2 class="bb-label">Travel &amp; Accommodation</h2>' +
-      '<span class="bb-label-tag">Expenses</span></div>' +
-      '<span class="bb-sum">Subtotal <b id="sum-travel">$0.00</b></span></div>' +
-      '<div class="bb-picker"><select class="svc-select" id="sel-travel" aria-label="Travel item to add">' +
-      options + '</select>' +
-      '<button type="button" class="btn btn-accent btn-sm" id="add-travel"' + (canAdd ? '' : ' disabled') + '>+ Add Item</button></div>' +
-      '<div class="gt-head expense-grid"><div>Service</div><div class="right">Qty / Cost</div>' +
-      '<div class="right">Rate</div><div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
-      bodyMarkup('travel', 'No items added. Use the selector above to add one.') +
-      '</div>'
-    );
-  }
-
-  function costSectionMarkup(kind, label, addLabel, columns, emptyText) {
-    return (
-      '<div class="billing-block">' +
+      '<div class="billing-block onset-block" id="block-' + kind + '">' +
       '<div class="bb-head"><div><h2 class="bb-label">' + label + '</h2>' +
       '<span class="bb-label-tag">Expenses</span></div>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + kind + '">$0.00</b></span></div>' +
-      '<div class="bb-picker"><button type="button" class="btn btn-accent btn-sm" id="add-' + kind + '">' +
-      addLabel + '</button></div>' +
-      '<div class="gt-head expense-grid"><div>' + columns[0] + '</div><div class="right">' + columns[1] +
-      '</div><div class="right">' + columns[2] + '</div><div class="right">—</div>' +
-      '<div class="right">Total</div><div></div></div>' +
-      bodyMarkup(kind, emptyText) +
+      '<p class="onset-note">Added on each production day, or under Not on a day, in Production Booking above.</p>' +
       '</div>'
     );
   }
@@ -1174,11 +1426,9 @@ const EstimateEditor = (() => {
     sections.forEach((section) => {
       html += section.id === 'prod' && !section.archived ? prodSectionMarkup(section) : labourSectionMarkup(section);
     });
-    html += travelSectionMarkup(pricing);
-    html += costSectionMarkup('crew', 'External Crew &amp; Contracts', '+ Add Crew Member',
-      ['Role / Name', 'Days', 'Day Rate'], 'No crew added. Click above to add a member.');
-    html += costSectionMarkup('equip', 'Equipment Hire', '+ Add Equipment Item',
-      ['Vendor / Item', 'Days', 'Cost/Day'], 'No equipment added. Click above to add an item.');
+    html += onSetSectionMarkup('travel', 'Travel &amp; Accommodation');
+    html += onSetSectionMarkup('crew', 'External Crew &amp; Contracts');
+    html += onSetSectionMarkup('equip', 'Equipment Hire');
 
     html += summaryMarkup();
 
@@ -1202,6 +1452,10 @@ const EstimateEditor = (() => {
      the page with its card. */
   function rowsIn(id) {
     if (id === 'prod') return Array.from(root.querySelectorAll('.gt-row[data-rid][data-section="prod"]'));
+    // Since B2-4 travel, crew and gear live in the day cards too, in the same page order.
+    if (id === 'travel' || id === 'crew' || id === 'equip') {
+      return Array.from(root.querySelectorAll('.gt-row[data-rid][data-kind="' + id + '"]'));
+    }
     const body = $('tbody-' + id);
     return body ? Array.from(body.querySelectorAll('[data-rid]')) : [];
   }
@@ -1220,13 +1474,20 @@ const EstimateEditor = (() => {
 
     activeRows.travel = rowsIn('travel').map((tr) => lineFrom(tr, false));
 
-    activeRows.crew = rowsIn('crew').map((tr) => ({
+    /* Crew and gear on a day carry its id (B2-4), as travel's does through
+       lineFrom; a line on no day carries none, so an old one saves as it was. */
+    const onDay = (tr, line) => {
+      const dayId = rowDayId(tr);
+      if (dayId) line.dayId = dayId;
+      return line;
+    };
+    activeRows.crew = rowsIn('crew').map((tr) => onDay(tr, {
       role: inputValue(tr, '.role-inp'),
       days: num(inputValue(tr, '.days-inp')),
       cost: num(inputValue(tr, '.cost-inp')),
     }));
 
-    activeRows.equip = rowsIn('equip').map((tr) => ({
+    activeRows.equip = rowsIn('equip').map((tr) => onDay(tr, {
       vendor: inputValue(tr, '.vendor-inp'),
       days: num(inputValue(tr, '.days-inp')),
       cost: num(inputValue(tr, '.cost-inp')),
@@ -1333,8 +1594,17 @@ const EstimateEditor = (() => {
       kind: (surcharges.days || {})[d.id],
       nextKind: (surcharges.nextDays || {})[d.id],
     })]));
+    /* Per card (a day id, or OFF_DAY): `total` is everything on it, production
+       at its surcharged price and the rest as billed (B2-4); `prodTotal`,
+       `hours`, `count` and `names` are its production lines only. */
     const perDay = new Map();
-    let unassigned = 0;
+    const tally = (dayId, amount) => {
+      const key = dayId || OFF_DAY;
+      const p = perDay.get(key) || { total: 0, prodTotal: 0, hours: 0, count: 0, names: [] };
+      p.total += amount || 0;
+      perDay.set(key, p);
+      return p;
+    };
 
     sections.forEach((section) => {
       let subtotal = 0;
@@ -1360,26 +1630,24 @@ const EstimateEditor = (() => {
           note.textContent = text;
           note.hidden = !text;
         }
-        if (!day) {
-          unassigned += 1;
-          return;
-        }
-        const p = perDay.get(day.id) || { total: 0, hours: 0, count: 0, names: [] };
-        p.total += bill || 0;
+        const p = tally(day ? day.id : null, bill);
+        if (!day) return;
+        p.prodTotal += bill || 0;
         p.hours += def ? num(line.qty) * LSCCalc.hoursPerUnitOf(def) : 0;
         p.count += 1;
         p.names.push(line.name);
-        perDay.set(day.id, p);
       });
       setText('sum-' + section.id, fmt(subtotal));
     });
-    paintDays(perDay, unassigned);
-    paintShortNotice(days);
 
+    /* Travel, crew and gear are never surcharged, on a day or not (D3): each
+       is billed as it always was, and counts toward its card's total. */
     let travelSubtotal = 0;
     rowsIn('travel').forEach((tr) => {
       const line = lineFrom(tr, false);
-      travelSubtotal += paintRow(tr, travelBill(travelDef(line, pricing), line));
+      const bill = paintRow(tr, travelBill(travelDef(line, pricing), line));
+      travelSubtotal += bill;
+      tally(line.dayId, bill);
     });
     setText('sum-travel', fmt(travelSubtotal));
 
@@ -1390,10 +1658,14 @@ const EstimateEditor = (() => {
           days: num(inputValue(tr, '.days-inp')),
           cost: num(inputValue(tr, '.cost-inp')),
         };
-        subtotal += paintRow(tr, costBill(line));
+        const bill = paintRow(tr, costBill(line));
+        subtotal += bill;
+        tally(rowDayId(tr), bill);
       });
       setText('sum-' + kind, fmt(subtotal));
     });
+    paintDays(perDay);
+    paintShortNotice(days);
 
     // The headline figures, from the same code the server will run on save.
     const totals = LSCCalc.computeTotals(active, pricing, LSCData.settings(), options);
@@ -2221,24 +2493,27 @@ const EstimateEditor = (() => {
      still has, and to "Unassigned — pick a day" otherwise (every line saved
      before task 7). Its stored surchargedPrice isn't read: the server stamps
      it again on save, and recalc shows what that will be. */
+  /* Every on-set line goes on its day's card, or on Not on a day when it has
+     none (B2-4, D79) — every line saved before B2, and production lines saved
+     before days. A production line there keeps its "Pick a day…" select until
+     B2-5's Move to. */
   function restoreRows(activeRows, pricing, days) {
     const dayIds = new Set((days || []).map((d) => String(d.id)));
+    const cardFor = (line) => panelFor(line.dayId && dayIds.has(String(line.dayId)) ? String(line.dayId) : OFF_DAY);
     sections.forEach((section) => {
       (activeRows[section.id] || []).forEach((line) => {
         const tr = buildLabourRow(section, labourDef(section, line, pricing), line);
         if (section.id !== 'prod' || section.archived) return injectRow($('tbody-' + section.id), tr);
-        if (line.dayId && dayIds.has(String(line.dayId))) {
-          return injectRow(panelFor(String(line.dayId)).querySelector('.gt-body'), tr);
-        }
-        addMoveControl(tr);
-        injectRow($('tbody-prod'), tr);
+        const panel = cardFor(line);
+        if (!panel.dataset.itemsDay) addMoveControl(tr);
+        injectRow(groupBody(panel, 'prod'), tr);
       });
     });
     (activeRows.travel || []).forEach((line) => {
-      injectRow($('tbody-travel'), buildTravelRow(travelDef(line, pricing), line));
+      injectRow(groupBody(cardFor(line), 'travel'), buildTravelRow(travelDef(line, pricing), line));
     });
-    (activeRows.crew || []).forEach((line) => injectRow($('tbody-crew'), buildCostRow('crew', line)));
-    (activeRows.equip || []).forEach((line) => injectRow($('tbody-equip'), buildCostRow('equip', line)));
+    (activeRows.crew || []).forEach((line) => injectRow(groupBody(cardFor(line), 'crew'), buildCostRow('crew', line)));
+    (activeRows.equip || []).forEach((line) => injectRow(groupBody(cardFor(line), 'equip'), buildCostRow('equip', line)));
     (activeRows.deliverables || []).forEach((line) =>
       injectRow($('tbody-deliverables'), buildDeliverableRow(line))
     );
@@ -2286,14 +2561,14 @@ const EstimateEditor = (() => {
     if (gstFreeBox) gstFreeBox.addEventListener('change', recalc);
     $('f-shortnotice').addEventListener('change', recalc);
 
-    /* "Add to a day": to that day's picker, or to a new Date TBC day's. The
-       day's own picker does the adding, so there is one way to add an item. */
+    /* "Add to a day": that day's service menu, or a new Date TBC day's. The
+       menu does the adding, so there is one way to add an item (the brief's
+       B2 principle 1). */
     const goToDay = (dayId) => {
       if (!booking) return;
       booking.showDay(dayId);
       const panel = dayPanels.get(dayId);
-      const target = panel && (panel.querySelector('.day-svc') || panel.querySelector('.qty-inp'));
-      if (target) target.focus();
+      if (panel) openMenu(dayId, panel.querySelector('.day-menu-btn'));
     };
     const dayGo = $('prod-day-go');
     if (dayGo) {
@@ -2336,20 +2611,6 @@ const EstimateEditor = (() => {
       });
     });
 
-    $('add-travel').addEventListener('click', () => {
-      const select = $('sel-travel');
-      const defs = (pricing && pricing.travelRows) || [];
-      const def = defs.find((r) => r.name === (select && select.value));
-      if (!def) return;
-      const picked = unitSnap('', def, 'hour');
-      if (!picked.snap) return; // an own-time item with no floor yet — its option is disabled
-      const tr = buildTravelRow(null, Object.assign({ name: def.name, qty: 0 }, picked.snap));
-      markOwn(tr, picked);
-      injectRow($('tbody-travel'), tr);
-    });
-
-    $('add-crew').addEventListener('click', () => injectRow($('tbody-crew'), buildCostRow('crew', {})));
-    $('add-equip').addEventListener('click', () => injectRow($('tbody-equip'), buildCostRow('equip', {})));
     $('add-deliverables').addEventListener('click', () =>
       injectRow($('tbody-deliverables'), buildDeliverableRow({ qty: 1 }))
     );
@@ -2390,6 +2651,7 @@ const EstimateEditor = (() => {
     sections = sectionsFor(activeRows, pricing, estimate && estimate.sectionLabels);
 
     booking = null;
+    closeMenu(false);
     dayPanels.clear();
     // A fresh estimate: its first recalc is the baseline, announced as nothing.
     clearTimeout(surTimer);
@@ -2403,8 +2665,8 @@ const EstimateEditor = (() => {
     restoreRows(activeRows, pricing, estimate && estimate.days);
     booking = BookingBlock.mount($('booking-slot'), {
       estimate,
-      // Collapsed unless there is booking to show (D64).
-      hasProductionItems: Array.isArray(activeRows.prod) && activeRows.prod.length > 0,
+      // Collapsed unless there is booking to show (D64): days, or any on-set line, which lives on a card.
+      hasItems: ['prod', 'travel', 'crew', 'equip'].some((k) => Array.isArray(activeRows[k]) && activeRows[k].length > 0),
       // How this estimate's own tiles are labelled on the calendar, read live.
       identity: () => ({
         upid: $('f-upid').value.trim(),
@@ -2413,8 +2675,13 @@ const EstimateEditor = (() => {
       }),
       // A day's date, times or removal moves its items' prices.
       onChange: recalc,
-      // Each day's production items (task 7), built here and kept across paints.
+      // Each day's items (task 7; every on-set kind since B2-4), built here and kept across paints.
       itemsFor: (dayId) => panelFor(dayId),
+      offItems: () => panelFor(OFF_DAY),
+      // Folding the block takes the service menu with it.
+      onToggle: (isOpen) => {
+        if (!isOpen) closeMenu(false);
+      },
     });
     bind(pricing);
     paintLink();

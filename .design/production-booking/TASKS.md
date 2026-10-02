@@ -1118,7 +1118,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
 - [x] **B2-3. Deliverables block: moved, restyled, typed; the Prices bar moved** (frontend —
   Opus/high). _Depends on: B2-1._ This is the first visible B2 slice, to confirm the look early.
-  **Done 2026-10-03, uncommitted.**
+  **Done 2026-10-03, committed `51b3a80`.**
   - **Placement:** Deliverables moves above the booking block, and the Prices bar moves above
     Deliverables (D98).
   - **The treatment (D86):** the Total box's tint (`rgba(184,84,68,.08)` fill, a stronger accent
@@ -1188,8 +1188,9 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **Equipment's `item` and `dayId` on travel, crew and equip** are still dropped by
       `collect()`. That's B2-4 and B2-7.
 
-- [ ] **B2-4. The service menu, and every on-set kind on a day** (money math — Opus/high, because
+- [x] **B2-4. The service menu, and every on-set kind on a day** (money math — Opus/high, because
   production lines price live). _Depends on: B2-2._ This is the riskiest slice.
+  **Done 2026-10-03, uncommitted.**
   - **The button:** "Add Production Service Items" on each day card ("Add items" on Not on a day)
     replaces the card's service → unit → Add picker.
   - **The menu (≥768):** it swaps in for the calendar in its column. It has the head "Adding to
@@ -1223,6 +1224,91 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - nothing above the booking block moves at 1280.
 
   _Reuses: `BookingBlock`, the labour row and cost row builders, `Modal`._
+
+  **Done note (2026-10-03).** Changed `estimate-editor.js`, `booking-block.js`, `booking.css` and
+  `index.html` (one overlay, `#modal-day-menu`). No server change; 396/396.
+  - **The booking block:**
+    - **Not on a day** is a static last card (`#booking-off`), never in `payloadDays()`. It's
+      filled once from `opts.offItems()`, under the key `BookingBlock.OFF`.
+    - **Editor hooks:** `menuHost()` (the calendar's column), `setTarget(id)` (the card's
+      accent edge, kept across repaints), `showOff()`, and `opts.onToggle`.
+    - **Removing a day** now says "Its N items are removed too", counting every kind.
+    - **`opts.hasItems`** opens the block when any on-set line exists, not just production:
+      those lines live in it now.
+  - **The day panel** (`panelFor`) is now "Add Production Service Items" ("Add items" on Not on
+    a day), the day total, a "Nothing on this day yet." line, then four `.day-group`s
+    (Production · Travel · Crew · Equipment), each with its section's column heads and shown
+    only with lines. Then D26's hours hint.
+  - **Rows:** travel, crew and equip rows carry `data-kind` (travel keeps no `data-section`, which
+    the rates code reads as "travel"). `rowsIn` finds them anywhere on the page. `rowDayId`
+    reads any on-set row's card, and `collect()` writes `dayId` on crew and equip as `lineFrom`
+    does on travel.
+  - **The service menu** (`openMenu`/`closeMenu`/`addFromMenu`):
+    - **≥768:** a labelled `<section>` in the calendar's column. `.is-menu` hides the calendar.
+    - **<768:** inside `#modal-day-menu`, a bottom sheet with `LSCModal.trapTab`, a sticky
+      head and 44px targets.
+    - **Contents:** the four disclosure groups (Production open), unit buttons with muted prices
+      from `unitSnap`, disabled with what they need, an "N added" count and a `role=status`
+      line ("Added Video Capture — Full Day."), plus the filter past 12 Production rows.
+    - **Closing:** Done, Escape, or the card's button again close it, with focus back on the
+      button. Another card's button retargets it. Folding the block, or the target day going,
+      closes it.
+  - **Adds:**
+    - Production at qty 1; travel at 1;
+    - the car per km at 0 km, focused on its kilometres;
+    - crew and gear empty, focused on Role or Vendor;
+    - a production line on Not on a day gets the "Pick a day…" select.
+  - **Production section:** its "Unassigned — pick a day" group is gone (those lines are on Not
+    on a day), and "Add to a day" opens that day's menu. Its per-day list shows production totals
+    only.
+  - **Travel, Crew and Equipment sections:** each is a head and subtotal with a one-line note
+    (`.onset-block`). Their own add buttons are gone, so **this is not deployable until B2-6.**
+  - **Card totals:** `recalc` tallies every line per card: production at its stamped price, the
+    rest as billed. "Day total" is everything on the card.
+  - **Also:** `.day-menu` and `.day-card` got `scroll-margin-top: 64px`, so scrolling into
+    view clears the 52px sticky page header (it hid the menu's head at 800).
+  - **In the browser against `api-scratch`:**
+    - **An old estimate** ("B2-4 old flat": production, post, two travel lines, crew and gear,
+      none on a day) opened with everything on Not on a day: the card total was $2,155, the
+      page total matched the stored $2,659, and the form was unsaved-clean.
+    - **A Saturday 6–11pm day** got Video Capture Day ($2,400 at weekend ×1.5), Crew Meals,
+      a Gaffer and Lensworks gear through the menu, for a day total of $3,330.
+    - **The save matched the server to the cent:** total $5,989, tax $1,302.56, take-home
+      $2,419.04. The surcharge was $800, production only.
+    - **It reopened clean** with every line on its card.
+    - **Per km** (scratch Overhead set to $0.92/km) arrived focused, and 80 km came to $73.60.
+    - **Short notice on:** the surcharge was $4,320 (both production lines), expenses stayed
+      $2,038.60, and the screen and server agreed on $9,582.60.
+    - **Retarget, Escape, the toggle, "Add to a day" and the remove question** all checked.
+    - **The filter** was tested with 8 temporary services; the card was put back after.
+  - **Measured:**
+    - **1280:** everything above the booking block is where B2-3 left it (doc-type bar 686,
+      Prices 755, Deliverables 824.5+186, booking from 1022.5).
+    - **800:** the menu spans the column above the cards and scrolls to 64px.
+    - **375:** the sheet is 375 wide, focus goes to its heading, Tab wraps, and Done, the group
+      heads and unit buttons are 44px. A production add updates the card behind; a crew add
+      closes the sheet and focuses Role. No page overflow.
+    - **Console:** clean, apart from one connection error from an earlier `api-scratch` restart.
+  - **Interpretations to show the user:**
+    1. **On a phone, adding a crew member, a hire item or the car per km closes the sheet** and
+       focuses the field, since it can't be typed in behind the sheet. Production and other
+       travel adds keep it open.
+    2. **Every Production service shows all three unit buttons** (Hr · ½ Day · Day), as the old
+       picker listed all three units; one with no price is disabled and says what it needs.
+    3. **Crew and gear rows arrive empty**, with no default of 1 day.
+    4. **Not on a day always shows** while the block is open, even when it's empty.
+    5. **The day total counts everything on the card**, but the hours hint and the Production
+       section's per-day list stay production only.
+  - **Seams for later tasks:**
+    - **B2-5:** a travel, crew or gear line on Not on a day has no way onto a day yet except
+      removing and re-adding it. Move to fixes that. The "Pick a day…" select on production
+      lines is the one to replace.
+    - **B2-6:** fill the head-only Travel, Crew and Equipment sections.
+    - **B2-7:** equipment is still the single "Vendor / Item" field.
+    - **B2-12:** resizing across 768 with the menu open keeps its mode until reopened.
+      Escape at ≥768 only acts with focus inside the menu.
+    - **Scratch data:** "B2-4 old flat" now has a Saturday 10 Oct day. The scratch goals have
+      `vehicleCostPerKm` 0.92, and the scratch card has a "Vehicle — per km" row.
 
 - [ ] **B2-5. Moving lines: drag, Move to, Duplicate day** (money math — Opus/high, because a move
   re-prices). _Depends on: B2-4._

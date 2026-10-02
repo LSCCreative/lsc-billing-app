@@ -530,26 +530,8 @@
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
-.prod-unassigned {
-  border-top: 1px solid var(--border);
-}
-.prod-unassigned[hidden] {
-  display: none;
-}
-.prod-unassigned-head {
-  padding: 10px 14px 2px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--cal-pencilled);
-}
-.prod-unassigned-note {
-  padding: 0 14px 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-/* An unassigned line's day select, under its name, in .lab-unit-sel's chrome. */
+/* A line on Not on a day: its day select, under its name, in .lab-unit-sel's
+   chrome (until B2-5's Move to). */
 .lab-move {
   margin-top: 4px;
 }
@@ -682,4 +664,230 @@
     line-height: 1.9;
     border-bottom: none; /* the stacked row draws its own rule */
   }
+}
+
+/* ── Day-built cards and the service menu (production-booking B2-4) ─────────
+   A card is a whole shoot day: its items in groups — Production · Travel ·
+   Crew · Equipment, each shown only with lines — behind one "Add Production
+   Service Items" button that opens the menu. */
+
+/* Not on a day (D79): last, and not a day, so its rail is neutral. */
+.off-day-card {
+  margin-top: 8px;
+}
+.off-day-card::before {
+  background: var(--border);
+}
+.off-day-hint {
+  margin: -4px 0 0;
+}
+/* The card the menu is adding to (the brief's B2 Key Interactions 1). */
+.day-card.is-target {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.day-menu-btn {
+  min-height: 44px;
+}
+@media (min-width: 768px) {
+  .day-menu-btn {
+    min-height: 0;
+  }
+}
+.day-items-empty {
+  padding: 4px 16px 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.day-items-empty[hidden],
+.day-group[hidden] {
+  display: none;
+}
+.day-group {
+  border-top: 1px solid var(--border);
+}
+.day-group-label {
+  padding: 8px 16px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+/* The flat Travel / Crew / Equipment sections: a head and subtotal until
+   B2-6's summaries. */
+.onset-note {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── The menu ──────────────────────────────────────────────────────────────
+   At 768 and up it takes the calendar's place in its column; below, it is a
+   bottom sheet. */
+.booking-cal-col.is-menu > :not(.day-menu) {
+  display: none;
+}
+.day-menu {
+  border: 1px solid var(--border);
+  background: rgba(61, 74, 92, 0.12);
+  padding: 10px 14px 12px;
+}
+/* Brought into view under the sticky page header (52px), not behind it: the
+   menu on open, a card on showDay(). */
+.day-menu,
+.day-card {
+  scroll-margin-top: 64px;
+}
+.day-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.day-menu-title {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.day-menu-title:focus {
+  outline: none;
+}
+.day-menu-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.day-menu-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.day-menu-done {
+  margin-left: auto;
+}
+.day-menu-status {
+  min-height: 1.4em;
+  margin: 4px 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.dm-filter {
+  margin-bottom: 8px;
+}
+.dm-group {
+  border-top: 1px solid var(--border);
+}
+.dm-ghead {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-align: left;
+  cursor: pointer;
+}
+.dm-ghead:hover {
+  color: var(--text);
+}
+.dm-ghead[aria-expanded='true'] .bb-chevron {
+  transform: rotate(90deg);
+}
+.dm-gbody {
+  padding-bottom: 8px;
+}
+.dm-gbody[hidden],
+.dm-row[hidden],
+.dm-none[hidden] {
+  display: none;
+}
+.dm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+}
+.dm-row:last-of-type {
+  border-bottom: none;
+}
+.dm-name {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.dm-units {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.dm-unit {
+  background: #1a1c20;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dm-unit:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.dm-unit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.dm-unit:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+}
+.dm-price {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.dm-none {
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The bottom sheet, below 768: full width, Done kept in reach as the list
+   scrolls, every target 44px. */
+#modal-day-menu {
+  align-items: flex-end;
+}
+#modal-day-menu .dm-sheet {
+  width: 100%;
+  max-width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  border-bottom: none;
+}
+.day-menu.is-sheet {
+  border: none;
+  background: none;
+  padding: 0;
+}
+.day-menu.is-sheet .day-menu-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 14px 0 8px;
+  background: var(--surface);
+}
+.day-menu.is-sheet .day-menu-done,
+.day-menu.is-sheet .dm-ghead,
+.day-menu.is-sheet .dm-unit,
+.day-menu.is-sheet .dm-blank {
+  min-height: 44px;
 }

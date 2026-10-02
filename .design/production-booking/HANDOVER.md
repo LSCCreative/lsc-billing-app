@@ -206,7 +206,7 @@ times.
             wording for the new codes yet.
 
         - [x] **B2-3, the Deliverables block and the Prices bar**: done 2026-10-03,
-          **uncommitted**. Only `estimate-editor.js` and `estimates.css` changed.
+          committed `51b3a80`. Only `estimate-editor.js` and `estimates.css` changed.
           - **What exists now:**
             - the order is Prices bar → Deliverables → booking;
             - the tinted headline block;
@@ -217,7 +217,23 @@ times.
             (a removed type keeps its snapshot; re-picking keeps the old multiplier; Type first
             on phones), the 1280/800/375 measurements, and the scratch data left for B2-10.
 
-**Exact next item: TASKS.md B2-4, the service menu and every on-set kind on a day** (money math,
+        - [x] **B2-4, the service menu and every on-set kind on a day**: done 2026-10-03,
+          **uncommitted**. Changed `estimate-editor.js`, `booking-block.js`, `booking.css` and
+          `index.html`.
+          - **What exists now:**
+            - day cards hold Production · Travel · Crew · Equipment groups;
+            - a "Not on a day" last card;
+            - one service menu ("Add Production Service Items"), in the calendar's column at
+              ≥768 and a bottom sheet below;
+            - the flat Travel, Crew and Equipment sections are heads and subtotals only.
+          - **Verified:** to the cent against the server, including a surcharged production
+            line beside unsurcharged travel, crew and gear on a Saturday, and with short notice.
+          - **Not deployable until B2-6** fills those sections.
+          - **Read its Done note before B2-5 and B2-6.** It has five interpretations to show the
+            user and the seams: Move to has to replace the "Pick a day…" select, and lines on Not
+            on a day have no way onto a day until then.
+
+**Exact next item: TASKS.md B2-5, moving lines: drag, Move to, Duplicate day** (money math,
 Opus/high). After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
 Opus/high).
 
