@@ -1190,7 +1190,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
 - [x] **B2-4. The service menu, and every on-set kind on a day** (money math — Opus/high, because
   production lines price live). _Depends on: B2-2._ This is the riskiest slice.
-  **Done 2026-10-03, uncommitted.**
+  **Done 2026-10-03, committed `c6f7457`.**
   - **The button:** "Add Production Service Items" on each day card ("Add items" on Not on a day)
     replaces the card's service → unit → Add picker.
   - **The menu (≥768):** it swaps in for the calendar in its column. It has the head "Adding to
@@ -1310,8 +1310,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **Scratch data:** "B2-4 old flat" now has a Saturday 10 Oct day. The scratch goals have
       `vehicleCostPerKm` 0.92, and the scratch card has a "Vehicle — per km" row.
 
-- [ ] **B2-5. Moving lines: drag, Move to, Duplicate day** (money math — Opus/high, because a move
-  re-prices). _Depends on: B2-4._
+- [x] **B2-5. Moving lines: drag, Move to, Duplicate day** (money math — Opus/high, because a move
+  re-prices). _Depends on: B2-4._ **Done 2026-10-03, uncommitted.**
   - **Drag (mouse and pen, pointer events):** a handle `<button>` on each line. Drop targets are
     the same kind's group on any card, and Not on a day. A drop rule shows the insert point.
     Dropping in its own card reorders. There's no handle below 768.
@@ -1330,6 +1330,68 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - Move to works from the keyboard alone;
   - Duplicate then date gives the weekend price;
   - mutations: keeping the old day's surcharge on move is caught by a figure check.
+
+  **Done note (2026-10-03).** Changed `estimate-editor.js`, `booking-block.js` and `booking.css`.
+  No server change; 396/396.
+  - **How a move works:** a line's day is the card it sits in, and `recalc` prices from there.
+    So a move (`moveLine`) is the row itself `insertBefore`'d into another card's group, then a
+    recalc. Nothing is rebuilt: what's typed, the snapshot, the unit, the custom bill, and
+    `prevSnap`/`lastOnly` all go with it. The announcement reads, for example: "Moved Video
+    Capture — Full Day to Sat 10 Oct: $1,680.00, weekend ×1.5." B2-4's stop-gap "Pick a day…"
+    select (`addMoveControl`/`moveToDay`) is gone, with its CSS.
+  - **The line controls** (`addLineControls`, every on-set row, from the row builders) sit
+    under the name:
+    - **A handle `<button>`:** named "Move <line>", `tabindex=-1`, hidden below 768;
+    - **"Move to ▾":** a menu button, named "Move to, for <line>".
+    Both open one `.move-pop` list (`role=menu`) of the other cards: "Sat 10 Oct", "Day 3 —
+    date TBC", "Not on a day". It uses arrows, Home/End, Escape and Tab, and closes on an
+    outside press. Picking one moves the line and puts focus on its Move to in the new place.
+  - **Drag** (`bindDrag`):
+    - **Starting:** pointer events, ignoring `pointerType === 'touch'`, and only after 4px of
+      travel, so a press still opens the list.
+    - **Drop zones:** every card's group of that kind outlines. **Empty groups are unhidden by
+      the drag code, not by CSS**, because `login.css` hides `[hidden]` with `!important`.
+    - **The rule** marks the insert point (`elementFromPoint`, then the row midpoints).
+      Dropping in the line's own card reorders it.
+    - **Escape** cancels, and the click after a drag is swallowed.
+    - `setPointerCapture` is guarded.
+  - **Duplicate day** is a card action (`data-act="duplicate"`, beside ×). The block adds a
+    Proposed Date TBC day straight after the source **with the source's times**, then calls
+    `opts.onDuplicate(src, new)`. The editor's `duplicateLines` rebuilds each line from what it
+    holds now (legacy lines through `labourDef`/`travelDef`, as `restoreRows` does). The
+    block then paints, recalculates, focuses the copy's date and announces "Day 1 · Sat 10 Oct
+    duplicated as Day 3 — date TBC, with its 5 items."
+  - **In the browser against `api-scratch`** ("B2-4 old flat"; Sat 10 Oct 6–11pm, Mon 12 Oct):
+    - **Move to, keyboard only:** focus, Enter, arrows, Enter. A $1,120 Video Capture Full Day
+      went Not on a day → Sat ($1,680, "incl. weekend ×1.5") → Mon ($1,120), with focus
+      following the line and Escape returning focus.
+    - **Drag:** onto Monday's empty Production group ($1,120), to Saturday ($1,680), and back to
+      Monday ($1,120). The empty zone showed and then hid again.
+    - **Duplicate day on Saturday:** a Proposed TBC copy with the times 18:00–23:00 and all 5
+      items. Its Video Capture was $1,600 (TBC base), and dated Sunday 11 Oct it was $2,400
+      (weekend). The copied Lensworks kept its vendor.
+    - **The save matched the server to the cent:** total $9,466.20, tax $2,100.22, take-home
+      $3,900.42, surcharge $1,600.
+    - **The mutation:** with `moveLine`'s recalc removed, Sat → Mon kept $2,400, where the
+      figure check expects $1,600. Restored, both the $1,600 and $1,120 lines round-trip
+      Sat ↔ Mon to the dollar.
+  - **Measured:**
+    - **375:** the handle hidden; Move to, Duplicate day, × and the list's items all 44px; no
+      overflow. The first reading said 28/37px, but that was the emulator half-applied; a clean
+      reload measured 44.
+    - **1280:** no overflow.
+  - **Interpretations to show the user:**
+    1. **A duplicated day copies the source's start and end times**, so a Saturday evening
+       shoot's copy is still an evening once it's dated. It stays undated and Proposed.
+    2. **The handle isn't a tab stop.** Move to beside it does the same, so keyboard users get
+       one stop per line, not two.
+    3. **The Move to list names cards as "Sat 10 Oct"**, not "Day 1 · Sat 10 Oct", as the
+       brief's example has it.
+  - **Seams for later tasks:**
+    - **B2-12:** there's no auto-scroll while dragging near the window's edge (the wheel works
+      mid-drag). The handle's tooltip is the only hint that it drags. Reduced motion has
+      nothing to turn off, since there's no animation.
+    - **Scratch data:** "B2-4 old flat" now has Sat 10, Sun 11 and Mon 12 Oct.
 
 - [ ] **B2-6. "On set, by day": the four read-only summaries, and the editor order** (money math —
   Opus/high, because it renders day totals). _Depends on: B2-4._

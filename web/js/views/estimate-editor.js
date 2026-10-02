@@ -460,6 +460,7 @@ const EstimateEditor = (() => {
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button></div>';
 
     bindRow(tr, ['.qty-inp', '.custom-bill-inp']);
+    if (section.id === 'prod' && !section.archived) addLineControls(tr, 'prod');
     const unitSel = tr.querySelector('.lab-unit-sel');
     if (unitSel) unitSel.addEventListener('change', () => switchUnit(tr, unitSel.value));
     return tr;
@@ -494,6 +495,7 @@ const EstimateEditor = (() => {
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button></div>';
 
     bindRow(tr, ['.qty-inp']);
+    addLineControls(tr, 'travel');
     return tr;
   }
 
@@ -527,6 +529,7 @@ const EstimateEditor = (() => {
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove" aria-label="Remove row">×</button></div>';
 
     bindRow(tr, ['.days-inp', '.cost-inp']);
+    addLineControls(tr, kind);
     return tr;
   }
 
@@ -807,17 +810,18 @@ const EstimateEditor = (() => {
     openMenu(dayKey, trigger);
   }
 
-  /* What the menu's heading names: "Sat 3 Oct", "Day 3 — date TBC", "Not on a day". */
-  function menuTargetName() {
-    if (menu.target === OFF_DAY) return 'Not on a day';
-    const d = (booking ? booking.list() : []).find((x) => x.id === menu.target);
+  /* A card as the menu and Move to name it: "Sat 3 Oct", "Day 3 — date TBC",
+     "Not on a day" (the IA's B2 naming). */
+  function cardName(key) {
+    if (key === OFF_DAY) return 'Not on a day';
+    const d = (booking ? booking.list() : []).find((x) => x.id === key);
     if (!d) return 'this day';
     return d.date ? LSCCalendar.shortDate(d.date) : d.title;
   }
 
   function paintMenuTitle() {
     if (!menu.el) return;
-    menu.el.querySelector('#day-menu-h').textContent = 'Adding to ' + menuTargetName();
+    menu.el.querySelector('#day-menu-h').textContent = 'Adding to ' + cardName(menu.target);
   }
 
   function paintMenuCount() {
@@ -1029,7 +1033,6 @@ const EstimateEditor = (() => {
       if (!picked.snap) return;
       tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 1 }, picked.snap));
       markOwn(tr, picked);
-      if (menu.target === OFF_DAY) addMoveControl(tr);
       said = row.name + ' — ' + UNIT_ADDED[row.prices ? unit : 'hour'];
     } else if (kind === 'travel') {
       const def = ((LSCData.pricing() || {}).travelRows || []).find((r) => r.name === name);
@@ -1057,46 +1060,299 @@ const EstimateEditor = (() => {
     if (field) field.focus();
   }
 
-  /* An unassigned line's way onto a day: a select under its name. */
-  function addMoveControl(tr) {
-    const svc = tr.firstElementChild;
-    const wrap = document.createElement('div');
-    wrap.className = 'lab-move';
-    wrap.innerHTML =
-      '<select class="lab-move-sel" aria-label="Move ' + esc(tr.dataset.name) + ' to a day"></select>';
-    svc.classList.add('lab-svc');
-    svc.appendChild(wrap);
-    const sel = wrap.firstElementChild;
-    sel.innerHTML = moveOptions();
-    sel.addEventListener('change', () => {
-      if (sel.value) moveToDay(tr, sel.value);
+  // ── Moving lines between cards (B2-5, D80, D81) ───────────────────────────
+  /* A line's day is the card it sits in, and recalc prices every line from
+     where it sits — so a move is the row itself moved into another card's
+     group, then a recalc. Nothing is rebuilt: what's typed, the snapshot, the
+     unit, the custom bill and both rate marks go with it, and production
+     re-prices at the new day's surcharges (D80 overturns task 7's one-way
+     move).
+
+     Two ways, one result. Drag the handle (mouse and pen, pointer events;
+     touch never drags, and the handle is hidden below 768) onto any card's
+     group of the same kind, or Not on a day; dropping in the line's own card
+     reorders it. Or "Move to ▾", a menu button listing the other cards — the
+     single-pointer and keyboard route (WCAG 2.5.7). Pressing the handle opens
+     the same list. Either way the move is announced with the line's new
+     price and what it now carries. */
+
+  const keyOf = (tr) => {
+    const panel = tr.closest('[data-items-day]');
+    return panel && panel.dataset.itemsDay ? panel.dataset.itemsDay : OFF_DAY;
+  };
+  const kindOf = (tr) => tr.dataset.kind || tr.dataset.section;
+
+  /* "Video Capture — Full Day", "Crew Meals", "Gaffer", "Lensworks". */
+  function lineLabel(tr) {
+    const kind = kindOf(tr);
+    if (kind === 'crew') return inputValue(tr, '.role-inp').trim() || 'crew member';
+    if (kind === 'equip') return inputValue(tr, '.vendor-inp').trim() || 'hire item';
+    const snap = snapOf(tr) || {};
+    const day = kind === 'prod' && (snap.dayUnit === 'full' || snap.dayUnit === 'half') ? ' — ' + UNIT_ADDED[snap.dayUnit] : '';
+    return tr.dataset.name + day;
+  }
+
+  function labelLineControls(tr) {
+    const ctl = tr.querySelector('.line-ctl');
+    if (!ctl) return;
+    const name = lineLabel(tr);
+    const handle = ctl.querySelector('.line-handle');
+    handle.setAttribute('aria-label', 'Move ' + name);
+    handle.title = 'Drag ' + name + ' to another day, or press to choose one';
+    ctl.querySelector('.line-move .sr-only').textContent = ', for ' + name;
+  }
+
+  /* Under the line's name: the handle, then Move to. The handle is a real
+     button that opens the list too, but no tab stop: Move to, beside it,
+     is the keyboard's way, and one line shouldn't cost two stops for one
+     action. */
+  function addLineControls(tr, kind) {
+    const cell = tr.firstElementChild;
+    cell.classList.add('lab-svc');
+    const ctl = document.createElement('div');
+    ctl.className = 'line-ctl';
+    ctl.innerHTML =
+      '<button type="button" class="line-handle" tabindex="-1" aria-haspopup="menu" aria-expanded="false">' +
+      '<span aria-hidden="true">⠿</span></button>' +
+      '<button type="button" class="line-move" aria-haspopup="menu" aria-expanded="false">Move to' +
+      '<span class="sr-only"></span> <span aria-hidden="true">▾</span></button>';
+    cell.appendChild(ctl);
+    const handle = ctl.querySelector('.line-handle');
+    const move = ctl.querySelector('.line-move');
+    move.addEventListener('click', () => openMovePop(tr, move));
+    bindDrag(tr, kind, handle);
+    const name = tr.querySelector('.role-inp, .vendor-inp');
+    if (name) name.addEventListener('input', () => labelLineControls(tr));
+    labelLineControls(tr);
+  }
+
+  /* Puts a line in `body` before `before` (or last), re-prices, and says so. */
+  function moveLine(tr, body, before) {
+    const to = body.closest('[data-items-day]');
+    const key = to && to.dataset.itemsDay ? to.dataset.itemsDay : OFF_DAY;
+    body.insertBefore(tr, before || null);
+    recalc();
+    const price = (tr.querySelector('.bill-cell') || {}).textContent || '';
+    const note = tr.querySelector('.sur-note');
+    const carries = note && !note.hidden ? note.textContent.replace(/^incl\. /, '') : '';
+    LSCUtil.announce($('editor-live'),
+      'Moved ' + lineLabel(tr) + ' to ' + cardName(key) + ': ' + price + (carries ? ', ' + carries : '') + '.');
+  }
+
+  // ── The Move to list ──
+  const pop = { el: null, tr: null, opener: null };
+
+  function closeMovePop(returnFocus) {
+    if (!pop.el) return;
+    pop.el.remove();
+    document.removeEventListener('pointerdown', onPopOutside, true);
+    if (pop.opener) pop.opener.setAttribute('aria-expanded', 'false');
+    if (returnFocus && pop.opener && pop.opener.isConnected) pop.opener.focus();
+    pop.el = null;
+    pop.tr = null;
+    pop.opener = null;
+  }
+
+  function onPopOutside(event) {
+    if (pop.el && !pop.el.contains(event.target) && event.target !== pop.opener) closeMovePop(false);
+  }
+
+  function openMovePop(tr, opener) {
+    const reopen = pop.el && pop.tr === tr;
+    closeMovePop(false);
+    if (reopen) return; // the same button again closes it
+    const here = keyOf(tr);
+    const cards = (booking ? booking.list() : []).map((d) => d.id).concat([OFF_DAY]).filter((k) => k !== here);
+    const el = document.createElement('div');
+    el.className = 'move-pop';
+    el.setAttribute('role', 'menu');
+    el.setAttribute('aria-label', 'Move ' + lineLabel(tr) + ' to');
+    el.innerHTML = cards.length
+      ? cards.map((k) => '<button type="button" role="menuitem" tabindex="-1" data-key="' + esc(k) + '">' + esc(cardName(k)) + '</button>').join('')
+      : '<p class="move-pop-none">No other day yet. Book one in Production Booking.</p>';
+    document.body.appendChild(el);
+    const r = opener.getBoundingClientRect();
+    const w = el.offsetWidth;
+    el.style.top = Math.round(r.bottom + window.scrollY + 4) + 'px';
+    el.style.left = Math.round(Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8)) + window.scrollX) + 'px';
+    pop.el = el;
+    pop.tr = tr;
+    pop.opener = opener;
+    opener.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', onPopOutside, true);
+
+    const items = Array.from(el.querySelectorAll('[role="menuitem"]'));
+    el.addEventListener('keydown', (e) => {
+      const i = items.indexOf(document.activeElement);
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMovePop(true);
+      } else if (e.key === 'Tab') {
+        closeMovePop(false);
+      } else if (items.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End')) {
+        e.preventDefault();
+        const n = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+          : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items[n].focus();
+      }
+    });
+    el.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-key]');
+      if (!item) return;
+      const line = pop.tr;
+      closeMovePop(false);
+      moveLine(line, groupBody(panelFor(item.dataset.key), kindOf(line)), null);
+      // Focus follows the line (the brief's B2 Key Interactions 2).
+      const again = line.querySelector('.line-move');
+      if (again) again.focus();
+    });
+    if (items.length) {
+      items[0].focus();
+    } else {
+      el.setAttribute('tabindex', '-1');
+      el.focus();
+    }
+  }
+
+  // ── Dragging ──
+  /* A drag starts past a few pixels of travel, so a press is still a click
+     (which opens the list). While one is on, every card shows its group of
+     the line's kind as a drop zone (booking.css), and a rule marks where it
+     would land. Escape, or letting go anywhere else, puts nothing anywhere. */
+  const DRAG_START_PX = 4;
+  const drag = { tr: null, kind: null, x: 0, y: 0, on: false, rule: null, shown: [], suppressClick: false };
+
+  function dropTarget(x, y, kind) {
+    const el = document.elementFromPoint(x, y);
+    const card = el && el.closest('.day-card');
+    const panel = card && card.querySelector('.day-items');
+    return panel && root.contains(panel) ? groupBody(panel, kind) : null;
+  }
+
+  function placeRule(x, y) {
+    const body = dropTarget(x, y, drag.kind);
+    if (!body) {
+      if (drag.rule.parentNode) drag.rule.remove();
+      return;
+    }
+    const rows = Array.from(body.querySelectorAll(':scope > [data-rid]')).filter((r) => r !== drag.tr);
+    const before = rows.find((r) => {
+      const b = r.getBoundingClientRect();
+      return y < b.top + b.height / 2;
+    });
+    if (drag.rule.parentNode !== body || drag.rule.nextSibling !== (before || null)) body.insertBefore(drag.rule, before || null);
+  }
+
+  function endDrag(commit) {
+    if (!drag.tr) return;
+    const { tr, rule, on } = drag;
+    document.removeEventListener('keydown', onDragKey, true);
+    root.classList.remove('is-dragging', 'drag-' + drag.kind);
+    tr.classList.remove('is-dragging');
+    // The empty groups shown as drop zones go again (a drop's recalc re-decides them anyway).
+    drag.shown.forEach((g) => (g.hidden = !g.querySelector('[data-rid]')));
+    drag.shown = [];
+    const body = rule && rule.parentNode;
+    const before = body ? rule.nextSibling : null;
+    if (rule) rule.remove();
+    drag.tr = null;
+    drag.on = false;
+    drag.rule = null;
+    if (on && commit && body) moveLine(tr, body, before);
+  }
+
+  function onDragKey(e) {
+    if (e.key !== 'Escape' || !drag.on) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endDrag(false);
+  }
+
+  function bindDrag(tr, kind, handle) {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch' || e.button !== 0) return;
+      drag.tr = tr;
+      drag.kind = kind;
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+      drag.on = false;
+      try {
+        handle.setPointerCapture(e.pointerId); // keeps the moves coming as the pointer leaves the handle
+      } catch (err) {
+        /* a pointer the browser no longer tracks: the drag still works while over the handle */
+      }
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (drag.tr !== tr) return;
+      if (!drag.on) {
+        if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < DRAG_START_PX) return;
+        drag.on = true;
+        closeMovePop(false);
+        drag.rule = document.createElement('div');
+        drag.rule.className = 'drop-rule';
+        drag.rule.setAttribute('aria-hidden', 'true');
+        root.classList.add('is-dragging', 'drag-' + kind);
+        tr.classList.add('is-dragging');
+        /* Every card's group of this kind is a drop zone, an empty one too.
+           Shown here, not in CSS: login.css hides [hidden] with !important. */
+        drag.shown = Array.from(root.querySelectorAll('.day-group[data-group="' + kind + '"][hidden]'));
+        drag.shown.forEach((g) => (g.hidden = false));
+        document.addEventListener('keydown', onDragKey, true);
+      }
+      placeRule(e.clientX, e.clientY);
+    });
+    handle.addEventListener('pointerup', () => {
+      if (drag.tr !== tr) return;
+      drag.suppressClick = drag.on; // a drag isn't also a press
+      endDrag(true);
+    });
+    handle.addEventListener('pointercancel', () => endDrag(false));
+    handle.addEventListener('click', () => {
+      if (drag.suppressClick) {
+        drag.suppressClick = false;
+        return;
+      }
+      openMovePop(tr, handle);
     });
   }
 
-  function moveOptions() {
-    const days = booking ? booking.list() : [];
-    return '<option value="">' + (days.length ? 'Pick a day…' : 'No days booked yet') + '</option>' +
-      days.map((d) => '<option value="' + esc(d.id) + '">' + esc(d.title) + '</option>').join('');
-  }
-
-  /* Rebuilt rather than moved, so it loses its move select; everything typed,
-     and both rate marks, go with it (as reprice does). */
-  function moveToDay(tr, dayId) {
-    const section = sections.find((sec) => sec.id === 'prod');
-    const line = Object.assign({ name: tr.dataset.name }, snapOf(tr) || {}, {
-      qty: inputValue(tr, '.qty-inp'),
-      override: inputValue(tr, '.custom-bill-inp'),
+  // ── Duplicate day ──
+  /* The booking block has made the copy, a Date TBC day after the source
+     (D81); its lines are copied here, rebuilt from what each one holds now —
+     snapshot, quantity, unit, custom bill, rate marks — and priced as the new
+     day is (TBC: no weekend or after hours, short notice still). Gear keeps
+     its vendor, so a copy joins the same rental. */
+  function duplicateLines(fromKey, toKey) {
+    const from = dayPanels.get(fromKey);
+    if (!from) return 0;
+    const to = panelFor(toKey);
+    const pricing = LSCData.pricing();
+    const prod = sections.find((sec) => sec.id === 'prod');
+    let n = 0;
+    ['prod', 'travel', 'crew', 'equip'].forEach((kind) => {
+      groupBody(from, kind).querySelectorAll(':scope > [data-rid]').forEach((tr) => {
+        let fresh;
+        if (kind === 'prod' || kind === 'travel') {
+          const line = lineFrom(tr, kind === 'prod');
+          delete line.dayId;
+          fresh = kind === 'prod'
+            ? buildLabourRow(prod, labourDef(prod, line, pricing), line)
+            : buildTravelRow(travelDef(line, pricing), line);
+        } else {
+          fresh = buildCostRow(kind, {
+            role: inputValue(tr, '.role-inp'),
+            vendor: inputValue(tr, '.vendor-inp'),
+            days: inputValue(tr, '.days-inp'),
+            cost: inputValue(tr, '.cost-inp'),
+          });
+        }
+        if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
+        if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
+        groupBody(to, kind).appendChild(fresh);
+        n += 1;
+      });
     });
-    const fresh = buildLabourRow(section, null, line);
-    if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
-    if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
-    const day = (booking ? booking.list() : []).find((d) => d.id === dayId);
-    tr.remove();
-    injectRow(groupBody(panelFor(dayId), 'prod'), fresh);
-    if (booking) booking.showDay(dayId);
-    const qty = fresh.querySelector('.qty-inp');
-    if (qty) qty.focus();
-    LSCUtil.announce($('editor-live'), tr.dataset.name + ' moved to ' + (day ? day.title : 'its day') + '.');
+    return n;
   }
 
   /* "Booked 12 hrs, items cover 8" (D26): the day's booked hours, from its
@@ -1131,10 +1387,6 @@ const EstimateEditor = (() => {
           '<option value="' + NEW_TBC + '">A new Date TBC day</option>';
         sel.value = live.has(was) ? was : days.length ? days[0].id : NEW_TBC;
       }
-      rowsIn('prod').forEach((tr) => {
-        const move = tr.querySelector('.lab-move-sel');
-        if (move) move.innerHTML = moveOptions();
-      });
       days.forEach((d) => {
         const panel = dayPanels.get(d.id);
         if (!panel) return;
@@ -2034,7 +2286,6 @@ const EstimateEditor = (() => {
     const fresh = section ? buildLabourRow(section, null, line) : buildTravelRow(null, line);
     if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
     if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
-    if (tr.querySelector('.lab-move')) addMoveControl(fresh); // still unassigned
     tr.replaceWith(fresh);
     return fresh;
   }
@@ -2495,8 +2746,7 @@ const EstimateEditor = (() => {
      it again on save, and recalc shows what that will be. */
   /* Every on-set line goes on its day's card, or on Not on a day when it has
      none (B2-4, D79) — every line saved before B2, and production lines saved
-     before days. A production line there keeps its "Pick a day…" select until
-     B2-5's Move to. */
+     before days. */
   function restoreRows(activeRows, pricing, days) {
     const dayIds = new Set((days || []).map((d) => String(d.id)));
     const cardFor = (line) => panelFor(line.dayId && dayIds.has(String(line.dayId)) ? String(line.dayId) : OFF_DAY);
@@ -2504,9 +2754,7 @@ const EstimateEditor = (() => {
       (activeRows[section.id] || []).forEach((line) => {
         const tr = buildLabourRow(section, labourDef(section, line, pricing), line);
         if (section.id !== 'prod' || section.archived) return injectRow($('tbody-' + section.id), tr);
-        const panel = cardFor(line);
-        if (!panel.dataset.itemsDay) addMoveControl(tr);
-        injectRow(groupBody(panel, 'prod'), tr);
+        injectRow(groupBody(cardFor(line), 'prod'), tr);
       });
     });
     (activeRows.travel || []).forEach((line) => {
@@ -2652,6 +2900,8 @@ const EstimateEditor = (() => {
 
     booking = null;
     closeMenu(false);
+    closeMovePop(false);
+    endDrag(false);
     dayPanels.clear();
     // A fresh estimate: its first recalc is the baseline, announced as nothing.
     clearTimeout(surTimer);
@@ -2682,6 +2932,8 @@ const EstimateEditor = (() => {
       onToggle: (isOpen) => {
         if (!isOpen) closeMenu(false);
       },
+      // Duplicate day (B2-5): the block made the day; its lines are copied here.
+      onDuplicate: duplicateLines,
     });
     bind(pricing);
     paintLink();

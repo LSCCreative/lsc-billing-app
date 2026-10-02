@@ -20,6 +20,8 @@
  *   booking.refreshIdentity()  // the UPID / name / business changed: redraw this estimate's tiles
  *   booking.showDay(id)        // open the block and scroll that day's card into view
  *   booking.addTbc()           // add a Date TBC day; returns its id
+ * Duplicate day (B2-5) is the card's own action: it adds the copy, then calls
+ * opts.onDuplicate(sourceId, newId) for the editor to copy the lines.
  * Day ids are made here, in the browser, because production lines point at
  * their day (`dayId`) before the estimate has ever been saved.
  *
@@ -246,6 +248,7 @@ const BookingBlock = (() => {
     const onChange = typeof opts.onChange === 'function' ? opts.onChange : () => {};
     const itemsFor = typeof opts.itemsFor === 'function' ? opts.itemsFor : () => null;
     const onToggle = typeof opts.onToggle === 'function' ? opts.onToggle : () => {};
+    const onDuplicate = typeof opts.onDuplicate === 'function' ? opts.onDuplicate : () => 0;
     let targetId = null; // the card the service menu is adding to, edged
 
     slot.innerHTML =
@@ -386,6 +389,7 @@ const BookingBlock = (() => {
         '<div class="day-card-head">' +
         '<span class="day-card-title" id="' + k + '-t">' + esc(title) + '</span>' +
         C.statusChip(day.status) +
+        '<button type="button" class="btn btn-ghost btn-sm day-dup" data-act="duplicate" aria-label="Duplicate ' + esc(title) + '">Duplicate day</button>' +
         '<button type="button" class="del-btn day-card-del" data-act="remove" aria-label="Remove ' + esc(title) + '">×</button>' +
         '</div>' +
         '<div class="day-fields">' +
@@ -627,6 +631,29 @@ const BookingBlock = (() => {
         await ensureCovered([day.date]);
         if (alive() && cal) cal.goTo(day.date);
       }
+    });
+
+    /* Duplicate day (B2-5, D81): a Date TBC day straight after the source,
+       Proposed as TBC days start, with the source's times, so the copy is
+       the near-identical second day; the editor copies its lines
+       (onDuplicate). Focus goes to the copy's date, the field to fill next. */
+    cards.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act="duplicate"]');
+      if (!btn) return;
+      const i = days.findIndex((d) => d.id === btn.closest('[data-day-id]').dataset.dayId);
+      if (i === -1) return;
+      const src = days[i];
+      const srcTitle = titleOf(src, i + 1);
+      const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: src.startTime, endTime: src.endTime, overrideNote: '' };
+      days.splice(i + 1, 0, day);
+      days = sortDays(days);
+      const n = onDuplicate(src.id, day.id);
+      paint();
+      onChange();
+      focusCard(day.id, 'date');
+      const at = days.indexOf(day);
+      $('booking-live').textContent = srcTitle + ' duplicated as ' + titleOf(day, at + 1) +
+        (n ? ', with its ' + (n === 1 ? 'item' : n + ' items') : '') + '.';
     });
 
     cards.addEventListener('click', (e) => {

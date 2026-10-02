@@ -530,33 +530,6 @@
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
-/* A line on Not on a day: its day select, under its name, in .lab-unit-sel's
-   chrome (until B2-5's Move to). */
-.lab-move {
-  margin-top: 4px;
-}
-.lab-move-sel {
-  max-width: 100%;
-  background: #1a1c20;
-  border: 1px solid var(--cal-pencilled);
-  color: var(--text);
-  font-family: 'Funnel Sans', sans-serif;
-  font-size: 10.5px;
-  padding: 2px 4px;
-  cursor: pointer;
-  color-scheme: dark;
-}
-.lab-move-sel:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-@media (max-width: 767px) {
-  .lab-move-sel {
-    width: 100%;
-    min-height: 44px;
-    font-size: 16px;
-  }
-}
 
 /* ── Short notice, in the doc-type bar (D19) ──────────────────────────────── */
 
@@ -890,4 +863,135 @@
 .day-menu.is-sheet .dm-unit,
 .day-menu.is-sheet .dm-blank {
   min-height: 44px;
+}
+
+/* ── Moving lines (production-booking B2-5, D80, D81) ───────────────────────
+   Under each on-set line's name: a drag handle (mouse and pen) and Move to,
+   the menu button every pointer and keyboard can use. */
+.line-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.line-handle {
+  padding: 0 4px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: grab;
+  touch-action: none;
+}
+.line-handle:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+.line-move {
+  background: #1a1c20;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 10.5px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.line-move:hover {
+  border-color: var(--accent);
+}
+.line-handle:focus-visible,
+.line-move:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* No drag on a phone (D80's alternative): Move to is the route, at 44px. */
+@media (max-width: 767px) {
+  .line-handle {
+    display: none;
+  }
+  .line-move {
+    min-height: 44px;
+    padding: 4px 12px;
+    font-size: 13px;
+  }
+}
+
+/* The Move to list. */
+.move-pop {
+  position: absolute;
+  z-index: 9500;
+  min-width: 170px;
+  padding: 4px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.move-pop [role='menuitem'] {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.move-pop [role='menuitem']:hover,
+.move-pop [role='menuitem']:focus {
+  background: rgba(184, 84, 68, 0.18);
+  outline: none;
+}
+.move-pop [role='menuitem']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.move-pop-none {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (max-width: 767px) {
+  .move-pop [role='menuitem'] {
+    min-height: 44px;
+  }
+}
+
+/* While dragging: the line dims, every card's group of that kind outlines as
+   a drop zone (the drag code unhides empty ones), and a rule marks the
+   insert point. */
+.is-dragging,
+.is-dragging * {
+  cursor: grabbing !important;
+}
+.gt-row.is-dragging {
+  opacity: 0.45;
+}
+.drag-prod .day-group[data-group='prod'] .gt-body,
+.drag-travel .day-group[data-group='travel'] .gt-body,
+.drag-crew .day-group[data-group='crew'] .gt-body,
+.drag-equip .day-group[data-group='equip'] .gt-body {
+  min-height: 30px;
+  outline: 1px dashed rgba(184, 84, 68, 0.7);
+  outline-offset: -1px;
+}
+.drop-rule {
+  height: 2px;
+  background: var(--accent);
+}
+
+/* Duplicate day, beside Remove at the head's far end. */
+.day-dup {
+  margin-left: auto;
+  min-height: 44px;
+}
+.day-dup + .day-card-del {
+  margin-left: 0;
+}
+@media (min-width: 768px) {
+  .day-dup {
+    min-height: 0;
+  }
 }

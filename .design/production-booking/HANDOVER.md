@@ -218,7 +218,7 @@ times.
             on phones), the 1280/800/375 measurements, and the scratch data left for B2-10.
 
         - [x] **B2-4, the service menu and every on-set kind on a day**: done 2026-10-03,
-          **uncommitted**. Changed `estimate-editor.js`, `booking-block.js`, `booking.css` and
+          committed `c6f7457`. Changed `estimate-editor.js`, `booking-block.js`, `booking.css` and
           `index.html`.
           - **What exists now:**
             - day cards hold Production · Travel · Crew · Equipment groups;
@@ -233,8 +233,19 @@ times.
             user and the seams: Move to has to replace the "Pick a day…" select, and lines on Not
             on a day have no way onto a day until then.
 
-**Exact next item: TASKS.md B2-5, moving lines: drag, Move to, Duplicate day** (money math,
-Opus/high). After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
+        - [x] **B2-5, moving lines: drag, Move to, Duplicate day**: done 2026-10-03,
+          **uncommitted**. Changed `estimate-editor.js`, `booking-block.js` and `booking.css`.
+          - **What exists now:** every on-set line has a drag handle (mouse and pen, ≥768) and
+            "Move to ▾" (any pointer, the keyboard). A move is the row moved into another card,
+            then a recalc, so its price follows the new day. Each card has "Duplicate day".
+          - **Verified:** Sat ↔ Mon round trips to the dollar; the save matched the server to
+            the cent; and removing the re-price was caught by the figure check.
+          - **Read its Done note before B2-12.** It has three interpretations to show the user
+            (the copy keeps the times; the handle isn't a tab stop; list names) and the
+            `login.css` `[hidden] !important` trap.
+
+**Exact next item: TASKS.md B2-6, "On set, by day": the four read-only summaries, and the editor
+order** (money math, Opus/high). It is what makes B2-4/B2-5 deployable. After B2 is built and deployed, task 11, the hash router (Stage C; frontend,
 Opus/high).
 
 **Seams left for later tasks:**
