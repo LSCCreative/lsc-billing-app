@@ -2281,11 +2281,15 @@ test('afterHoursShare: the share of booked hours outside office hours', () => {
   assert.equal(afterHoursShare('05:00', '09:00', '07:00', '17:00'), 0.5);
 });
 
-test('afterHoursShare: overnight runs past midnight, and every hour after it is after hours (D21)', () => {
+test('afterHoursShare: overnight runs past midnight, and the next morning\'s office hours are in-hours (2026-10-02)', () => {
   assert.equal(afterHoursShare('20:00', '02:00', '07:00', '17:00'), 1);
-  // 3pm to 1am: 2 of 10 hours in office; 1am next day to 9am would be all after hours.
+  // 3pm to 1am: 2 of 10 hours in office.
   assert.equal(afterHoursShare('15:00', '01:00', '07:00', '17:00'), 0.8);
-  assert.equal(afterHoursShare('16:00', '09:00', '07:00', '17:00'), 16 / 17);
+  // 4pm to 9am: 4–5pm and the next day's 7–9am are in office, 3 of 17 hours.
+  // It was 16/17 while every hour past midnight counted as after hours.
+  assert.equal(afterHoursShare('16:00', '09:00', '07:00', '17:00'), 14 / 17);
+  // Wed 8pm → Thu 10am: Thu 7–10am in office, so 11 of 14 hours after.
+  assert.equal(afterHoursShare('20:00', '10:00', '07:00', '17:00'), 11 / 14);
 });
 
 test('afterHoursShare: no times, one time, or no length is no share', () => {
@@ -2320,17 +2324,30 @@ test('default mode: when after hours is the higher, it takes the after-hours sha
   assert.equal(priceOn(1120, day, card, false), 1960); // 1120 × (0.5 × 1.5 + 0.5 × 2)
   const a = surchargeAttribution(1120, day, card, false);
   assert.deepEqual(a.rows, [
-    { type: 'weekend', multiplier: 1.5, share: 0.5, amount: 280 },
-    { type: 'afterHours', multiplier: 2, share: 0.5, amount: 560 },
+    { type: 'weekend', multiplier: 1.5, share: 0.5, hours: 4, carry: false, amount: 280 },
+    { type: 'afterHours', multiplier: 2, share: 0.5, hours: 4, carry: false, amount: 560 },
   ]);
 });
 
-test('an overnight Friday 8pm → 2am belongs to Friday and is all after hours', () => {
+test('an overnight Friday 8pm → 2am splits at midnight: the Saturday hours take the weekend rate (2026-10-02)', () => {
   const day = { date: FRI, startTime: '20:00', endTime: '02:00' };
-  assert.equal(surchargeFactor(day, NO_SURCHARGES, false), 1.25);
-  assert.equal(priceOn(1120, day, NO_SURCHARGES, false), 1400);
-  // Not Saturday's rate, though half of it happens on Saturday.
-  assert.equal(priceOn(1120, day, withMode('multiply'), false), 1400);
+  // Fri 8pm–12am after hours ×1.25 (4 of 6 hrs); Sat 12–2am weekend beats after hours, ×1.5 (2 of 6).
+  assert.equal(surchargeFactor(day, NO_SURCHARGES, false), (4 / 6) * 1.25 + (2 / 6) * 1.5);
+  assert.equal(priceOn(1120, day, NO_SURCHARGES, false), 1494); // 1,493.33 up to the dollar
+  // All multiply: Saturday's hours are weekend AND after hours, 1.5 × 1.25.
+  assert.equal(priceOn(1120, day, withMode('multiply'), false), 1634); // 1,633.33
+  // The Saturday hours are their own carry-over rows, with the date they fall on.
+  const a = surchargeAttribution(1120, day, NO_SURCHARGES, false);
+  assert.equal(a.carryDate, SAT);
+  assert.deepEqual(a.rows.map((r) => [r.type, r.carry, r.hours, r.amount]), [
+    ['afterHours', false, 4, 186.67],
+    ['weekend', true, 2, 187.33],
+  ]);
+  // A snapshotted next-date kind wins over the calendar (a Saturday the estimate saw as a weekday).
+  assert.equal(priceOn(1120, { ...day, nextKind: 'weekday' }, NO_SURCHARGES, false), 1400);
+  // Into a date of the same status there is no rate change and no carry-over row.
+  const wed = surchargeAttribution(1120, { date: '2026-09-30', startTime: '20:00', endTime: '02:00' }, NO_SURCHARGES, false);
+  assert.deepEqual([wed.carryDate, wed.rows.map((r) => [r.type, r.carry, r.hours])], [null, [['afterHours', false, 6]]]);
 });
 
 test('a public holiday on a weekday takes the weekend/holiday rate; a hidden one does not', () => {
@@ -2381,19 +2398,20 @@ test('a surcharged price rounds UP to the whole dollar, once, after every surcha
 test('attribution: the worked examples, row by row', () => {
   const day = { date: SAT, startTime: '13:00', endTime: '21:00' };
   assert.deepEqual(surchargeAttribution(1120, day, withMode('higher'), true).rows, [
-    { type: 'weekend', multiplier: 1.5, share: 1, amount: 560 },
-    { type: 'shortNotice', multiplier: 2, share: 1, amount: 1680 },
+    { type: 'weekend', multiplier: 1.5, share: 1, hours: 8, carry: false, amount: 560 },
+    { type: 'shortNotice', multiplier: 2, share: 1, hours: 8, carry: false, amount: 1680 },
   ]);
   assert.deepEqual(surchargeAttribution(1120, day, withMode('multiply'), true).rows, [
-    { type: 'weekend', multiplier: 1.5, share: 1, amount: 560 },
-    { type: 'afterHours', multiplier: 1.25, share: 0.5, amount: 210 },
-    { type: 'shortNotice', multiplier: 2, share: 1, amount: 1890 },
+    { type: 'weekend', multiplier: 1.5, share: 1, hours: 8, carry: false, amount: 560 },
+    { type: 'afterHours', multiplier: 1.25, share: 0.5, hours: 4, carry: false, amount: 210 },
+    { type: 'shortNotice', multiplier: 2, share: 1, hours: 8, carry: false, amount: 1890 },
   ]);
   assert.deepEqual(surchargeAttribution(1120, day, withMode('highest'), true).rows, [
-    { type: 'shortNotice', multiplier: 2, share: 1, amount: 1120 },
+    { type: 'shortNotice', multiplier: 2, share: 1, hours: 8, carry: false, amount: 1120 },
   ]);
+  // The whole booking, with no item hours given (the brief's D5 example as a day reading).
   const weekday = surchargeAttribution(1120, { date: FRI, startTime: '09:00', endTime: '19:00' }, NO_SURCHARGES, false);
-  assert.deepEqual(weekday.rows, [{ type: 'afterHours', multiplier: 1.25, share: 0.2, amount: 56 }]);
+  assert.deepEqual(weekday.rows, [{ type: 'afterHours', multiplier: 1.25, share: 0.2, hours: 2, carry: false, amount: 56 }]);
   assert.deepEqual([weekday.base, weekday.price, weekday.surcharge], [1120, 1176, 56]);
 });
 
@@ -2468,19 +2486,52 @@ test('a production line on a Saturday is priced at $1,680; the $560 is income wi
   assert.equal(t.taxSetAside, 504); // 30% of all of it: the surcharge is taxed
 });
 
-test('the worked examples price the same through computeTotals as in task 1', () => {
+test('the worked examples price through computeTotals on the hours each item covers', () => {
   const rows = { prod: [capture({ dayId: 'd_sat' }), capture({ dayId: 'd_fri' }), capture({ dayId: 'd_tbc' })] };
   const days = [SAT_DAY, FRI_DAY, TBC_DAY];
-  // Saturday 1–9pm $1,680; Friday 9–7 $1,176; TBC at base.
+  // Saturday 1–9pm $1,680; TBC at base. Friday 9–7 holds a full day of 8 hrs,
+  // which covers 9–5: no after hours (it was $1,176 on D5's share of the booking).
   let t = computeTotals(rows, DAY_CARD_PB, UNREG, booked(days));
-  assert.deepEqual([t.labourTotal, t.surchargeTotal], [1680 + 1176 + 1120, 560 + 56]);
-  // Short notice: Saturday $3,360, Friday 2 × $1,176 = $2,352, TBC 2 × $1,120.
+  assert.deepEqual([t.labourTotal, t.surchargeTotal], [1680 + 1120 + 1120, 560]);
+  // Short notice: Saturday $3,360, Friday 2 × $1,120, TBC 2 × $1,120.
   t = computeTotals(rows, DAY_CARD_PB, UNREG, booked(days, { shortNotice: true }));
-  assert.equal(t.labourTotal, 3360 + 2352 + 2240);
+  assert.equal(t.labourTotal, 3360 + 2240 + 2240);
   // The mode comes from the snapshot, not the live card.
   const snap = booked(days, { shortNotice: true });
   snap.surcharges.settings.mode = 'multiply';
   assert.equal(computeTotals({ prod: [capture({ dayId: 'd_sat' })] }, DAY_CARD_PB, UNREG, snap).labourTotal, 3780);
+});
+
+test('each item is surcharged on its own hours from the booked start, never past the booked end', () => {
+  const opts = (start, end) => booked([{ ...FRI_DAY, startTime: start, endTime: end }]);
+  const price = (line, start, end) => computeTotals({ prod: [line] }, DAY_CARD_PB, UNREG, opts(start, end)).labourTotal;
+  // Ten hourly hours on 9–7 still cover 5–7pm: D5's own $1,176.
+  const tenHours = capture({ dayId: 'd_fri', dayUnit: undefined, hoursPerUnit: 1, mu: 112, qty: 10 });
+  assert.equal(price(tenHours, '09:00', '19:00'), 1176);
+  // A full day on a long 9am–9pm booking covers 9–5. The evening is Overtime's to bill.
+  assert.equal(price(capture({ dayId: 'd_fri' }), '09:00', '21:00'), 1120);
+  // The same full day from 1pm covers 1–9pm: 4 of its 8 hours after hours.
+  assert.equal(price(capture({ dayId: 'd_fri' }), '13:00', '21:00'), 1260);
+  // A two-hour item from a 3pm start covers 3–5pm, though the booking runs to 9.
+  const twoHours = capture({ dayId: 'd_fri', dayUnit: undefined, hoursPerUnit: 1, mu: 140, qty: 2 });
+  assert.equal(price(twoHours, '15:00', '21:00'), 280);
+  // An item longer than the booking covers the booking: 8 hrs in a 6pm–10pm booking, all after hours.
+  assert.equal(price(capture({ dayId: 'd_fri' }), '18:00', '22:00'), 1400);
+  // Hours come from qty × hours per unit: two full days from 9am fill a 9am–9pm booking.
+  assert.equal(price(capture({ dayId: 'd_fri', qty: 2 }), '09:00', '21:00'), Math.ceil(2240 * (8 / 12 + (4 / 12) * 1.25)));
+});
+
+test('short notice reaches a production line on no day, as on a Date TBC day', () => {
+  const rows = { prod: [capture(), capture({ dayId: 'd_sat' })], post: [capture({ name: 'Edit' })] };
+  const sat = { ...SAT_DAY, startTime: null, endTime: null };
+  const t = computeTotals(rows, DAY_CARD_PB, UNREG, booked([sat], { shortNotice: true }));
+  // Unassigned $2,240 (it used to stay $1,120) + Saturday $3,360 + Post untouched $1,120.
+  assert.deepEqual([t.labourTotal, t.surchargeTotal], [2240 + 3360 + 1120, 1120 + 2240]);
+  // With no days at all, the tick still applies, from the snapshot's own multiplier.
+  const none = { days: [], shortNotice: true, surcharges: surchargeSnapshot([], { ...DAY_CARD_PB, surcharges: { shortNotice: 1.5 } }, [], null) };
+  assert.equal(computeTotals({ prod: [capture()] }, DAY_CARD_PB, UNREG, none).labourTotal, 1680);
+  // And without the tick, nothing on no day moves.
+  assert.equal(computeTotals({ prod: [capture()] }, DAY_CARD_PB, UNREG, booked([sat])).labourTotal, 1120);
 });
 
 test('a line on no day, a dayId outside Production, and an estimate with no days all price as before', () => {
@@ -2532,7 +2583,7 @@ test('surchargeSnapshot: a re-save keeps the old settings and each unmoved day\'
   assert.equal(surchargeSnapshot([SAT_DAY], liveCard, [], { surcharges: {}, days: [] }).settings.weekend, 3);
 });
 
-test('stampSurchargedPrices: each production line on a day carries its price, and nothing else carries one', () => {
+test('stampSurchargedPrices: each production line the surcharges reach carries its price, and nothing else carries one', () => {
   const rows = {
     prod: [capture({ dayId: 'd_sat' }), capture({ surchargedPrice: 9999 })],
     post: [capture({ name: 'Edit', surchargedPrice: 1 })],
@@ -2541,29 +2592,34 @@ test('stampSurchargedPrices: each production line on a day carries its price, an
   const opts = booked([SAT_DAY], { shortNotice: true });
   const stamped = stampSurchargedPrices(rows, DAY_CARD_PB, opts);
   assert.equal(stamped.prod[0].surchargedPrice, 3360);
-  assert.equal('surchargedPrice' in stamped.prod[1], false);
+  // On no day, with short notice ticked: short notice only, and a stale stamp replaced.
+  assert.equal(stamped.prod[1].surchargedPrice, 2240);
   assert.equal('surchargedPrice' in stamped.post[0], false);
   assert.deepEqual(stamped.crew, rows.crew);
   assert.equal(rows.prod[1].surchargedPrice, 9999); // the input is not modified
   // What is stamped is what is totalled.
   const t = computeTotals(stamped, DAY_CARD_PB, UNREG, opts);
-  assert.equal(t.labourTotal, 3360 + 1120 + 1120);
+  assert.equal(t.labourTotal, 3360 + 2240 + 1120);
+  // Without the tick, a line on no day carries no price of its own.
+  const plain = stampSurchargedPrices(rows, DAY_CARD_PB, booked([SAT_DAY]));
+  assert.equal('surchargedPrice' in plain.prod[1], false);
 });
 
 /* ── The Cost Breakdown (production-booking task 8) ───────────────────────
-   D13: each day's items at base price, each surcharge with its multiplier,
-   the hours it covered and its $, short notice once, then everything else —
-   adding up to the stored total to the cent. */
+   D13: each day's items at base price, each item's surcharges with their
+   multiplier, the hours they covered and their $, carry-over rows after
+   midnight, short notice once, then everything else — adding up to the stored
+   total to the cent. */
 const { costBreakdown } = require('../src/calc');
 
 /* Every figure a reader of the breakdown adds up, in cents. */
 function breakdownCents(b) {
   const c = (n) => Math.round(n * 100);
   let sum = 0;
-  b.days.forEach((d) => {
-    d.lines.forEach((l) => { sum += c(l.base); });
-    d.surcharges.forEach((s) => { sum += c(s.amount); });
-  });
+  b.days.forEach((d) => d.lines.forEach((l) => {
+    sum += c(l.base);
+    l.surcharges.forEach((r) => { sum += c(r.amount); });
+  }));
   if (b.shortNotice) sum += c(b.shortNotice.amount);
   b.sections.forEach((s) => s.lines.forEach((l) => { sum += c(l.amount); }));
   [b.travel, b.equip, b.crew].forEach((list) => list.forEach((l) => { sum += c(l.amount); }));
@@ -2574,8 +2630,9 @@ const breakdownOf = (rows, settings, opts) => {
   const totals = computeTotals(rows, DAY_CARD_PB, settings, opts);
   return { totals, b: costBreakdown(rows, DAY_CARD_PB, { ...opts, totals }) };
 };
+const rowsOf = (line) => line.surcharges.map((r) => [r.type, r.multiplier, r.hours, r.carry, r.amount]);
 
-test('costBreakdown: the worked examples, each day\'s surcharge named with its hours, adding up to the total', () => {
+test('costBreakdown: the worked examples, each item\'s surcharges named with its hours, adding up to the total', () => {
   const rows = {
     prod: [capture({ dayId: 'd_sat' }), capture({ dayId: 'd_fri' }), capture({ dayId: 'd_tbc' })],
     post: [capture({ name: 'Edit' })],
@@ -2585,31 +2642,64 @@ test('costBreakdown: the worked examples, each day\'s surcharge named with its h
   const [sat, fri, tbc] = b.days;
   // Saturday 1–9pm: half of it is after hours, but the weekend's ×1.5 wins both halves.
   assert.deepEqual(sat.lines.map((l) => [l.base, l.price]), [[1120, 1680]]);
-  assert.deepEqual(sat.surcharges, [{ type: 'weekend', multiplier: 1.5, share: 1, hours: 8, amount: 560 }]);
-  assert.equal(sat.kind, 'weekend');
-  // Friday 9–7: two of ten hours after hours.
-  assert.deepEqual(fri.surcharges, [{ type: 'afterHours', multiplier: 1.25, share: 0.2, hours: 2, amount: 56 }]);
-  assert.equal(fri.price, 1176);
-  assert.deepEqual([tbc.surcharges, tbc.price, tbc.kind], [[], 1120, null]);
+  assert.deepEqual(rowsOf(sat.lines[0]), [['weekend', 1.5, 8, false, 560]]);
+  assert.deepEqual([sat.kind, sat.lines[0].window, sat.lines[0].coveredHours], ['weekend', { start: 780, end: 1260 }, 8]);
+  // Friday 9–7 holds a full day: it covers 9–5, so nothing after hours.
+  assert.deepEqual([fri.lines[0].window, rowsOf(fri.lines[0]), fri.price], [{ start: 540, end: 1020 }, [], 1120]);
+  assert.deepEqual([rowsOf(tbc.lines[0]), tbc.price, tbc.kind, tbc.lines[0].window], [[], 1120, null, null]);
   assert.equal(b.shortNotice, null);
   assert.deepEqual(b.sections.map((s) => [s.id, s.total]), [['post', 1120]]);
   assert.deepEqual(b.crew.map((l) => [l.name, l.amount]), [['Gaffer', 500]]);
   assert.equal(b.surchargeTotal, totals.surchargeTotal);
   assert.equal(b.itemsTotal, totals.clientPriceExGst);
-  assert.deepEqual([b.target, b.adjustment], [totals.clientPriceExGst, 0]);
+  assert.deepEqual([b.target, b.adjustment, b.stale], [totals.clientPriceExGst, 0, false]);
   assert.equal(breakdownCents(b), Math.round(totals.clientPriceExGst * 100));
 });
 
-test('costBreakdown: short notice is one row for the estimate, charged on each day\'s surcharged price', () => {
-  const rows = { prod: [capture({ dayId: 'd_sat' }), capture({ dayId: 'd_fri' }), capture({ dayId: 'd_tbc' })] };
-  const { totals, b } = breakdownOf(rows, UNREG, booked([SAT_DAY, FRI_DAY, TBC_DAY], { shortNotice: true }));
-  // $3,360 + $2,352 + $2,240: short notice is 1,680 + 1,176 + 1,120 of it.
-  assert.deepEqual(b.days.map((d) => d.price), [3360, 2352, 2240]);
-  assert.deepEqual(b.shortNotice, { multiplier: 2, amount: 1680 + 1176 + 1120, dayIds: ['d_sat', 'd_fri', 'd_tbc'] });
-  // Short notice never appears among a day's own rows.
-  assert.deepEqual(b.days.map((d) => d.surcharges.map((s) => s.type)), [['weekend'], ['afterHours'], []]);
+test('costBreakdown: two items on one day each carry their own window and after-hours share', () => {
+  // Fri 3pm–9pm: a full day covers 3–9pm (6 hrs, the booking's end), two drone hours cover 3–5pm.
+  const day = { ...FRI_DAY, startTime: '15:00', endTime: '21:00' };
+  const drone = capture({ name: 'Drone', dayId: 'd_fri', dayUnit: undefined, hoursPerUnit: 1, mu: 150, qty: 2 });
+  const { totals, b } = breakdownOf({ prod: [capture({ dayId: 'd_fri' }), drone] }, UNREG, booked([day]));
+  const [full, two] = b.days[0].lines;
+  assert.deepEqual([full.window, full.coveredHours, rowsOf(full)], [{ start: 900, end: 1260 }, 6, [['afterHours', 1.25, 4, false, 187]]]); // 186.67 plus the round-up to $1,307
+  assert.deepEqual([full.price, two.window, rowsOf(two), two.price], [1307, { start: 900, end: 1020 }, [], 300]);
   assert.equal(breakdownCents(b), Math.round(totals.clientPriceExGst * 100));
-  assert.equal(b.adjustment, 0);
+});
+
+test('costBreakdown: hours after midnight on a date of another status are a carry-over row', () => {
+  // Fri 8pm → Sat 2am; Sun 8pm → Mon 3am (weekend into weekday: after hours takes over).
+  const fri = { id: 'd_fn', date: FRI, status: 'confirmed', startTime: '20:00', endTime: '02:00' };
+  const sun = { id: 'd_sn', date: '2026-10-04', status: 'confirmed', startTime: '20:00', endTime: '03:00' };
+  const rows = { prod: [capture({ dayId: 'd_fn' }), capture({ dayId: 'd_sn' })] };
+  const opts = booked([fri, sun]);
+  assert.deepEqual(opts.surcharges.nextDays, { d_fn: 'weekend', d_sn: 'weekday' });
+  const { totals, b } = breakdownOf(rows, UNREG, opts);
+  const [f, s] = b.days.map((d) => d.lines[0]);
+  assert.deepEqual([rowsOf(f), f.carryDate, f.nextKind, f.price], [
+    [['afterHours', 1.25, 4, false, 186.67], ['weekend', 1.5, 2, true, 187.33]], SAT, 'weekend', 1494]);
+  // Sun 8pm–12am weekend (4 hrs); Mon 12–3am after hours (3 hrs), a carry-over into a weekday.
+  assert.deepEqual([rowsOf(s), s.carryDate], [
+    [['weekend', 1.5, 4, false, 320], ['afterHours', 1.25, 3, true, 120]], '2026-10-05']);
+  assert.equal(breakdownCents(b), Math.round(totals.clientPriceExGst * 100));
+});
+
+test('costBreakdown: short notice is one row for the estimate, on every production item it reached', () => {
+  const rows = {
+    prod: [capture({ dayId: 'd_sat' }), capture({ dayId: 'd_fri' }), capture({ dayId: 'd_tbc' }), capture({ name: 'Loose' })],
+    post: [capture({ name: 'Edit' })],
+  };
+  const { totals, b } = breakdownOf(rows, UNREG, booked([SAT_DAY, FRI_DAY, TBC_DAY], { shortNotice: true }));
+  // $3,360 + $2,240 + $2,240 on days, $2,240 on no day: short notice is 1,680 + 1,120 × 3 of it.
+  assert.deepEqual(b.days.map((d) => d.price), [3360, 2240, 2240]);
+  assert.deepEqual(b.shortNotice, { multiplier: 2, amount: 1680 + 1120 * 3, items: 4 });
+  // Short notice never appears among an item's own rows.
+  assert.deepEqual(b.days.map((d) => d.lines[0].surcharges.map((r) => r.type)), [['weekend'], [], []]);
+  // The line on no day lists at base, and is charged with its short notice.
+  assert.deepEqual(b.sections.map((sec) => [sec.id, sec.lines.map((l) => [l.name, l.amount, l.price])]),
+    [['prod', [['Loose', 1120, 2240]]], ['post', [['Edit', 1120, 1120]]]]);
+  assert.equal(breakdownCents(b), Math.round(totals.clientPriceExGst * 100));
+  assert.deepEqual([b.adjustment, b.surchargeTotal], [0, totals.surchargeTotal]);
 });
 
 test('costBreakdown: under "multiply" after hours is charged on the weekend price, and each row covers its own hours', () => {
@@ -2617,10 +2707,7 @@ test('costBreakdown: under "multiply" after hours is charged on the weekend pric
   opts.surcharges.settings.mode = 'multiply';
   const { totals, b } = breakdownOf({ prod: [capture({ dayId: 'd_sat' })] }, UNREG, opts);
   assert.equal(totals.clientPriceExGst, 3780);
-  assert.deepEqual(b.days[0].surcharges, [
-    { type: 'weekend', multiplier: 1.5, share: 1, hours: 8, amount: 560 },
-    { type: 'afterHours', multiplier: 1.25, share: 0.5, hours: 4, amount: 210 },
-  ]);
+  assert.deepEqual(rowsOf(b.days[0].lines[0]), [['weekend', 1.5, 8, false, 560], ['afterHours', 1.25, 4, false, 210]]);
   assert.deepEqual([b.shortNotice.amount, b.days[0].price], [1890, 3780]);
   assert.equal(breakdownCents(b), 378000);
 });
@@ -2631,8 +2718,8 @@ test('costBreakdown: the snapshot\'s settings explain the price, not the live ca
   const totals = computeTotals(rows, DAY_CARD_PB, UNREG, opts);
   const live = { ...DAY_CARD_PB, surcharges: { weekend: 3 } };
   const b = costBreakdown(rows, live, { ...opts, totals });
-  assert.deepEqual(b.days[0].surcharges.map((s) => [s.multiplier, s.amount]), [[1.5, 560]]);
-  assert.equal(b.adjustment, 0);
+  assert.deepEqual(b.days[0].lines[0].surcharges.map((r) => [r.multiplier, r.amount]), [[1.5, 560]]);
+  assert.deepEqual([b.adjustment, b.settings.weekend], [0, 1.5]);
 });
 
 test('costBreakdown: unassigned production lines list at base under Production; no days means no surcharge rows', () => {
@@ -2644,7 +2731,16 @@ test('costBreakdown: unassigned production lines list at base under Production; 
   assert.equal(breakdownCents(b), Math.round(totals.clientPriceExGst * 100));
 
   const none = costBreakdown(rows, DAY_CARD_PB, { totals: computeTotals(rows, DAY_CARD_PB, UNREG) });
-  assert.deepEqual([none.days, none.shortNotice, none.adjustment], [[], null, 0]);
+  assert.deepEqual([none.days, none.shortNotice, none.adjustment, none.settings], [[], null, 0, null]);
+});
+
+test('costBreakdown: a zero-quantity item with no price is left out', () => {
+  const rows = { prod: [capture({ dayId: 'd_sat' }), capture({ dayId: 'd_sat', name: 'Drone', qty: 0 })] };
+  const { b } = breakdownOf(rows, UNREG, booked([SAT_DAY]));
+  assert.deepEqual(b.days[0].lines.map((l) => l.name), ['Video Capture']);
+  // A custom amount with no quantity is still charged, so it stays.
+  const custom = { prod: [capture({ dayId: 'd_sat', qty: 0, override: 300 })] };
+  assert.equal(breakdownOf(custom, UNREG, booked([SAT_DAY])).b.days[0].lines.length, 1);
 });
 
 test('costBreakdown: the lines add up to the total inc GST on an inclusive card, and to the ex-GST price otherwise', () => {
@@ -2666,12 +2762,26 @@ test('costBreakdown: lines in fractions of a cent leave a rounding difference, a
   const rows = { post: [capture({ name: 'Grade', mu: 33.33, qty: 1.5 }), capture({ name: 'Mix', mu: 33.33, qty: 1.5 })] };
   const { totals, b } = breakdownOf(rows, UNREG, {});
   assert.equal(totals.clientPriceExGst, 99.99);
-  assert.deepEqual([b.itemsTotal, b.target, b.adjustment], [100, 99.99, -0.01]);
+  assert.deepEqual([b.itemsTotal, b.target, b.adjustment, b.stale], [100, 99.99, -0.01, false]);
+});
+
+test('costBreakdown: totals that no longer match the lines are stale, not rounding', () => {
+  // Lines worth $2,000 against stored totals of $1,400: an estimate saved by an older build.
+  const rows = { post: [capture({ name: 'Edit', mu: 1000, qty: 2 })] };
+  const b = costBreakdown(rows, DAY_CARD_PB, { totals: { clientPriceExGst: 1400, gst: 0, totalIncGst: 1400 } });
+  assert.deepEqual([b.adjustment, b.stale], [-600, true]);
+  // One cent on one line is rounding; two cents on one line is not.
+  const one = costBreakdown(rows, DAY_CARD_PB, { totals: { clientPriceExGst: 1999.99, gst: 0, totalIncGst: 1999.99 } });
+  assert.equal(one.stale, true);
+  const two = costBreakdown({ post: [capture({ name: 'A', mu: 1000 }), capture({ name: 'B', mu: 999.99 })] }, DAY_CARD_PB,
+    { totals: { clientPriceExGst: 2000, gst: 0, totalIncGst: 2000 } });
+  assert.deepEqual([two.adjustment, two.stale], [0.01, false]);
 });
 
 test('costBreakdown: a sweep of prices, days, modes and GST cards always adds up to the stored total', () => {
   const settingsList = [UNREG, settingsWith(GST_INCLUSIVE), settingsWith(GST_EXCLUSIVE)];
   const LATE = { id: 'd_late', date: FRI, status: 'proposed', startTime: '18:00', endTime: '02:00' };
+  const SUN = { id: 'd_sun', date: '2026-10-04', status: 'pencilled', startTime: '19:30', endTime: '04:15' };
   let checked = 0;
   for (const mode of ['higher', 'multiply', 'highest']) {
     for (const shortNotice of [false, true]) {
@@ -2679,19 +2789,24 @@ test('costBreakdown: a sweep of prices, days, modes and GST cards always adds up
         for (let mu = 97; mu < 1500; mu += 137) {
           const rows = {
             prod: [capture({ dayId: 'd_sat', mu }), capture({ dayId: 'd_fri', mu: mu + 3, qty: 2 }),
-              capture({ dayId: 'd_late', mu: mu / 2 }), capture({ dayId: 'd_tbc', override: mu + 0.5 }), capture({ mu })],
+              capture({ dayId: 'd_late', mu: mu / 2 }), capture({ dayId: 'd_tbc', override: mu + 0.5 }), capture({ mu }),
+              capture({ dayId: 'd_sun', mu: mu + 7, dayUnit: undefined, hoursPerUnit: 1, qty: 3.5 }),
+              capture({ dayId: 'd_late', mu: mu + 1, dayUnit: 'half', hoursPerUnit: 4 })],
             post: [capture({ name: 'Edit', mu: mu + 11 })],
             equip: [{ vendor: 'Lens', days: 2, cost: mu / 4 }],
           };
-          const opts = booked([SAT_DAY, FRI_DAY, LATE, TBC_DAY], { shortNotice });
+          const opts = booked([SAT_DAY, FRI_DAY, LATE, TBC_DAY, SUN], { shortNotice });
           opts.surcharges.settings.mode = mode;
           const { totals, b } = breakdownOf(rows, settings, opts);
           assert.equal(b.adjustment, 0, `mode ${mode}, mu ${mu}`);
+          assert.equal(b.stale, false);
           assert.equal(breakdownCents(b), Math.round(b.target * 100));
           assert.equal(b.surchargeTotal, totals.surchargeTotal);
+          const stamped = stampSurchargedPrices(rows, DAY_CARD_PB, opts).prod;
           b.days.forEach((d) => d.lines.forEach((l) => {
-            const stamped = stampSurchargedPrices(rows, DAY_CARD_PB, opts).prod[l.index];
-            assert.equal(l.price, stamped.surchargedPrice);
+            assert.equal(l.price, stamped[l.index].surchargedPrice);
+            const own = l.surcharges.reduce((sum, r) => sum + Math.round(r.amount * 100), 0);
+            assert.ok(own <= Math.round((l.price - l.base) * 100)); // short notice is the rest
           }));
           checked += 1;
         }

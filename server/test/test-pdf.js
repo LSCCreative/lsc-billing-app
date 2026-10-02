@@ -16,7 +16,7 @@ const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const {
-  buildEstimateHtml, buildCostBreakdownHtml, exportBlocker, exportFilename, costBreakdownFilename,
+  buildEstimateHtml, buildCostBreakdownHtml, costBreakdownBlocker, exportBlocker, exportFilename, costBreakdownFilename,
   resolveExecutablePath, PROPOSED_DISCLAIMER,
 } = require('../src/pdf');
 const { PRICING_SHAPE, computeTotals, surchargeSnapshot, stampSurchargedPrices } = require('../src/calc');
@@ -190,7 +190,8 @@ test('client PDF: production days by date with status and times, items at their 
   const html = buildEstimateHtml(est, DAY_PRICING, {});
   assert.match(html, /Production Days/);
   assert.match(html, /Saturday 3 October 2026.*Confirmed &middot; 1:00pm–9:00pm.*Video Capture.*1 full day.*\$3,360\.00/s);
-  assert.match(html, /Friday 2 October 2026.*Pencilled &middot; 9:00am–7:00pm.*\$2,352\.00/s);
+  // Friday 9–7 holds a full day, which covers 9–5: short notice only.
+  assert.match(html, /Friday 2 October 2026.*Pencilled &middot; 9:00am–7:00pm.*\$2,240\.00/s);
   assert.match(html, /Date TBC.*Proposed.*Drone.*1 half day.*\$1,200\.00/s);
   // Days print in the estimate's own order (the editor saves them by date, TBC last).
   assert.ok(html.indexOf('Saturday 3 October') < html.indexOf('Friday 2 October'));
@@ -204,9 +205,9 @@ test('client PDF: the folded prices add up to the total', () => {
   const html = buildEstimateHtml(est, DAY_PRICING, {});
   const days = html.slice(html.indexOf('Production Days'), html.indexOf('Your Investment'));
   const lines = moneyIn(days);
-  assert.deepEqual(lines, [336000, 235200, 120000]);
+  assert.deepEqual(lines, [336000, 224000, 120000]);
   assert.equal(lines.reduce((a, b) => a + b, 0), Math.round(est.totals.totalIncGst * 100));
-  assert.match(html, /Total Investment.*\$6,912\.00/s);
+  assert.match(html, /Total Investment.*\$6,800\.00/s);
 
   // On a GST-exclusive card they add up to the ex-GST subtotal shown above GST.
   const ex = bookedEstimate({ rows: { prod: [cap({ dayId: 'd_sat' })] }, days: [SAT], settings: EXCL });
@@ -258,38 +259,68 @@ function cbFigures(html) {
   return {
     items: rows.filter((r) => r[1] === 'item').map((r) => amount(r[2])),
     total: rows.filter((r) => r[1] === 'total').map((r) => amount(r[2])),
-    text: rows.map((r) => r[2].replace(/<[^>]+>/g, '').replace(/&middot;/g, '·').replace(/&times;/g, '×').replace(/&amp;/g, '&')),
+    text: rows.map((r) => r[2].replace(/<[^>]+>/g, '').replace(/&middot;/g, '·').replace(/&times;/g, '×')
+      .replace(/&rarr;/g, '→').replace(/&amp;/g, '&')),
   };
 }
 
-test('Cost Breakdown: base prices, each surcharge with its multiplier and hours, short notice, adding up to the total', () => {
+test('Cost Breakdown: base prices, each item\'s rates with its hours, carry-over, short notice, adding up to the total', () => {
+  const FRI_NIGHT = { id: 'd_fn', date: '2026-10-02', status: 'confirmed', startTime: '20:00', endTime: '02:00', overrideNote: '' };
   const est = bookedEstimate({
     rows: {
-      prod: [cap({ dayId: 'd_sat' }), cap({ dayId: 'd_fri' }), cap({ dayId: 'd_tbc' })],
+      prod: [cap({ dayId: 'd_sat' }), cap({ dayId: 'd_fn' }), cap({ dayId: 'd_fri' }), cap({ dayId: 'd_tbc' })],
       post: [cap({ name: 'Edit', dayUnit: undefined, hoursPerUnit: undefined, mu: 150, qty: 6 })],
       crew: [{ role: 'Gaffer', days: 2, cost: 650 }],
       equip: [{ vendor: 'Lens hire', days: 1, cost: 180 }],
     },
-    days: [SAT, FRI, TBC],
+    days: [SAT, FRI_NIGHT, FRI, TBC],
     shortNotice: true,
   });
   const html = buildCostBreakdownHtml(est, DAY_PRICING, {});
   const f = cbFigures(html);
-  assert.ok(f.text.some((t) => /Video Capture · 1 full day, standard rate\$1,120\.00/.test(t)));
-  assert.ok(f.text.some((t) => /Weekend rate ×1\.5 · whole day\+\$560\.00/.test(t)));
-  assert.ok(f.text.some((t) => /After hours ×1\.25 · 2 of 10 hrs\+\$56\.00/.test(t)));
-  assert.ok(f.text.some((t) => /Short notice ×2 · .*3 days\+\$3,976\.00/.test(t)));
-  assert.ok(f.text.some((t) => /Edit · 6 hours\$900\.00/.test(t)));
-  assert.ok(f.text.some((t) => /Gaffer · 2 days at \$650\.00\$1,300\.00/.test(t)));
-  assert.ok(f.text.some((t) => /Day total\$1,680\.00/.test(t)));
+  const has = (re) => assert.ok(f.text.some((t) => re.test(t)), String(re));
+  has(/^Video Capture · 1 full day, standard rate\$1,120\.00$/);
+  // Saturday 1–9pm: the weekend rate on all eight hours (it beats after hours).
+  has(/^Weekend rate ×1\.5 · all of its 8 hrs\+\$560\.00$/);
+  // Friday 8pm → 2am: after hours until midnight, then a carry-over into Saturday at the weekend rate.
+  has(/^After hours ×1\.25 · 4 of its 6 hrs\+\$186\.67$/);
+  has(/^Carry-over into Saturday 3 October 2026: weekend rate ×1\.5 · 2 of its 6 hrs, after midnight, \$186\.67\/hr → \$280\.00\/hr\+\$186\.67$/);
+  has(/^Day total · before short notice\$1,493\.34$/);
+  // Friday 9–7: the full day covers 9–5, and the page says why the last two hours carry nothing.
+  has(/^Covers 9:00am–5:00pm: 8 hrs from the 9:00am start, of the 10 hrs booked\. The rest of the booking carries no day or time rate\.$/);
+  // Short notice: once, on all four items: 1,680 + 1,493.66 + 1,120 + 1,120.
+  has(/^Short notice ×2 · booked at short notice, on 4 production items\+\$5,413\.66$/);
+  has(/^Edit · 6 hours\$900\.00$/);
+  has(/^Gaffer · 2 days at \$650\.00\$1,300\.00$/);
+  // The explanation, in the estimate's own office hours and mode.
+  assert.match(html, /Each item&rsquo;s day and time rates apply to the hours it covers.*7:00am&ndash;5:00pm.*Hours after midnight take the next date&rsquo;s rate, shown as a carry-over\. Where a weekend or holiday rate and after hours overlap, the higher one applies/s);
   // The rows add up to the total, which is the estimate's own.
   const sum = f.items.reduce((a, b) => a + b, 0);
   assert.deepEqual(f.total, [sum]);
   assert.equal(sum, Math.round(est.totals.totalIncGst * 100));
-  assert.match(html, /Total <span[^>]*>inc\. all services<\/span><\/td><td[^>]*>\$10,332\.00/);
+  assert.match(html, /Total <span[^>]*>inc\. all services<\/span><\/td><td[^>]*>\$13,207\.00/);
   // Its header names it, and none of the owner's internal figures appear.
   assert.match(html, /COST BREAKDOWN.*UP-042.*Brand film/s);
   assert.doesNotMatch(html, INTERNAL_WORDS);
+});
+
+test('Cost Breakdown: an estimate whose stored total no longer matches its lines is refused, not "rounded"', () => {
+  const est = { ...QUOTE, activeRows: { post: [cap({ name: 'Edit', mu: 1000, qty: 2 })] },
+    totals: { clientPriceExGst: 1400, gst: 0, totalIncGst: 1400 }, days: [] };
+  assert.equal(costBreakdownBlocker(est, DAY_PRICING).error, 'breakdown_stale');
+  assert.match(costBreakdownBlocker(est, DAY_PRICING).message, /save it again/);
+  assert.equal(costBreakdownBlocker(ALL_ON_DAYS(), DAY_PRICING), null);
+});
+
+test('client PDF and Cost Breakdown: a zero-quantity item is left off, a charged one never is', () => {
+  const est = bookedEstimate({
+    rows: { prod: [cap({ dayId: 'd_sat' }), cap({ dayId: 'd_sat', name: 'Drone', qty: 0 }), cap({ dayId: 'd_sat', name: 'Handover', qty: 0, override: 150 })] },
+    days: [SAT],
+  });
+  const html = buildEstimateHtml(est, DAY_PRICING, {});
+  assert.doesNotMatch(html, /Drone/);
+  assert.match(html, /Handover.*\$225\.00/s); // its custom $150, at the weekend rate
+  assert.doesNotMatch(buildCostBreakdownHtml(est, DAY_PRICING, {}), /Drone/);
 });
 
 test('Cost Breakdown: adds up on GST-inclusive and exclusive cards, in every mode', () => {

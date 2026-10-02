@@ -1,7 +1,7 @@
 # Design Brief: Production Booking
 
 Date: 30 September 2026. Written from the user's request of the same day, their 66 answers in
-[`DECISIONS.md`](DECISIONS.md) (cited below as **D1–D66**; don't re-ask any of them), and the
+[`DECISIONS.md`](DECISIONS.md) (cited below as **D1–D72**; don't re-ask any of them; D67–D72 revised the surcharge maths on 2026-10-02), and the
 codebase. This track replaces `estimate-accuracy` task 8 (booking rate, scrapped) and task 11
 (loadings, superseded). Earlier tracks remain the authority for anything not overturned here.
 
@@ -160,16 +160,22 @@ estimate | invoice.
 ### 1. Surcharge maths (money math, pin with tests)
 
 These rules apply to production items only (the `prod` section, D3, D24). Pass-throughs, other
-sections and Additional work are never surcharged. For each **dated** production day:
+sections and Additional work are never surcharged. *Revised 2026-10-02 after a money review
+(D67–D72): the rates are worked out per item, over the hours it covers.* For each production item
+on a **dated** day:
 
 - **w**: the weekend/holiday multiplier if the date is not a working weekday (the "working
   weekdays" setting, default Mon–Fri) or is on the holiday list; otherwise 1.
-- **s**: the after-hours share. It is the booked hours outside office start–end divided by total
-  booked hours (D5, D11), and is 0 with no times. Overnight: an end time before the start means past
-  midnight, and the whole shoot belongs to the start date (D21). *Interpretation, flagged for
-  review:* office hours define after hours on **every** day, so a Saturday 8pm hour is both
-  weekend and after hours. That only changes the result under "All multiply", which is the
-  point of D2's 2 × 1.5 × 1.25 example.
+- **The item's window** (D67): from the booked start, for the item's own hours (qty × hours per
+  unit), never past the booked end. A full day booked 9am–9pm covers 9am–5pm; the rest of the
+  booking carries no rate (it's Overtime's to bill). With no times there is no window.
+- **s**: the after-hours share of the item's window, outside office start–end. Office hours apply on
+  **every** day (D68), and on the next date too, so an overnight shoot's hours inside the next
+  morning's office hours are in-hours (D69). 0 with no times.
+- **Overnight** (D70): an end before the start runs past midnight. The hours after midnight take
+  the **next date's** weekend/holiday status: the window splits at midnight, each part with its own
+  w. Where the status changes, those hours are a **carry-over**, shown as their own sub-line in the
+  Cost Breakdown.
 - **A**: the after-hours multiplier. **S**: the short-notice multiplier if the tick is on, else 1.
 
 | Mode (D2) | In-hours part | After-hours part |
@@ -178,13 +184,15 @@ sections and Additional work are never surcharged. For each **dated** production
 | All multiply | S × w | S × w × A |
 | Only the highest | max(S, w) | max(S, w, A) |
 
-Item factor = (1 − s) × in-hours + s × after-hours. The client price of the line is
+Item factor = Σ over the window's parts (in or out of office hours, on each date) of the part's
+share × its column above, with w that part's own date's. The client price of the line is
 `ceil(base × factor)` to the whole dollar, applied once per line after all surcharges (D20). A
-**Date TBC** day has w = 1 and s = 0, but short notice still applies (D9). The surcharge is
+**Date TBC** day has w = 1 and s = 0, but short notice still applies (D9), and it applies to a
+production item on no day too (D72). The surcharge is
 **income**: taxed, no extra hours, and no change to the floors or Minimum Job Price. Each line
 snapshots its surcharged price, and the estimate snapshots the multipliers, the mode, the office
-hours and each day's weekend/holiday status, so a later Rate Card or holiday-list change moves
-only new estimates.
+hours, each day's weekend/holiday status and, for an overnight day, the next date's, so a later
+Rate Card or holiday-list change moves only new estimates.
 
 **The Cost Breakdown's surcharge amounts add up to the cent** to the difference between the
 rounded client price and the base price. The rounding lands on the last surcharge row for that line.
@@ -192,7 +200,11 @@ rounded client price and the base price. The rounding lands on the last surcharg
 Worked examples for the tests, on the default card (Video Capture Full Day $1,120):
 
 - A Saturday, no times, default mode: 1,120 × 1.5 = **$1,680**.
-- A weekday booked 9am–7pm (s = 0.2), default mode: 1,120 × (0.8 + 0.2 × 1.25) = **$1,176**.
+- A weekday booked 9am–7pm, default mode: the full day covers 9–5, so **$1,120** (D67). Ten
+  hourly hours on the same booking cover 5–7pm too (s = 0.2): 1,120 × (0.8 + 0.2 × 1.25) = **$1,176**.
+- Friday 8pm → Saturday 2am, a full day ($1,120, the window is the 6-hr booking), default mode:
+  Friday's 4 hrs after hours ×1.25, Saturday's 2 hrs weekend ×1.5 (a carry-over):
+  1,120 × (4/6 × 1.25 + 2/6 × 1.5) = $1,493.33, so **$1,494** (D70).
 - A short-notice Saturday booked 1pm–9pm (s = 0.5) prices differently in each mode:
   - default: 2 × 1.5 on both parts = **$3,360**;
   - all multiply: 2 × (0.5 × 1.5 + 0.5 × 1.875) = **$3,780**;

@@ -4,7 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { config } = require('../config');
 const {
-  buildEstimateHtml, buildCostBreakdownHtml, exportBlocker, exportFilename, costBreakdownFilename, renderPdfBuffer,
+  buildEstimateHtml, buildCostBreakdownHtml, costBreakdownBlocker, exportBlocker, exportFilename, costBreakdownFilename,
+  renderPdfBuffer,
 } = require('../pdf');
 const { readPricing, readSettings } = require('../ratecard');
 const { loadEstimate } = require('../estimate');
@@ -55,7 +56,11 @@ function registerPdfRoutes(app, db) {
     const estimate = load(req.params.id);
     if (!estimate) return res.status(404).json({ error: 'not_found' });
 
-    const html = buildCostBreakdownHtml(estimate, readPricing(db), readSettings(db));
+    const pricing = readPricing(db);
+    // Totals that no longer match the lines are refused, never printed as "rounding".
+    const blocker = costBreakdownBlocker(estimate, pricing);
+    if (blocker) return res.status(409).json(blocker);
+    const html = buildCostBreakdownHtml(estimate, pricing, readSettings(db));
     return sendPdf(res, next, html, costBreakdownFilename(estimate));
   });
 }

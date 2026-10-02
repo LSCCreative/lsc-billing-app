@@ -605,6 +605,19 @@
 .sn-hint:empty {
   display: none;
 }
+/* On a phone the whole label is the target, 44px tall (task 9). The box
+   itself grows a little so it is visible at thumb distance; the label still
+   does the work. Above 768 it keeps the doc-type bar's desktop size. */
+@media (max-width: 767px) {
+  .sn-check {
+    min-height: 44px;
+    padding-right: 6px;
+  }
+  .sn-check input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+}
 
 /* ── The estimate detail: Production by day (task 8) ─────────────────────────
    Production on an estimate with booked days reads as one group per day: a

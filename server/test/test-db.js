@@ -889,6 +889,60 @@ test('v11 leaves every estimate as it was, with no days and nothing surcharged',
   db.close();
 });
 
+test('v11 moves Overtime off set, into Additional work, and leaves saved estimates alone', () => {
+  const db = openDatabase(tempDbPath('v11-overtime'));
+  const now = nowIso();
+  const overtime = { id: 'svc_ot', name: 'Overtime — per hour', rate: 150, prices: { hour: 210, half: null, full: null } };
+  const capture = { id: 'svc_vc', name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } };
+  const card = {
+    serviceDay: { fullHours: 8, halfHours: 4 },
+    labourSections: [
+      { id: 'prod', label: 'Production', rows: [capture, overtime] },
+      { id: 'post', label: 'Post-Production', rows: [{ id: 'svc_ed', name: 'Edit', prices: { hour: 120, half: null, full: null } }] },
+    ],
+    travelRows: [],
+  };
+  db.prepare('INSERT OR REPLACE INTO pricing (id, data_json, updated_at) VALUES (1, ?, ?)').run(JSON.stringify(card), now);
+  const rows = JSON.stringify({ prod: [{ name: 'Overtime — per hour', qty: 2, mu: 210, rowId: 'svc_ot' }] });
+  db.prepare(`INSERT INTO estimates (id, upid, name, active_rows_json, totals_json, created_at, updated_at)
+    VALUES ('est_ot', 'UP-OT', 'Long day', ?, ?, ?, ?)`).run(rows, JSON.stringify({ totalIncGst: 420 }), now, now);
+  const estimateBefore = db.prepare('SELECT * FROM estimates').get();
+
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  migrate(db);
+  const moved = JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json);
+  assert.deepEqual(moved.labourSections.map((sec) => [sec.id, sec.label, sec.rows.map((r) => r.id)]), [
+    ['prod', 'Production', ['svc_vc']],
+    ['post', 'Post-Production', ['svc_ed']],
+    ['additional', 'Additional work', ['svc_ot']],
+  ]);
+  // The row moves whole: same id, same prices.
+  assert.deepEqual(moved.labourSections[2].rows[0], overtime);
+  // A saved estimate's Overtime line is untouched.
+  const est = db.prepare('SELECT * FROM estimates').get();
+  assert.deepEqual([est.active_rows_json, est.totals_json], [estimateBefore.active_rows_json, estimateBefore.totals_json]);
+
+  // Again: nothing left in Production to move, and nothing duplicated.
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  migrate(db);
+  assert.deepEqual(JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json), moved);
+
+  // A card that already has Additional work keeps its rows, Overtime joining after them.
+  const withAdditional = { ...card, labourSections: [
+    { id: 'prod', label: 'Production', rows: [capture, overtime] },
+    { id: 'additional', label: 'Extras', rows: [{ id: 'svc_rev', name: 'Revision round', prices: { hour: 90, half: null, full: null } }] },
+  ] };
+  db.prepare('UPDATE pricing SET data_json = ? WHERE id = 1').run(JSON.stringify(withAdditional));
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  migrate(db);
+  const merged = JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json);
+  assert.deepEqual(merged.labourSections.map((sec) => [sec.id, sec.label, sec.rows.map((r) => r.id)]), [
+    ['prod', 'Production', ['svc_vc']],
+    ['additional', 'Extras', ['svc_rev', 'svc_ot']],
+  ]);
+  db.close();
+});
+
 test('v11 gives a holidays table made before task 3 its fetched_at column, keeping the rows', () => {
   const db = openDatabase(tempDbPath('v11-fetched-at'));
   db.exec(`

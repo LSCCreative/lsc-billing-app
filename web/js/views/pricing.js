@@ -937,13 +937,14 @@ const PricingView = (() => {
   /* What one mode makes of a short-notice weekend shoot wholly outside office
      hours: calc.js's own factor, from the figures as typed. The day runs from
      office end to the next office start, so every hour of it is after hours
-     (afterHoursShare is 1 whatever the office hours are), and `kind` pins it as
-     a weekend whatever the working week says. null while a figure it needs
+     (afterHoursShare is 1 whatever the office hours are), and `kind` and
+     `nextKind` pin both its dates as weekend whatever the working week says. null while a figure it needs
      isn't usable. */
   function comboExample(mode) {
     const s = card.surcharges;
     if (!MULTIPLIERS.every((f) => multOk(s[f])) || !officeOk(s)) return null;
-    const day = { date: '2026-01-03', kind: 'weekend', startTime: s.officeEnd, endTime: s.officeStart };
+    // Both dates pinned as weekend: the hours after midnight take the next date's status.
+    const day = { date: '2026-01-03', kind: 'weekend', nextKind: 'weekend', startTime: s.officeEnd, endTime: s.officeStart };
     return LSCCalc.surchargeFactor(day, { surcharges: Object.assign({}, s, { mode }) }, true);
   }
   const comboFigure = (mode) => {

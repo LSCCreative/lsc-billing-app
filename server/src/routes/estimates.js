@@ -47,9 +47,9 @@ const outdated = (body) => body.pricingShape !== PRICING_SHAPE;
  * the multipliers and each unmoved day's weekend/holiday kind, so a later Rate
  * Card or holiday-list change moves only new estimates. `refreshSurcharges:
  * true` re-snapshots from the live card and holiday list — the surcharge
- * half of "Update to current rates". An estimate with no days stores '{}':
- * nothing was surcharged, so nothing is pinned, and its first day takes
- * today's settings.
+ * half of "Update to current rates". An estimate with no days and no short
+ * notice stores '{}': nothing was surcharged, so nothing is pinned, and its
+ * first day takes today's settings.
  *
  * @returns {{status:number, body:object}|{fields:object}} a refusal, or the fields.
  */
@@ -93,7 +93,9 @@ function prepareWrite(db, body, existing) {
   const prior = existing && body.refreshSurcharges !== true
     ? { surcharges: JSON.parse(existing.surcharges_json || '{}'), days: storedDays }
     : null;
-  const surcharges = days.length ? surchargeSnapshot(days, pricing, readHolidays(db), prior) : {};
+  // Short notice reaches production lines on no day too (calc.js
+  // surchargedPriceOf), so it needs the settings pinned even with no days.
+  const surcharges = days.length || shortNotice ? surchargeSnapshot(days, pricing, readHolidays(db), prior) : {};
   const options = { gstFree, overheadRate: readOverheadRate(db), days, surcharges, shortNotice };
   const activeRows = stampSurchargedPrices(body.activeRows || {}, pricing, options);
   const totals = computeTotals(activeRows, pricing, readSettings(db), options);
@@ -212,13 +214,20 @@ function registerEstimateRoutes(app, db) {
     // go with them. Those lines then price at their base price, so a copy
     // whose original had days is re-totalled rather than copied: copied totals
     // would still hold surcharges its lines no longer carry.
+    //
+    // That drops every day and time rate the original carried, so the reply
+    // says how many items came off a day (`unbooked`) and the detail screen
+    // tells the owner, rather than the copy quietly quoting less (money
+    // review, 2026-10-02).
     const rows = JSON.parse(existing.active_rows_json || '{}');
     let unbooked = false;
+    let offDays = 0;
     Object.keys(rows).forEach((key) => {
       if (!Array.isArray(rows[key])) return;
       rows[key] = rows[key].map((line) => {
         if (!line || typeof line !== 'object' || (line.dayId === undefined && line.surchargedPrice === undefined)) return line;
         unbooked = true;
+        if (line.dayId !== undefined) offDays += 1;
         const { dayId, surchargedPrice, ...rest } = line;
         return rest;
       });
@@ -243,7 +252,7 @@ function registerEstimateRoutes(app, db) {
     );
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(id);
-    res.status(201).json({ ok: true, estimate: loadJson(row) });
+    res.status(201).json({ ok: true, estimate: loadJson(row), unbooked: offDays });
   });
 }
 

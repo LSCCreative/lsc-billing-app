@@ -1281,14 +1281,15 @@ test('estimates: the worked examples price on the server as in calc.js, and each
   const { status, body } = await saveEstimate({ activeRows, days });
   assert.equal(status, 201);
   const e = body.estimate;
-  assert.deepEqual(e.activeRows.prod.map((l) => l.surchargedPrice), [1680, 1176, 1120]);
-  assert.deepEqual([e.totals.surchargeTotal, e.totals.totalIncGst], [616, 3976]);
+  // Friday 9–7 holds a full day, which covers 9–5: no after hours on it.
+  assert.deepEqual(e.activeRows.prod.map((l) => l.surchargedPrice), [1680, 1120, 1120]);
+  assert.deepEqual([e.totals.surchargeTotal, e.totals.totalIncGst], [560, 3920]);
   assert.deepEqual(e.days.map((d) => d.id), ['d_sat', 'd_fri', 'd_tbc']);
   assert.deepEqual(e.surcharges.days, { d_sat: 'weekend', d_fri: 'weekday' });
 
   // Short notice ticked: Saturday 1–9pm is the brief's $3,360 in the default mode.
   const sn = await saveEstimate({ activeRows, days, shortNotice: true }, e.id);
-  assert.deepEqual(sn.body.estimate.activeRows.prod.map((l) => l.surchargedPrice), [3360, 2352, 2240]);
+  assert.deepEqual(sn.body.estimate.activeRows.prod.map((l) => l.surchargedPrice), [3360, 2240, 2240]);
   assert.equal(sn.body.estimate.shortNotice, true);
   // A PUT that doesn't mention days or short notice keeps both.
   const kept = await saveEstimate({ activeRows }, e.id);
@@ -1414,17 +1415,48 @@ test('calendar: only days dated in the range, with what a tile shows, and none o
   assert.deepEqual(body.days, []);
 });
 
+test('estimates: short notice with no days pins the card\'s multiplier and reaches every production line', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  assert.equal((await api('/api/pricing', { method: 'PUT', body: JSON.stringify({ ...card, surcharges: { shortNotice: 1.5 } }) })).status, 200);
+  const e = await saveEstimate({ activeRows: { prod: [capture(null)], post: [capture(null, { name: 'Edit' })] }, shortNotice: true });
+  assert.equal(e.status, 201);
+  assert.equal(e.body.estimate.surcharges.settings.shortNotice, 1.5);
+  assert.deepEqual(e.body.estimate.activeRows.prod.map((l) => l.surchargedPrice), [1680]);
+  assert.equal('surchargedPrice' in e.body.estimate.activeRows.post[0], false);
+  assert.deepEqual([e.body.estimate.totals.totalIncGst, e.body.estimate.totals.surchargeTotal], [1680 + 1120, 560]);
+  // Untick it and nothing is pinned or surcharged.
+  const off = await saveEstimate({ activeRows: { prod: [capture(null)] }, shortNotice: false }, e.body.estimate.id);
+  assert.deepEqual([off.body.estimate.surcharges, off.body.estimate.totals.surchargeTotal], [{}, 0]);
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  await dropEstimates(e.body.estimate.id);
+});
+
 test('estimates: a duplicate takes no days, and its lines price at base', async () => {
   const e = await saveEstimate({
     activeRows: { prod: [capture('dd1')] }, shortNotice: true,
     days: [pbDay('dd1', '2026-10-03', 'confirmed')],
   });
   assert.equal(e.body.estimate.totals.totalIncGst, 3360);
-  const copy = (await api(`/api/estimates/${e.body.estimate.id}/duplicate`, { method: 'POST' }).then((r) => r.json())).estimate;
+  const reply = await api(`/api/estimates/${e.body.estimate.id}/duplicate`, { method: 'POST' }).then((r) => r.json());
+  const copy = reply.estimate;
+  // The reply says how many items lost their day, so the screen can say so.
+  assert.equal(reply.unbooked, 1);
   assert.deepEqual([copy.days, copy.shortNotice, copy.surcharges], [[], false, {}]);
   assert.deepEqual(copy.activeRows.prod, [capture(null)]);
   assert.deepEqual([copy.totals.totalIncGst, copy.totals.surchargeTotal], [1120, 0]);
   await dropEstimates(e.body.estimate.id, copy.id);
+});
+
+test('cost breakdown: an estimate whose saved total no longer matches its lines is refused before rendering', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const e = await saveEstimate({ activeRows: { post: [capture(null, { name: 'Edit', mu: 1000, qty: 2 })] } });
+  db.prepare('UPDATE estimates SET totals_json = ? WHERE id = ?')
+    .run(JSON.stringify({ ...e.body.estimate.totals, clientPriceExGst: 1400, totalIncGst: 1400 }), e.body.estimate.id);
+  const res = await api(`/api/estimates/${e.body.estimate.id}/cost-breakdown`, { method: 'POST' });
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).error, 'breakdown_stale');
+  await dropEstimates(e.body.estimate.id);
 });
 
 test('estimates and pricing: a write from a build before v11 is refused as outdated', async () => {

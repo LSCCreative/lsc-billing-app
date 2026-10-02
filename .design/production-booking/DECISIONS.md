@@ -293,6 +293,41 @@ estimates are almost certainly all `draft`, and the Dashboard's "average job val
 approved / invoiced / paid) has had nothing to count. The new statuses (sent / accepted) will start
 filling it. `averageJobValue`'s won set has to move to the new model (see the IA).
 
+## 2026-10-02 — after the money review
+
+A code and accounting review of the whole pipeline (finance inputs → floors → card → estimate →
+surcharges → stored figures → PDFs) found that some of the surcharge rules could overcharge or
+undercharge. The user decided these on 2026-10-02:
+
+67. **After hours is measured over each item's own hours, from the booked start** (replaces D5's
+    share of the whole booking). A full day booked 9am–9pm covers 9am–5pm and takes no after-hours
+    rate; the evening is billed as Overtime when it runs (D10, D26). Under D5 that full day would
+    also have paid an after-hours share for hours it didn't cover: a double charge. An item longer
+    than the booking covers the booking. **The explanation goes in the Cost Breakdown only**, the
+    owner's sheet for a client who asks: each item says what it covers.
+68. **After hours applies on every day, weekends included** (D2's "All multiply" example, over
+    D11's "on weekdays"). The two decisions disagreed; the user chose D2.
+69. **Office hours apply on the next morning too.** An overnight shoot's hours inside the next
+    date's office hours are in-hours (they were all after hours).
+70. **Hours after midnight take the next date's status** (replaces D21's "the start date's status
+    applies to the whole shoot"), as penalty rates split at midnight. Where the status changes
+    (Friday night into Saturday), those hours are a **carry-over**: their own sub-line under the
+    item in the Cost Breakdown, naming the date, the rate and the hourly rate it changes to. The
+    client's copy still shows one folded price per item.
+71. **Overtime is moved off set by migration v11**, with the user's go-ahead (D14 left it to them).
+    Every production line now sits on a day and takes its rates, so Overtime left in Production
+    would be surcharged on top of its own premium. Saved estimates' Overtime lines keep their own
+    prices.
+72. **Short notice applies to every production item**, including one on no day (D3). It used to
+    be skipped there, so an older estimate ticked for short notice was undercharged by the whole
+    premium.
+
+Also from the review, without a new decision: the editor won't save a booked date until it has
+the public holiday list (so the price saved is the price shown); the Cost Breakdown refuses an
+estimate whose saved total no longer matches its items, rather than calling the gap "rounding";
+items with no quantity and no price are left off the documents; and a duplicate says how many
+items came off their days.
+
 ## Left for the user to supply (not decisions, inputs)
 
 - The **service agreement text** (decision 39), ideally checked by a lawyer.
@@ -300,8 +335,8 @@ filling it. `averageJobValue`'s won set has to move to the new model (see the IA
 - A **Stripe account** and its keys (48), plus the card-surcharge % matching Stripe's fee (49).
 - ~~The FAQ page URL~~: supplied 2026-10-01 (D55).
 - ~~The CS Felice Mono font files~~: supplied 2026-10-01 (D57).
-- On the live Rate Card: **move Overtime** out of Production into Additional work (24), once that
-  section exists.
+- ~~On the live Rate Card: move Overtime out of Production into Additional work~~: done by
+  migration v11 with the user's go-ahead (D71).
 
 ## Where this touches `estimate-accuracy`
 

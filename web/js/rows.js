@@ -137,17 +137,8 @@ const LSCRows = (() => {
      client sees (D8, D12). */
   const SUR_WORD = { weekend: 'weekend', holiday: 'public holiday', afterHours: 'after hours', shortNotice: 'short notice' };
 
-  // A day's booked hours from its times; an end before the start runs past midnight.
-  function bookedHours(day) {
-    const toMin = (t) => {
-      const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
-      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-    };
-    const a = toMin(day.startTime);
-    const b = toMin(day.endTime);
-    if (a === null || b === null || a === b) return 0;
-    return ((b < a ? b + 1440 : b) - a) / 60;
-  }
+  // A day's booked hours: calc.js's own reading, so every screen agrees.
+  const bookedHours = (day) => LSCCalc.bookedHoursOf(day);
 
   const hrsText = (n) => {
     const r = Math.round(n * 100) / 100;
@@ -156,20 +147,23 @@ const LSCRows = (() => {
 
   /**
    * @param {number} base — the line's price before surcharges.
-   * @param {object} day — the line's day, with its snapshotted `kind`.
-   * @param {object} surcharges — the estimate's snapshot ({ settings, days }).
+   * @param {object} day — the line's day, with its snapshotted `kind` and
+   *   `nextKind`.
+   * @param {object} surcharges — the estimate's snapshot ({ settings, days, nextDays }).
    * @param {boolean} shortNotice — the estimate's tick.
+   * @param {number} [lineHours] — the line's own hours (qty × hours per unit),
+   *   which decide the stretch of the day it covers (calc.js coveredWindow).
    * @returns {string} '' when nothing applies.
    */
-  function surchargeNote(base, day, surcharges, shortNotice) {
-    const att = LSCCalc.surchargeAttribution(base, day, { surcharges: (surcharges || {}).settings }, shortNotice);
+  function surchargeNote(base, day, surcharges, shortNotice, lineHours) {
+    const card = { surcharges: (surcharges || {}).settings };
+    const att = LSCCalc.surchargeAttribution(base, day, card, shortNotice, undefined, lineHours);
     if (!(att.surcharge > 0)) return '';
-    const booked = bookedHours(day);
     const parts = att.rows.map((r) => {
-      const part = r.share < 1 - 1e-9 && booked > 0
-        ? ' on ' + hrsText(r.share * booked).replace(/ hrs?$/, '') + ' of ' + hrsText(booked)
+      const of = att.hours > 0 && r.type !== 'shortNotice' && (r.carry || r.share < 1 - 1e-9)
+        ? ' on ' + hrsText(r.hours).replace(/ hrs?$/, '') + ' of ' + hrsText(att.hours)
         : '';
-      return SUR_WORD[r.type] + ' ×' + r.multiplier + part;
+      return SUR_WORD[r.type] + ' ×' + r.multiplier + (r.carry ? ' after midnight' : '') + of;
     });
     return 'incl. ' + parts.join(', ');
   }

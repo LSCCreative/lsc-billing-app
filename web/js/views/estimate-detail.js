@@ -97,7 +97,8 @@ const EstimateDetail = (() => {
     // asDocument: this screen is the read of what was quoted, so it uses the
     // headings the estimate carries — the same ones its PDF prints.
     sectionsFor(activeRows, pricing, estimate.sectionLabels, { asDocument: true }).forEach((section) => {
-      if (section.id === 'prod' && (estimate.days || []).length) {
+      // By day once there are days, or short notice (which reaches lines on no day too).
+      if (section.id === 'prod' && ((estimate.days || []).length || estimate.shortNotice === true)) {
         html += productionByDay(estimate, section, pricing);
         return;
       }
@@ -156,27 +157,32 @@ const EstimateDetail = (() => {
     const days = estimate.days || [];
     const snap = estimate.surcharges || {};
     const kinds = snap.days || {};
+    const nextKinds = snap.nextDays || {};
     const dayIds = new Set(days.map((d) => d.id));
+    const shortNotice = estimate.shortNotice === true;
     const today = LSCUtil.today();
     let subtotal = 0;
 
+    /* The stored price wherever the server stamped one: a line on a day, or
+       any production line once short notice is ticked. Never re-priced. */
     const priced = (line) => {
       const def = labourDef(section, line, pricing);
       const base = labourBill(def, line);
-      const onDay = line.dayId && dayIds.has(line.dayId);
-      const bill = base === null ? null : onDay && typeof line.surchargedPrice === 'number' ? line.surchargedPrice : base;
+      const bill = base === null ? null : typeof line.surchargedPrice === 'number' ? line.surchargedPrice : base;
       if (bill !== null) subtotal += bill;
-      return { def, base, bill };
+      const hours = def ? (Number(line.qty) || 0) * LSCCalc.hoursPerUnitOf(def) : 0;
+      return { def, base, bill, hours };
     };
+    // Left off, as on the PDF: a line with no quantity and nothing charged.
+    const shown = (line, bill) => (line.qty || 0) > 0 || bill > 0;
 
     const groups = days.map((day) => {
       const own = lines.filter((line) => line.dayId === day.id);
-      const withKind = Object.assign({}, day, { kind: kinds[day.id] });
+      const withKind = Object.assign({}, day, { kind: kinds[day.id], nextKind: nextKinds[day.id] });
       const rows = own.map((line) => {
-        const { def, base, bill } = priced(line);
-        const note = base !== null && bill > base
-          ? LSCRows.surchargeNote(base, withKind, snap, estimate.shortNotice === true)
-          : '';
+        const { def, base, bill, hours } = priced(line);
+        if (!shown(line, bill)) return '';
+        const note = base !== null && bill > base ? LSCRows.surchargeNote(base, withKind, snap, shortNotice, hours) : '';
         return labourRow(line, def, bill, note);
       }).join('');
       const when = day.date ? LSCCalendar.longDate(day.date, today) : 'Date TBC';
@@ -193,14 +199,26 @@ const EstimateDetail = (() => {
       );
     }).join('');
 
-    const loose = lines.filter((line) => !(line.dayId && dayIds.has(line.dayId)) && (line.qty || 0) > 0);
+    const loose = lines.filter((line) => !(line.dayId && dayIds.has(line.dayId)));
+    let looseCount = 0;
     const looseRows = loose.map((line) => {
-      const { def, bill } = priced(line);
-      return labourRow(line, def, bill, '');
+      const { def, base, bill } = priced(line);
+      if (!shown(line, bill)) return '';
+      looseCount += 1;
+      const note = base !== null && bill > base ? LSCRows.surchargeNote(base, null, snap, shortNotice) : '';
+      return labourRow(line, def, bill, note);
     }).join('');
     const unassigned = looseRows
       ? '<tbody class="est-day"><tr class="est-day-head"><th colspan="4" scope="rowgroup">' +
         '<span class="est-day-date">Not on a day</span></th></tr>' + looseRows + '</tbody>'
+      : '';
+    /* Owner-only: lines off a day get no weekend, holiday or after-hours rate,
+       which a copy of a booked estimate (or one from before days) can hide. */
+    const offDayNote = looseCount
+      ? '<p class="est-day-disclaimer est-off-day">' + looseCount + ' production ' +
+        (looseCount === 1 ? 'item isn’t' : 'items aren’t') + ' on a booked day, so no weekend, public holiday or ' +
+        'after-hours rate applies to ' + (looseCount === 1 ? 'it' : 'them') + '. Book ' +
+        (looseCount === 1 ? 'it' : 'them') + ' on a day in Edit.</p>'
       : '';
 
     const disclaimer = days.some((d) => d.status === 'proposed')
@@ -214,7 +232,7 @@ const EstimateDetail = (() => {
       '<h2 class="est-block-label">' + esc(section.label) + '</h2>' +
       '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
       '<table class="est-table est-table-4">' + LABOUR_HEAD + groups + unassigned + '</table>' +
-      disclaimer + '</div>'
+      offDayNote + disclaimer + '</div>'
     );
   }
 
@@ -353,7 +371,12 @@ const EstimateDetail = (() => {
     Toast.working('Duplicating…');
     try {
       const reply = await LSCApi.post('/api/estimates/' + encodeURIComponent(estimate.id) + '/duplicate');
-      Toast.ok('Duplicated — opening the copy.');
+      /* A copy has no days (D60), so any day and time rates the original
+         carried are gone until its items are booked again. Said, not hidden. */
+      Toast.ok(reply.unbooked
+        ? 'Duplicated. Its ' + reply.unbooked + ' production ' + (reply.unbooked === 1 ? 'item is' : 'items are') +
+          ' off their days and priced at the standard rate until you book ' + (reply.unbooked === 1 ? 'it' : 'them') + '.'
+        : 'Duplicated — opening the copy.');
       handlers.onOpen(reply.estimate.id);
     } catch (err) {
       els.duplicate.disabled = false;
@@ -433,7 +456,9 @@ const EstimateDetail = (() => {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       Toast.hide();
       if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
-      if (err.code === 'pdf_unavailable') {
+      if (err.code === 'breakdown_stale') {
+        showExportError(els, err.message);
+      } else if (err.code === 'pdf_unavailable') {
         showExportError(els, 'Couldn’t make the Cost Breakdown — the server has no PDF renderer. Check Chromium is installed in the container.');
       } else if (err.status === 404) {
         showExportError(els, 'Couldn’t make the Cost Breakdown — this estimate no longer exists on the server.');

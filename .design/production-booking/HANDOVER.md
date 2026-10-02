@@ -1,7 +1,7 @@
 # Handover: Production Booking
 
 Read this first, then [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md) and [`DECISIONS.md`](DECISIONS.md) (the
-user's answers, D1–D66; don't re-ask), then
+user's answers, D1–D72; don't re-ask), then
 [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md) (routes, screens, data model). This track replaces
 `estimate-accuracy` task 8 (expected booking rate, scrapped) and task 11 (loadings, superseded). It
 sits on top of every earlier track, and those stay the authority for anything this one doesn't
@@ -141,18 +141,44 @@ times.
           commit with no changes. That settles the attribution question below and the five
           interpretations in TASKS.md task 8's Done note.
 
-**Exact next item: TASKS.md task 9, the A+B responsive and accessibility pass**
-(**frontend, Opus/high**).
+      - [x] **Task 9, the A+B responsive and accessibility pass**: done 2026-10-02,
+        **uncommitted**. Only `estimate-editor.js` and `booking.css` changed (366/366).
+        - **Built:** a debounced, polite surcharge announcement (`#sur-live`, "Saturday 24
+          October: weekend rate ×1.5 applied."), and the Short notice tick at 44px on phones.
+        - **Measured and recorded** in TASKS.md task 9's Done note: layout at 1280/800/375, the
+          add-day sheet, ≥44px targets, status words, the keyboard grid, reduced motion, focus
+          rings, and nothing moved at 1280/800.
+        - **Still for a person:** a real VoiceOver pass over the booking block, the add-day
+          sheet and the detail's day groups.
+
+      - [x] **Task 9a, the money review fixes**: done 2026-10-02, **uncommitted** (377/377).
+        - **What changed:** a code and accounting review of the whole pipeline raised ten findings.
+          The user decided D67–D72 for the ones that changed a rule:
+          - after hours per item, over its own hours from the booked start;
+          - after hours every day;
+          - the next morning's office hours count as in-hours;
+          - the hours after midnight take the next date's status, as a carry-over sub-line in the
+            Cost Breakdown;
+          - migration v11 moves Overtime off set;
+          - short notice reaches items on no day.
+        - **Also fixed:** the editor's holiday save guard, the Cost Breakdown refusing stale totals,
+          qty-0 items, and the duplicate's message.
+        - **Details** are in TASKS.md task 9a.
+        - **Brief:** its surcharge maths and worked examples are updated (the 9–7 full day is now
+          $1,120).
+
+**Exact next item: TASKS.md task 10, deploy A+B** (**deploy, Sonnet/medium; ask the user first**).
+Commit tasks 9 and 9a first.
+- **Deploy order** (in the task): estimate-accuracy's v10 must be live first, then NAS v11, then
+  Pages back to back.
+- **Watch the NAS boot log** for v11's Overtime move.
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
   two readers of a booked estimate. The client page lists days as the client PDF does, with
   stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.
-- **Task 9 on the detail screen:** the day groups are `<tbody>` with a `scope="rowgroup"` head.
-  Check how VoiceOver reads them.
-- **Announcing a surcharge recompute (task 9):** not done. The editor updates figures silently.
-  The brief wants one polite announcement per recompute. Debounce it, because every keystroke in a
-  quantity recalculates.
+- **A VoiceOver pass by a person** (task 9 did everything short of it): the detail's day groups
+  are `<tbody>` with a `scope="rowgroup"` head. Check how they read.
 - **Holidays in the editor:** fetched once, the first time the estimate has a dated day. Until it
   arrives, or if it fails, new dates price as non-holidays. The server always prices with the real
   list on save, and the detail screen shows what was stored.

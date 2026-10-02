@@ -163,7 +163,9 @@ function daysWithItems(estimate, pricing) {
       const base = def ? (override || (parseFloat(line.qty) || 0) * (parseFloat(def.mu) || 0)) : 0;
       const price = typeof line.surchargedPrice === 'number' ? line.surchargedPrice : round2(base);
       return { name: line.name, qty: line.qty, unit: unitOfLine(line, def), price };
-    });
+    // A line with no quantity and no price is left off, as everywhere else on
+    // the document; one that's charged (a custom amount) never is.
+    }).filter((it) => (parseFloat(it.qty) || 0) > 0 || it.price > 0);
     return { day, items };
   });
 }
@@ -357,37 +359,117 @@ const SURCHARGE_WORD = {
   shortNotice: 'Short notice',
 };
 
+const MODE_SENTENCE = {
+  higher: 'Where a weekend or holiday rate and after hours overlap, the higher one applies; short notice is applied on top.',
+  multiply: 'Where rates overlap they multiply together, short notice included.',
+  highest: 'Only the single highest rate applies to any hour, short notice included.',
+};
+
 const hrs = (n) => {
   const r = Math.round(n * 100) / 100;
   return r + (r === 1 ? ' hr' : ' hrs');
 };
+const hrsBare = (n) => hrs(n).replace(/ hrs?$/, '');
 
-/* "whole day", "2 of 10 hrs" — the part of the day's booked hours a row covered. */
-function coverText(row, bookedHours) {
-  if (row.share >= 1 - 1e-9) return 'whole day';
-  if (!(bookedHours > 0)) return Math.round(row.share * 100) + '% of the day';
-  return hrs(row.hours).replace(/ hrs?$/, '') + ' of ' + hrs(bookedHours);
+/* Minutes after the start date's midnight → '1:00pm'. */
+function clockOf(minutes) {
+  const m = ((minutes % 1440) + 1440) % 1440;
+  return clock12(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'));
+}
+
+/* "all of its 8 hrs", "2 of its 8 hrs": the part of the item's covered hours
+   a row applied to. With no booked times the item has no hours to divide. */
+function shareText(row, line) {
+  if (!line.window) return 'the whole day';
+  if (row.share >= 1 - 1e-9) return 'all of its ' + hrs(line.coveredHours);
+  return hrsBare(row.hours) + ' of its ' + hrs(line.coveredHours);
 }
 
 const multText = (m) => '&times;' + String(Math.round(m * 1000) / 1000);
+const perHour = (n) => fmt(n) + '/hr';
 
 function cbRow(label, detail, amount, opts) {
   const o = opts || {};
   const weight = o.strong ? 700 : o.muted ? 400 : 600;
   const colour = o.muted ? '#555' : '#181818';
+  const pad = o.indent === 2 ? '28px' : o.indent ? '14px' : '0';
   /* data-cb says what a row is to anyone adding the page up (the tests do):
-     'item' rows sum to the 'total' row; a 'subtotal' repeats items above it. */
+     'item' rows sum to the 'total' row; a 'subtotal' repeats items above it;
+     a 'note' carries no amount. */
   return '<tr data-cb="' + (o.kind || 'item') + '">' +
-    '<td style="padding:6px 0 6px ' + (o.indent ? '14px' : '0') + ';font-size:10pt;font-weight:' + weight + ';color:' + colour + ';border-bottom:1px solid #f0f0f0">' +
+    '<td style="padding:6px 0 6px ' + pad + ';font-size:10pt;font-weight:' + weight + ';color:' + colour + ';border-bottom:1px solid #f0f0f0">' +
       label + (detail ? ' <span style="font-weight:400;color:#888">&middot; ' + detail + '</span>' : '') + '</td>' +
     '<td style="padding:6px 0;font-size:10pt;text-align:right;white-space:nowrap;font-weight:' + weight + ';color:' + colour + ';border-bottom:1px solid #f0f0f0">' +
-      (amount < 0 ? '-' + fmt(-amount) : (o.plus ? '+' : '') + fmt(amount)) + '</td></tr>';
+      (o.kind === 'note' ? '' : amount < 0 ? '-' + fmt(-amount) : (o.plus ? '+' : '') + fmt(amount)) + '</td></tr>';
 }
 
-function cbBlock(title, rowsHtml) {
+const cbNote = (text, indent) => cbRow('<span style="font-weight:400;color:#888;font-size:9pt">' + text + '</span>', '', 0, { kind: 'note', indent });
+
+function cbBlock(title, rowsHtml, intro) {
   if (!rowsHtml) return '';
-  return '<div style="margin-bottom:22px"><div class="sh">' + title + '</div>' +
+  return '<div style="margin-bottom:22px"><div class="sh">' + title + '</div>' + (intro || '') +
     '<table style="width:100%;border-collapse:collapse"><tbody>' + rowsHtml + '</tbody></table></div>';
+}
+
+/* What a production item covers, said once above its rates: why a long day's
+   extra hours carry no surcharge, and where the hours after midnight went. */
+function coverNote(line, day) {
+  if (!line.window) return '';
+  const span = clockOf(line.window.start) + '–' + clockOf(line.window.end) + (line.window.end > 1440 ? ' (into the next day)' : '');
+  const shorter = day.bookedHours > line.coveredHours + 1e-9;
+  if (!line.surcharges.length && !shorter) return '';
+  return cbNote('Covers ' + span + ': ' + hrs(line.coveredHours) + ' from the ' + clockOf(line.window.start) + ' start' +
+    (shorter ? ', of the ' + hrs(day.bookedHours) + ' booked. The rest of the booking carries no day or time rate' : '') + '.', 1);
+}
+
+/* One of an item's own rate rows. A carry-over row is the part of the item
+   after midnight on a date with another status: its own sub-line, naming the
+   date and the rate it changes to (2026-10-02, the user's design). */
+function rateRow(r, line) {
+  if (r.carry) {
+    const hourly = line.coveredHours > 0 ? line.base / line.coveredHours : 0;
+    const change = hourly > 0 ? ', ' + perHour(hourly) + ' &rarr; ' + perHour(hourly * r.multiplier) : '';
+    return cbRow('Carry-over into ' + esc(dayDate(line.carryDate)) + ': ' + SURCHARGE_WORD[r.type].toLowerCase() + ' ' + multText(r.multiplier),
+      hrsBare(r.hours) + ' of its ' + hrs(line.coveredHours) + ', after midnight' + change, r.amount, { indent: 2, muted: true, plus: true });
+  }
+  return cbRow(SURCHARGE_WORD[r.type] + ' ' + multText(r.multiplier), shareText(r, line), r.amount, { indent: 1, muted: true, plus: true });
+}
+
+/* "Day total": the day's items at the standard rate plus their own rates.
+   Short notice is one row for the whole estimate, so it isn't in here. */
+function dayTotalBeforeShortNotice(day) {
+  let cents = 0;
+  day.lines.forEach((l) => {
+    cents += Math.round(l.base * 100);
+    l.surcharges.forEach((r) => { cents += Math.round(r.amount * 100); });
+  });
+  return cents / 100;
+}
+
+/* The figures for an estimate's Cost Breakdown, from calc.js. */
+function breakdownOf(estimate, pricing) {
+  return costBreakdown(estimate.activeRows, pricing, {
+    days: estimate.days,
+    surcharges: estimate.surcharges,
+    shortNotice: estimate.shortNotice === true,
+    totals: estimate.totals,
+    gstFree: estimate.gstFree === true,
+  });
+}
+
+/**
+ * Why this estimate's Cost Breakdown can't be made, or null. Its stored totals
+ * no longer match its lines (an estimate saved by an older build): printing it
+ * would have to call the gap "rounding", on a document that may go to the
+ * client. A re-save brings the two back together.
+ */
+function costBreakdownBlocker(estimate, pricing) {
+  if (!breakdownOf(estimate, pricing).stale) return null;
+  return {
+    error: 'breakdown_stale',
+    message: 'This estimate’s saved total doesn’t match its items — it was last saved by an older version. ' +
+      'Open it, check it and save it again, then download the Cost Breakdown.',
+  };
 }
 
 function buildCostBreakdownHtml(estimate, pricing, settings) {
@@ -395,41 +477,51 @@ function buildCostBreakdownHtml(estimate, pricing, settings) {
   const business = (settings && settings.business) || {};
   const labourSections = (pricing && pricing.labourSections) || [];
   const treatment = gstTreatment(estimate.totals, estimate);
-  const b = costBreakdown(estimate.activeRows, pricing, {
-    days: estimate.days,
-    surcharges: estimate.surcharges,
-    shortNotice: estimate.shortNotice === true,
-    totals: estimate.totals,
-    gstFree: estimate.gstFree === true,
-  });
+  const b = breakdownOf(estimate, pricing);
 
   let daysHtml = '';
   b.days.forEach((day) => {
     const meta = [STATUS_WORD[day.status] || 'Proposed', dayTimes(day)].filter(Boolean).join(' &middot; ');
     daysHtml +=
-      '<tr><td colspan="2" style="padding:12px 0 4px;font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700">' +
-        esc(dayDate(day.date)) + ' <span style="text-transform:none;letter-spacing:0;font-weight:400;color:#555">&middot; ' + meta + '</span></td></tr>' +
-      (day.lines.length
-        ? day.lines.map((l) => cbRow(esc(l.name), esc(qtyText(l.qty, l.unit)) + ', standard rate', l.base)).join('')
-        : cbRow('No items on this day', '', 0, { muted: true })) +
-      day.surcharges.map((r) =>
-        cbRow(SURCHARGE_WORD[r.type] + ' ' + multText(r.multiplier), coverText(r, day.bookedHours), r.amount, { indent: true, muted: true, plus: true })
-      ).join('') +
-      (day.surcharges.length ? cbRow('Day total', '', dayTotalBeforeShortNotice(day), { strong: true, kind: 'subtotal' }) : '');
+      '<tr data-cb="note"><td colspan="2" style="padding:12px 0 4px;font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700">' +
+        esc(dayDate(day.date)) + ' <span style="text-transform:none;letter-spacing:0;font-weight:400;color:#555">&middot; ' + meta + '</span></td></tr>';
+    if (!day.lines.length) {
+      daysHtml += cbNote('No items on this day.');
+      return;
+    }
+    day.lines.forEach((l) => {
+      daysHtml += cbRow(esc(l.name), esc(qtyText(l.qty, l.unit)) + ', standard rate', l.base) +
+        coverNote(l, day) +
+        l.surcharges.map((r) => rateRow(r, l)).join('');
+    });
+    if (day.lines.some((l) => l.surcharges.length)) {
+      daysHtml += cbRow('Day total', 'before short notice', dayTotalBeforeShortNotice(day), { strong: true, kind: 'subtotal' });
+    }
   });
+
+  /* The explanation the owner asked for (2026-10-02): how day and time rates
+     are worked out, in the estimate's own settings, for a client who asks. */
+  const s = b.settings;
+  const intro = b.days.length && s
+    ? '<div style="font-size:9pt;color:#555;line-height:1.6;margin-bottom:10px">' +
+      'Each item&rsquo;s day and time rates apply to the hours it covers, counted from the day&rsquo;s booked start: ' +
+      'an 8-hour item booked from 9:00am covers 9:00am&ndash;5:00pm. Booked hours beyond an item&rsquo;s length carry no ' +
+      'rate of their own; extra time on the day is billed as overtime. After hours is any time outside ' +
+      esc(clock12(s.officeStart)) + '&ndash;' + esc(clock12(s.officeEnd)) + ', on any day. Hours after midnight take the next ' +
+      'date&rsquo;s rate, shown as a carry-over. ' + MODE_SENTENCE[s.mode] + '</div>'
+    : '';
 
   const shortNoticeHtml = b.shortNotice
     ? cbRow(SURCHARGE_WORD.shortNotice + ' ' + multText(b.shortNotice.multiplier),
-      'on the production items of ' + b.shortNotice.dayIds.length +
-        (b.shortNotice.dayIds.length === 1 ? ' day' : ' days'),
+      'booked at short notice, on ' + b.shortNotice.items + ' production ' + (b.shortNotice.items === 1 ? 'item' : 'items'),
       b.shortNotice.amount, { plus: true })
     : '';
 
   const labels = {};
   sectionsFor(estimate.activeRows, labourSections, estimate.sectionLabels).forEach((sec) => { labels[sec.id] = sec.label; });
   const sectionsHtml = b.sections.map((sec) =>
-    cbBlock(esc(labels[sec.id] || 'Archived Services') + (sec.id === 'prod' && b.days.length ? ' (not on a day)' : ''),
-      sec.lines.map((l) => cbRow(esc(l.name), esc(qtyText(l.qty, l.unit)), l.amount)).join(''))
+    cbBlock(esc(labels[sec.id] || 'Archived Services') + (sec.id === 'prod' ? ' (not on a day)' : ''),
+      sec.lines.map((l) => cbRow(esc(l.name), esc(qtyText(l.qty, l.unit)) + (sec.id === 'prod' ? ', standard rate' : ''), l.amount)).join(''))
   ).join('');
 
   const travelHtml = cbBlock('Travel &amp; Accommodation', b.travel.map((l) =>
@@ -440,6 +532,7 @@ function buildCostBreakdownHtml(estimate, pricing, settings) {
   const itemsLabel = treatment === 'taxable'
     ? (b.linesIncludeGst ? 'Items total (inc. GST)' : 'Items total (ex GST)')
     : 'Items total';
+  // Only ever cents: a bigger gap is refused (costBreakdownBlocker).
   const roundingHtml = b.adjustment !== 0
     ? cbRow('Rounding', 'each line above is shown to the cent', b.adjustment, { muted: true })
     : '';
@@ -456,7 +549,7 @@ function buildCostBreakdownHtml(estimate, pricing, settings) {
       (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
       '</div></div>' +
     '<div style="font-size:10pt;color:#555;margin-bottom:22px;line-height:1.6">How the price of this estimate is made up: each production day&rsquo;s items at the standard rate, then any rate for the day or time they&rsquo;re booked, then everything else.</div>' +
-    cbBlock('Production Days', daysHtml) +
+    cbBlock('Production Days', daysHtml, intro) +
     cbBlock('Short Notice', shortNoticeHtml) +
     sectionsHtml +
     travelHtml +
@@ -470,12 +563,6 @@ function buildCostBreakdownHtml(estimate, pricing, settings) {
       totalsBoxHtml('Total', estimate.totals, treatment) +
       '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'estimate') + '</div></div>' +
     '</body></html>';
-}
-
-/* "Day total": the day's items at the standard rate plus its own surcharges.
-   Short notice is one row for the whole estimate, so it isn't in here. */
-function dayTotalBeforeShortNotice(day) {
-  return round2(day.surcharges.reduce((sum, r) => sum + r.amount, day.base));
 }
 
 /** `Cost Breakdown_<UPID>_<ProjectName>.pdf` (D8), filesystem-safe. */
@@ -568,6 +655,7 @@ async function renderPdfBuffer(html) {
 module.exports = {
   buildEstimateHtml,
   buildCostBreakdownHtml,
+  costBreakdownBlocker,
   exportBlocker,
   exportFilename,
   costBreakdownFilename,

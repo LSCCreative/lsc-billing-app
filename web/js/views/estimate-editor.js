@@ -112,7 +112,7 @@ const EstimateEditor = (() => {
      server reads it), for pricing a new or moved day. null until fetched;
      fetched once, the first time the estimate has a dated day. */
   let holidays = null;
-  let holidaysAsked = false;
+  let holidaysLoading = null;
   /* "Update to current rates" also re-takes the surcharge settings and each
      day's weekday/weekend/holiday kind from today's Rate Card and holiday
      list. Sent as refreshSurcharges on the next save, so the server does the
@@ -1087,7 +1087,9 @@ const EstimateEditor = (() => {
       '<div id="booking-slot"></div>' +
       ratesBarMarkup() +
       // Where a line's unit switch is announced (switchUnit).
-      '<p class="sr-only" id="editor-live" aria-live="polite"></p>';
+      '<p class="sr-only" id="editor-live" aria-live="polite"></p>' +
+      // Where a day's surcharge changing is announced (announceSurcharges).
+      '<p class="sr-only" id="sur-live" aria-live="polite"></p>';
 
     html += deliverablesSectionMarkup();
     sections.forEach((section) => {
@@ -1184,7 +1186,8 @@ const EstimateEditor = (() => {
      and each unmoved day's kind) unless "Update to current rates" asked for
      today's; '{}' with no days. */
   function surchargesNow(days, pricing) {
-    if (!days.length) return {};
+    // Short notice reaches lines on no day too, so it pins settings with no days.
+    if (!days.length && !shortNoticeNow()) return {};
     const prior = existing && !refreshSurcharges
       ? { surcharges: existing.surcharges || {}, days: existing.days || [] }
       : null;
@@ -1195,18 +1198,25 @@ const EstimateEditor = (() => {
      weekend/holiday kind needs it, and nothing else does. Until it arrives (or
      if it can't), dates price against no holidays; the server prices on save
      with the real list either way. */
-  async function loadHolidays() {
-    if (holidaysAsked) return;
-    holidaysAsked = true;
-    try {
-      const reply = await LSCApi.get('/api/holidays');
-      holidays = reply.holidays || [];
-    } catch (err) {
-      if (err instanceof LSCApi.ApiError && err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
-      holidaysAsked = false; // asked again at the next change
-      return;
+  function loadHolidays() {
+    if (holidays) return Promise.resolve();
+    /* One request at a time, shared: save() awaits the same one a recalc
+       started, rather than reading "not loaded" while it is on its way. */
+    if (!holidaysLoading) {
+      holidaysLoading = (async () => {
+        try {
+          const reply = await LSCApi.get('/api/holidays');
+          holidays = reply.holidays || [];
+        } catch (err) {
+          if (err instanceof LSCApi.ApiError && err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+          return; // asked again at the next change
+        } finally {
+          holidaysLoading = null;
+        }
+        if (onScreen()) recalc();
+      })();
     }
-    if (onScreen()) recalc();
+    return holidaysLoading;
   }
 
   function recalc() {
@@ -1230,7 +1240,10 @@ const EstimateEditor = (() => {
        surchargedPrice when it is on a day, its base otherwise. Index i of
        active.prod is rowsIn('prod')[i], since collect() read it from there. */
     const stamped = LSCCalc.stampSurchargedPrices({ prod: active.prod || [] }, pricing, options).prod;
-    const dayById = new Map(days.map((d) => [d.id, Object.assign({}, d, { kind: (surcharges.days || {})[d.id] })]));
+    const dayById = new Map(days.map((d) => [d.id, Object.assign({}, d, {
+      kind: (surcharges.days || {})[d.id],
+      nextKind: (surcharges.nextDays || {})[d.id],
+    })]));
     const perDay = new Map();
     let unassigned = 0;
 
@@ -1250,7 +1263,11 @@ const EstimateEditor = (() => {
         const day = line.dayId ? dayById.get(line.dayId) : null;
         const note = tr.querySelector('.sur-note');
         if (note) {
-          const text = day && bill !== null && bill > base ? surNote(base, day, surcharges, shortNotice) : '';
+          /* The line's own hours decide the stretch of its day it covers
+             (calc.js coveredWindow). A line on no day can still carry short
+             notice, which its note then names. */
+          const hours = def ? num(line.qty) * LSCCalc.hoursPerUnitOf(def) : 0;
+          const text = bill !== null && bill > base ? surNote(base, day, surcharges, shortNotice, hours) : '';
           note.textContent = text;
           note.hidden = !text;
         }
@@ -1292,6 +1309,7 @@ const EstimateEditor = (() => {
     // The headline figures, from the same code the server will run on save.
     const totals = LSCCalc.computeTotals(active, pricing, LSCData.settings(), options);
     paintSurcharges(totals, surcharges);
+    announceSurcharges(dayById, surcharges, shortNotice);
     setText('s-hours', totals.totalHours);
     setText('s-labour', fmt(totals.labourTotal));
     setText('s-expenses', fmt(totals.expenseTotal));
@@ -1344,6 +1362,76 @@ const EstimateEditor = (() => {
       'Priced under weekend & public holiday ×' + s.weekend + ', after hours ×' + s.afterHours + ' (outside ' +
         s.officeStart + '–' + s.officeEnd + ') and short notice ×' + s.shortNotice + ': ' + MODE_WORDS[s.mode] + '.'
     );
+  }
+
+  /* A surcharge recompute, announced once and politely (brief, Accessibility:
+     "Saturday 4 October: weekend rate applied"). What a day carries is worded
+     from calc.js surchargeAttribution on a nominal base, so it is the same
+     whether or not the day has items yet; short notice is said once for the
+     estimate, not once per day.
+
+     Compared against what was last ANNOUNCED, not the last recalc, and only
+     after a second's quiet: typing "19:00" passes through "1", "19" and
+     "19:0", and only where it lands is read out — nothing at all if it lands
+     back where it started. Several days changing at once are read together.
+     Its own region, so it never cancels a message in #editor-live. The first
+     recalc only records the state: opening an estimate says nothing. */
+  let surAnnounced = null;
+  let surLatest = null;
+  let surTimer = null;
+
+  function surchargeState(dayById, surcharges, shortNotice) {
+    const card = { surcharges: surcharges.settings };
+    const days = {};
+    dayById.forEach((day, id) => {
+      if (!day.date) return; // Date TBC: no day or time surcharge
+      const att = LSCCalc.surchargeAttribution(100, day, card, false);
+      const words = att.rows.map((r) => {
+        const part = att.hours > 0 && (r.carry || r.share < 1 - 1e-9)
+          ? ' on ' + LSCRows.hrsText(r.hours).replace(/ hrs?$/, '') + ' of ' + LSCRows.hrsText(att.hours)
+          : '';
+        return SUR_RATE_WORD[r.type] + ' ×' + r.multiplier + (r.carry ? ' after midnight' : '') + part;
+      });
+      days[id] = { date: day.date, words: words.join(' and ') };
+    });
+    const sn = LSCCalc.surchargeSettings(card).shortNotice;
+    return { days, shortNotice: shortNotice && sn > 1 ? sn : 0 };
+  }
+  const SUR_RATE_WORD = { weekend: 'weekend rate', holiday: 'public holiday rate', afterHours: 'after hours' };
+
+  function surchargeMessage(before, after) {
+    const out = [];
+    Object.keys(after.days).forEach((id) => {
+      const now = after.days[id].words;
+      const was = before.days[id] ? before.days[id].words : '';
+      if (now === was) return;
+      const when = LSCCalendar.longDate(after.days[id].date, today());
+      out.push(when + ': ' + (now ? now + ' applied.' : 'no surcharge now.'));
+    });
+    if (after.shortNotice !== before.shortNotice) {
+      out.push(after.shortNotice
+        ? 'Short notice ×' + after.shortNotice + ' applied to the production items.'
+        : 'Short notice removed.');
+    }
+    return out.join(' ');
+  }
+
+  function announceSurcharges(dayById, surcharges, shortNotice) {
+    // Mid-mount, before the booking block exists, the days aren't known yet.
+    if (!booking) return;
+    surLatest = surchargeState(dayById, surcharges, shortNotice);
+    if (!surAnnounced) {
+      surAnnounced = surLatest;
+      return;
+    }
+    clearTimeout(surTimer);
+    surTimer = setTimeout(() => {
+      const region = $('sur-live');
+      if (!region || !region.isConnected) return;
+      const text = surchargeMessage(surAnnounced, surLatest);
+      surAnnounced = surLatest;
+      if (text) region.textContent = text;
+    }, 1000);
   }
 
   /* D19: when the first booked date from today on is within the Rate Card's
@@ -1938,6 +2026,29 @@ const EstimateEditor = (() => {
       return;
     }
 
+    /* The server prices every booked date against the public holiday list.
+       Until the editor has that list too, the figures on screen can be lower
+       than the ones that will be saved and sent (money review, 2026-10-02).
+       So it is fetched first. If it can't be, or if it changes a price, the
+       save stops and says so: nothing is stored at a price the owner hasn't
+       seen. */
+    if ((body.days || []).some((d) => d.date) && !holidays) {
+      setSaving(true);
+      const shown = ($('s-total') || {}).textContent;
+      await loadHolidays();
+      setSaving(false);
+      if (!onScreen()) return;
+      if (!holidays) {
+        showError('Couldn’t load the public holiday list, so a booked date can’t be priced yet. Nothing was saved — try again in a moment.');
+        return;
+      }
+      if (($('s-total') || {}).textContent !== shown) {
+        showError('A booked date is a public holiday, so the prices have been updated. Check them, then save again.');
+        return;
+      }
+      Object.assign(body, payload());
+    }
+
     setSaving(true);
     Toast.working('Saving…');
 
@@ -2191,8 +2302,11 @@ const EstimateEditor = (() => {
 
     booking = null;
     dayPanels.clear();
+    // A fresh estimate: its first recalc is the baseline, announced as nothing.
+    clearTimeout(surTimer);
+    surAnnounced = null;
     holidays = null;
-    holidaysAsked = false;
+    holidaysLoading = null;
     refreshSurcharges = false;
     daysSig = null; // so the first paint builds the day selects
 

@@ -1,7 +1,7 @@
 # Build Tasks: Production Booking
 
 Generated from: [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md), [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md)
-and [`DECISIONS.md`](DECISIONS.md) (D1–D66, all the user's; don't re-ask).
+and [`DECISIONS.md`](DECISIONS.md) (D1–D72, all the user's; don't re-ask; D67–D72 came from the 2026-10-02 money review).
 Date: 2 October 2026
 
 Stages are built in order, **A+B → C → D → E** (D1), and each one ships and is usable on its own.
@@ -727,7 +727,7 @@ State the bucket out loud and pause for the user to switch before starting a tas
       +$6,272, the same five notes and the same hours hint.
     - **Console:** no errors (only the harness's 401 before sign-in).
 
-- [ ] **9. A+B responsive and accessibility pass** (frontend — Opus/high). Breakpoints 1280, 800
+- [x] **9. A+B responsive and accessibility pass** (frontend — Opus/high). Breakpoints 1280, 800
   and 375.
   - The editor calendar sits beside the cards at ≥1100px and above them below that.
   - The add-day pop-up becomes a bottom sheet with 44px buttons below 768px.
@@ -742,13 +742,154 @@ State the bucket out loud and pause for the user to switch before starting a tas
 
   **Done when** it's measured and recorded here, with no overflow.
 
+  **Done 2026-10-02** on `production-booking` (uncommitted). The suite is unchanged at 366/366: no
+  server change. Changed: `estimate-editor.js` and `booking.css`. Most of the list was already
+  built in tasks 4–8. This pass measured all of it, and built the two things that were missing.
+  - **Built: the surcharge recompute announcement** (brief: "Saturday 4 October: weekend rate
+    applied").
+    - **What it says:** each dated day's day/time surcharges, worded from calc.js
+      `surchargeAttribution` on a nominal base, so a day with no items yet is described too.
+      Short notice is said once for the estimate. For example:
+      - "Wednesday 21 October: after hours ×1.25 on 4 of 12 hrs applied."
+      - "…: no surcharge now."
+      - "Short notice ×2 applied to the production days." / "Short notice removed."
+    - **When:** it compares against what was last *announced*, after a second's quiet. Typing a
+      time through "20:00" to "21:00" is read once, where it lands. A change undone within the
+      second says nothing. Several days changing together are read in one message.
+    - **Where:** its own polite region `#sur-live`, so it never cancels a message in
+      `#editor-live`.
+    - **Never on open:** the first recalc with the booking block is the baseline. It is reset on
+      every mount, so opening a second estimate doesn't "announce" the difference from the first.
+  - **Built: the Short notice tick is 44px on phones.** Below 768 the wrapping label is
+    `min-height: 44px` and the box is 20px. At 768 and up nothing changes. Task 7 had flagged it.
+  - **Measured** headless against `api-scratch` (puppeteer; dispatched events, plus one real Tab
+    for focus rings):
+    - **Layout:** the editor calendar sits beside the cards at 1280 (420px column) and above them
+      at 800 and 375. At 375 the calendar is 313px wide, so it shows dots.
+    - **The add-day pop-up:** at 1280 and 800 it is a 460px box with 44px buttons. At 375 it is a
+      full-width bottom sheet (375px wide, 0px from the bottom) with 341×44 buttons. The first
+      button takes focus, and Escape closes it and returns focus to the grid cell.
+    - **Rate Card:** the Surcharges and Public holidays blocks stack, with labels above fields at
+      375 (screenshot checked).
+    - **No overflow:** nothing overflows, in the document or inside either block, at 1280, 800 or
+      375.
+    - **≥44px on phones:** at 375, nothing is under 44px in the booking block, the doc bar's short
+      notice group, the surcharge line, the Production day list, the Unassigned group, or the Rate
+      Card's two blocks.
+      - The ⓘ buttons are excluded: each has a 44px `::after` hit area.
+      - So is a checkbox whose wrapping label is the target.
+    - **Status is never colour alone:**
+      - every status chip carries its word;
+      - calendar tiles carry the UPID;
+      - dots differ by shape (solid / hatched / small grey);
+      - list entries read "Proposed: UPID, project, Sat 4 Oct, …", the brief's format;
+      - the detail's day heads carry the chip.
+    - **Keyboard grid in the editor:** arrows, PageDown/PageUp and one tab stop all work. Each
+      focused date is named with its bookings ("Saturday 3 October: 2 confirmed, AUD-Audit A and
+      TST-001"). Enter on a date confirmed elsewhere opens the pop-up with the lock message. The
+      month live region is present.
+    - **Clash lock:** the lock line shows and is announced through `#booking-live` (task 6), and
+      re-checked here through the keyboard path.
+    - **Reduced motion:** under emulated `prefers-reduced-motion`, nothing in the booking block (after
+      a month change), the doc bar, the add-day sheet or the Rate Card blocks has a transition or
+      animation over 1ms. a11y.css's global rule takes everything to 0.01ms, and calendar.css also
+      drops the month slide. As a control, the same probe finds 82 moving elements without it.
+    - **Focus rings:** after one real Tab, all 59 focusable controls in the booking block, the
+      short notice box, the Production day links and the ⓘ buttons match `:focus-visible` with a
+      visible outline. So do the detail's "↓ Cost Breakdown" and its ⓘ (2px accent).
+    - **Nothing moved:** the editor at 1280 and at 800, for an estimate with days and one without,
+      old build (HEAD's `estimate-editor.js` and `booking.css`, served by request interception) vs
+      new. Every element kept its rect. The only new element is the 1×1 sr-only `#sur-live`.
+    - **Console:** no errors (only the harness's 401 before sign-in).
+  - **Not done here:** a real screen reader. Everything above is DOM and ARIA. A person should run
+    VoiceOver over the booking block, the add-day sheet and the detail's day groups (`<tbody>` with
+    a `scope="rowgroup"` head) before or soon after deploy, as was done for price-calculator.
+
+- [x] **9a. Money review fixes** (money math — Opus/high). 2026-10-02, after a code and accounting
+  review of the whole finance → billing pipeline (ten findings). The user decided D67–D72 for the
+  ones that changed a rule. **Done 2026-10-02, uncommitted.** The suite is 377/377.
+  - **The surcharge core was rewritten in `calc.js`** (both copies):
+    - `coveredWindow` places each item from the booked start for its own hours (D67);
+    - `windowPieces` cuts that window at midnight and at each date's office hours (D69);
+    - `surchargeParts` gives each piece its own date's status (D70).
+    - `surchargeFactor` and `surchargeAttribution` take an optional `lineHours`. Without it they
+      read the whole booking: the Rate Card's mode example and the editor's announcement.
+    - Attribution rows gain `hours` and `carry`, and the result gains `window`, `hours`,
+      `nextKind` and `carryDate`.
+    - `surchargeSnapshot` stores `nextDays` (the next date's kind) for an overnight day, kept on
+      re-save like `days`.
+  - **Short notice on no day (D72):** `surchargeContext` exists with no days when short notice is
+    ticked. `surchargedPriceOf` applies it to a production line on no day, and
+    `stampSurchargedPrices` stamps that line. The server pins a snapshot whenever short notice is
+    ticked.
+  - **`costBreakdown`** is per item now. Each day line has `window`, `coveredHours`, `carryDate`
+    and its own `surcharges` (short notice still one estimate-wide row, `items` counted). It adds
+    `stale` (more than half a cent per line off the stored total) and `settings`. `bookedHoursOf`
+    is exported and is the one definition `rows.js` reads.
+  - **The Cost Breakdown PDF** shows the explanation (D67, in the estimate's own office hours and
+    mode), a "Covers 9:00am–5:00pm…" note per item where it matters, each item's rates, and
+    carry-over sub-lines ("Carry-over into Saturday 17 October 2026: weekend rate ×1.5 · 2 of its 6
+    hrs, after midnight, $186.67/hr → $280.00/hr"). The route refuses a stale estimate (409
+    `breakdown_stale`) instead of printing a "Rounding" row of any size.
+  - **Migration v11** (amended in place; not deployed anywhere) moves rows named "Overtime…" from
+    Production to Additional work (D71). **A dev DB already at v11 needs `DELETE FROM
+    schema_version WHERE version >= 11` and a restart** (`api-scratch` was done; it logged the
+    move).
+  - **The editor:**
+    - it won't save a booked date until it has the holiday list, and it stops and says so if the
+      list can't load or changes a price;
+    - one shared in-flight holiday request;
+    - line notes from each line's own hours, with "after midnight" for carry-overs;
+    - a note on a short-noticed line that isn't on a day.
+  - **The detail screen:** quantity-0 items with no price are left off, the notes use line hours, a
+    line on no day shows its stored short-notice price, and an owner-only "N production items aren't
+    on a booked day…" note appears. Duplicate's toast says how many items came off their days (the
+    route returns `unbooked`).
+  - **Client PDF:** quantity-0 items with no price are left off.
+  - **Mutations:** 22, each caught (both `calc.js` copies mutated together; the files were restored
+    and `calc.js` is identical):
+    - item hours ignored, or not capped at the booking;
+    - the next morning's office hours ignored;
+    - the next date's status ignored, or its snapshot ignored;
+    - carry rows not split;
+    - short notice skipped on no-day lines, with no context or no stamp for them;
+    - computeTotals not passing hours;
+    - nextDays not snapshotted;
+    - the stale threshold loosened, or the stale blocker skipped;
+    - no snapshot for short notice without days;
+    - the breakdown dropping no-day short notice, or keeping qty-0 lines;
+    - `unbooked` not returned;
+    - Overtime left in Production, or copied rather than moved;
+    - the client PDF keeping qty-0 items;
+    - carry-over shown as a plain row;
+    - the long-day cover note missing.
+  - **Verified** headless against `api-scratch` (re-migrated):
+    - **Audit A, priced by the editor and the server alike ($11,440, then $11,627):**
+      - the 9am–7pm full day fell to short notice only, $2,240;
+      - its line on no day took short notice, $400 → $800;
+      - a day moved to Fri 16 Oct 8pm–2am priced at $2,987, with "weekend ×1.5 after midnight on
+        2 of 6 hrs", announced once, and `nextDays` stored;
+    - **Save guard:**
+      - the holiday list failing (a 4xx) stops the save with its message;
+      - a slow list that turns a Labour Day price up stops it with the new price shown;
+      - saving again stores $1,680.
+      - A 5xx or network failure is already blocked by the connection banner.
+    - **Detail, duplicate and PDF:** the detail shows the off-day note, the duplicate toast reads
+      "Its 4 production items are off their days…", and the Cost Breakdown adds up: $4,880 + $933.34
+      + $5,813.66 = $11,627.
+    - **Console:** no errors.
+  - **Scratch DB state:** Audit A now has Sat 3 Oct, Fri 16 Oct 8pm–2am, Thu 22 Oct 9–7 and a TBC
+    day, with short notice. Total $11,627.
+
 - [ ] **10. Deploy A+B** (deploy — Sonnet/medium). **Ask the user first.**
   - **NAS:** back up the live DB, deploy NAS v11 (watch the boot log for the migration and the
     holiday fetch), check `healthy`.
   - **Pages:** then push Pages, back to back (the shape bump refuses the old tab in between, as at
     v9).
-  - **Afterwards, the user:** moves Overtime into Additional work on the live card (or resets it);
-    checks the Public holidays list; sets their multipliers.
+  - **Watch the boot log for** `[db] v11: moved 1 Overtime row(s) from Production to Additional
+    work` (D71). The migration does the move; the user no longer has to.
+  - **Afterwards, the user:** checks Overtime sits in Additional work; checks the Public holidays
+    list; sets their multipliers.
 
   Record the run ids in `HANDOVER.md`.
 

@@ -645,9 +645,44 @@ const MIGRATIONS = [
       if (!cols.includes('surcharges_json')) {
         db.exec("ALTER TABLE estimates ADD COLUMN surcharges_json TEXT NOT NULL DEFAULT '{}';");
       }
+      moveOvertimeOffSet(db);
     },
   },
 ];
+
+/**
+ * 4. (amended 2026-10-02, after the money review) OVERTIME LEAVES PRODUCTION.
+ * Every production line now sits on a booked day and takes its day's rates,
+ * so an Overtime row left in Production (every live card: D14 left the move
+ * to the user) would put a weekend or after-hours rate on top of overtime's
+ * own premium. D14 says Overtime is never surcharged; the user gave the
+ * go-ahead to move it. Rows named "Overtime…" go, unchanged (id, prices and
+ * all), to the `additional` section, which is made if the card lacks one.
+ *
+ * Only the card moves. A saved estimate's Overtime lines keep their own
+ * snapshot prices in `prod`, off any day, so they total as before. Safe to
+ * run twice: the second time there is nothing left in Production to move.
+ */
+function moveOvertimeOffSet(db) {
+  const row = db.prepare('SELECT data_json FROM pricing WHERE id = 1').get();
+  if (!row) return; // a fresh database takes DEFAULT_PRICING, which already has it right
+  const card = JSON.parse(row.data_json);
+  const sections = Array.isArray(card.labourSections) ? card.labourSections : [];
+  const prod = sections.find((sec) => sec && sec.id === 'prod');
+  if (!prod || !Array.isArray(prod.rows)) return;
+  const isOvertime = (r) => r && /^\s*overtime\b/i.test(String(r.name || ''));
+  const moving = prod.rows.filter(isOvertime);
+  if (!moving.length) return;
+  prod.rows = prod.rows.filter((r) => !isOvertime(r));
+  let additional = sections.find((sec) => sec && sec.id === 'additional');
+  if (!additional) {
+    additional = { id: 'additional', label: 'Additional work', rows: [] };
+    sections.push(additional);
+  }
+  additional.rows = (Array.isArray(additional.rows) ? additional.rows : []).concat(moving);
+  db.prepare('UPDATE pricing SET data_json = ?, updated_at = ? WHERE id = 1').run(JSON.stringify(card), nowIso());
+  console.log(`[db] v11: moved ${moving.length} Overtime row(s) from Production to Additional work`);
+}
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 

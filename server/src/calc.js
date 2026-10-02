@@ -434,7 +434,7 @@ function computeTotals(activeRows, pricing, settings, options) {
       const base = override > 0 ? override : qty * nonNeg(def.mu);
       /* Only the section with id `prod` is on set (D24), whatever it is
          called; a dayId anywhere else prices nothing extra. */
-      const price = section.id === 'prod' ? surchargedPriceOf(base, line, dayCtx) : base;
+      const price = section.id === 'prod' ? surchargedPriceOf(base, line, dayCtx, qty * hoursPerUnitOf(def)) : base;
       labourTotal += price;
       surchargeTotal += price - base;
     }
@@ -1871,12 +1871,79 @@ function dayKind(date, settings, holidays) {
   return normaliseSurcharges(settings).workingWeekdays.indexOf(dt.getUTCDay()) !== -1 ? 'weekday' : 'weekend';
 }
 
+/* 'YYYY-MM-DD' → the next calendar date, as text. Built with Date.UTC and
+   read back in UTC, as dayKind reads a date, so no timezone can move it.
+   null for anything that isn't a date. */
+function nextDateOf(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd === null || ymd === undefined ? '' : ymd).trim());
+  if (!m) return null;
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1)).toISOString().slice(0, 10);
+}
+
+/* Office hours in minutes after midnight; a pair that doesn't parse, or that
+   ends at or before it starts, reads as the defaults (07:00–17:00). */
+function officeMinutes(officeStart, officeEnd) {
+  const os = clockMinutes(officeStart);
+  const oe = clockMinutes(officeEnd);
+  if (os === null || oe === null || oe <= os) {
+    return [clockMinutes(SURCHARGE_DEFAULTS.officeStart), clockMinutes(SURCHARGE_DEFAULTS.officeEnd)];
+  }
+  return [os, oe];
+}
+
+/**
+ * The stretch of a booked day that one production item covers: from the
+ * booked start, for the item's own hours, never past the booked end. In
+ * minutes after the start date's midnight, so an overnight window ends past
+ * 1440 (at most 2880: a booking is under 24 hours).
+ *
+ * The item's own hours, not the whole booking (decided 2026-10-02 after the
+ * money review, replacing D5's share of the booked window): a full day booked
+ * 9am–9pm covers 9am–5pm. Booked hours past an item's length carry no
+ * surcharge, because the owner bills them as Overtime (D10, D26), and charging
+ * the full day an after-hours share for them would charge those hours twice.
+ * An item longer than the booking covers the booking.
+ *
+ * With no `lineHours` the window is the whole booking: the day's own reading,
+ * as the Rate Card's mode example and the editor's announcement use it.
+ *
+ * @returns {{start:number, end:number}|null} null when either time is missing
+ *   or unusable, or start = end: there are no booked hours to place it in.
+ */
+function coveredWindow(day, lineHours) {
+  const a = clockMinutes(field(day, 'startTime', 'start_time'));
+  const b0 = clockMinutes(field(day, 'endTime', 'end_time'));
+  if (a === null || b0 === null || a === b0) return null;
+  const b = b0 < a ? b0 + 1440 : b0;
+  const h = numOrNull(lineHours);
+  return { start: a, end: h !== null && h > 0 ? Math.min(b, a + h * 60) : b };
+}
+
+/* A window cut at midnight and at each date's office hours: its pieces, each
+   { minutes, nextDay, afterHours }. Office hours hold on both dates (decided
+   2026-10-02), so an overnight shoot's hours after the next morning's office
+   start are in-hours; they used to count as after hours. */
+function windowPieces(win, officeStart, officeEnd) {
+  const [os, oe] = officeMinutes(officeStart, officeEnd);
+  const pieces = [];
+  for (let d = 0; d < 2; d += 1) {
+    const lo = Math.max(win.start, d * 1440);
+    const hi = Math.min(win.end, (d + 1) * 1440);
+    if (hi <= lo) continue;
+    const inside = Math.max(0, Math.min(hi, oe + d * 1440) - Math.max(lo, os + d * 1440));
+    if (inside > 0) pieces.push({ minutes: inside, nextDay: d === 1, afterHours: false });
+    if (hi - lo - inside > 0) pieces.push({ minutes: hi - lo - inside, nextDay: d === 1, afterHours: true });
+  }
+  return pieces;
+}
+
 /**
  * The share of a booking's hours that falls outside office hours (D5).
  *
- * An end before the start means the booking runs past midnight, and every
- * minute after midnight is after hours (D21). Office hours that don't parse,
- * or that end at or before they start, read as the defaults (07:00–17:00).
+ * An end before the start means overnight. Office hours apply on the next
+ * date too, so after midnight only the hours outside them are after hours.
+ * Office hours that don't parse, or that end at or before they start, read as
+ * the defaults (07:00–17:00).
  *
  * @param {string} start — 'HH:MM'.
  * @param {string} end — 'HH:MM'; earlier than start is overnight.
@@ -1887,28 +1954,19 @@ function dayKind(date, settings, holidays) {
  *   divide, and an unpriceable share must not read as a surcharge.
  */
 function afterHoursShare(start, end, officeStart, officeEnd) {
-  const a = clockMinutes(start);
-  const b0 = clockMinutes(end);
-  if (a === null || b0 === null || a === b0) return 0;
-
-  let os = clockMinutes(officeStart);
-  let oe = clockMinutes(officeEnd);
-  if (os === null || oe === null || oe <= os) {
-    os = clockMinutes(SURCHARGE_DEFAULTS.officeStart);
-    oe = clockMinutes(SURCHARGE_DEFAULTS.officeEnd);
-  }
-
-  const b = b0 < a ? b0 + 1440 : b0;
-  const total = b - a;
-  /* Office hours are only ever counted on the start date: oe < 1440, so
-     nothing past midnight can overlap them. */
-  const inside = Math.max(0, Math.min(b, oe) - Math.max(a, os));
-  return (total - inside) / total;
+  const win = coveredWindow({ startTime: start, endTime: end });
+  if (!win) return 0;
+  const after = windowPieces(win, officeStart, officeEnd)
+    .filter((p) => p.afterHours)
+    .reduce((sum, p) => sum + p.minutes, 0);
+  return after / (win.end - win.start);
 }
 
-/* The surcharge chain for one day, as the steps each part of the day passes
-   through. A part is the in-hours share (1 − s) or the after-hours share (s);
-   each step multiplies that part's running price by m. Per the brief's table:
+/* The surcharge chain for one item on one day, as the steps each part of its
+   window passes through. A part is a piece of the window: in or out of office
+   hours, on the start date or (overnight) the next one. Each step multiplies
+   that part's running price by m. Per the brief's table, with w the part's
+   own date's weekend/holiday multiplier:
 
      mode       in-hours           after-hours
      higher     [w], S             [max(w, A)], S
@@ -1919,8 +1977,15 @@ function afterHoursShare(start, end, officeStart, officeEnd) {
    after hours, short notice wins — the $ are the same either way; this only
    decides the row's name. The order of steps is also the order the
    attribution charges them in: under "multiply", after hours is charged on the
-   weekend price, and short notice on the day's surcharged price. */
-function surchargeParts(day, card, shortNotice, holidays) {
+   weekend price, and short notice on the surcharged price.
+
+   HOURS AFTER MIDNIGHT TAKE THE NEXT DATE'S STATUS (decided 2026-10-02,
+   replacing D21's "the start date's status applies to the whole shoot"): a
+   Friday 8pm–4am shoot's four Saturday hours are weekend hours, as penalty
+   rates split at midnight. `nextKind` is that date's kind, snapshotted like
+   `kind` (surchargeSnapshot's nextDays); without one it is read from the date
+   and the holiday list. */
+function surchargeParts(day, card, shortNotice, holidays, lineHours) {
   const cfg = surchargeSettings(card);
   const date = day ? day.date : null;
   const KINDS = ['weekday', 'weekend', 'holiday'];
@@ -1930,47 +1995,61 @@ function surchargeParts(day, card, shortNotice, holidays) {
     ? null
     : KINDS.indexOf(day.kind) !== -1 ? day.kind : dayKind(date, cfg, holidays);
 
-  const w = { type: kind === 'holiday' ? 'holiday' : 'weekend', m: kind === 'weekend' || kind === 'holiday' ? cfg.weekend : 1 };
+  const wOf = (k) => ({ type: k === 'holiday' ? 'holiday' : 'weekend', m: k === 'weekend' || k === 'holiday' ? cfg.weekend : 1 });
   const A = { type: 'afterHours', m: cfg.afterHours };
   const S = { type: 'shortNotice', m: shortNotice ? cfg.shortNotice : 1 };
-  const s = kind === null
-    ? 0
-    : afterHoursShare(field(day, 'startTime', 'start_time'), field(day, 'endTime', 'end_time'), cfg.officeStart, cfg.officeEnd);
-
   const top = (cands) => cands.reduce((best, c) => (c.m > best.m ? c : best));
-  let inSteps;
-  let outSteps;
-  if (cfg.mode === 'multiply') {
-    inSteps = [w, S];
-    outSteps = [w, A, S];
-  } else if (cfg.mode === 'highest') {
-    inSteps = [top([w, S])];
-    outSteps = [top([w, A, S])];
-  } else {
-    inSteps = [w, S];
-    outSteps = [top([w, A]), S];
+  const stepsFor = (w, after) => {
+    if (cfg.mode === 'multiply') return after ? [w, A, S] : [w, S];
+    if (cfg.mode === 'highest') return after ? [top([w, A, S])] : [top([w, S])];
+    return after ? [top([w, A]), S] : [w, S];
+  };
+
+  const win = kind === null ? null : coveredWindow(day, lineHours);
+  if (!win) {
+    // Date TBC, or no times: the whole item is in-hours on its date.
+    return {
+      kind, nextKind: null, mode: cfg.mode, window: null, hours: 0, share: 0,
+      parts: [{ share: 1, nextDay: false, afterHours: false, steps: stepsFor(wOf(kind), false) }],
+    };
   }
+  const total = win.end - win.start;
+  const nextKind = win.end <= 1440
+    ? null
+    : KINDS.indexOf(day.nextKind) !== -1 ? day.nextKind : dayKind(nextDateOf(date), cfg, holidays);
+  const parts = windowPieces(win, cfg.officeStart, cfg.officeEnd).map((p) => ({
+    share: p.minutes / total,
+    nextDay: p.nextDay,
+    afterHours: p.afterHours,
+    steps: stepsFor(wOf(p.nextDay ? nextKind : kind), p.afterHours),
+  }));
   return {
     kind,
-    share: s,
+    nextKind,
     mode: cfg.mode,
-    parts: [{ share: 1 - s, steps: inSteps }, { share: s, steps: outSteps }],
+    window: win,
+    hours: total / 60,
+    share: parts.filter((p) => p.afterHours).reduce((sum, p) => sum + p.share, 0),
+    parts,
   };
 }
 
 /**
- * The price factor for a production item on one booked day:
- * (1 − s) × in-hours + s × after-hours, per the mode (see surchargeParts).
+ * The price factor for a production item on one booked day: Σ share × the
+ * product of its steps, over the parts of the window it covers (see
+ * surchargeParts and coveredWindow).
  *
  * @param {object} day — { date, startTime, endTime } (snake_case accepted),
- *   optionally `kind` as snapshotted at save.
+ *   optionally `kind` and `nextKind` as snapshotted at save. null is Date TBC.
  * @param {object} card — the rate card (or { surcharges } snapshot).
  * @param {boolean} shortNotice — the estimate's tick.
- * @param {Array} [holidays] — see dayKind; unused when the day carries `kind`.
+ * @param {Array} [holidays] — see dayKind; unused for a snapshotted kind.
+ * @param {number} [lineHours] — the item's own hours (qty × hours per unit);
+ *   without it, the whole booking.
  * @returns {number} ≥ 1, unrounded. Exactly 1 when nothing applies.
  */
-function surchargeFactor(day, card, shortNotice, holidays) {
-  const { parts } = surchargeParts(day, card, shortNotice, holidays);
+function surchargeFactor(day, card, shortNotice, holidays, lineHours) {
+  const { parts } = surchargeParts(day, card, shortNotice, holidays, lineHours);
   return parts.reduce((sum, p) => sum + p.share * p.steps.reduce((f, st) => f * st.m, 1), 0);
 }
 
@@ -1993,27 +2072,43 @@ function surchargedLinePrice(base, factor) {
 
 /**
  * Where a surcharged line's extra money came from, for the owner's Cost
- * Breakdown (D13): one row per surcharge that added anything, in the order
- * weekend/holiday, after hours, short notice. The rows add up TO THE CENT to
- * price − base; each row is rounded to the cent and the last row takes the
- * remainder, which carries the whole-dollar round-up (D20).
+ * Breakdown (D13): one row per surcharge that added anything. The rows add up
+ * TO THE CENT to price − base; each row is rounded to the cent and the last
+ * row takes the remainder, which carries the whole-dollar round-up (D20).
+ *
+ * Rows come in this order: the start date's weekend/holiday and after hours,
+ * then the CARRY-OVER rows, then short notice. A carry-over row is a part of
+ * the item after midnight on a date whose status differs from the start
+ * date's (a Friday night into Saturday): the rate changes there, so it is its
+ * own row (`carry: true`, the date in `carryDate`). After midnight on a date of
+ * the same status there is no rate change, and those hours join the start
+ * date's rows.
  *
  * @returns {{base:number, price:number, surcharge:number, factor:number,
- *   kind:string|null, rows:Array<{type:string, multiplier:number,
- *   share:number, amount:number}>}} `share` is the fraction of the day's
- *   booked hours the row covered (1 for the whole day).
+ *   kind:string|null, nextKind:string|null, carryDate:string|null,
+ *   window:{start:number,end:number}|null, hours:number,
+ *   rows:Array<{type:string, multiplier:number, share:number, hours:number,
+ *   carry:boolean, amount:number}>}} `share` is the fraction of the item's
+ *   covered hours the row applied to, and `hours` that many hours (0 with no
+ *   times). `window` and `hours` are the stretch the item covers.
  */
-function surchargeAttribution(base, day, card, shortNotice, holidays) {
+function surchargeAttribution(base, day, card, shortNotice, holidays, lineHours) {
   const b = round2(nonNeg(base));
-  const { parts, kind } = surchargeParts(day, card, shortNotice, holidays);
-  const ORDER = ['weekend', 'holiday', 'afterHours', 'shortNotice'];
-  const acc = {};
+  const sp = surchargeParts(day, card, shortNotice, holidays, lineHours);
+  const carry = sp.nextKind !== null && sp.nextKind !== sp.kind;
+  const acc = new Map();
   let factor = 0;
-  parts.forEach((p) => {
+  sp.parts.forEach((p) => {
     let running = 1;
     p.steps.forEach((st) => {
       if (st.m > 1 && p.share > 0) {
-        const row = acc[st.type] || (acc[st.type] = { type: st.type, multiplier: st.m, share: 0, raw: 0 });
+        const isCarry = carry && p.nextDay && st.type !== 'shortNotice';
+        const key = st.type + (isCarry ? '@next' : '');
+        let row = acc.get(key);
+        if (!row) {
+          row = { type: st.type, multiplier: st.m, carry: isCarry, share: 0, raw: 0 };
+          acc.set(key, row);
+        }
         row.raw += b * p.share * running * (st.m - 1);
         row.share += p.share;
       }
@@ -2024,22 +2119,43 @@ function surchargeAttribution(base, day, card, shortNotice, holidays) {
 
   const price = surchargedLinePrice(b, factor);
   const surcharge = round2(price - b);
-  const rows = ORDER.filter((t) => acc[t] && acc[t].raw > 0).map((t) => acc[t]);
+  const DAY_TYPES = ['weekend', 'holiday', 'afterHours'];
+  const ORDER = DAY_TYPES.concat(DAY_TYPES.map((t) => t + '@next'), ['shortNotice']);
+  const rows = ORDER.filter((k) => acc.has(k) && acc.get(k).raw > 0).map((k) => acc.get(k));
   let sofar = 0;
   const out = rows.map((r, i) => {
     const amount = i === rows.length - 1 ? round2(surcharge - sofar) : round2(r.raw);
     sofar = round2(sofar + amount);
-    return { type: r.type, multiplier: r.multiplier, share: r.share, amount };
+    return { type: r.type, multiplier: r.multiplier, share: r.share, hours: round2(r.share * sp.hours), carry: r.carry, amount };
   });
-  return { base: b, price, surcharge, factor, kind, rows: out };
+  return {
+    base: b,
+    price,
+    surcharge,
+    factor,
+    kind: sp.kind,
+    nextKind: sp.nextKind,
+    carryDate: carry ? nextDateOf(day.date) : null,
+    window: sp.window,
+    hours: sp.hours,
+    rows: out,
+  };
+}
+
+/* Does a day run past midnight? Its end clock time is before its start. */
+function isOvernight(day) {
+  const a = clockMinutes(field(day, 'startTime', 'start_time'));
+  const b = clockMinutes(field(day, 'endTime', 'end_time'));
+  return a !== null && b !== null && b < a;
 }
 
 /**
  * What an estimate stores as its surcharge snapshot (`surcharges_json`): the
- * settings it was priced under and each dated day's kind, so a later Rate Card
+ * settings it was priced under, each dated day's kind, and, for a day that
+ * runs past midnight, the next date's kind (`nextDays`), so a later Rate Card
  * or holiday-list change moves only new estimates (brief, Key Interactions 1).
  *
- * Re-saving keeps what was snapshotted: the prior settings, and a day's kind
+ * Re-saving keeps what was snapshotted: the prior settings, and a day's kinds
  * as long as that day (same id) still has the same date. A new day, or one
  * whose date moved, is read fresh against the holiday list. With no prior
  * snapshot — a new estimate, one saved before v11, or the caller asking for
@@ -2049,12 +2165,13 @@ function surchargeAttribution(base, day, card, shortNotice, holidays) {
  * the same one to price live, so the two agree to the cent.
  *
  * @param {Array<object>} days — the estimate's days as about to be saved:
- *   { id, date } (others ignored).
+ *   { id, date, startTime, endTime } (others ignored).
  * @param {object} card — the live rate card.
  * @param {Array} holidays — the live holiday list (see dayKind).
  * @param {object|null} prior — { surcharges, days }: the stored snapshot and
  *   the stored days; null for none.
- * @returns {{settings:object, days:Object<string,string>}}
+ * @returns {{settings:object, days:Object<string,string>,
+ *   nextDays?:Object<string,string>}} nextDays only when a day is overnight.
  */
 function surchargeSnapshot(days, card, holidays, prior) {
   const p = prior || {};
@@ -2062,49 +2179,67 @@ function surchargeSnapshot(days, card, holidays, prior) {
   const keep = Boolean(snap.settings && typeof snap.settings === 'object');
   const settings = keep ? normaliseSurcharges(snap.settings) : surchargeSettings(card);
   const priorKinds = keep && snap.days && typeof snap.days === 'object' ? snap.days : {};
+  const priorNext = keep && snap.nextDays && typeof snap.nextDays === 'object' ? snap.nextDays : {};
   const priorDates = {};
   (Array.isArray(p.days) ? p.days : []).forEach((d) => {
     if (d && d.id) priorDates[d.id] = d.date || null;
   });
 
   const kinds = {};
+  const nextKinds = {};
   (Array.isArray(days) ? days : []).forEach((d) => {
     if (!d || !d.id) return;
     const fresh = dayKind(d.date, settings, holidays);
     if (fresh === null) return; // Date TBC: nothing to snapshot
-    const held = priorKinds[d.id];
-    kinds[d.id] = held && priorDates[d.id] === d.date ? held : fresh;
+    const unmoved = priorDates[d.id] === d.date;
+    kinds[d.id] = priorKinds[d.id] && unmoved ? priorKinds[d.id] : fresh;
+    if (isOvernight(d)) {
+      nextKinds[d.id] = priorNext[d.id] && unmoved ? priorNext[d.id] : dayKind(nextDateOf(d.date), settings, holidays);
+    }
   });
-  return { settings, days: kinds };
+  const out = { settings, days: kinds };
+  if (Object.keys(nextKinds).length) out.nextDays = nextKinds;
+  return out;
 }
 
 /* The surcharge context computeTotals prices `prod` lines through: each day by
-   id, with its snapshotted kind, and the snapshot's settings as a card. null
-   when the estimate has no days, so nothing about it is surcharged. */
+   id, with its snapshotted kinds, and the snapshot's settings as a card. null
+   when the estimate has no days and no short notice, so nothing about it is
+   surcharged. */
 function surchargeContext(options) {
   const o = options || {};
-  if (!Array.isArray(o.days) || !o.days.length) return null;
+  const days = Array.isArray(o.days) ? o.days : [];
+  const shortNotice = o.shortNotice === true;
+  if (!days.length && !shortNotice) return null;
   const snap = o.surcharges && typeof o.surcharges === 'object' ? o.surcharges : {};
   const kinds = snap.days && typeof snap.days === 'object' ? snap.days : {};
+  const nextKinds = snap.nextDays && typeof snap.nextDays === 'object' ? snap.nextDays : {};
   const byId = new Map();
-  o.days.forEach((d) => {
-    if (d && d.id) byId.set(String(d.id), Object.assign({}, d, { kind: kinds[d.id] }));
+  days.forEach((d) => {
+    if (d && d.id) byId.set(String(d.id), Object.assign({}, d, { kind: kinds[d.id], nextKind: nextKinds[d.id] }));
   });
-  return { byId, card: { surcharges: snap.settings }, shortNotice: o.shortNotice === true };
+  return { byId, card: { surcharges: snap.settings }, shortNotice };
 }
 
 /* A production line's price after surcharges, or `base` itself — untouched,
-   not even rounded — when the line has no day this estimate knows. */
-function surchargedPriceOf(base, line, ctx) {
-  const day = ctx && line && line.dayId ? ctx.byId.get(String(line.dayId)) : null;
-  if (!day) return base;
-  return surchargedLinePrice(base, surchargeFactor(day, ctx.card, ctx.shortNotice));
+   not even rounded — when nothing applies to it. On a day, the day's rates
+   over the hours the line covers. On no day, short notice still applies when
+   it's ticked, as on a Date TBC day (D3, D9): it used to be skipped, so an
+   estimate whose lines weren't on a day was undercharged by the whole short-
+   notice premium (money review, 2026-10-02). */
+function surchargedPriceOf(base, line, ctx, lineHours) {
+  if (!ctx || !line) return base;
+  const day = line.dayId ? ctx.byId.get(String(line.dayId)) : null;
+  if (day) return surchargedLinePrice(base, surchargeFactor(day, ctx.card, ctx.shortNotice, undefined, lineHours));
+  if (ctx.shortNotice) return surchargedLinePrice(base, surchargeFactor(null, ctx.card, true));
+  return base;
 }
 
 /**
- * The estimate's lines as they are stored: every `prod` line on a day carries
- * the `surchargedPrice` computeTotals priced it at (D20's whole dollars), and
- * no other line carries one. The server writes this on every save, so a stored
+ * The estimate's lines as they are stored: every `prod` line the surcharges
+ * reach — one on a day, and, with short notice ticked, one on no day — carries
+ * the `surchargedPrice` computeTotals priced it at (D20's whole dollars), and no
+ * other line carries one. The server writes this on every save, so a stored
  * line can never claim a price its totals don't contain; the PDF and the
  * detail read it rather than re-pricing.
  *
@@ -2127,12 +2262,15 @@ function stampSurchargedPrices(activeRows, pricing, options) {
       if (!line || typeof line !== 'object') return line;
       const copy = Object.assign({}, line);
       delete copy.surchargedPrice;
-      if (key !== 'prod' || !ctx || !copy.dayId || !ctx.byId.has(String(copy.dayId))) return copy;
+      if (key !== 'prod' || !ctx) return copy;
+      const onDay = Boolean(copy.dayId) && ctx.byId.has(String(copy.dayId));
+      if (!onDay && !ctx.shortNotice) return copy;
       const def = lineDef(prodRows ? prodRows.rows : [], copy, pricing);
       if (!def) return copy;
+      const qty = nonNeg(copy.qty);
       const override = nonNeg(copy.override);
-      const base = override > 0 ? override : nonNeg(copy.qty) * nonNeg(def.mu);
-      copy.surchargedPrice = surchargedPriceOf(base, copy, ctx);
+      const base = override > 0 ? override : qty * nonNeg(def.mu);
+      copy.surchargedPrice = surchargedPriceOf(base, copy, ctx, qty * hoursPerUnitOf(def));
       return copy;
     });
   });
@@ -2144,13 +2282,14 @@ function stampSurchargedPrices(activeRows, pricing, options) {
    it can be forwarded — so it carries line prices and surcharges, and never
    a floor, the Minimum Job Price, the tax set-aside or take-home. */
 
-/* A day's booked hours, from its times; 0 when either is missing or they're
-   equal, as afterHoursShare reads them. */
+/**
+ * A day's booked hours, from its times; 0 when either is missing or they're
+ * equal, as coveredWindow reads them. The one definition: the editor's hours
+ * hint, the owner's notes and the Cost Breakdown all read it.
+ */
 function bookedHoursOf(day) {
-  const a = clockMinutes(field(day, 'startTime', 'start_time'));
-  const b = clockMinutes(field(day, 'endTime', 'end_time'));
-  if (a === null || b === null || a === b) return 0;
-  return ((b < a ? b + 1440 : b) - a) / 60;
+  const win = coveredWindow(day);
+  return win ? (win.end - win.start) / 60 : 0;
 }
 
 /* Whole cents, so the breakdown's sums are integer additions. */
@@ -2160,33 +2299,41 @@ function centsOf(n) {
 
 /**
  * The Cost Breakdown as figures: production items at their base price under
- * their day, each day's weekend / holiday / after-hours surcharges, short
- * notice once for the whole estimate, then every other line, adding up to the
- * estimate's stored total.
+ * their day, each item's own weekend / holiday / after-hours rows and its
+ * carry-over rows, short notice once for the whole estimate, then every other
+ * line, adding up to the estimate's stored total.
  *
  * It reads the estimate as saved — the lines' own snapshots, its days and its
  * surcharge snapshot — never the live card's surcharge settings, so it
  * explains the price the client was given, not today's. A line's price is the
  * one computeTotals charged (surchargeAttribution prices it the same way), and
- * each line's surcharge rows add up to the cent to price − base, so the day
- * rows, the short-notice row and the bases add up to the folded prices.
+ * each line's surcharge rows add up to the cent to price − base.
+ *
+ * SURCHARGES ARE PER ITEM, because each item covers its own hours from the
+ * booked start (coveredWindow): on one day a full day and a two-hour item can
+ * carry different after-hours shares. Each item says what it covers.
  *
  * Each line is shown to the cent. computeTotals rounds once, on the sum, so
- * a line priced in fractions of a cent can leave the shown lines a cent or so
- * off the stored total; `adjustment` is that difference, for a "Rounding" row,
- * and is 0 whenever every line is in whole cents. It is measured against the
- * figure the lines add up to: the total inc GST when the card's prices
- * included GST, otherwise the client price ex GST. Which one is read from the
- * stored totals (whichever the lines are nearer), not today's settings, as
- * gstTreatment reads GST.
+ * lines priced in fractions of a cent can leave the shown lines a cent or so
+ * off the stored total: `adjustment` is that difference, printed as a
+ * "Rounding" row. It is measured against the figure the lines add up to: the
+ * total inc GST when the card's prices included GST, otherwise the client
+ * price ex GST, read from the stored totals (whichever the lines are nearer),
+ * not today's settings, as gstTreatment reads GST.
+ *
+ * `stale` is true when the difference is more than rounding can explain (half
+ * a cent per line): the stored totals no longer match the lines, as on an
+ * estimate saved by an older build. The document must not paper over that as
+ * "rounding"; the route refuses it and asks for a re-save.
  *
  * @param {object} activeRows — the estimate's stored lines.
  * @param {object} pricing — the rate card, for a legacy line with no snapshot.
  * @param {object} options — { days, surcharges, shortNotice, totals, gstFree },
  *   as loadEstimate gives them.
  * @returns {object} { days, shortNotice, sections, travel, equip, crew,
- *   surchargeTotal, itemsTotal, linesIncludeGst, target, adjustment } — see
- *   the code below for each shape; every money figure is in dollars to the cent.
+ *   surchargeTotal, itemsTotal, linesIncludeGst, target, adjustment, stale,
+ *   settings } — see the code below for each shape; every money figure is in
+ *   dollars to the cent.
  */
 function costBreakdown(activeRows, pricing, options) {
   const rows = activeRows || {};
@@ -2198,7 +2345,7 @@ function costBreakdown(activeRows, pricing, options) {
   const days = [];
   const dayById = new Map();
   if (ctx) {
-    o.days.forEach((d) => {
+    (Array.isArray(o.days) ? o.days : []).forEach((d) => {
       if (!d || !d.id || dayById.has(String(d.id))) return;
       const day = ctx.byId.get(String(d.id));
       const out = {
@@ -2210,7 +2357,6 @@ function costBreakdown(activeRows, pricing, options) {
         kind: surchargeParts(day, ctx.card, false).kind,
         bookedHours: bookedHoursOf(day),
         lines: [],
-        surcharges: [],
         base: 0,
         price: 0,
       };
@@ -2221,15 +2367,25 @@ function costBreakdown(activeRows, pricing, options) {
 
   let shortNoticeCents = 0;
   let shortNoticeMultiplier = 1;
-  const shortNoticeDays = [];
+  let shortNoticeItems = 0;
   let itemsCents = 0;
   let surchargeCents = 0;
+  let lineCount = 0;
 
   const unitOf = (def, line) => {
     const dayUnit = def.dayUnit || line.dayUnit;
     if (dayUnit === 'full' || dayUnit === 'half') return dayUnit;
     return hoursPerUnitOf(def) === 1 ? 'hour' : 'unit';
   };
+  /* Short notice is one row for the estimate; every other row stays with its
+     item. */
+  const takeShortNotice = (att) => att.rows.filter((r) => {
+    if (r.type !== 'shortNotice') return true;
+    shortNoticeCents += centsOf(r.amount);
+    shortNoticeMultiplier = r.multiplier;
+    shortNoticeItems += 1;
+    return false;
+  });
 
   const sections = [];
   for (const section of labourSectionsOf(rows, labourSections)) {
@@ -2241,57 +2397,53 @@ function costBreakdown(activeRows, pricing, options) {
       const qty = nonNeg(line.qty);
       const override = nonNeg(line.override);
       const base = override > 0 ? override : qty * nonNeg(def.mu);
-      const day = section.id === 'prod' && line.dayId ? dayById.get(String(line.dayId)) : null;
+      const hours = qty * hoursPerUnitOf(def);
+      const isProd = section.id === 'prod';
+      const day = isProd && line.dayId ? dayById.get(String(line.dayId)) : null;
+      if (!(qty > 0) && !(base > 0)) return;
+      lineCount += 1;
 
       if (day) {
-        const att = surchargeAttribution(base, ctx.byId.get(day.id), ctx.card, ctx.shortNotice);
-        day.lines.push({ index, name: line.name || '', qty, unit: unitOf(def, line), base: att.base, price: att.price });
+        const att = surchargeAttribution(base, ctx.byId.get(day.id), ctx.card, ctx.shortNotice, undefined, hours);
+        const own = takeShortNotice(att);
+        day.lines.push({
+          index,
+          name: line.name || '',
+          qty,
+          unit: unitOf(def, line),
+          base: att.base,
+          price: att.price,
+          window: att.window,
+          coveredHours: att.hours,
+          carryDate: att.carryDate,
+          nextKind: att.nextKind,
+          surcharges: own.map((r) => ({ type: r.type, multiplier: r.multiplier, share: r.share, hours: r.hours, carry: r.carry, amount: r.amount })),
+        });
         day.base = (centsOf(day.base) + centsOf(att.base)) / 100;
         day.price = (centsOf(day.price) + centsOf(att.price)) / 100;
         itemsCents += centsOf(att.price);
         surchargeCents += centsOf(att.price) - centsOf(att.base);
-        att.rows.forEach((r) => {
-          if (r.type === 'shortNotice') {
-            shortNoticeCents += centsOf(r.amount);
-            shortNoticeMultiplier = r.multiplier;
-            if (shortNoticeDays.indexOf(day.id) === -1) shortNoticeDays.push(day.id);
-            return;
-          }
-          let row = day.surcharges.find((s) => s.type === r.type);
-          if (!row) {
-            row = { type: r.type, multiplier: r.multiplier, share: r.share, cents: 0 };
-            day.surcharges.push(row);
-          }
-          row.share = Math.max(row.share, r.share);
-          row.cents += centsOf(r.amount);
-        });
         return;
       }
 
-      if (!(qty > 0) && !(base > 0)) return;
-      const amount = round2(base);
-      lines.push({ index, name: line.name || '', qty, unit: unitOf(def, line), amount });
-      itemsCents += centsOf(amount);
+      // A production line on no day: short notice only (surchargedPriceOf).
+      let amount = round2(base);
+      let price = amount;
+      if (isProd && ctx && ctx.shortNotice) {
+        const att = surchargeAttribution(base, null, ctx.card, true);
+        takeShortNotice(att);
+        amount = att.base;
+        price = att.price;
+        surchargeCents += centsOf(att.price) - centsOf(att.base);
+      }
+      lines.push({ index, name: line.name || '', qty, unit: unitOf(def, line), amount, price });
+      itemsCents += centsOf(price);
     });
     if (lines.length) {
       const total = lines.reduce((sum, l) => sum + centsOf(l.amount), 0) / 100;
       sections.push({ id: section.id, lines, total });
     }
   }
-
-  const ORDER = ['weekend', 'holiday', 'afterHours'];
-  days.forEach((day) => {
-    day.surcharges = day.surcharges
-      .filter((s) => s.cents !== 0)
-      .sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type))
-      .map((s) => ({
-        type: s.type,
-        multiplier: s.multiplier,
-        share: s.share,
-        hours: round2(s.share * day.bookedHours),
-        amount: s.cents / 100,
-      }));
-  });
 
   const travel = [];
   (rows.travel || []).forEach((line, index) => {
@@ -2303,6 +2455,7 @@ function costBreakdown(activeRows, pricing, options) {
     if (!(qty > 0) && !(amount > 0)) return;
     travel.push({ index, name: line.name || '', qty, perKm: Boolean(def.perKm), directCost: Boolean(def.directCost), amount });
     itemsCents += centsOf(amount);
+    lineCount += 1;
   });
 
   const atCost = (key, nameKey, fallback) => {
@@ -2313,6 +2466,7 @@ function costBreakdown(activeRows, pricing, options) {
       if (!(amount > 0) && !line[nameKey]) return;
       out.push({ index, name: line[nameKey] || fallback, days: nonNeg(line.days), cost: nonNeg(line.cost), amount });
       itemsCents += centsOf(amount);
+      lineCount += 1;
     });
     return out;
   };
@@ -2332,11 +2486,12 @@ function costBreakdown(activeRows, pricing, options) {
     }
     targetCents = linesIncludeGst ? inc : ex;
   }
+  const adjustmentCents = targetCents - itemsCents;
 
   return {
     days,
     shortNotice: shortNoticeCents !== 0
-      ? { multiplier: shortNoticeMultiplier, amount: shortNoticeCents / 100, dayIds: shortNoticeDays }
+      ? { multiplier: shortNoticeMultiplier, amount: shortNoticeCents / 100, items: shortNoticeItems }
       : null,
     sections,
     travel,
@@ -2346,7 +2501,10 @@ function costBreakdown(activeRows, pricing, options) {
     itemsTotal: itemsCents / 100,
     linesIncludeGst,
     target: targetCents / 100,
-    adjustment: (targetCents - itemsCents) / 100,
+    adjustment: adjustmentCents / 100,
+    // Half a cent of rounding per line shown, at most.
+    stale: Math.abs(adjustmentCents) > lineCount * 0.5 + 1e-9,
+    settings: ctx ? surchargeSettings(ctx.card) : null,
   };
 }
 
@@ -2537,6 +2695,7 @@ if (typeof module === 'object' && module.exports) {
     surchargeSnapshot,
     stampSurchargedPrices,
     costBreakdown,
+    bookedHoursOf,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -2594,6 +2753,7 @@ if (typeof module === 'object' && module.exports) {
     surchargeSnapshot,
     stampSurchargedPrices,
     costBreakdown,
+    bookedHoursOf,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
