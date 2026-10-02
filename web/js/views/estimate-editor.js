@@ -499,17 +499,17 @@ const EstimateEditor = (() => {
     return tr;
   }
 
-  /* Equipment and crew are the same shape — a free-text name, days, and a cost
-     per day — and bill identically. One builder, two labels. */
+  /* Equipment and crew are the same shape — a name, days, and a cost per day —
+     and bill identically. One builder, two labels.
+
+     EQUIPMENT (B2-7, D82): Vendor and Item, where it was one "Vendor / item"
+     field. The Vendor suggests this estimate's vendors, since all the hire
+     from one vendor is one gear rental (syncRentals). A line saved before B2-7
+     has no `item`: its one field's text becomes the Item, with no Vendor, so
+     it joins no rental (confirmed 2026-10-03). */
   function buildCostRow(kind, line) {
     const isEquip = kind === 'equip';
-    const nameClass = isEquip ? 'vendor-inp' : 'role-inp';
-    const placeholder = isEquip ? 'Vendor / item name' : 'Role / contractor name';
-    const label = isEquip ? 'Vendor or item' : 'Role or contractor';
-    const value = isEquip ? line.vendor : line.role;
-    // Must match the day card's group heads (DAY_GROUPS) for this kind — the stacked
-    // mobile row prints these in place of the headings it hides.
-    const nameCol = isEquip ? 'Vendor / Item' : 'Role / Name';
+    const legacy = isEquip && !Object.prototype.hasOwnProperty.call(line, 'item');
     const costCol = isEquip ? 'Cost/Day' : 'Day Rate';
 
     const tr = document.createElement('div');
@@ -517,9 +517,20 @@ const EstimateEditor = (() => {
     tr.dataset.rid = rid();
     tr.dataset.kind = kind;
 
+    // Must match the day card's group heads (DAY_GROUPS) for this kind — the stacked
+    // mobile row prints these in place of the headings it hides.
+    const nameCell = isEquip
+      ? '<div data-label="Vendor · Item"><div class="equip-names">' +
+        '<input class="text-inp vendor-inp" type="text" maxlength="200" value="' + esc(legacy ? '' : line.vendor || '') +
+        '" placeholder="Vendor" aria-label="Vendor">' +
+        '<input class="text-inp item-inp" type="text" value="' + esc((legacy ? line.vendor : line.item) || '') +
+        '" placeholder="Item" aria-label="Item"></div>' +
+        '<button type="button" class="rental-hint" hidden>Add pickup and return dates <span aria-hidden="true">↓</span></button></div>'
+      : '<div data-label="Role / Name"><input class="text-inp role-inp" type="text" value="' + esc(line.role || '') +
+        '" placeholder="Role / contractor name" aria-label="Role or contractor"></div>';
+
     tr.innerHTML =
-      '<div data-label="' + nameCol + '"><input class="text-inp ' + nameClass + '" type="text" value="' + esc(value || '') +
-      '" placeholder="' + placeholder + '" aria-label="' + label + '"></div>' +
+      nameCell +
       '<div class="right" data-label="Days"><input class="num-inp days-inp" type="number" min="0" step="0.5" value="' +
       (line.days || '') + '" aria-label="Days"></div>' +
       '<div class="right" data-label="' + costCol + '"><input class="num-inp cost-inp" type="number" min="0" step="0.01" value="' +
@@ -529,6 +540,22 @@ const EstimateEditor = (() => {
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove" aria-label="Remove row">×</button></div>';
 
     bindRow(tr, ['.days-inp', '.cost-inp']);
+    // Names price nothing, but the summaries and the rentals read them.
+    tr.querySelectorAll('.role-inp, .vendor-inp, .item-inp').forEach((input) => input.addEventListener('input', recalc));
+    if (isEquip) {
+      const vendor = tr.querySelector('.vendor-inp');
+      ClientTypeahead.attach(vendor, {
+        fetch: (query) => vendorsLike(query),
+        label: (v) => v.vendor,
+        sub: (v) => plural(v.items, 'item', 'items'),
+        debounce: 0,
+        onPick: (v) => {
+          vendor.value = v.vendor;
+          vendor.dispatchEvent(new Event('input', { bubbles: true }));
+        },
+      });
+      tr.querySelector('.rental-hint').addEventListener('click', () => focusRental(vendorKey(vendor.value)));
+    }
     addLineControls(tr, kind);
     return tr;
   }
@@ -723,7 +750,7 @@ const EstimateEditor = (() => {
       '<div class="right">Rate</div><div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>'],
     ['crew', 'Crew', '<div class="gt-head expense-grid"><div>Role / Name</div><div class="right">Days</div>' +
       '<div class="right">Day Rate</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
-    ['equip', 'Equipment', '<div class="gt-head expense-grid"><div>Vendor / Item</div><div class="right">Days</div>' +
+    ['equip', 'Equipment', '<div class="gt-head expense-grid"><div>Vendor · Item</div><div class="right">Days</div>' +
       '<div class="right">Cost/Day</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
   ];
 
@@ -1028,7 +1055,7 @@ const EstimateEditor = (() => {
       if (perKm) focusSel = '.qty-inp';
       said = def.name;
     } else {
-      tr = buildCostRow(kind, {});
+      tr = buildCostRow(kind, kind === 'equip' ? { vendor: '', item: '' } : {});
       focusSel = kind === 'crew' ? '.role-inp' : '.vendor-inp';
       said = kind === 'crew' ? 'a crew member' : 'a hire item';
     }
@@ -1069,7 +1096,7 @@ const EstimateEditor = (() => {
   function lineLabel(tr) {
     const kind = kindOf(tr);
     if (kind === 'crew') return inputValue(tr, '.role-inp').trim() || 'crew member';
-    if (kind === 'equip') return inputValue(tr, '.vendor-inp').trim() || 'hire item';
+    if (kind === 'equip') return inputValue(tr, '.item-inp').trim() || inputValue(tr, '.vendor-inp').trim() || 'hire item';
     const snap = snapOf(tr) || {};
     const day = kind === 'prod' && (snap.dayUnit === 'full' || snap.dayUnit === 'half') ? ' — ' + UNIT_ADDED[snap.dayUnit] : '';
     return tr.dataset.name + day;
@@ -1104,8 +1131,8 @@ const EstimateEditor = (() => {
     const move = ctl.querySelector('.line-move');
     move.addEventListener('click', () => openMovePop(tr, move));
     bindDrag(tr, kind, handle);
-    const name = tr.querySelector('.role-inp, .vendor-inp');
-    if (name) name.addEventListener('input', () => labelLineControls(tr));
+    tr.querySelectorAll('.role-inp, .vendor-inp, .item-inp').forEach((name) =>
+      name.addEventListener('input', () => labelLineControls(tr)));
     labelLineControls(tr);
   }
 
@@ -1336,6 +1363,7 @@ const EstimateEditor = (() => {
           fresh = buildCostRow(kind, {
             role: inputValue(tr, '.role-inp'),
             vendor: inputValue(tr, '.vendor-inp'),
+            item: inputValue(tr, '.item-inp'),
             days: inputValue(tr, '.days-inp'),
             cost: inputValue(tr, '.cost-inp'),
           });
@@ -1347,6 +1375,242 @@ const EstimateEditor = (() => {
       });
     });
     return n;
+  }
+
+  // ── Gear rentals (B2-7, D82–D84) ─────────────────────────────────────────
+  /* One rental per vendor on this estimate's equipment lines (trimmed,
+     case-insensitive): when that vendor's hire goes out and comes back, and
+     how. Logistics only: the hire is billed on its lines' days × cost (D83),
+     and a rental never reaches a client (D82).
+
+     The lines are the truth, and syncRentals() — run by every recalc — makes
+     the rentals follow them:
+       - a vendor new to the estimate gets a rental, with no dates yet;
+       - renaming the vendor on its only line renames its rental, dates and
+         all, even through a moment of being blank while it's retyped (the
+         line carries it);
+       - a line given a vendor that already has a rental joins it;
+       - a rental left with no lines goes (the brief's B2 Key Interactions 1).
+     The server drops a rental with no lines too (rentals.js rentalsWithGear). */
+  const vendorKey = (v) => String(v === undefined || v === null ? '' : v).trim().toLowerCase();
+  // { id, key, vendor, outDate, outMethod, backDate, backMethod, note, carrier }: key null while carried.
+  let rentals = [];
+  let rentalsReady = false; // not until restoreRows has put every line back
+  let rentalsEl = null;
+  const rentalRows = new Map(); // rental id → its row in the panel
+  let lineVendors = new WeakMap(); // equipment row → its Vendor text at the last sync
+
+  function newRentalId() {
+    if (window.crypto && typeof crypto.randomUUID === 'function') {
+      return 'rn' + crypto.randomUUID().replace(/-/g, '');
+    }
+    return 'rn' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+
+  const vendorOf = (tr) => inputValue(tr, '.vendor-inp').trim();
+
+  function syncRentals() {
+    if (!rentalsReady) return;
+    const lines = rowsIn('equip');
+    const count = new Map(); // vendor key → its lines
+    lines.forEach((tr) => {
+      const k = vendorKey(vendorOf(tr));
+      if (k) count.set(k, (count.get(k) || 0) + 1);
+    });
+    const byKey = new Map(rentals.filter((r) => r.key).map((r) => [r.key, r]));
+
+    lines.forEach((tr) => {
+      const text = vendorOf(tr);
+      const was = lineVendors.has(tr) ? lineVendors.get(tr) : text; // a new line has changed nothing
+      lineVendors.set(tr, text);
+      if (was === text) return;
+      const k = vendorKey(text);
+      const before = vendorKey(was);
+      if (k === before) {
+        // Re-spelt ("lensworks" → "Lensworks"): on its only line, the rental takes the spelling.
+        if (k && count.get(k) === 1 && byKey.has(k)) byKey.get(k).vendor = text;
+        return;
+      }
+      // The rental this line takes with it: the one it's carrying, or its old vendor's if no line still has that.
+      let mine = rentals.find((r) => r.carrier === tr) || null;
+      if (!mine && before && !count.has(before)) mine = byKey.get(before) || null;
+      if (!mine) return;
+      byKey.delete(before);
+      if (!k) {
+        mine.key = null;
+        mine.carrier = tr;
+      } else if (byKey.has(k)) {
+        mine.key = null; // it joins that vendor's rental; this one goes below
+        mine.carrier = null;
+      } else {
+        Object.assign(mine, { key: k, vendor: text, carrier: null });
+        byKey.set(k, mine);
+      }
+    });
+
+    count.forEach((n, k) => {
+      if (byKey.has(k)) return;
+      const tr = lines.find((t) => vendorKey(vendorOf(t)) === k);
+      const r = { id: newRentalId(), key: k, vendor: vendorOf(tr), outDate: null, outMethod: null,
+        backDate: null, backMethod: null, note: '', carrier: null };
+      rentals.push(r);
+      byKey.set(k, r);
+    });
+    rentals = rentals.filter((r) => (r.key ? count.has(r.key) : Boolean(r.carrier) && lines.indexOf(r.carrier) !== -1));
+  }
+
+  /* Vendor suggestions for an equipment line: this estimate's other vendors
+     matching what's typed, those starting with it first. */
+  function vendorsLike(query) {
+    const q = vendorKey(query);
+    return rentals
+      .filter((r) => r.key && r.key !== q && r.key.indexOf(q) !== -1)
+      .sort((a, b) => (b.key.indexOf(q) === 0) - (a.key.indexOf(q) === 0))
+      .map((r) => ({ vendor: r.vendor, items: rowsIn('equip').filter((tr) => vendorKey(vendorOf(tr)) === r.key).length }));
+  }
+
+  const shownRentals = () => rentals.filter((r) => r.key);
+
+  /* The rentals as the estimate routes take them, in the panel's order. */
+  function rentalsPayload() {
+    return shownRentals().map((r) => ({
+      id: r.id,
+      vendor: r.vendor,
+      outDate: r.outDate || null,
+      outMethod: r.outMethod || null,
+      backDate: r.backDate || null,
+      backMethod: r.backMethod || null,
+      note: (r.note || '').trim(),
+    }));
+  }
+
+  function rentalsPanel() {
+    if (rentalsEl) return rentalsEl;
+    rentalsEl = document.createElement('section');
+    rentalsEl.className = 'rentals';
+    rentalsEl.setAttribute('aria-labelledby', 'rentals-h');
+    rentalsEl.innerHTML =
+      '<h3 class="rentals-h" id="rentals-h">Gear rentals</h3>' +
+      '<p class="rentals-empty"></p>' +
+      '<ul class="rentals-list"></ul>';
+    rentalsEl.addEventListener('input', onRentalInput);
+    rentalsEl.addEventListener('change', onRentalInput);
+    return rentalsEl;
+  }
+
+  function rentalRowMarkup(r) {
+    const k = 'rn-' + r.id;
+    const opt = (v, t) => '<option value="' + v + '">' + t + '</option>';
+    return (
+      '<div class="rental-who"><span class="rental-vendor" id="' + k + '-v"></span>' +
+      '<span class="rental-items"></span></div>' +
+      '<div class="rental-f"><label for="' + k + '-out">Out</label><div class="rental-pair">' +
+      '<input type="date" class="text-inp" id="' + k + '-out" data-r="outDate" aria-describedby="' + k + '-v">' +
+      '<select class="svc-select" data-r="outMethod" aria-label="How it goes out">' +
+      opt('', '—') + opt('pickup', 'Pickup') + opt('postage', 'Postage') + '</select></div></div>' +
+      '<div class="rental-f"><label for="' + k + '-back">Back</label><div class="rental-pair">' +
+      '<input type="date" class="text-inp" id="' + k + '-back" data-r="backDate" aria-describedby="' + k + '-v ' + k + '-err">' +
+      '<select class="svc-select" data-r="backMethod" aria-label="How it comes back">' +
+      opt('', '—') + opt('return', 'Return') + opt('postage', 'Postage') + '</select></div></div>' +
+      '<div class="rental-f rental-note-f"><label for="' + k + '-note">Note</label>' +
+      '<input type="text" class="text-inp" id="' + k + '-note" data-r="note" maxlength="500" ' +
+      'placeholder="Booking ref, tracking no." aria-describedby="' + k + '-v"></div>' +
+      '<p class="rental-err" id="' + k + '-err" hidden>Back is before Out.</p>'
+    );
+  }
+
+  function buildRentalRow(r) {
+    const li = document.createElement('li');
+    li.className = 'rental-row';
+    li.dataset.rental = r.id;
+    li.setAttribute('role', 'group');
+    li.setAttribute('aria-labelledby', 'rn-' + r.id + '-v');
+    li.innerHTML = rentalRowMarkup(r);
+    li.querySelector('[data-r="outDate"]').value = r.outDate || '';
+    li.querySelector('[data-r="outMethod"]').value = r.outMethod || '';
+    li.querySelector('[data-r="backDate"]').value = r.backDate || '';
+    li.querySelector('[data-r="backMethod"]').value = r.backMethod || '';
+    li.querySelector('[data-r="note"]').value = r.note || '';
+    rentalRows.set(r.id, li);
+    return li;
+  }
+
+  function onRentalInput(e) {
+    const field = e.target.closest('[data-r]');
+    const li = field && field.closest('[data-rental]');
+    const r = li && rentals.find((x) => x.id === li.dataset.rental);
+    if (!r) return;
+    r[field.dataset.r] = field.dataset.r === 'note' ? field.value : field.value || null;
+    paintRentals();
+  }
+
+  // 'YYYY-MM-DD' compares as text, as the server's check does.
+  const reversed = (r) => Boolean(r.outDate && r.backDate && r.backDate < r.outDate);
+
+  /* The panel, and each line's "Add pickup and return dates ↓". Rows are kept
+     and moved, never rebuilt, so a date being typed survives a repaint. */
+  function paintRentals() {
+    if (!rentalsEl) return;
+    const lines = rowsIn('equip');
+    const shown = shownRentals();
+    const empty = rentalsEl.querySelector('.rentals-empty');
+    empty.textContent = lines.length
+      ? 'Give a hire item its vendor to plan when its gear goes out and comes back.'
+      : 'Gear you hire shows here, grouped by vendor.';
+    empty.hidden = shown.length > 0;
+    rentalRows.forEach((li, id) => {
+      if (shown.some((r) => r.id === id)) return;
+      li.remove();
+      rentalRows.delete(id);
+    });
+    const list = rentalsEl.querySelector('.rentals-list');
+    shown.forEach((r, i) => {
+      const li = rentalRows.get(r.id) || buildRentalRow(r);
+      if (list.children[i] !== li) list.insertBefore(li, list.children[i] || null);
+      li.querySelector('.rental-vendor').textContent = r.vendor;
+      const names = lines.filter((tr) => vendorKey(vendorOf(tr)) === r.key)
+        .map((tr) => inputValue(tr, '.item-inp').trim() || 'An item with no name yet');
+      const sig = r.vendor + '\n' + names.join('\n');
+      if (li.dataset.items !== sig) {
+        li.dataset.items = sig;
+        li.querySelector('.rental-items').innerHTML = plural(names.length, 'item', 'items') +
+          LSCInfo.markup({
+            id: 'rental-items-' + r.id,
+            label: 'The items from ' + r.vendor,
+            title: r.vendor,
+            paragraphs: names.map(esc),
+          });
+      }
+      const bad = reversed(r);
+      li.querySelector('.rental-err').hidden = !bad;
+      li.querySelector('[data-r="backDate"]').setAttribute('aria-invalid', String(bad));
+    });
+    lines.forEach((tr) => {
+      const k = vendorKey(vendorOf(tr));
+      const r = k ? shown.find((x) => x.key === k) : null;
+      tr.querySelector('.rental-hint').hidden = !(r && !r.outDate && !r.backDate);
+    });
+  }
+
+  /* From a line's hint: its rental's Out date. */
+  function focusRental(key) {
+    const r = shownRentals().find((x) => x.key === key);
+    const li = r && rentalRows.get(r.id);
+    if (!li) return;
+    const out = li.querySelector('[data-r="outDate"]');
+    out.scrollIntoView({ block: 'nearest' });
+    out.focus({ preventScroll: true });
+  }
+
+  /* The collapsed head's extras (the IA's B2 Content Hierarchy 3). */
+  function bookingHeadNotes() {
+    const notes = [];
+    const n = shownRentals().length;
+    if (n) notes.push(plural(n, 'rental', 'rentals'));
+    const off = dayPanels.get(OFF_DAY);
+    const loose = off ? off.querySelectorAll('[data-rid]').length : 0;
+    if (loose) notes.push(plural(loose, 'off-day line', 'off-day lines'));
+    return notes;
   }
 
   /* "Booked 12 hrs, items cover 8" (D26): the day's booked hours, from its
@@ -1807,7 +2071,8 @@ const EstimateEditor = (() => {
     }));
 
     activeRows.equip = rowsIn('equip').map((tr) => onDay(tr, {
-      vendor: inputValue(tr, '.vendor-inp'),
+      vendor: vendorOf(tr),
+      item: inputValue(tr, '.item-inp').trim(),
       days: num(inputValue(tr, '.days-inp')),
       cost: num(inputValue(tr, '.cost-inp')),
     }));
@@ -1993,15 +2258,20 @@ const EstimateEditor = (() => {
         };
         const bill = paintRow(tr, costBill(line));
         subtotal += bill;
-        const name = inputValue(tr, kind === 'crew' ? '.role-inp' : '.vendor-inp').trim();
+        // Gear reads as its Item, with its vendor under it (B2-7).
+        const vendor = kind === 'equip' ? vendorOf(tr) : '';
+        const name = kind === 'crew' ? inputValue(tr, '.role-inp').trim() : inputValue(tr, '.item-inp').trim() || vendor;
         tally(kind, rowDayId(tr), bill, onSetLine(
           name || (kind === 'crew' ? 'Crew member, no name yet' : 'Hire item, no name yet'),
-          plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, '', !name));
+          plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, name !== vendor ? vendor : '', !name));
       });
       setText('sum-' + kind, fmt(subtotal));
     });
     paintDays(perDay);
     paintOnSet(onSet);
+    syncRentals();
+    paintRentals();
+    if (booking) booking.refreshHead();
     paintShortNotice(days);
 
     // The headline figures, from the same code the server will run on save.
@@ -2678,6 +2948,8 @@ const EstimateEditor = (() => {
       activeRows: collect(),
       // Replaces the estimate's days whole on the server, so it is always sent.
       days: booking ? booking.payloadDays() : [],
+      // Gear rentals (B2-7): replaced whole, like days, so always sent.
+      rentals: rentalsPayload(),
       // Like days: a PUT without it keeps the stored tick, so it is always sent.
       shortNotice: shortNoticeNow(),
       // Says this build prices lines from the v9 card; the server refuses an
@@ -2697,6 +2969,17 @@ const EstimateEditor = (() => {
      is an unsaved change like any other. */
   const snapshot = () => JSON.stringify(payload());
 
+  /* What the server's gear-rental refusals mean (rentals.js parseRentals). The
+     editor's own rules keep most of them from happening. */
+  const RENTAL_ERRORS = {
+    rental_dates_reversed: 'A gear rental comes back before it goes out. Check its dates.',
+    rental_vendor_duplicate: 'Two gear rentals have the same vendor. Nothing was saved.',
+    rental_vendor_too_long: 'A vendor’s name is too long: 200 characters at most.',
+    rental_note_too_long: 'A gear rental’s note is too long: 500 characters at most.',
+    rental_id_taken: 'A gear rental’s id is already used by another estimate. Reload this estimate and try again.',
+    too_many_rentals: 'There are more than 100 gear rentals on this estimate.',
+  };
+
   async function save() {
     if (saving) return;
     clearError();
@@ -2713,6 +2996,15 @@ const EstimateEditor = (() => {
     // The client's ABN prints on the invoice.
     if (body.client.abn && !abnValid(body.client.abn)) {
       fieldError('That client ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.', 'f-abn');
+      return;
+    }
+
+    // A rental back before it went out: the server refuses it (rental_dates_reversed).
+    const backwards = shownRentals().find(reversed);
+    if (backwards) {
+      if (booking) booking.showOff(); // opens the block if it was folded
+      fieldError('The ' + backwards.vendor + ' rental comes back before it goes out. Check its Back date.',
+        'rn-' + backwards.id + '-back');
       return;
     }
 
@@ -2791,6 +3083,7 @@ const EstimateEditor = (() => {
         if (lock.fieldId) return fieldError(lock.msg, lock.fieldId);
         return showError(lock.msg);
       }
+      if (RENTAL_ERRORS[err.code]) return showError(RENTAL_ERRORS[err.code]);
       showError(
         err.kind === 'network'
           ? 'Couldn’t save — the server is unreachable. Your work is still here; try again once it’s back.'
@@ -2847,6 +3140,8 @@ const EstimateEditor = (() => {
     (activeRows.deliverables || []).forEach((line) =>
       injectRow($('tbody-deliverables'), buildDeliverableRow(line))
     );
+    // Every line is back, so the rentals can follow them from here (syncRentals).
+    rentalsReady = true;
   }
 
   function bind(pricing) {
@@ -2987,6 +3282,23 @@ const EstimateEditor = (() => {
     refreshSurcharges = false;
     daysSig = null; // so the first paint labels the cards
 
+    // The stored rentals, before the lines come back and are matched to them (syncRentals).
+    rentals = ((estimate && estimate.rentals) || []).map((r) => ({
+      id: r.id,
+      key: vendorKey(r.vendor),
+      vendor: String(r.vendor || '').trim(),
+      outDate: r.outDate || null,
+      outMethod: r.outMethod || null,
+      backDate: r.backDate || null,
+      backMethod: r.backMethod || null,
+      note: r.note || '',
+      carrier: null,
+    }));
+    rentalsReady = false;
+    rentalsEl = null;
+    rentalRows.clear();
+    lineVendors = new WeakMap();
+
     root.innerHTML = formMarkup(estimate, pricing);
     restoreRows(activeRows, pricing, estimate && estimate.days);
     booking = BookingBlock.mount($('booking-slot'), {
@@ -3010,6 +3322,9 @@ const EstimateEditor = (() => {
       },
       // Duplicate day (B2-5): the block made the day; its lines are copied here.
       onDuplicate: duplicateLines,
+      // Gear rentals (B2-7): the panel under both columns, and the head's counts.
+      rentals: rentalsPanel,
+      headNotes: bookingHeadNotes,
     });
     bind(pricing);
     paintLink();

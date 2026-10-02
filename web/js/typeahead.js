@@ -13,6 +13,12 @@
  * Replies can arrive out of order on a slow link, so each search carries a
  * sequence number and anything but the latest is dropped. Otherwise typing
  * "acme" could end up showing the results for "a".
+ *
+ * OTHER LISTS (B2-7). The same combobox suggests an equipment line's Vendor
+ * from this estimate's own vendors: `options.fetch(query)` returns (a promise
+ * of) the items in place of the client search, and `options.label(item)` /
+ * `options.sub(item)` word them. Without them it is the client search, as
+ * before.
  */
 
 const ClientTypeahead = (() => {
@@ -22,6 +28,12 @@ const ClientTypeahead = (() => {
 
   function attach(input, options) {
     const onPick = options.onPick;
+    const fetchItems = options.fetch ||
+      ((query) => LSCApi.get('/api/clients?q=' + encodeURIComponent(query)).then((reply) => reply.clients || []));
+    const labelOf = options.label || ((client) => client.businessName);
+    const subOf = options.sub || ((client) => [client.contactName, client.email].filter(Boolean).join(' · '));
+    // A local list needs no pause for the network.
+    const debounce = typeof options.debounce === 'number' ? options.debounce : DEBOUNCE_MS;
     const listId = 'typeahead-list-' + ++instances;
 
     const list = document.createElement('ul');
@@ -70,16 +82,16 @@ const ClientTypeahead = (() => {
       }
     }
 
-    function render(clients) {
-      results = clients;
+    function render(items) {
+      results = items;
       active = -1;
-      if (!clients.length) return close();
-      list.innerHTML = clients
-        .map((client, i) => {
-          const sub = [client.contactName, client.email].filter(Boolean).join(' · ');
+      if (!items.length) return close();
+      list.innerHTML = items
+        .map((item, i) => {
+          const sub = subOf(item);
           return (
             '<li role="option" id="' + listId + '-' + i + '" aria-selected="false" data-i="' + i + '">' +
-            '<span class="ta-name">' + esc(client.businessName) + '</span>' +
+            '<span class="ta-name">' + esc(labelOf(item)) + '</span>' +
             (sub ? '<span class="ta-sub">' + esc(sub) + '</span>' : '') +
             '</li>'
           );
@@ -91,25 +103,25 @@ const ClientTypeahead = (() => {
 
     async function search(query) {
       const mine = ++seq;
-      let reply;
+      let items;
       try {
-        reply = await LSCApi.get('/api/clients?q=' + encodeURIComponent(query));
+        items = await fetchItems(query);
       } catch (err) {
         if (mine === seq) close();
         return;
       }
       // Stale reply, or the field was cleared/blurred while it was in flight.
       if (mine !== seq || document.activeElement !== input) return;
-      render(reply.clients || []);
+      render(items || []);
     }
 
     function pick(index) {
-      const client = results[index];
-      if (!client) return;
+      const item = results[index];
+      if (!item) return;
       seq++; // a search still in flight must not reopen the list over the pick
       clearTimeout(timer);
       close();
-      onPick(client);
+      onPick(item);
     }
 
     input.addEventListener('input', () => {
@@ -119,7 +131,7 @@ const ClientTypeahead = (() => {
         seq++;
         return close();
       }
-      timer = setTimeout(() => search(query), DEBOUNCE_MS);
+      timer = setTimeout(() => search(query), debounce);
     });
 
     input.addEventListener('keydown', (event) => {

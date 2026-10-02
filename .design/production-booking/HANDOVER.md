@@ -245,7 +245,7 @@ times.
             `login.css` `[hidden] !important` trap.
 
         - [x] **B2-6, "On set, by day": the four read-only summaries and the editor order**:
-          done 2026-10-03, **uncommitted**. Changed `estimate-editor.js` and `booking.css`.
+          done 2026-10-03, committed `77aebbb`. Changed `estimate-editor.js` and `booking.css`.
           - **What exists now:** under Additional work, an "On set, by day" divider and four
             read-only summaries (Production, Travel, External Crew & Contracts, Equipment Hire),
             each grouped by card with "Edit on the day ↑", a group total and the subtotal, and
@@ -258,9 +258,25 @@ times.
           - **Read its Done note before B2-7.** It has four interpretations to show the user and
             the Equipment summary's seam.
 
-**Exact next item: TASKS.md B2-7, Gear rentals** (frontend, Opus/high): Vendor and Item on
-equipment lines, the Gear rentals panel, and `rentals` in the save. After B2 is built and
-deployed, task 11, the hash router (Stage C; frontend, Opus/high).
+        - [x] **B2-7, gear rentals**: done 2026-10-03, **uncommitted**. Changed
+          `estimate-editor.js`, `estimate-detail.js`, `booking-block.js`, `typeahead.js` and
+          `booking.css`.
+          - **What exists now:**
+            - equipment lines have Vendor (a typeahead of this estimate's vendors) and Item;
+            - one rental per vendor in a Gear rentals panel under the booking block's columns,
+              with Out/Back dates and methods and a note;
+            - rentals saved with the estimate;
+            - the head counts rentals and off-day lines;
+            - the detail shows Item with the vendor muted.
+            Old lines open with their text as the Item.
+          - **Verified:** the Done-when cases, a rename that keeps the rental's dates (and the
+            mutation that breaks it caught), and the save and reload against the server.
+          - **Read its Done note before B2-8.** It has four interpretations to show the user
+            and the seams.
+
+**Exact next item: TASKS.md B2-8, Rental bars on the calendar** (frontend, Opus/high; a change
+to the shared `web/js/calendar.js`). After B2 is built and deployed, task 11, the hash router
+(Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the

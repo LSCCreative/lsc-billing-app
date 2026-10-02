@@ -1394,7 +1394,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **Scratch data:** "B2-4 old flat" now has Sat 10, Sun 11 and Mon 12 Oct.
 
 - [x] **B2-6. "On set, by day": the four read-only summaries, and the editor order** (money math —
-  Opus/high, because it renders day totals). _Depends on: B2-4._ **Done 2026-10-03, committed (see git log).**
+  Opus/high, because it renders day totals). _Depends on: B2-4._ **Done 2026-10-03, committed `77aebbb`.**
   - **One builder for four summaries** (Production, Travel, External Crew & Contracts, Equipment
     Hire). Each has:
     - groups per day in card order (title, status chip, lines, group total, "Edit on the day ↑"
@@ -1475,7 +1475,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **Scratch data:** "B2-4 old flat" now has a Day 4 (TBC) with a $1,600 Video Capture, its
       Saturday Video Capture moved to Monday, and a "Lensworks cine zoom" hire on Sunday.
 
-- [ ] **B2-7. Gear rentals** (frontend — Opus/high). _Depends on: B2-4._
+- [x] **B2-7. Gear rentals** (frontend — Opus/high). _Depends on: B2-4._ **Done 2026-10-03, uncommitted.**
   - **Equipment rows:** split into **Vendor** (a typeahead from this estimate's vendors) and
     **Item**. Old lines show their `vendor` text as the Item, with Vendor blank (confirmed
     2026-10-03).
@@ -1491,6 +1491,92 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** two vendors across two days make two rentals, dates save and reload, emptying a
   vendor removes its rental, and an old estimate is unchanged.
+
+  **Done note (2026-10-03).** Changed `estimate-editor.js`, `estimate-detail.js`,
+  `booking-block.js`, `typeahead.js` and `booking.css`. No server change; 396/396.
+  - **Equipment rows** (`buildCostRow`) have **Vendor** (`.vendor-inp`, max 200) and **Item**
+    (`.item-inp`), and save `{ vendor, item, days, cost, dayId? }`, both trimmed. A line with no
+    `item` property is pre-B2-7: its `vendor` text becomes the Item, Vendor blank. The card's
+    group head reads "Vendor · Item". On a card, crew and gear rows drop the shared grid's empty
+    "—" column (≥768), so the two names get its width.
+  - **The Vendor typeahead** reuses `ClientTypeahead.attach`, which now takes `fetch`, `label`,
+    `sub` and `debounce` options (without them it is the client search, unchanged).
+    `vendorsLike(q)` suggests this estimate's other vendors with their item counts, ones
+    starting with the text first.
+  - **Rentals follow the lines** (`syncRentals`, run by every `recalc`). Each rental is keyed
+    by its trimmed, lower-case vendor:
+    - **A new vendor** gets a rental with no dates.
+    - **A line given an existing vendor** joins that rental.
+    - **Renaming the vendor on its only line** renames its rental, keeping its id, dates and
+      note. If the line is blank for a moment while it's retyped, the line carries the rental
+      until it has a name again. A re-spelling of the same name ("lensworks" → "Lensworks") on
+      the only line changes the rental's spelling.
+    - **A rental with no lines** goes.
+    - **The stored rentals** are loaded before `restoreRows`, and matching only starts once
+      every line is back (`rentalsReady`), so a half-restored page can't drop one.
+  - **The Gear rentals panel** (`rentalsPanel`, given to the block as `opts.rentals` and put
+    under both columns):
+    - **Each row (`role=group`, named by its vendor)** shows the vendor, "N items" with an ⓘ
+      listing their names, then Out (date + — / Pickup / Postage), Back (date + — / Return /
+      Postage) and Note (max 500). Rows are kept and moved, never rebuilt.
+    - **The empty panel says** "Gear you hire shows here, grouped by vendor." With equipment
+      but no vendors, it says "Give a hire item its vendor to plan when its gear goes out and
+      comes back."
+    - **A line whose rental has neither date** shows "Add pickup and return dates ↓", which
+      focuses that rental's Out date.
+    - **Back before Out** shows "Back is before Out." with `aria-invalid`, and the save stops
+      on that field. The server's rental refusal codes have their own messages
+      (`RENTAL_ERRORS`).
+  - **Saving:** `payload()` always sends `rentals` (id, vendor, the four date and method
+    fields with blanks as null, and the trimmed note), so the unsaved check covers them.
+  - **The collapsed head** gains "· N rentals" and "· N off-day lines" (`opts.headNotes`,
+    `booking.refreshHead()`).
+  - **The estimate detail's Equipment** shows the Item, with the vendor muted under it
+    (`equipName`; column "Item"). The **Equipment summary** (B2-6) shows the same, which closes
+    B2-6's seam. Crew names and gear names now repaint the summaries as they're typed. That
+    was missed in B2-6, where they only updated on the next priced edit.
+  - **In the browser against `api-scratch`** ("B2-4 old flat"):
+    - **Opening it** (four pre-B2-7 lines, no rentals): every line showed its old text as the
+      Item; nothing was unsaved; the total stayed $10,617.20.
+    - **Typing letter by letter:** Lensworks on Saturday made one rental. "lensworks " on
+      Sunday joined it (2 items). Camera House on Sunday made a second (two vendors across
+      two days, two rentals). The partial names left no stray rentals.
+    - **Dates:** a Back before Out showed the error and stopped the save on that field. Renaming
+      Camera House to "Camera House Pty", then clearing it and typing "CamHire", kept the same
+      rental id, dates and note.
+    - **The save:** the server stored both rentals as sent and $10,617.20. They reopened
+      identical and clean, and the detail showed "Cine zoom kit / Lensworks".
+    - **Removing CamHire's only line** removed its rental. Saved, the server had one rental,
+      and `GET /api/calendar` returned its 9–12 Oct span. The total was $10,266.20 on screen and
+      on the server.
+    - **The typeahead** suggested "Lensworks · 2 items" for "le", and picking it joined that
+      rental (3 items). Duplicate day kept the copies in their rentals (4 items). The client
+      Business Name search still lists matches.
+    - **The mutation:** with the rename carry removed (`mine` never taken from the old
+      vendor), the rename check failed (a new id and no Out date). Restored, it passes.
+    - **Old estimate** ("B2-3 old shape"): clean, $1,120, with the empty panel text.
+    - **Measured:**
+      - **1280:** Vendor 78px and Item 134px on a card.
+      - **800:** 150px and 243px; the Note goes under the dates, which show in full.
+      - **375:** Vendor over Item, and every rental field and the hint are 44px.
+      - No page overflow at any width.
+  - **Interpretations to show the user:**
+    1. **The rental's name is the vendor as typed on its first line.** Re-spelling it on its
+       only line changes it; with several lines, the first spelling stays.
+    2. **The hint shows on every line of a rental with no dates**, not only on the first, and
+       goes once either date is set.
+    3. **A rental's method can be left blank ("—")**, since the brief makes the dates optional.
+    4. **With equipment but no vendor yet**, the panel says to give a hire item its vendor,
+       rather than the brief's "Gear you hire shows here", which is for no equipment at all.
+  - **Seams for later tasks:**
+    - **B2-8:** the bars read rentals from live editor state. `rentalsPayload()` is that state.
+    - **B2-12:** the ⓘ in a rental row is the shared 18px `LSCInfo` button (as elsewhere in
+      the app), under 44px on phones. The typeahead list can be clipped by the booking block's
+      `overflow: hidden` on a line at the very bottom of the cards; the rentals panel under
+      them usually leaves room.
+    - **Scratch data:** "B2-4 old flat" is saved with one Lensworks rental (9–12 Oct) and
+      vendors on three lines. The open editor had unsaved Kit Co and duplicate-day edits, which
+      were never saved.
 
 - [ ] **B2-8. Rental bars on the calendar** (frontend — Opus/high). _Depends on: B2-2, B2-7. A
   change to the shared `web/js/calendar.js`._

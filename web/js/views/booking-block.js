@@ -22,6 +22,11 @@
  *   booking.addTbc()           // add a Date TBC day; returns its id
  * Duplicate day (B2-5) is the card's own action: it adds the copy, then calls
  * opts.onDuplicate(sourceId, newId) for the editor to copy the lines.
+ *
+ * GEAR RENTALS (B2-7, D82). The editor's rentals panel, `opts.rentals()`, is
+ * put once under both columns, like Not on a day's items. `opts.headNotes()`
+ * gives the collapsed head's extra parts ("2 rentals", "3 off-day lines"),
+ * and booking.refreshHead() repaints the head after they change.
  * Day ids are made here, in the browser, because production lines point at
  * their day (`dayId`) before the estimate has ever been saved.
  *
@@ -249,6 +254,7 @@ const BookingBlock = (() => {
     const itemsFor = typeof opts.itemsFor === 'function' ? opts.itemsFor : () => null;
     const onToggle = typeof opts.onToggle === 'function' ? opts.onToggle : () => {};
     const onDuplicate = typeof opts.onDuplicate === 'function' ? opts.onDuplicate : () => 0;
+    const headNotes = typeof opts.headNotes === 'function' ? opts.headNotes : () => [];
     let targetId = null; // the card the service menu is adding to, edged
 
     slot.innerHTML =
@@ -278,6 +284,8 @@ const BookingBlock = (() => {
       '<div class="day-items-slot"></div>' +
       '</div></div>' +
       '</div>' +
+      // Gear rentals (B2-7): under both columns, put in once below.
+      '<div class="booking-rentals-slot"></div>' +
       '<p class="sr-only" id="booking-live" aria-live="polite"></p>' +
       '</div>' +
       '</div>';
@@ -344,7 +352,8 @@ const BookingBlock = (() => {
     // ── Painting ──────────────────────────────────────────────────────────────
 
     function summary() {
-      if (!days.length) return 'No days booked';
+      const notes = headNotes();
+      if (!days.length) return ['No days booked'].concat(notes).join(' · ');
       const parts = [days.length + (days.length === 1 ? ' day' : ' days')];
       STATUSES.forEach(([s]) => {
         const n = days.filter((d) => d.date && d.status === s).length;
@@ -354,7 +363,7 @@ const BookingBlock = (() => {
       if (tbc) parts.push(tbc + ' date TBC');
       const dated = days.filter((d) => d.date);
       if (dated.length) parts.push(spanText(dated[0].date, dated[dated.length - 1].date));
-      return parts.join(' · ');
+      return parts.concat(notes).join(' · ');
     }
 
     function titleOf(day, n) {
@@ -683,6 +692,8 @@ const BookingBlock = (() => {
 
     const off = typeof opts.offItems === 'function' ? opts.offItems() : null;
     if (off) $('booking-off').querySelector('.day-items-slot').appendChild(off);
+    const rentalsPanel = typeof opts.rentals === 'function' ? opts.rentals() : null;
+    if (rentalsPanel) slot.querySelector('.booking-rentals-slot').appendChild(rentalsPanel);
 
     paint();
     if (open) ensureCalendar();
@@ -745,6 +756,11 @@ const BookingBlock = (() => {
 
       refreshIdentity() {
         if (cal) cal.setDays(calendarDays());
+      },
+
+      /** The head's summary again: the editor's headNotes() changed (B2-7). */
+      refreshHead: () => {
+        if (alive()) $('booking-sum').textContent = summary();
       },
 
       /** The calendar's column, where the editor's service menu swaps in (B2-4). */

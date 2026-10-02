@@ -1069,3 +1069,193 @@
     min-height: 0;
   }
 }
+
+/* ── Gear rentals (B2-7, D82) ─────────────────────────────────────────────────
+   An equipment line is Vendor + Item; all the hire from one vendor is one
+   rental, planned in the panel under both columns: when it goes out and comes
+   back, and how. Logistics only — no price here (D83). */
+.equip-names {
+  display: flex;
+  align-self: stretch; /* the name cell (.lab-svc) packs its children to the start */
+  gap: 6px;
+  min-width: 0;
+}
+.equip-names > .typeahead-wrap {
+  flex: 2 1 0;
+  min-width: 0;
+}
+.equip-names > .item-inp {
+  flex: 3 1 0;
+  min-width: 0;
+}
+.rental-hint {
+  display: block;
+  min-height: 44px;
+  margin-top: 2px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--muted2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.rental-hint:hover {
+  color: var(--text);
+}
+.rental-hint[hidden] {
+  display: none;
+}
+.est-vendor {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.booking-rentals-slot {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.rentals {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.rentals-h {
+  margin-bottom: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.rentals-empty {
+  font-size: 11px;
+  color: var(--muted);
+}
+.rentals-empty[hidden] {
+  display: none;
+}
+.rentals-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+.rental-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: rgba(240, 237, 232, 0.02);
+}
+.rental-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rental-vendor {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.rental-items {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.rental-f {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.rental-f label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.rental-pair {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.rental-pair .text-inp {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.rental-pair .svc-select {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+.rental-f .text-inp,
+.rental-f .svc-select {
+  min-height: 44px;
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  color-scheme: dark;
+}
+.rental-err {
+  font-size: 11px;
+  color: var(--err-text);
+}
+.rental-err[hidden] {
+  display: none;
+}
+@media (min-width: 768px) {
+  .rental-hint {
+    min-height: 0;
+  }
+  .rental-row {
+    grid-template-columns: minmax(120px, 1fr) minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.3fr);
+    align-items: end;
+  }
+  .rental-who {
+    align-self: center;
+  }
+  .rental-err {
+    grid-column: 1 / -1;
+  }
+  .rental-f .text-inp,
+  .rental-f .svc-select {
+    min-height: 30px;
+    font-size: 12px;
+  }
+}
+/* 768–1099: the panel is narrower than the dates need in one row of four, so
+   the Note goes under the dates. */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .rental-row {
+    grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .rental-note-f {
+    grid-column: 2 / -1;
+  }
+}
+/* On a card, crew and gear rows drop the shared expense grid's empty
+   Mark-Up column ("—") and give its width to the names: a hire line has two
+   of them since B2-7. At 768 and up; below, the rows stack anyway. */
+@media (min-width: 768px) {
+  .day-group[data-group='crew'] .expense-grid,
+  .day-group[data-group='equip'] .expense-grid {
+    grid-template-columns: minmax(0, 1fr) 64px 90px 100px 32px;
+  }
+  .day-group[data-group='crew'] .expense-grid > :nth-child(4),
+  .day-group[data-group='equip'] .expense-grid > :nth-child(4) {
+    display: none;
+  }
+}
+/* A phone: Vendor over Item, each full width. */
+@media (max-width: 767px) {
+  .equip-names {
+    flex-direction: column;
+  }
+}

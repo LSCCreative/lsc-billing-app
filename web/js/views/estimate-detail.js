@@ -236,13 +236,14 @@ const EstimateDetail = (() => {
     );
   }
 
-  function costBlock(label, lines, nameKey, nameFallback, columns) {
+  /* `nameOf(line)` is the first cell's HTML, escaped by it. */
+  function costBlock(label, lines, nameOf, columns) {
     if (!lines.length) return '';
     const subtotal = lines.reduce((acc, line) => acc + costBill(line), 0);
     const rows = lines
       .map(
         (line) =>
-          '<tr><td data-label="' + columns[0] + '">' + esc(line[nameKey] || nameFallback) + '</td>' +
+          '<tr><td data-label="' + columns[0] + '">' + nameOf(line) + '</td>' +
           '<td class="right muted-td" data-label="' + columns[1] + '">' + esc(line.days || 0) + '</td>' +
           '<td class="right muted-td" data-label="' + columns[2] + '">' + fmt(line.cost) + '</td>' +
           '<td class="right bill" data-label="Total">' + fmt(costBill(line)) + '</td></tr>'
@@ -348,18 +349,28 @@ const EstimateDetail = (() => {
     );
   }
 
+  /* A hire line as its Item, with its vendor muted under it (B2-7). A line
+     saved before B2-7 has only `vendor`, its old one-field text, which reads
+     as the Item, as the client PDF prints it (item || vendor). */
+  function equipName(line) {
+    const item = String(line.item || '').trim();
+    const vendor = String(line.vendor || '').trim();
+    if (!item) return esc(vendor || 'Equipment');
+    return esc(item) + (vendor ? '<span class="est-vendor">' + esc(vendor) + '</span>' : '');
+  }
+
   function markup(estimate, pricing) {
     const activeRows = estimate.activeRows || {};
-    const equip = (activeRows.equip || []).filter((e) => costBill(e) > 0 || e.vendor);
+    const equip = (activeRows.equip || []).filter((e) => costBill(e) > 0 || e.vendor || e.item);
     const crew = (activeRows.crew || []).filter((c) => costBill(c) > 0 || c.role);
 
     return (
       '<button class="back-btn" id="js-back">← Back</button>' +
       headerMarkup(estimate) +
       labourBlocks(estimate, pricing) +
-      costBlock('Equipment Hire', equip, 'vendor', 'Equipment', ['Vendor / Item', 'Days', 'Cost/Day']) +
+      costBlock('Equipment Hire', equip, equipName, ['Item', 'Days', 'Cost/Day']) +
       travelBlock(activeRows, pricing) +
-      costBlock('External Crew &amp; Contracts', crew, 'role', 'Crew', ['Role / Name', 'Days', 'Day Rate']) +
+      costBlock('External Crew &amp; Contracts', crew, (c) => esc(c.role || 'Crew'), ['Role / Name', 'Days', 'Day Rate']) +
       deliverablesBlock(activeRows) +
       totalsMarkup(estimate)
     );
