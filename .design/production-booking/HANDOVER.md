@@ -29,7 +29,7 @@ five stages. Build them in this order (decision 1):
 A and B ship together, because the weekend/holiday and after-hours surcharges need booked dates and
 times.
 
-## State as of 2026-10-03
+## State as of 2026-10-04
 
 Design is complete: Grill Me (D1–D99), `DESIGN_BRIEF.md`, `INFORMATION_ARCHITECTURE.md` (hash routes,
 "Projects" replaces "Estimates" in the nav, unique UPIDs, Settings as a screen), and `TASKS.md`
@@ -74,14 +74,30 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   (NAS v13 ships with task 23). Its decisions are in its Done note in `TASKS.md`.
 
 - **D, task 16** (the UPID fix-up `#/setup/upids` with `GET/POST /api/setup/upids`, the list
-  banner, Duplicate into the copy's editor). 2026-10-03, **uncommitted, not deployed** (ships with
-  v13 at task 23). Its decisions are in its Done note in `TASKS.md`. The `api-scratch` DB is now
+  banner, Duplicate into the copy's editor). 2026-10-03, committed `ad63ac0`, **not deployed** (ships
+  with v13 at task 23). Its decisions are in its Done note in `TASKS.md`. The `api-scratch` DB is now
   v13, with every group settled and one duplicate (`B28-COPY`).
 
-**Exact next item: TASKS.md task 17, the Projects list** (frontend, Opus/high). Carry the fix-up
-banner over: it reads `needsUpid` from `GET /api/estimates` today, so `GET /api/projects` needs the
-same count, and the banner's "Fix now" goes to `/setup/upids` (`EstimatesView` handler
-`onFixUpids`).
+- **D, task 17** (the Projects list: `GET /api/projects`, `#/projects` with stage chips and search
+  in the address, one stage-line function, the client's projects as the same cards).
+  2026-10-04, **uncommitted, not deployed** (a new route: NAS before Pages, with v13 at task 23).
+  Its decisions are in its Done note in `TASKS.md`. The `api-scratch` DB now has a project at
+  every stage (sent with valid-until, expired, overdue deposit, deposit paid, single sent, legacy,
+  paid, declined) for task 18 to look at.
+
+**Exact next item: TASKS.md task 18, the project folder** (frontend, Opus/high). Three hooks are
+waiting for it:
+- `ProjectCard.pathOf` (`web/js/project-card.js`) is the one place a card opens from (list,
+  client, and app.js's `openProject`). Point it at `#/projects/<id>`.
+- The Overview's stage line is `ProjectCard.stageMarkup(project, today)`, fed by the same
+  `stage`/`stageDetail` the list returns; `GET /api/projects/:id` should build them with
+  `projectStage` so the three can't disagree.
+- **Mark sent** should write an `activity` row of kind `sent` with `detail_json`
+  `{ validUntil, version? }`: `GET /api/projects` already reads the latest one for "Sent v2 ·
+  valid until 14 Oct" and "expired".
+
+`GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
+cached Pages build still calls it), then delete it.
 
 **Seams left for later tasks:**
 - **Invoices (tasks 19–20):** store the deposit's `depositAmount(...)` result on the deposit invoice

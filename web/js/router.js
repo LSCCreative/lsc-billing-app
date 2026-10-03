@@ -33,18 +33,23 @@
 const LSCRouter = (() => {
   let render = null; // app.js's (route, state) => void
   let active = false; // false while the login screen is up
-  let rendered = null; // the path of the screen on #main, or null
+  let rendered = null; // the key (path and query) of the screen on #main, or null
   let index = 0; // this entry's lscIdx
-  // lscIdx -> path for the entries made since the page loaded, so leaveTo() can
+  // lscIdx -> key for the entries made since the page loaded, so leaveTo() can
   // tell whether the screen it means is one Back away.
   const trail = new Map();
   let skipGuardOnce = false;
   let pending = null; // in-memory state handed to the next render only
   let ticket = 0;
 
-  /* '#/estimates/est_1a2b?q=x' -> { path: '/estimates/est_1a2b', segments,
-     query }. The area is lowercased (the IA's URLs are lowercase); ids keep
-     their case. A trailing slash and an empty hash both normalise away. */
+  /* '#/projects?stage=sent' -> { path: '/projects', segments, query,
+     key: '/projects?stage=sent' }. The area is lowercased (the IA's URLs are
+     lowercase); ids keep their case. A trailing slash and an empty hash both
+     normalise away.
+
+     `key` is what an entry is: the path and its query (task 17), so Back from
+     one filter of the Projects list to another redraws it. Everything below
+     that compares, records or renders an entry uses the key. */
   function parse(hash) {
     const raw = String(hash || '').replace(/^#/, '');
     const q = raw.indexOf('?');
@@ -58,10 +63,12 @@ const LSCRouter = (() => {
     });
     if (segments.length) segments[0] = segments[0].toLowerCase();
     const query = new URLSearchParams(q === -1 ? '' : raw.slice(q + 1));
-    return { path: '/' + segments.map(encodeURIComponent).join('/'), segments, query };
+    const path = '/' + segments.map(encodeURIComponent).join('/');
+    const qs = query.toString();
+    return { path, segments, query, key: qs ? path + '?' + qs : path };
   }
 
-  const here = () => parse(location.hash).path;
+  const here = () => parse(location.hash).key;
   const stampedIdx = () => {
     const st = history.state;
     return st && typeof st.lscIdx === 'number' ? st.lscIdx : null;
@@ -157,7 +164,7 @@ const LSCRouter = (() => {
     settle(here(), newIdx);
   }
 
-  /* Go to `path` ('/clients/cli_1a2b'). options:
+  /* Go to `path` ('/clients/cli_1a2b', '/projects?stage=sent'). options:
        replace   — take this entry's place rather than adding one (canonical
                    rewrites, and a new record's first save);
        skipGuard — the screen being left has nothing to lose, or has already
@@ -171,27 +178,34 @@ const LSCRouter = (() => {
     const opts = options || {};
     if (!active) return false;
     if (!opts.skipGuard && !LSCUnsaved.confirmLeave()) return false;
+    const key = parse(path).key;
     pending = opts.state || null;
-    if (opts.replace || path === here()) {
-      history.replaceState({ lscIdx: index }, '', '#' + path);
+    if (opts.replace || key === here()) {
+      history.replaceState({ lscIdx: index }, '', '#' + key);
     } else {
       index += 1;
-      history.pushState({ lscIdx: index }, '', '#' + path);
+      history.pushState({ lscIdx: index }, '', '#' + key);
       forgetForward();
     }
-    trail.set(index, path);
-    show(path);
+    trail.set(index, key);
+    show(key);
     return true;
   }
 
   /* "Back to the list": Back itself when the list is the entry behind this
      one, so Back afterwards doesn't return to the screen just left; go() to
      it otherwise (a deep link, or after a reload), where `replace` decides
-     whether the screen being left keeps its entry. */
+     whether the screen being left keeps its entry. A path with no query
+     means the list however it was filtered: "← All Projects" returns to the
+     search and stage chip it was opened from. */
   function leaveTo(path, options) {
     const opts = options || {};
     if (!active) return false;
-    if (trail.get(index - 1) !== path) return go(path, opts);
+    const behind = trail.get(index - 1);
+    const target = parse(path);
+    const isBehind = behind !== undefined &&
+      (behind === target.key || (target.key === target.path && parse(behind).path === target.path));
+    if (!isBehind) return go(path, opts);
     if (!opts.skipGuard && !LSCUnsaved.confirmLeave()) return false;
     skipGuardOnce = true;
     pending = opts.state || null;

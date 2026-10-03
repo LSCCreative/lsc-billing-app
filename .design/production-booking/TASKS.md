@@ -281,7 +281,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     its deposit; a single subtracting one.
 
 - [x] **15. Schema v13: projects, statuses, invoices, activity** (money math — Opus/high).
-  _Depends on: 14._ **Done 2026-10-03, uncommitted** (see the Done note below).
+  _Depends on: 14._ **Done 2026-10-03, committed `f7d55d0`** (see the Done note below).
   - **`projects`** (IA Data Model). One per distinct non-blank UPID; shared or blank UPIDs become
     projects with `upid` NULL and `needs_upid` (D61). Also `estimates.project_id`.
   - **An `estimates` rebuild** for the status CHECK: draft / sent / accepted / declined.
@@ -341,7 +341,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     editor. `activity.kind` has no CHECK: Stage E adds kinds.
 
 - [x] **16. The UPID fix-up screen and Duplicate** (frontend — Opus/high).
-  _Depends on: 11, 15._ **Done 2026-10-03, uncommitted** (see the Done note below).
+  _Depends on: 11, 15._ **Done 2026-10-03, committed `ad63ac0`** (see the Done note below).
   - **`#/setup/upids`** lists groups (estimates with name, date and total). Per estimate, the user
     types a new UPID; per group, they can choose "Keep together". It uses `GET/POST
     /api/setup/upids`.
@@ -383,7 +383,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     the list with a toast. The banner counts `needsUpid` from `GET /api/estimates`. The setup
     area lights the Estimates nav item.
 
-- [ ] **17. The Projects list** (frontend — Opus/high). _Depends on: 15._
+- [x] **17. The Projects list** (frontend — Opus/high). _Depends on: 15._ **Done 2026-10-04,
+  uncommitted** (see the Done note below).
   - The nav item and route become **Projects** (`#/projects`), and the list shows **one card per
     project** (D58).
   - **A stage line** from one shared function, for example "Sent v2 · valid until 14 Oct" or
@@ -392,6 +393,36 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - **The Clients screen's history** lists projects using the same card.
 
   **Done when** the stage line reads the same on the card, the folder and the client.
+
+  **Done note (2026-10-04).** `GET /api/projects` (new `routes/projects.js`; `projectStage` and
+  `settledAt` in `projects.js`), `web/js/project-card.js` (`ProjectCard`: `stageLine`,
+  `stageMarkup`, `cardMarkup`, `bind`, `pathOf`), `views/project-list.js` (`ProjectsView`,
+  replacing the deleted `estimate-list.js`), `css/projects.css`, new `test-project-card.js`.
+  `npm test` 429/429 (was 422); `calc.js` untouched. Mutations caught: 24/24 server, 5/5 wording.
+  Checked against `api-scratch` at 1280 / 800 / 375 (dispatched clicks, one real Tab for focus
+  rings). Decisions taken in the code:
+  - **The server decides the stage, the web words it.** `projectStage` returns `{stage, step, …}`
+    (16 steps); the list filters and counts by it. `stageLine(project, today)` is the one wording
+    function, because "valid until", "expired" (D44) and "overdue" read against the browser's
+    today. Invoices (void ignored): the first unpaid of deposit, final, single, legacy is where
+    the job is; a deposit or single not yet sent is still Accepted. A **legacy** invoice reads
+    "Invoiced · <number>, made the old way" until paid, never "not sent" (no screen ever set a
+    status). Declined wins over everything.
+  - **Chips: Active · Draft · Sent · Accepted · Invoiced · Paid · Declined**, with counts. The IA's
+    "All" became **Active** (its Content Growth Plan): every project except paid/declined ones
+    settled 90+ days ago (paid date, else the invoice's last change). A search looks at every
+    project. A chip pushes history; typing replaces the entry. The router's entries are now path
+    + query (`key`), so Back between filters redraws, and the list updates in place (search keeps
+    focus). `leaveTo('/projects')` returns to the list as filtered.
+  - **A project's name, total and client** are its lead estimate's (latest changed, not
+    declined); a kept-together group shows "· N estimates". Newest activity first (project,
+    estimates, invoices, activity). Search: UPIDs (the waiting one's old UPID too), every
+    estimate's name, client business and contact.
+  - **Phones:** the chips are one sideways-scrolling row to the screen edge (wrapped they took
+    three rows and pushed the first card below the fold).
+  - **Routes:** `#/projects`, `#/projects/new` (the editor); `#/estimates` alone redirects to
+    Projects. Detail and editor stay at `#/estimates/<id>` until task 18. Nav "Projects"
+    (`#nav-projects`). The client's history is the same cards via `?client=&stage=all`.
 
 - [ ] **18. The project folder** (frontend — Opus/high). _Depends on: 17._
   - **`#/projects/<id>`**: Overview (UPID, name, client, stage line, the **one next action**), a

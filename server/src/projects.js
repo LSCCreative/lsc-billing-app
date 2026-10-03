@@ -121,4 +121,100 @@ function dropEmptyProject(db, projectId) {
   if (left === 0) db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 }
 
-module.exports = { normUpid, upidTakenBy, upidTakenReply, planProjectWrite, applyProjectWrite, dropEmptyProject };
+/**
+ * WHERE A PROJECT IS (task 17): its stage, the filter chips' key, and the
+ * step inside it, which the web's one stage-line function (web/js/project-card.js
+ * stageLine) words. The server decides where a project is, so the list's
+ * filter, its counts and every screen that shows a stage agree; the web says
+ * it, because "valid until", "due" and "overdue" are read against the
+ * browser's today, as every other date in the app is.
+ *
+ * Stages, in the order a job moves through them (IA, Content Hierarchy):
+ * draft · sent · accepted · invoiced · paid · declined.
+ *
+ * - DECLINED wins: the owner said no-go (D22). Reopen clears declined_at.
+ * - With invoices (void ones ignored), the first unpaid one in the order
+ *   deposit, final, single, legacy is where the job is. All paid is PAID.
+ *   A deposit or single invoice not yet sent leaves the job ACCEPTED; once
+ *   one has gone out, or the deposit is paid, it is INVOICED.
+ * - A LEGACY invoice (v13, D62) was made the old way and nothing recorded
+ *   whether it went out: no screen ever set a status. It reads as invoiced
+ *   until it is marked paid, never as "not sent".
+ * - With none: accepted (the project's accepted_at, or an accepted estimate),
+ *   then sent (an estimate marked sent, task 18), then draft.
+ *
+ * `sent` is the latest send's record, when there is one: { at, version,
+ * validUntil }. Task 18's Mark sent writes it as an `activity` row of kind
+ * `sent`; Stage E's versions take over.
+ *
+ * @returns {{stage:string, step:string, at?:string|null, number?:string|null,
+ *   dueAt?:string|null, version?:number|null, validUntil?:string|null}}
+ */
+const STAGES = ['draft', 'sent', 'accepted', 'invoiced', 'paid', 'declined'];
+const INVOICE_ORDER = ['deposit', 'final', 'single', 'legacy'];
+
+function projectStage(project, estimates, invoices, sent) {
+  if (project.declined_at) return { stage: 'declined', step: 'declined', at: project.declined_at };
+
+  const live = (invoices || []).filter((i) => i.status !== 'void');
+  if (live.length) {
+    const unpaid = live
+      .filter((i) => i.status !== 'paid')
+      .sort((a, b) => INVOICE_ORDER.indexOf(a.kind) - INVOICE_ORDER.indexOf(b.kind));
+    if (!unpaid.length) {
+      const paidAt = live.map((i) => i.paid_at).filter(Boolean).sort().pop() || null;
+      return { stage: 'paid', step: 'paid', at: paidAt };
+    }
+    const now = unpaid[0];
+    const number = now.number || null;
+    if (now.kind === 'legacy') return { stage: 'invoiced', step: 'legacy', number };
+    // A final waits on a paid deposit: before that, the deposit is first.
+    const afterDeposit = now.kind === 'final' && live.some((i) => i.kind === 'deposit' && i.status === 'paid');
+    if (now.status === 'draft') {
+      return afterDeposit
+        ? { stage: 'invoiced', step: 'deposit_paid' }
+        : { stage: 'accepted', step: now.kind + '_draft' };
+    }
+    if (now.status === 'scheduled') {
+      return { stage: afterDeposit ? 'invoiced' : 'accepted', step: now.kind + '_scheduled' };
+    }
+    return { stage: 'invoiced', step: now.kind + '_sent', number, dueAt: now.due_at || null };
+  }
+
+  const statuses = (estimates || []).map((e) => e.status);
+  if (project.accepted_at || statuses.includes('accepted')) {
+    return { stage: 'accepted', step: 'accepted', at: project.accepted_at || null };
+  }
+  if (statuses.includes('sent')) {
+    return {
+      stage: 'sent',
+      step: 'sent',
+      at: (sent && sent.at) || null,
+      version: (sent && Number.isInteger(sent.version) && sent.version) || null,
+      validUntil: (sent && sent.validUntil) || null,
+    };
+  }
+  return { stage: 'draft', step: 'draft' };
+}
+
+/**
+ * When a paid or declined project got there, for the list's Active view,
+ * which leaves out ones settled more than 90 days ago (IA, Content Growth
+ * Plan). A legacy invoice was never given a paid date, so its last change
+ * stands in; null for any other stage.
+ */
+function settledAt(project, invoices, stage) {
+  if (stage === 'declined') return project.declined_at;
+  if (stage !== 'paid') return null;
+  return (invoices || [])
+    .filter((i) => i.status === 'paid')
+    .map((i) => i.paid_at || i.updated_at)
+    .filter(Boolean)
+    .sort()
+    .pop() || project.updated_at;
+}
+
+module.exports = {
+  normUpid, upidTakenBy, upidTakenReply, planProjectWrite, applyProjectWrite, dropEmptyProject,
+  STAGES, projectStage, settledAt,
+};

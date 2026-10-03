@@ -101,19 +101,7 @@
   color: var(--muted);
   font-size: 12px;
 }
-.client-history-link {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
+/* The client's projects: the Projects list's cards, inset in the block. */
+.client-projects-grid {
+  padding: 16px;
 }
-.client-history-link:hover,
-.client-history-link:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-}
-/* No `outline: none` here: keyboard focus keeps a11y.css's ring as well as the
-   colour, the same as the Finance links (decision 73's premise). */

@@ -1,7 +1,7 @@
 'use strict';
 
 /* The Clients screen: the saved client list, and one client's record with the
- * estimates linked to it.
+ * projects linked to it.
  *
  * New in the web build — the desktop app had no client list at all
  * (BILLING_APP_PLAN.md, "A simple Clients screen to view/edit saved clients and
@@ -22,7 +22,7 @@
  */
 
 const ClientsView = (() => {
-  const { fmt, esc, abnDigits, abnValid, abnFormat } = LSCUtil;
+  const { esc, abnDigits, abnValid, abnFormat } = LSCUtil;
 
   let root = null;
   let handlers = null;
@@ -152,59 +152,56 @@ const ClientsView = (() => {
     );
   }
 
-  function historyMarkup(estimates) {
+  /* The client's projects (task 17), as the Projects list draws them: the
+     same card and stage line, every stage, newest activity first. */
+  const HISTORY_LIMIT = 200;
+
+  function historyMarkup(reply) {
+    const projects = reply.projects || [];
+    const today = LSCUtil.today();
     const head =
-      '<div class="est-block-head"><h2 class="est-block-label">Estimate History</h2>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Projects</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
-      estimates.length + ' estimate' + (estimates.length !== 1 ? 's' : '') + '</span></div>';
-    if (!estimates.length) {
+      reply.total + ' project' + (reply.total !== 1 ? 's' : '') + '</span></div>';
+    if (!projects.length) {
       return (
-        '<div class="est-block">' + head +
-        '<p class="client-history-empty">No estimates are linked to this client yet. Pick them from the ' +
-        'Business Name field when you create an estimate and they’ll appear here.</p></div>'
+        '<div class="est-block client-projects">' + head +
+        '<p class="client-history-empty">No projects are linked to this client yet. Pick them from the ' +
+        'Business Name field when you write an estimate and its project will appear here.</p></div>'
       );
     }
     return (
-      '<div class="est-block">' + head +
-      '<table class="est-table client-history-table"><thead><tr><th>UPID</th><th>Project</th><th>Date</th>' +
-      '<th class="right">Total (inc GST)</th></tr></thead><tbody>' +
-      estimates
-        .map(
-          (e) =>
-            '<tr data-id="' + esc(e.id) + '">' +
-            /* data-label on every cell, as in estimate-detail.js: this table is
-               an .est-table, and below 768px css/responsive.css hides the head
-               row and prints these beside the values instead. */
-            '<td class="muted-td" data-label="UPID">' + esc(e.upid || '—') + '</td>' +
-            '<td data-label="Project"><button type="button" class="client-history-link">' + esc(e.name || 'Untitled') + '</button></td>' +
-            '<td class="muted-td" data-label="Date">' + esc(e.date || '—') + '</td>' +
-            '<td class="right bill" data-label="Total (inc GST)">' + fmt(e.totalIncGst) + '</td></tr>'
-        )
-        .join('') +
-      '</tbody></table></div>'
+      '<div class="est-block client-projects">' + head +
+      '<div class="cards-grid client-projects-grid" role="list">' +
+      projects.map((p) => ProjectCard.cardMarkup(p, today)).join('') + '</div>' +
+      (reply.next
+        ? '<p class="client-history-empty">Showing the latest ' + projects.length + '. Search Projects for older ones.</p>'
+        : '') +
+      '</div>'
     );
   }
 
   async function loadHistory(client) {
     const box = root.querySelector('#client-history');
-    box.innerHTML = '<p class="client-history-empty">Loading estimate history…</p>';
-    let estimates;
+    box.innerHTML = '<p class="client-history-empty">Loading projects…</p>';
+    let reply;
     try {
-      estimates = (await LSCApi.get('/api/clients/' + encodeURIComponent(client.id) + '/estimates')).estimates || [];
+      const params = new URLSearchParams({
+        client: client.id, stage: 'all', limit: String(HISTORY_LIMIT), today: LSCUtil.today(),
+      });
+      reply = await LSCApi.get('/api/projects?' + params.toString());
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (err.kind === 'auth') return handlers.onAuthLost();
       if (!box.isConnected) return;
-      box.innerHTML = '<p class="client-history-empty">' + esc(failureText(err, 'load the estimate history')) + '</p>';
+      box.innerHTML = '<p class="client-history-empty">' + esc(failureText(err, 'load their projects')) + '</p>';
       return;
     }
     if (!box.isConnected) return; // navigated away while it loaded
-    box.innerHTML = historyMarkup(estimates);
-    box.querySelectorAll('.client-history-link').forEach((btn) => {
-      // The history sits under the client form, so this link leaves a screen
-      // that may have edits in it — the router's guard asks, as for the header.
-      btn.addEventListener('click', () => handlers.onOpenEstimate(btn.closest('tr').dataset.id));
-    });
+    box.innerHTML = historyMarkup(reply);
+    // The cards sit under the client form, so opening one leaves a screen that
+    // may have edits in it — the router's guard asks, as for the header.
+    ProjectCard.bind(box, reply.projects || [], handlers.onOpenProject);
   }
 
   function showEditor(client) {

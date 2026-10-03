@@ -1,0 +1,214 @@
+/* The Projects list (production-booking task 17): the search, the stage chips,
+   and what the project card adds to .proj-card — the stage line where the date
+   sat, and the next production day. Additive only; reuses .page-head,
+   .cards-grid, .proj-card, .status-chip (calendar.css), .upid-banner
+   (setup.css), .spinner and .sr-only.
+
+   Phone first: the search is full width, and the chips are one row under it
+   that scrolls sideways, run out to the screen's edge so the chip cut off
+   there says there are more (wrapped, they took three rows and pushed the
+   first card below the fold). From 768px they wrap and share the search's
+   row while it fits, and the controls drop to the app's desktop heights. The chips are drawn like Home's month/week
+   switch (home.css): lit with the nav's accent underline when chosen, and
+   aria-pressed says it in words. */
+
+/* ── Search and chips ─────────────────────────────────────────────────────── */
+
+.projects-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.projects-q {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  outline: none;
+  transition: border-color 0.15s;
+}
+.projects-q:focus {
+  border-color: var(--accent);
+}
+
+.stage-chips {
+  display: flex;
+  gap: 6px;
+  margin: 0 -16px;
+  padding: 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.stage-chips::-webkit-scrollbar {
+  display: none;
+}
+.stage-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.stage-chip:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+.stage-chip[aria-pressed='true'] {
+  color: var(--text);
+  background: rgba(240, 237, 232, 0.06);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.stage-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.stage-chip-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.stage-chip-count:empty {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .projects-tools {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .projects-search {
+    flex: 1 1 240px;
+  }
+  .stage-chips {
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .projects-q {
+    min-height: 34px;
+    font-size: 13px;
+  }
+  .stage-chip {
+    min-height: 34px;
+  }
+}
+
+/* A new filter's cards are on their way: the old ones stay, dimmed, rather
+   than the grid blinking out between keystrokes. */
+#projects-results[aria-busy='true'] .cards-grid {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.projects-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 22px;
+}
+.projects-more .btn {
+  min-height: 44px;
+}
+
+/* ── The card ─────────────────────────────────────────────────────────────── */
+
+.card-num.is-missing {
+  color: var(--muted);
+}
+.card-num.is-needed {
+  color: var(--err-text);
+}
+
+/* The foot stacks: the stage line, then the next production day. */
+.project-foot {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.stage-line {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.stage-word {
+  color: var(--text);
+  font-weight: 600;
+}
+/* The stage's mark. The word beside it says the same, so colour is never the
+   only sign. Draft is hollow: nothing has happened yet. */
+.stage-line::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  vertical-align: 1px;
+  background: var(--stage-mark, transparent);
+  border: 1px solid var(--stage-mark, var(--muted));
+}
+.stage-line.is-sent {
+  --stage-mark: var(--cal-rental);
+}
+.stage-line.is-accepted {
+  --stage-mark: var(--cal-pencilled);
+}
+.stage-line.is-invoiced {
+  --stage-mark: var(--accent);
+}
+.stage-line.is-paid {
+  --stage-mark: var(--ok);
+}
+.stage-line.is-declined {
+  --stage-mark: var(--muted);
+}
+.stage-line.is-declined .stage-word {
+  color: var(--muted);
+}
+/* Expired or overdue: the owner has something to do. */
+.stage-line.is-alert .stage-word,
+.stage-line.is-alert .stage-note {
+  color: var(--err-text);
+}
+
+.card-next {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text);
+}
+.card-next-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-chip,
+  .projects-q,
+  #projects-results[aria-busy='true'] .cards-grid {
+    transition: none;
+  }
+}

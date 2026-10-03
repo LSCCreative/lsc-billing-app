@@ -1986,3 +1986,175 @@ test('setup: keep together makes one project under the shared UPID, invoices and
   await dropEstimates(old.id, newer.id, lone.id);
   assert.equal(projectRow(old.projectId), undefined);
 });
+
+// ── The Projects list (task 17) ───────────────────────────────────────────
+
+const { projectStage } = require('../src/projects');
+
+test('projects: the stage and step a project is at, from its estimates and invoices', () => {
+  const inv = (kind, status, extra) => ({ kind, status, number: 'N-' + kind, ...extra });
+  const at = (project, estimates, invoices, sent) => {
+    const s = projectStage(project, estimates, invoices, sent);
+    return s.stage + '/' + s.step;
+  };
+  const p = {};
+  assert.equal(at(p, [{ status: 'draft' }], []), 'draft/draft');
+  assert.equal(at(p, [{ status: 'draft' }, { status: 'sent' }], []), 'sent/sent');
+  assert.deepEqual(projectStage(p, [{ status: 'sent' }], [], { at: '2026-10-01T00:00:00Z', version: 2, validUntil: '2026-10-31' }),
+    { stage: 'sent', step: 'sent', at: '2026-10-01T00:00:00Z', version: 2, validUntil: '2026-10-31' });
+  assert.equal(projectStage(p, [{ status: 'sent' }], [], { version: 'x' }).version, null);
+  assert.equal(at(p, [{ status: 'accepted' }], []), 'accepted/accepted');
+  assert.equal(at({ accepted_at: '2026-10-01' }, [{ status: 'sent' }], []), 'accepted/accepted');
+  // Declined wins over everything, invoices included.
+  assert.equal(at({ declined_at: '2026-10-02', accepted_at: 'x' }, [{ status: 'accepted' }], [inv('deposit', 'paid')]), 'declined/declined');
+
+  // A pair, step by step.
+  assert.equal(at(p, [], [inv('deposit', 'draft'), inv('final', 'draft')]), 'accepted/deposit_draft');
+  assert.equal(at(p, [], [inv('deposit', 'scheduled'), inv('final', 'draft')]), 'accepted/deposit_scheduled');
+  assert.deepEqual(projectStage(p, [], [inv('deposit', 'sent', { due_at: '2026-10-09' }), inv('final', 'draft')]),
+    { stage: 'invoiced', step: 'deposit_sent', number: 'N-deposit', dueAt: '2026-10-09' });
+  assert.equal(at(p, [], [inv('final', 'draft'), inv('deposit', 'paid')]), 'invoiced/deposit_paid');
+  assert.equal(at(p, [], [inv('deposit', 'paid'), inv('final', 'scheduled')]), 'invoiced/final_scheduled');
+  assert.equal(at(p, [], [inv('deposit', 'paid'), inv('final', 'sent')]), 'invoiced/final_sent');
+  // The deposit comes first while it's unpaid, whatever the final says.
+  assert.equal(at(p, [], [inv('final', 'sent'), inv('deposit', 'sent')]), 'invoiced/deposit_sent');
+  assert.deepEqual(projectStage(p, [], [inv('deposit', 'paid', { paid_at: '2026-10-01' }), inv('final', 'paid', { paid_at: '2026-11-02' })]),
+    { stage: 'paid', step: 'paid', at: '2026-11-02' });
+  // A single invoice; a void one is ignored.
+  assert.equal(at(p, [], [inv('single', 'draft')]), 'accepted/single_draft');
+  assert.equal(at(p, [], [inv('single', 'scheduled')]), 'accepted/single_scheduled');
+  assert.equal(at(p, [], [inv('single', 'sent'), inv('deposit', 'void')]), 'invoiced/single_sent');
+  assert.equal(at(p, [{ status: 'accepted' }], [inv('single', 'void')]), 'accepted/accepted');
+  // A final with no deposit at all, not yet sent.
+  assert.equal(at(p, [], [inv('final', 'draft')]), 'accepted/final_draft');
+  // Legacy: invoiced until paid, never "not sent".
+  assert.deepEqual(projectStage(p, [{ status: 'accepted' }], [inv('legacy', 'draft')]),
+    { stage: 'invoiced', step: 'legacy', number: 'N-legacy' });
+  assert.equal(at(p, [], [inv('legacy', 'paid')]), 'paid/paid');
+  assert.equal(projectStage(p, [], [inv('legacy', 'paid')]).at, null);
+});
+
+const listProjects = (query) => api('/api/projects?' + new URLSearchParams(query)).then(async (r) => ({ status: r.status, body: await r.json() }));
+
+test('projects list: one card per project, searched, filtered by stage and counted', async () => {
+  const today = '2026-10-04';
+  const mk = async (name, upid, extra) => (await saveEstimate({ name: 'T17 ' + name, upid, ...extra })).body.estimate;
+  const draft = await mk('Draft', 'T17-DRAFT', {
+    date: '2026-10-01',
+    days: [
+      { id: 'd_t17_past', date: '2026-09-30', status: 'confirmed' },
+      { id: 'd_t17_b', date: '2026-10-20', status: 'pencilled' },
+      { id: 'd_t17_a', date: '2026-10-06', status: 'proposed' },
+      { id: 'd_t17_tbc', date: null, status: 'proposed' },
+    ],
+  });
+  const sent = await mk('Sent', 'T17-SENT');
+  db.prepare("UPDATE estimates SET status = 'sent' WHERE id = ?").run(sent.id);
+  db.prepare("INSERT INTO activity (id, project_id, at, kind, detail_json) VALUES ('act_t17s', ?, '2026-10-02T01:00:00.000Z', 'sent', ?)")
+    .run(sent.projectId, JSON.stringify({ version: 2, validUntil: '2026-11-01' }));
+  const paidOld = await mk('Paid long ago', 'T17-PAIDOLD');
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, paid_at, created_at, updated_at) VALUES ('inv_t17o', ?, 'single', 'INV-T17-PAIDOLD', 'paid', '2026-06-01', '2026-06-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')")
+    .run(paidOld.projectId);
+  const paidNew = await mk('Paid lately', 'T17-PAIDNEW');
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, paid_at, created_at, updated_at) VALUES ('inv_t17n', ?, 'single', 'INV-T17-PAIDNEW', 'paid', '2026-09-01', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')")
+    .run(paidNew.projectId);
+  const declined = await mk('Declined', 'T17-DECL', { days: [{ id: 'd_t17_decl', date: '2026-10-05', status: 'confirmed' }] });
+  db.prepare("UPDATE estimates SET status = 'declined' WHERE id = ?").run(declined.id);
+  db.prepare("UPDATE projects SET declined_at = '2026-01-01T00:00:00.000Z' WHERE id = ?").run(declined.projectId);
+
+  // Active: the old paid and the old declined ones are left out — unless searched for.
+  // Paid when it was paid, not when the invoice was last touched.
+  const active = await listProjects({ today });
+  assert.equal(active.status, 200);
+  const ids = (reply) => reply.body.projects.map((p) => p.id);
+  assert.ok(!ids(active).includes(paidOld.projectId));
+  assert.ok(!ids(active).includes(declined.projectId));
+  assert.ok(ids(active).includes(paidNew.projectId));
+
+  const found = await listProjects({ today, q: 't17' });
+  assert.deepEqual(new Set(ids(found)),
+    new Set([draft, sent, paidOld, paidNew, declined].map((e) => e.projectId)));
+  assert.deepEqual(found.body.counts,
+    { active: 5, all: 5, draft: 1, sent: 1, accepted: 0, invoiced: 0, paid: 2, declined: 1 });
+  assert.equal(found.body.total, 5);
+  // Newest activity first, activity rows included: a later note puts the draft on top.
+  db.prepare("INSERT INTO activity (id, project_id, at, kind) VALUES ('act_t17n', ?, '2099-01-01T00:00:00.000Z', 'note')")
+    .run(draft.projectId);
+  const reordered = await listProjects({ today, q: 't17' });
+  assert.equal(ids(reordered)[0], draft.projectId);
+  assert.equal(reordered.body.projects[0].lastActivityAt, '2099-01-01T00:00:00.000Z');
+  const times = reordered.body.projects.map((p) => p.lastActivityAt);
+  assert.deepEqual(times, times.slice().sort().reverse());
+
+  // What a card shows.
+  const card = (reply, est) => reply.body.projects.find((p) => p.id === est.projectId);
+  const d = card(found, draft);
+  assert.deepEqual(
+    [d.upid, d.needsUpid, d.name, d.stage, d.stageDetail, d.estimateId, d.estimateCount, d.nextDay],
+    ['T17-DRAFT', false, 'T17 Draft', 'draft', { step: 'draft' }, draft.id, 1, { date: '2026-10-06', status: 'proposed' }]);
+  assert.equal(typeof d.totalIncGst, 'number');
+  assert.deepEqual(card(found, sent).stageDetail,
+    { step: 'sent', at: '2026-10-02T01:00:00.000Z', version: 2, validUntil: '2026-11-01' });
+  assert.equal(card(found, declined).nextDay, null, 'a declined project has no next day');
+  assert.equal(card(found, paidNew).stageDetail.at, '2026-09-01');
+
+  // By stage, by UPID, by name, by client; a search ignores case and finds old ones.
+  assert.deepEqual(ids(await listProjects({ today, q: 't17', stage: 'paid' })).sort(),
+    [paidOld.projectId, paidNew.projectId].sort());
+  assert.deepEqual(ids(await listProjects({ today, stage: 'declined', q: 'T17' })), [declined.projectId]);
+  assert.deepEqual(ids(await listProjects({ today, stage: 'draft', q: 'T17' })), [draft.projectId]);
+  assert.deepEqual(ids(await listProjects({ today, q: 'T17-paidOLD' })), [paidOld.projectId]);
+  assert.deepEqual(ids(await listProjects({ today, q: 'paid lately' })), [paidNew.projectId]);
+  db.prepare("INSERT OR IGNORE INTO clients (id, business_name, contact_name, created_at, updated_at) VALUES ('cl_t17', 'Seventeen Pty', 'Sam', 'x', 'x')").run();
+  await saveEstimate({ name: 'T17 Sent', upid: 'T17-SENT', clientId: 'cl_t17', client: { businessName: 'Seventeen Pty' } }, sent.id);
+  assert.deepEqual(ids(await listProjects({ today, q: 'seventeen' })), [sent.projectId]);
+  assert.deepEqual(ids(await listProjects({ today, q: 'sam' })), [sent.projectId], 'the linked client\'s contact');
+  // A client's projects, every stage.
+  const mine = await listProjects({ today, client: 'cl_t17', stage: 'all' });
+  assert.deepEqual(ids(mine), [sent.projectId]);
+  assert.equal(mine.body.projects[0].client.businessName, 'Seventeen Pty');
+  assert.equal(mine.body.projects[0].client.id, 'cl_t17');
+
+  // Show more: pages of `limit`, each picking up where the last stopped.
+  const first = await listProjects({ today, q: 't17', limit: 2 });
+  assert.equal(first.body.projects.length, 2);
+  const second = await listProjects({ today, q: 't17', limit: 2, before: first.body.next });
+  const third = await listProjects({ today, q: 't17', limit: 2, before: second.body.next });
+  assert.equal(third.body.next, null);
+  assert.deepEqual([...ids(first), ...ids(second), ...ids(third)], ids(await listProjects({ today, q: 't17' })));
+  // A last page that is exactly full has nothing after it.
+  assert.equal((await listProjects({ today, q: 't17', limit: 5 })).body.next, null);
+
+  // Refused.
+  for (const [query, error] of [
+    [{ stage: 'expired' }, 'stage_invalid'], [{ today: '2026-02-30' }, 'today_invalid'],
+    [{ limit: 0 }, 'limit_invalid'], [{ limit: 201 }, 'limit_invalid'], [{ limit: '1.5' }, 'limit_invalid'],
+    [{ before: 'nope' }, 'before_invalid'],
+  ]) {
+    const r = await listProjects(query);
+    assert.deepEqual([r.status, r.body.error], [400, error], JSON.stringify(query));
+  }
+
+  await dropEstimates(draft.id, sent.id, paidOld.id, paidNew.id, declined.id);
+});
+
+test('projects list: a kept-together project is one card, named and totalled by its latest live estimate', async () => {
+  const a = (await saveEstimate({ name: 'T17 Older', upid: 'T17-KEEP' })).body.estimate;
+  const b = (await saveEstimate({ name: 'T17 Newer', upid: 'T17-KEEP2' })).body.estimate;
+  db.prepare('UPDATE estimates SET project_id = ?, upid = ? WHERE id = ?').run(a.projectId, 'T17-KEEP', b.id);
+  db.prepare('DELETE FROM projects WHERE id = ?').run(b.projectId);
+  db.prepare("UPDATE estimates SET updated_at = '2030-01-01T00:00:00.000Z' WHERE id = ?").run(b.id);
+  let list = await listProjects({ q: 't17-keep' });
+  assert.deepEqual(list.body.projects.map((p) => [p.id, p.name, p.estimateId, p.estimateCount, p.lastActivityAt]),
+    [[a.projectId, 'T17 Newer', b.id, 2, '2030-01-01T00:00:00.000Z']]);
+  // A declined estimate is never the lead while a live one is there.
+  db.prepare("UPDATE estimates SET status = 'declined' WHERE id = ?").run(b.id);
+  list = await listProjects({ q: 't17-keep' });
+  assert.equal(list.body.projects[0].estimateId, a.id);
+  // A waiting project is found by the UPID its estimate still carries.
+  makeWaiting(a, 'T17-OLDSHARED');
+  list = await listProjects({ q: 't17-oldshared' });
+  assert.deepEqual(list.body.projects.map((p) => [p.id, p.upid, p.needsUpid]), [[a.projectId, null, true]]);
+  assert.ok(list.body.needsUpid >= 1);
+  await dropEstimates(a.id, b.id);
+});

@@ -1,8 +1,9 @@
 'use strict';
 
-/* The three estimate screens inside #main, behind the routes app.js gives them:
- * #/estimates (the list), #/estimates/<id> (the detail), #/estimates/new and
- * #/estimates/<id>/edit (the editor).
+/* The estimate screens inside #main, behind the routes app.js gives them:
+ * #/estimates/<id> (the detail), and #/projects/new and #/estimates/<id>/edit
+ * (the editor). The list they return to is Projects (task 17, D58); the
+ * project folder takes these in at task 18.
  *
  * The desktop app kept `view`, `editProj` and `viewingId` as module globals and
  * called a single render() that read them. The address holds that state now
@@ -17,28 +18,17 @@ const EstimatesView = (() => {
 
   let root = null;
   let onAuthLost = null;
-  // Routes out of the estimates list that this view doesn't own: the first-run
-  // setup steps on the empty state open the Rate Card and the Invoice Settings
-  // modal, both of which belong to js/app.js.
-  let onGoPricing = null;
-  let onOpenSettings = null;
 
-  const LIST = '/estimates';
-  const detailPath = (id) => LIST + '/' + encodeURIComponent(id);
+  const LIST = '/projects';
+  const detailPath = (id) => '/estimates/' + encodeURIComponent(id);
 
   function handlers() {
     return {
       onAuthLost,
-      onGoPricing: (...args) => onGoPricing(...args),
-      onOpenSettings: (...args) => onOpenSettings(...args),
-      onNew: () => LSCRouter.go(LIST + '/new'),
-      onOpen: (id) => LSCRouter.go(detailPath(id)),
       onEdit: (estimate) => LSCRouter.go(detailPath(estimate.id) + '/edit', { state: { estimate } }),
       /* Duplicate (D60): straight into the copy's editor, its UPID blank and
          focused, with what it was copied from said beside the field. */
       onEditCopy: (copy, from) => LSCRouter.go(detailPath(copy.id) + '/edit', { state: { estimate: copy, copiedFrom: from } }),
-      // The banner on the list, while any project waits for a UPID (D61).
-      onFixUpids: () => LSCRouter.go('/setup/upids'),
       onBack: () => LSCRouter.leaveTo(LIST),
       // The editor's Back and Cancel. Off a deep link the editor's entry gives
       // way to the list, so Back afterwards doesn't reopen an abandoned form.
@@ -66,7 +56,7 @@ const EstimatesView = (() => {
 
   function showPlaceholder(body) {
     root.innerHTML =
-      '<button class="back-btn" id="js-back">← All Estimates</button>' +
+      '<button class="back-btn" id="js-back">← All Projects</button>' +
       '<div class="empty-state">' + body + '</div>';
     root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(LIST));
   }
@@ -91,7 +81,7 @@ const EstimatesView = (() => {
         return null;
       }
       if (err.status === 404) {
-        showMissing('That estimate doesn’t exist any more', 'It may have been deleted. Your other estimates are in the list.');
+        showMissing('That estimate doesn’t exist any more', 'It may have been deleted. Your other projects are in the list.');
       } else {
         showMissing(
           'Couldn’t open that estimate',
@@ -101,11 +91,6 @@ const EstimatesView = (() => {
       }
       return null;
     }
-  }
-
-  function showList() {
-    window.scrollTo(0, 0);
-    EstimateList.mount(root, handlers());
   }
 
   async function showDetail(id) {
@@ -133,21 +118,19 @@ const EstimatesView = (() => {
   }
 
   return {
-    /* Once per sign-in: where to draw, and the routes out that app.js owns. */
+    /* Once per sign-in: where to draw. */
     init(container, options) {
       root = container;
       onAuthLost = options.onAuthLost;
-      onGoPricing = options.onGoPricing;
-      onOpenSettings = options.onOpenSettings;
     },
 
-    /* The router's way in. segments are the route after 'estimates'. False for
-       a shape this area doesn't have, which app.js treats as an unknown route. */
+    /* The router's way in: ['new'] for a new project's editor, or the route
+       after 'estimates'. False for a shape this area doesn't have, which
+       app.js treats as an unknown route. */
     show(segments, state) {
       const [id, sub, extra] = segments;
-      if (extra !== undefined) return false;
-      if (id === undefined) showList();
-      else if (id === 'new' && sub === undefined) showEditor(null);
+      if (id === undefined || extra !== undefined) return false;
+      if (id === 'new' && sub === undefined) showEditor(null);
       else if (sub === undefined) showDetail(id);
       else if (sub === 'edit') showEditor(id, state);
       else return false;

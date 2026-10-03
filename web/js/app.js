@@ -4,7 +4,7 @@
  *
  * On load the app asks GET /api/session, which answers 200 or 401 without
  * touching any data — so an expired session lands on the login screen instead
- * of firing a request that 401s halfway through rendering the estimates list.
+ * of firing a request that 401s halfway through rendering the Projects list.
  *
  * Which screen is on #main is the address's business (D59, js/router.js):
  * nav items ask for a route, and renderRoute() below is the only place a
@@ -147,17 +147,24 @@
     /* onGoPricing keeps its name: the first-run setup step it serves means the
        rate card specifically, so it asks for #/finance/pricing — #/finance
        alone lands on the Dashboard. */
-    EstimatesView.init(main, {
+    const openProject = (project) => {
+      const path = ProjectCard.pathOf(project);
+      if (path) LSCRouter.go(path);
+      else Toast.error('That project has no estimate to open.');
+    };
+    ProjectsView.init(main, {
       onAuthLost,
       onGoPricing: () => LSCRouter.go('/finance/pricing'),
       onOpenSettings: openSettings,
+      onNew: () => LSCRouter.go('/projects/new'),
+      onOpen: openProject,
+      // The banner, while any project waits for a UPID (D61).
+      onFixUpids: () => LSCRouter.go('/setup/upids'),
     });
+    EstimatesView.init(main, { onAuthLost });
     HomeView.init(main, { onAuthLost });
     SetupView.init(main, { onAuthLost });
-    ClientsView.init(main, {
-      onAuthLost,
-      onOpenEstimate: (id) => LSCRouter.go('/estimates/' + encodeURIComponent(id)),
-    });
+    ClientsView.init(main, { onAuthLost, onOpenProject: openProject });
     // Whatever the address says, even if it is the screen that was there before
     // a lost session: that screen never finished drawing, or it would have
     // been kept.
@@ -179,15 +186,29 @@
     if (area === 'home') {
       setNav('home');
       shown = HomeView.show(rest, state);
+    } else if (area === 'projects') {
+      // A new project starts as its estimate's editor (IA flow 1); the
+      // project is made on its first save.
+      setNav('projects');
+      shown = rest.length === 1 && rest[0] === 'new'
+        ? EstimatesView.show(['new'], state)
+        : ProjectsView.show(route);
     } else if (area === 'estimates') {
-      setNav('estimates');
+      /* An estimate's detail and editor, until the project folder takes them
+         in (task 18). #/estimates on its own was the list before Projects
+         replaced it (D58): an old bookmark lands there. */
+      setNav('projects');
+      if (!rest.length) {
+        LSCRouter.go('/projects', { replace: true, skipGuard: true });
+        return;
+      }
       shown = EstimatesView.show(rest, state);
     } else if (area === 'clients') {
       setNav('clients');
       shown = ClientsView.show(rest, state);
     } else if (area === 'setup') {
-      // The UPID fix-up (task 16) is reached from the estimates list.
-      setNav('estimates');
+      // The UPID fix-up (task 16) is reached from the Projects list.
+      setNav('projects');
       shown = SetupView.show(rest, state);
     } else if (area === 'finance' && rest.length <= 1) {
       setNav('finance');
@@ -204,12 +225,12 @@
 
   function setNav(active) {
     document.getElementById('logo-btn').classList.toggle('active', active === 'home');
-    document.getElementById('nav-estimates').classList.toggle('active', active === 'estimates');
+    document.getElementById('nav-projects').classList.toggle('active', active === 'projects');
     document.getElementById('nav-clients').classList.toggle('active', active === 'clients');
     document.getElementById('nav-finance').classList.toggle('active', active === 'finance');
   }
 
-  /* The header is no longer the only way to this: the estimates list's
+  /* The header is no longer the only way to this: the Projects list's
      first-run setup steps open it too, so it sits here rather than inside
      bindNav's closure where only the header could reach it. */
   function openSettings(opener) {
@@ -291,7 +312,7 @@
     settingsBtn.addEventListener('click', () => openSettings(settingsBtn));
 
     document.getElementById('logo-btn').addEventListener('click', to('/home'));
-    document.getElementById('nav-estimates').addEventListener('click', to('/estimates'));
+    document.getElementById('nav-projects').addEventListener('click', to('/projects'));
     document.getElementById('nav-clients').addEventListener('click', to('/clients'));
     document.getElementById('nav-finance').addEventListener('click', to('/finance'));
     signOutBtn.addEventListener('click', () => {

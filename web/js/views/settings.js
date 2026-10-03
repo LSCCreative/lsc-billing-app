@@ -331,9 +331,9 @@ const SettingsView = (() => {
       // And the Rate Card, whose auto prices carry GST inside them on a
       // GST-inclusive card.
       PricingView.refreshPrices();
-      // And the estimates empty state, whose first-run checklist may still be
+      // And the Projects empty state, whose first-run checklist may still be
       // listing the invoice details this save has just filled in.
-      EstimateList.refreshFirstRun();
+      ProjectsView.refreshFirstRun();
       // And the Dashboard's GST mirror, which can be open behind this modal
       // showing the setting this save just replaced.
       FinanceDashboardView.refreshGst();

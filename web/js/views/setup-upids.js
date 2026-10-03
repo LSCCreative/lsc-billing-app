@@ -23,7 +23,7 @@ const SetupView = (() => {
   let root = null;
   let onAuthLost = null;
 
-  const LIST = '/estimates';
+  const LIST = '/projects';
   const STATUS = { draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined' };
 
   // Per mount, so ids stay unique however many times the screen is drawn.
@@ -100,7 +100,7 @@ const SetupView = (() => {
 
   function headMarkup(sub) {
     return (
-      '<button class="back-btn" id="js-back">← All Estimates</button>' +
+      '<button class="back-btn" id="js-back">← All Projects</button>' +
       '<div class="page-head"><div><h1 class="page-title">Give each project its own UPID</h1>' +
       '<div class="page-sub" id="fix-count">' + esc(sub) + '</div></div></div>'
     );

@@ -863,20 +863,6 @@
   .totals-card td {
     padding: 9px 14px;
   }
-  /* A client's estimate history is the exception: its first column is the
-     UPID, but the row's subject is the project — a 44px link, which sat a
-     line below its own label while the UPID took the subject treatment. Every
-     cell here is a plain label/value pair, vertically centred on the link. */
-  #client-history .est-table td,
-  #client-history .est-table td:first-child {
-    display: flex;
-    align-items: center;
-    padding-top: 4px;
-  }
-  #client-history .est-table td:first-child::before {
-    display: inline;
-    margin-bottom: 0;
-  }
 
   /* ── Finance ─────────────────────────────────────────────────────────────
      The Overhead expense table's actions cell. It stacks like every other
@@ -1187,12 +1173,6 @@
   .pricing-sec-label-inp {
     min-height: 44px;
   }
-  /* Two targets that are not .btn and were missed by the list above: the
-     client-history row's link into an estimate (15px tall — the smallest thing
-     in the app that navigates), and the typeahead's suggestions. */
-  .client-history-link {
-    min-height: 44px;
-  }
   /* The Minimum Job Price (?) is a 20px ring by design — it annotates a number
      and a 44px one beside a 17px figure would outweigh what it points at. So
      the target grows without the ring growing: an absolutely-positioned overlay
@@ -1211,6 +1191,8 @@
     height: 44px;
     transform: translate(-50%, -50%);
   }
+  /* A target that is not .btn and was missed by the list above: the
+     typeahead's suggestions. */
   .typeahead-list li {
     min-height: 44px;
     justify-content: center;
