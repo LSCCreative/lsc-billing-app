@@ -384,7 +384,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     area lights the Estimates nav item.
 
 - [x] **17. The Projects list** (frontend — Opus/high). _Depends on: 15._ **Done 2026-10-04,
-  uncommitted** (see the Done note below).
+  committed `4cd0ed4`** (see the Done note below).
   - The nav item and route become **Projects** (`#/projects`), and the list shows **one card per
     project** (D58).
   - **A stage line** from one shared function, for example "Sent v2 · valid until 14 Oct" or
@@ -424,7 +424,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     Projects. Detail and editor stay at `#/estimates/<id>` until task 18. Nav "Projects"
     (`#nav-projects`). The client's history is the same cards via `?client=&stage=all`.
 
-- [ ] **18. The project folder** (frontend — Opus/high). _Depends on: 17._
+- [x] **18. The project folder** (frontend — Opus/high). _Depends on: 17._ **Done 2026-10-04,
+  uncommitted** (see the Done note below).
   - **`#/projects/<id>`**: Overview (UPID, name, client, stage line, the **one next action**), a
     compact Production days list, Documents, and Activity (IA Content Hierarchy).
   - **Actions:**
@@ -437,6 +438,47 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** every action round-trips, a declined project disappears from Home and the editor
   calendar, and nothing else in the editor moves at 1280.
+
+  **Done note (2026-10-04).** New `web/js/views/project-folder.js` (`ProjectFolder`),
+  `web/css/project-folder.css`. Server: `routes/projects.js` gains `summarize()` (the one project
+  summary, shared by the list and the folder), `readFolder`, `GET /api/projects/:id`, `POST
+  /sent | /decline | /reopen`, `DELETE`; `routes/estimates.js` stops writing `doc_type` /
+  `invoice_number`; `routes/pdf.js` takes `{ as: 'estimate' }`; `/api/calendar` days and rentals
+  carry `projectId`. Web: `estimates.js` rewritten for the project routes, `app.js` route table,
+  `ProjectCard.pathOf` → the folder, `ProjectCard.localDate`, Home's tile pop-up ("Open project")
+  and Coming up, the editor (D62 controls gone, `focusDay` option), `api.js` `postPdf(path, body)`.
+  `npm test` 436/436 (was 429). Mutations caught 22 of 23 (the 23rd, own days excluded from the
+  reopen check, is equivalent today: they are still declined then). Checked against `api-scratch`
+  at 1280 / 800 / 375 with dispatched clicks: every action, Back, the clash refusal (a scratch day
+  confirmed by hand, then put back), a declined project gone from Home's and another editor's
+  calendar and back after Reopen, PDFs, old addresses; the editor's 25 blocks measured before and
+  after at 1280, identical. Decisions taken in the code:
+  - **Routes:** `#/projects/<id>` the folder; `…/estimate` the lead estimate's editor, `…/estimate/view`
+    its read-only view (the old detail screen, kept for sent and accepted estimates and for stage E's
+    versions); `…/estimate/<eid>[/view]` another estimate of a kept-together group.
+    `#/estimates/<eid>[/edit]` find the project and replace the entry. Save returns to the folder.
+  - **Next action** (`nextAction()` in the folder, where 19 and 20 add theirs): draft and sent →
+    Edit estimate; declined → Reopen; anything later → View estimate. "Mark sent…" / "Mark sent
+    again…" sit beside it; Decline (hidden once any non-void invoice exists), Duplicate as new
+    project and Delete in the quiet row.
+  - **Mark sent** asks only "Valid until" (today + 30, D44; task 21 makes it a setting), has an
+    "↓ Estimate PDF" button, sets the lead estimate `sent`, and logs `sent` `{ validUntil,
+    estimateId }` **with no version**: nothing is frozen until E (D34). Refused once declined or
+    accepted.
+  - **Decline** sets every estimate declined and `declined_at`; refused with a live invoice; a second
+    one is a no-op. **Reopen** returns everything to draft (clears `accepted_at` too) and refuses,
+    `date_locked`, naming every date another project has since confirmed, unless that day has a
+    specification note; "Open the estimate" goes to the clashing day's card. Pencilled overlaps are
+    only named in the toast (D15).
+  - **Delete** removes the project (estimates, days, rentals, invoices, activity cascade); refused
+    while a non-legacy invoice is scheduled, sent or paid. The editor's own Delete stays.
+  - **D62 in the server too:** POST writes `estimate` / `''`, PUT keeps what the row has, so an old
+    invoice-typed row still prints as its invoice. Documents list such a row twice: its estimate
+    (PDF `as: 'estimate'`) and "Invoice INV-… · Made the old way" (PDF as it was).
+  - **Timestamps are read on the browser's clock** (`ProjectCard.localDate`): a UTC `declined_at`
+    in the evening was showing the next day's date; this also fixes task 17's card.
+  - **Found and fixed:** `isYmd` threw (500) on an impossible date like `2026-13-01`; now 400.
+  - The editor's doc-type bar keeps `min-height: 61px` from 768px, so nothing below it moves.
 
 - [ ] **19. Accepting, and creating invoices** (money math — Opus/high). _Depends on: 14, 18._
   - **`POST /api/projects/:id/accept`**, in one transaction:

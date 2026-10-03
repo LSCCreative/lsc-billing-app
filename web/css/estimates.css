@@ -784,3 +784,13 @@
     padding: 12px 14px;
   }
 }
+
+/* The doc-type bar without its Document Type select (D62, task 18): the
+   Short notice row. Above the phone band it keeps the height the select gave
+   it, so nothing below it in the editor moves; on a phone it takes what its
+   two ticks need. */
+@media (min-width: 768px) {
+  .doc-type-bar {
+    min-height: 61px;
+  }
+}

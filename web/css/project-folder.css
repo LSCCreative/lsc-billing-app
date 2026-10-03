@@ -1,0 +1,390 @@
+/* The project folder (production-booking task 18; js/views/project-folder.js).
+   New classes only, so no existing screen can move. Reuses .est-upid,
+   .est-name, .est-client (app.css), .stage-line (projects.css), .status-chip
+   (calendar.css), .upid-banner (setup.css), .btn, .spinner, .modal-*.
+
+   The head is the estimate detail's header, the stage line under the name
+   and the one next action beside it. The sections below are headed like
+   Home's panels (a Delight title over a hairline), because the folder is a
+   dashboard for one job, not a document.
+
+   Written phone first:
+     - under 768px: one column, the actions full width under the overview;
+     - 768–1099: the actions beside the overview, the sections stacked;
+     - 1100 and up: Production days and Activity on the left, Documents on
+       the right. */
+
+/* ── The head ─────────────────────────────────────────────────────────────── */
+
+.pf-head {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.pf-upid-missing {
+  color: var(--err-text);
+}
+.pf-stage {
+  margin-top: 12px;
+}
+.pf-stage .stage-line {
+  font-size: 13px;
+}
+.pf-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin-top: 14px;
+}
+.pf-facts dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.pf-facts dd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pf-actions-main,
+.pf-actions-quiet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pf-actions .btn {
+  justify-content: center;
+  min-height: 44px;
+}
+
+@media (min-width: 768px) {
+  .pf-head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .pf-overview {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .pf-actions {
+    flex: 0 0 auto;
+    align-items: flex-end;
+  }
+  .pf-actions-main,
+  .pf-actions-quiet {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .pf-actions .btn {
+    min-height: 0;
+  }
+}
+
+/* The actions' failures, under the head: as #export-error (estimates.css). */
+.pf-action-error,
+.pf-doc-error {
+  display: none;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pf-action-error {
+  margin: -8px 0 22px;
+}
+.pf-doc-error {
+  margin-top: 12px;
+}
+.pf-action-error.show,
+.pf-doc-error.show {
+  display: block;
+}
+.pf-action-error .btn,
+.pf-doc-error .btn {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.pf-notice {
+  margin-bottom: 22px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+.pf-body {
+  display: grid;
+  gap: 30px;
+}
+.pf-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.pf-h2 {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.pf-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pf-empty,
+.pf-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.pf-empty {
+  padding: 6px 0;
+}
+.pf-hint {
+  margin-bottom: 10px;
+}
+.pf-muted {
+  color: var(--muted);
+}
+
+@media (min-width: 1100px) {
+  .pf-body {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-areas: 'days docs' 'activity docs';
+    align-items: start;
+    column-gap: 36px;
+  }
+  .pf-days-section {
+    grid-area: days;
+  }
+  .pf-docs-section {
+    grid-area: docs;
+  }
+  .pf-activity-section {
+    grid-area: activity;
+  }
+}
+
+/* ── Production days: Coming up's rows (home.css), one per day ────────────── */
+
+.pf-days {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.pf-day {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.pf-day:hover {
+  border-color: var(--accent);
+}
+.pf-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pf-day-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+.pf-day-date {
+  font-weight: 600;
+}
+.pf-day-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pf-day-items {
+  grid-column: 1;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pf-day-note {
+  display: block;
+  color: var(--muted);
+  font-style: italic;
+}
+.pf-day-go {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.pf-day:hover .pf-day-go {
+  color: var(--text);
+}
+/* Declined: off every calendar, so the rows are drawn as history. */
+.pf-days.is-declined .pf-day {
+  opacity: 0.6;
+}
+
+/* ── Documents ────────────────────────────────────────────────────────────── */
+
+.pf-docs {
+  list-style: none;
+}
+.pf-doc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'main amount' 'acts acts';
+  gap: 8px 12px;
+  padding: 12px 0;
+}
+.pf-doc + .pf-doc {
+  border-top: 1px solid var(--cal-rule, var(--border));
+}
+.pf-doc-main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.pf-doc-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pf-doc-num {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.pf-doc-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+.pf-doc-amount {
+  grid-area: amount;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.pf-doc-acts {
+  grid-area: acts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pf-doc-acts:empty {
+  display: none;
+}
+.pf-doc-acts .btn {
+  min-height: 44px;
+  min-width: 44px;
+  justify-content: center;
+}
+@media (min-width: 768px) {
+  .pf-doc-acts .btn {
+    min-height: 0;
+  }
+}
+
+/* ── Activity ─────────────────────────────────────────────────────────────── */
+
+.pf-activity {
+  list-style: none;
+}
+.pf-activity li {
+  display: grid;
+  grid-template-columns: minmax(0, 9em) minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pf-activity li + li {
+  border-top: 1px solid var(--cal-rule, var(--border));
+}
+.pf-act-when {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pf-act-what {
+  color: var(--text);
+}
+
+/* ── The dialog ───────────────────────────────────────────────────────────── */
+
+.pfd-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.pfd-pdf {
+  margin: 14px 0 18px;
+}
+.pf-dialog .field label {
+  display: block;
+  margin-bottom: 6px;
+}
+.pf-dialog .field input {
+  width: 100%;
+}
+.pfd-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pfd-error {
+  font-size: 12px;
+  color: var(--err-text);
+}
+.pfd-error:not(:empty) {
+  margin-top: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-day {
+    transition: none;
+  }
+}

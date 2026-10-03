@@ -66,6 +66,12 @@ const HomeView = (() => {
 
   // ── The tile pop-up (D28) ───────────────────────────────────────────────────
 
+  /* A booked day opens its project's folder (D28, task 18). A day from a
+     server before v13 names no project: its estimate's old address finds it. */
+  const projectPath = (day) => (day.projectId
+    ? '/projects/' + encodeURIComponent(day.projectId)
+    : '/estimates/' + encodeURIComponent(day.estimateId));
+
   const pop = { overlay: null, opener: null };
 
   function onPopKeydown(event) {
@@ -113,7 +119,7 @@ const HomeView = (() => {
         : '<p class="hd-none">None on this day yet.</p>') +
       '<div class="modal-actions">' +
       '<button type="button" class="btn btn-ghost" id="hd-close">Close</button>' +
-      '<button type="button" class="btn btn-accent" id="hd-open">Open estimate</button>' +
+      '<button type="button" class="btn btn-accent" id="hd-open">Open project</button>' +
       '</div></div>';
 
     pop.overlay.classList.add('open');
@@ -122,7 +128,7 @@ const HomeView = (() => {
     pop.overlay.querySelector('#hd-close').addEventListener('click', () => closePop(true));
     pop.overlay.querySelector('#hd-open').addEventListener('click', () => {
       closePop(false);
-      LSCRouter.go('/estimates/' + encodeURIComponent(day.estimateId));
+      LSCRouter.go(projectPath(day));
     });
     pop.overlay.querySelector('#hd-open').focus();
   }
@@ -266,7 +272,7 @@ const HomeView = (() => {
         '<div class="up-body">' +
         '<p class="up-rel"><span class="sr-only">' + esc(C.longDate(date, today)) + ', </span>' + esc(rel) + '</p>' +
         '<ul class="up-rows">' + byDate.get(date).map((day) =>
-          '<li><a class="up-row is-' + day.status + '" href="#/estimates/' + encodeURIComponent(day.estimateId) + '">' +
+          '<li><a class="up-row is-' + day.status + '" href="#' + esc(projectPath(day)) + '">' +
           C.statusChip(day.status) +
           '<span class="up-main"><span class="up-upid">' + esc(day.upid || 'No UPID') + '</span>' +
           '<span class="up-name">' + esc(day.projectName || 'Untitled estimate') + '</span></span>' +

@@ -150,7 +150,7 @@
     const openProject = (project) => {
       const path = ProjectCard.pathOf(project);
       if (path) LSCRouter.go(path);
-      else Toast.error('That project has no estimate to open.');
+      else Toast.error('That project can’t be opened.');
     };
     ProjectsView.init(main, {
       onAuthLost,
@@ -162,6 +162,14 @@
       onFixUpids: () => LSCRouter.go('/setup/upids'),
     });
     EstimatesView.init(main, { onAuthLost });
+    ProjectFolder.init(main, {
+      onAuthLost,
+      // Duplicate as new project (D60): into the copy's editor.
+      onEditCopy: (copy, from) => {
+        const project = { id: copy.projectId, estimateId: copy.id };
+        LSCRouter.go(ProjectFolder.estimatePath(project, copy, false), { state: { estimate: copy, project, copiedFrom: from } });
+      },
+    });
     HomeView.init(main, { onAuthLost });
     SetupView.init(main, { onAuthLost });
     ClientsView.init(main, { onAuthLost, onOpenProject: openProject });
@@ -177,6 +185,8 @@
      unsaved guard — the router has, before calling this. */
   function renderRoute(route, state) {
     closeMenu(false);
+    // A screen that names itself (the project folder) sets its own once drawn.
+    document.title = 'LSC Billing';
     const [area, ...rest] = route.segments;
     if (area === undefined) {
       LSCRouter.go(LANDING, { replace: true, skipGuard: true });
@@ -187,22 +197,25 @@
       setNav('home');
       shown = HomeView.show(rest, state);
     } else if (area === 'projects') {
-      // A new project starts as its estimate's editor (IA flow 1); the
-      // project is made on its first save.
+      /* The list; `new`, a new project's editor (IA flow 1: the project is
+         made on its first save); a project's folder (task 18); and its
+         estimate's editor and read-only view under it. */
       setNav('projects');
-      shown = rest.length === 1 && rest[0] === 'new'
-        ? EstimatesView.show(['new'], state)
-        : ProjectsView.show(route);
+      const [id, sub, ...more] = rest;
+      if (id === undefined) shown = ProjectsView.show(route);
+      else if (id === 'new') shown = sub === undefined && EstimatesView.showNew();
+      else if (sub === undefined) shown = ProjectFolder.show(id);
+      else if (sub === 'estimate') shown = EstimatesView.showInProject(id, more, state);
     } else if (area === 'estimates') {
-      /* An estimate's detail and editor, until the project folder takes them
-         in (task 18). #/estimates on its own was the list before Projects
-         replaced it (D58): an old bookmark lands there. */
+      /* The addresses before the folder: #/estimates was the list (D58), and
+         #/estimates/<id>[/edit] an estimate. An old bookmark lands where that
+         is now. */
       setNav('projects');
       if (!rest.length) {
         LSCRouter.go('/projects', { replace: true, skipGuard: true });
         return;
       }
-      shown = EstimatesView.show(rest, state);
+      shown = EstimatesView.showOld(rest);
     } else if (area === 'clients') {
       setNav('clients');
       shown = ClientsView.show(rest, state);

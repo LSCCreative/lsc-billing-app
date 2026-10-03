@@ -41,7 +41,7 @@ function registerCalendarRoutes(app, db) {
     if (span < 0 || span > MAX_RANGE_DAYS) return res.status(400).json({ error: 'calendar_range_invalid' });
 
     const rows = db.prepare(`
-      SELECT d.id, d.estimate_id, d.date, d.status, d.start_time, d.end_time, d.override_note,
+      SELECT d.id, d.estimate_id, e.project_id, d.date, d.status, d.start_time, d.end_time, d.override_note,
              e.upid, e.name, e.client_json, e.active_rows_json
         FROM production_days d JOIN estimates e ON e.id = d.estimate_id
        WHERE d.date IS NOT NULL AND d.date BETWEEN ? AND ? AND e.status <> 'declined'
@@ -57,6 +57,8 @@ function registerCalendarRoutes(app, db) {
       return {
         id: r.id,
         estimateId: r.estimate_id,
+        // What a tile and Coming up open: the project's folder (task 18).
+        projectId: r.project_id || null,
         date: r.date,
         status: r.status,
         startTime: r.start_time || null,
@@ -71,7 +73,7 @@ function registerCalendarRoutes(app, db) {
 
     /* A rental spans out → back; with one date blank it spans the other. */
     const rentals = db.prepare(`
-      SELECT r.id, r.estimate_id, r.vendor, r.out_date, r.out_method, r.back_date, r.back_method,
+      SELECT r.id, r.estimate_id, e.project_id, r.vendor, r.out_date, r.out_method, r.back_date, r.back_method,
              e.upid, e.name
         FROM rentals r JOIN estimates e ON e.id = r.estimate_id
        WHERE COALESCE(r.out_date, r.back_date) IS NOT NULL AND e.status <> 'declined'
@@ -81,6 +83,7 @@ function registerCalendarRoutes(app, db) {
     `).all(to, from).map((r) => ({
       id: r.id,
       estimateId: r.estimate_id,
+      projectId: r.project_id || null,
       upid: r.upid,
       projectName: r.name,
       vendor: r.vendor,

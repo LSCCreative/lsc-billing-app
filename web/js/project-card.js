@@ -4,7 +4,7 @@
  * Component Reuse Map): the stage line, and the project card that carries it.
  *
  * THE STAGE LINE IS ONE FUNCTION. The Projects list, the client's projects and
- * (task 18) the project folder all print stageLine(), so the three can't
+ * the project folder (task 18) all print stageLine(), so the three can't
  * disagree. Where the project is, its `stage` and `stageDetail.step`, comes
  * from the server (server/src/projects.js projectStage), which also filters
  * and counts by it; this only words it. Dates are read against the browser's
@@ -33,9 +33,21 @@ const ProjectCard = (() => {
     ['declined', 'Declined'],
   ];
 
+  /* A date as YYYY-MM-DD. A timestamp (accepted_at, declined_at, a send) is
+     UTC, so it is read on this browser's clock: an evening here is the next
+     morning in UTC. A plain date is already a calendar day. */
+  function localDate(value) {
+    const raw = String(value || '');
+    if (raw.length <= 10) return raw;
+    const t = new Date(raw);
+    if (!Number.isFinite(t.getTime())) return raw.slice(0, 10);
+    const pad = (n) => String(n).padStart(2, '0');
+    return t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+  }
+
   // "14 Oct", with the year when it isn't this one. Takes a date or a timestamp.
   function dayMonth(value, today) {
-    const ymd = String(value || '').slice(0, 10);
+    const ymd = localDate(value);
     if (!C.isDate(ymd)) return '';
     const [y, m, d] = ymd.split('-').map(Number);
     const s = d + ' ' + C.MONTHS[m - 1].slice(0, 3);
@@ -104,10 +116,9 @@ const ProjectCard = (() => {
     );
   }
 
-  /* Where opening a project goes. Until the folder exists (task 18) that is
-     its estimate's detail, and a project with none (which every write and
-     delete prevents) has nowhere to go: null. Task 18 makes this the folder. */
-  const pathOf = (project) => (project.estimateId ? '/estimates/' + encodeURIComponent(project.estimateId) : null);
+  /* Where opening a project goes: its folder (task 18). The one place a card
+     opens from, for the list, the client's projects and app.js. */
+  const pathOf = (project) => (project && project.id ? '/projects/' + encodeURIComponent(project.id) : null);
 
   function upidMarkup(project) {
     const more = project.estimateCount > 1 ? ' · ' + project.estimateCount + ' estimates' : '';
@@ -153,5 +164,5 @@ const ProjectCard = (() => {
     });
   }
 
-  return { CHIPS, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth };
+  return { CHIPS, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth, localDate };
 })();

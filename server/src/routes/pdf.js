@@ -39,9 +39,14 @@ function registerPdfRoutes(app, db) {
     return row ? loadEstimate(row, readDays(db, row.id)) : null;
   };
 
+  /* `{ as: 'estimate' }` prints an old invoice-typed row (D62) as the estimate
+     it started as: the project folder lists that row twice, as its estimate
+     and as the invoice made the old way, and each downloads as what it is.
+     Without it the row prints as its retired doc type says. */
   app.post('/api/estimates/:id/pdf', async (req, res, next) => {
-    const estimate = load(req.params.id);
-    if (!estimate) return res.status(404).json({ error: 'not_found' });
+    const loaded = load(req.params.id);
+    if (!loaded) return res.status(404).json({ error: 'not_found' });
+    const estimate = (req.body || {}).as === 'estimate' ? { ...loaded, docType: 'estimate' } : loaded;
 
     const settings = readSettings(db);
     const blocker = exportBlocker(estimate, settings);

@@ -80,21 +80,27 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
 
 - **D, task 17** (the Projects list: `GET /api/projects`, `#/projects` with stage chips and search
   in the address, one stage-line function, the client's projects as the same cards).
-  2026-10-04, **uncommitted, not deployed** (a new route: NAS before Pages, with v13 at task 23).
-  Its decisions are in its Done note in `TASKS.md`. The `api-scratch` DB now has a project at
-  every stage (sent with valid-until, expired, overdue deposit, deposit paid, single sent, legacy,
-  paid, declined) for task 18 to look at.
+  2026-10-04, committed `4cd0ed4`, **not deployed** (a new route: NAS before Pages, with v13 at
+  task 23). The `api-scratch` DB has a project at every stage (sent with valid-until, expired,
+  overdue deposit, deposit paid, single sent, legacy, paid, declined).
 
-**Exact next item: TASKS.md task 18, the project folder** (frontend, Opus/high). Three hooks are
-waiting for it:
-- `ProjectCard.pathOf` (`web/js/project-card.js`) is the one place a card opens from (list,
-  client, and app.js's `openProject`). Point it at `#/projects/<id>`.
-- The Overview's stage line is `ProjectCard.stageMarkup(project, today)`, fed by the same
-  `stage`/`stageDetail` the list returns; `GET /api/projects/:id` should build them with
-  `projectStage` so the three can't disagree.
-- **Mark sent** should write an `activity` row of kind `sent` with `detail_json`
-  `{ validUntil, version? }`: `GET /api/projects` already reads the latest one for "Sent v2 ·
-  valid until 14 Oct" and "expired".
+- **D, task 18** (the project folder `#/projects/<id>`: `GET /api/projects/:id`, Mark sent,
+  Decline, Reopen with the clash check, Delete; the editor and a read-only view under
+  `…/estimate`; D62's doc-type controls gone from the editor and no longer written by the server;
+  calendar tiles and Coming up open the folder). 2026-10-04, **uncommitted, not deployed** (new
+  routes: NAS before Pages, with v13 at task 23). Its decisions are in its Done note in `TASKS.md`.
+
+**Exact next item: TASKS.md task 19, accepting and creating invoices** (money math, Opus/high).
+Hooks waiting for it:
+- `nextAction()` and `moreActions()` in `web/js/views/project-folder.js` are where "Mark
+  accepted…" (sent, and draft if the owner skips Mark sent) and "Create invoices" (accepted, no
+  invoices: a project v13 mapped from `approved`) go. Each action posts to
+  `/api/projects/:id/<action>?today=` and redraws from the folder it answers with (`post()`), so
+  `accept` and `invoices` should answer with `readFolder` as `sent`/`decline` do.
+- The folder's Documents already list invoices (kind, number, status, `totals_json.totalIncGst`);
+  task 20 gives each row its page and PDF.
+- D18's "clash, rebook" flag has no column yet: when 19 adds one, show it on the folder's
+  Production days rows first (IA).
 
 `GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
 cached Pages build still calls it), then delete it.
@@ -127,8 +133,14 @@ cached Pages build still calls it), then delete it.
   invoice numbers carry it, so refuse creating an invoice while `projects.needs_upid = 1`.
 - **UPID lock (D36, task 19):** `planProjectWrite` (`projects.js`) lets the UPID change freely
   today. Once a project has a non-legacy invoice or a send, refuse a change there.
-- **Accept/decline (tasks 18–19)** set `estimates.status` and `projects.accepted_at` /
-  `declined_at` together; estimate saves no longer touch the status.
+- **Accept (task 19)** sets `estimates.status` and `projects.accepted_at` together; estimate saves
+  never touch the status. Decline and Reopen (task 18) already do this for theirs; Reopen clears
+  `accepted_at` too, and Decline is refused once a non-void invoice exists.
+- **Delete (task 18)** is refused while a non-legacy invoice is scheduled, sent or paid. Task 20's
+  void action is the way out of that.
+- **Stage E's sends:** Stage D's Mark sent logs `sent` with `{ validUntil, estimateId }` and **no
+  version** (nothing is frozen, D34). E's versions should write `version` on the same activity
+  kind, which the stage line already reads ("Sent v2").
 
 **For review at task 8 (Cost Breakdown); settled 2026-10-02, the user approved the sample:** how attribution splits money between surcharges is an
 implementation choice, not a user decision. For example, under "multiply", after hours is charged

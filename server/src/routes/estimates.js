@@ -163,6 +163,8 @@ function registerEstimateRoutes(app, db) {
       // A new estimate is a new project (v13), and starts as a draft: since
       // v13 a status moves only by the project's own actions (send, accept,
       // decline), never by an estimate save.
+      // The retired doc type (D62, task 18) is no longer written: a new row is
+      // an estimate with no invoice number, whatever an old build sends.
       const projectId = applyProjectWrite(db, plan, body.clientId, now);
       db.prepare(`
         INSERT INTO estimates
@@ -172,7 +174,7 @@ function registerEstimateRoutes(app, db) {
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         id, plan.upid, body.name || '', body.date || '',
-        'draft', body.docType || 'estimate', body.invoiceNumber || '',
+        'draft', 'estimate', '',
         body.clientId || null, JSON.stringify(body.client || {}), body.notes || '',
         JSON.stringify(activeRows), JSON.stringify(sectionLabels),
         gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges), JSON.stringify(totals), now, now,
@@ -204,18 +206,20 @@ function registerEstimateRoutes(app, db) {
     db.transaction(() => {
       // The status is kept as it is (v13): `status` in the body is ignored,
       // because only the project's actions move it. The UPID is the project's
-      // (projects.js), copied here.
+      // (projects.js), copied here. So are the retired doc type and invoice
+      // number (D62, task 18): the editor no longer has them, and an old
+      // invoice-typed row keeps both, so its project's legacy invoice still
+      // prints as it was made.
       const projectId = applyProjectWrite(db, plan, body.clientId, now);
       db.prepare(`
         UPDATE estimates SET
-          upid = ?, name = ?, date = ?, doc_type = ?, invoice_number = ?,
+          upid = ?, name = ?, date = ?,
           client_id = ?, client_json = ?, notes = ?, active_rows_json = ?,
           section_labels_json = ?, gst_free = ?, short_notice = ?, surcharges_json = ?,
           totals_json = ?, updated_at = ?, project_id = ?
         WHERE id = ?
       `).run(
-        plan.upid, body.name || '', body.date || '',
-        body.docType || 'estimate', body.invoiceNumber || '', body.clientId || null,
+        plan.upid, body.name || '', body.date || '', body.clientId || null,
         JSON.stringify(body.client || {}), body.notes || '',
         JSON.stringify(activeRows), JSON.stringify(sectionLabels),
         gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges),
@@ -232,7 +236,7 @@ function registerEstimateRoutes(app, db) {
 
   // A project left with no estimate goes with it (v13), invoices and
   // activity included — as deleting an invoice-typed estimate always took
-  // that invoice with it. Task 18's folder gets its own Delete.
+  // that invoice with it. The folder has its own Delete (DELETE /api/projects/:id).
   app.delete('/api/estimates/:id', (req, res) => {
     const existing = db.prepare('SELECT project_id FROM estimates WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'not_found' });

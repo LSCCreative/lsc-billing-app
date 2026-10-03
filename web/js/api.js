@@ -172,8 +172,8 @@ const LSCApi = (() => {
     put: (path, body) => request('PUT', path, body),
     del: (path) => request('DELETE', path),
     /* Resolves to { blob, filename }; filename is null if the reply didn't
-       name the file. */
-    postPdf: (path) => request('POST', path, undefined, 'pdf'),
+       name the file. `body` is optional (the folder's { as: 'estimate' }). */
+    postPdf: (path, body) => request('POST', path, body, 'pdf'),
     /* The same shape, for a CSV fetched with GET. Through here rather than an
        <a href> to the API: `download` is ignored on a cross-origin link, so it
        would navigate the app away to the file — and an expired session would

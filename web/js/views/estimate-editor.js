@@ -2222,7 +2222,6 @@ const EstimateEditor = (() => {
 
   function formMarkup(estimate, pricing) {
     const client = (estimate && estimate.client) || {};
-    const isInvoice = estimate && estimate.docType === 'invoice';
 
     let html =
       '<button class="back-btn" id="js-back">← Back</button>' +
@@ -2263,17 +2262,10 @@ const EstimateEditor = (() => {
       '<div class="field full"><label for="f-notes">Internal Notes</label>' +
       '<textarea id="f-notes">' + esc(estimate ? estimate.notes : '') + '</textarea></div>' +
       '</div>' +
+      /* The Document Type switch and invoice number are retired (D62, task
+         18): the editor only edits the estimate, and invoices are made in the
+         project folder. The bar is now the Short notice row. */
       '<div class="doc-type-bar">' +
-      '<label class="doc-type-label" for="f-doctype">Document Type</label>' +
-      '<select class="doc-type-select" id="f-doctype">' +
-      '<option value="estimate"' + (isInvoice ? '' : ' selected') + '>Estimate</option>' +
-      '<option value="invoice"' + (isInvoice ? ' selected' : '') + '>Invoice</option>' +
-      '</select>' +
-      '<div class="inv-num-wrap' + (isInvoice ? ' show' : '') + '" id="inv-num-wrap">' +
-      '<label for="f-invnum" class="label-accent" style="font-size:10px;text-transform:uppercase;letter-spacing:.1em">Invoice #</label>' +
-      '<input class="inv-num-inp" id="f-invnum" type="text" placeholder="e.g. INV-001" value="' +
-      esc((estimate && estimate.invoiceNumber) || '') + '">' +
-      '</div>' +
       /* Short notice (D19): a tick the owner decides; the hint only suggests it
          when the first booked date is close. Multiplies production lines only. */
       '<div class="sn-group">' +
@@ -3269,14 +3261,10 @@ const EstimateEditor = (() => {
       name: $('f-name').value.trim(),
       date: $('f-date').value,
       notes: $('f-notes').value.trim(),
-      docType: $('f-doctype').value,
-      invoiceNumber: $('f-invnum').value.trim(),
-      // Nothing in the UI sets a status yet, but a PUT that omits it would
-      // reset the estimate to 'draft'.
-      status: (existing && existing.status) || 'draft',
       clientId: linkedClientId(),
-      // Same reasoning as status: the server treats an omitted gstFree as false,
-      // so it is always sent rather than left to a default.
+      // The server treats an omitted gstFree as false, so it is always sent
+      // rather than left to a default. (No status: since v13 only the
+      // project's own actions move it, and a save keeps it.)
       gstFree: gstFreeNow(),
       client,
       activeRows: collect(),
@@ -3511,11 +3499,6 @@ const EstimateEditor = (() => {
       setRatesFromLast(this.checked);
     });
 
-    const docType = $('f-doctype');
-    docType.addEventListener('change', function () {
-      $('inv-num-wrap').classList.toggle('show', this.value === 'invoice');
-    });
-
     // Changing the tax treatment moves the headline figures, so it recomputes
     // like any other input that feeds them.
     const gstFreeBox = $('f-gstfree');
@@ -3572,7 +3555,9 @@ const EstimateEditor = (() => {
   }
 
   /* options.copiedFrom: { upid, name } of the estimate Duplicate just copied
-     (D60), said under the blank UPID. */
+     (D60), said under the blank UPID. options.focusDay: a day id, from the
+     project folder's Production days list — the booking block opens on that
+     day's card instead of the UPID taking focus. */
   function mount(container, estimate, viewHandlers, options) {
     root = container;
     handlers = viewHandlers;
@@ -3682,7 +3667,10 @@ const EstimateEditor = (() => {
       dirty: () => snapshot() !== baseline,
     });
 
-    $('f-upid').focus();
+    const day = options && options.focusDay ? booking.showDay(options.focusDay) : null;
+    const dayField = day && day.querySelector('[data-f="date"]');
+    if (dayField) dayField.focus();
+    else $('f-upid').focus();
   }
 
   return {

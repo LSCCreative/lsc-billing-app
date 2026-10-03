@@ -100,3 +100,27 @@ test('the stage line markup escapes what it prints and marks the stage', () => {
   assert.match(ProjectCard.stageMarkup({ stage: 'x y', stageDetail: {} }, TODAY), /is-draft/);
   assert.match(ProjectCard.stageMarkup({ stage: 'sent', stageDetail: { step: 'sent', validUntil: '2026-01-01' } }, TODAY), /is-sent is-alert/);
 });
+
+test('a timestamp is read on the browser\'s clock, a plain date as it is (task 18)', () => {
+  const was = process.env.TZ;
+  process.env.TZ = 'Australia/Sydney'; // AEDT, UTC+11 from 4 Oct 2026
+  try {
+    // 10:13 pm on the 3rd in UTC is 9:13 am on the 4th in Sydney.
+    assert.equal(ProjectCard.localDate('2026-10-03T22:13:00.000Z'), '2026-10-04');
+    assert.equal(ProjectCard.dayMonth('2026-10-03T22:13:00.000Z', TODAY), '4 Oct');
+    assert.equal(say('declined', { step: 'declined', at: '2026-10-03T22:13:00.000Z' }), 'Declined · 4 Oct');
+    // A calendar date never moves.
+    assert.equal(ProjectCard.localDate('2026-10-03'), '2026-10-03');
+    assert.equal(say('paid', { step: 'paid', at: '2026-10-03' }), 'Paid · 3 Oct');
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+});
+
+test('the project folder loads after the card it prints', () => {
+  const html = readFileSync(join(__dirname, '..', '..', 'web', 'index.html'), 'utf8');
+  const at = (f) => html.indexOf('js/' + f);
+  assert.ok(at('project-card.js') < at('views/project-folder.js') && at('views/estimates.js') < at('views/project-folder.js'));
+  assert.ok(at('views/project-folder.js') < at('app.js'));
+});

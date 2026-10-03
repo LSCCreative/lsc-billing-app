@@ -884,8 +884,13 @@ test('pdf: a GST-bearing invoice is refused until the ABN is set; other document
     body: JSON.stringify({ name: 'Doc', activeRows: rows, ...extra }),
   }).then((r) => r.json()).then((j) => j.estimate);
 
-  const taxInvoice = await make({ docType: 'invoice', invoiceNumber: 'INV-1' });
-  const freeInvoice = await make({ docType: 'invoice', invoiceNumber: 'INV-2', gstFree: true });
+  // Invoice-typed rows are only ever old ones now (D62): no write makes one.
+  const asInvoice = (est, number) => {
+    db.prepare("UPDATE estimates SET doc_type = 'invoice', invoice_number = ? WHERE id = ?").run(number, est.id);
+    return { ...est, docType: 'invoice', invoiceNumber: number };
+  };
+  const taxInvoice = asInvoice(await make({}), 'INV-1');
+  const freeInvoice = asInvoice(await make({ gstFree: true }), 'INV-2');
   const quote = await make({});
   assert.equal(taxInvoice.totals.gst, 28);
 
@@ -894,6 +899,12 @@ test('pdf: a GST-bearing invoice is refused until the ABN is set; other document
   const body = await refused.json();
   assert.equal(body.error, 'abn_required');
   assert.match(body.message, /ABN/);
+
+  // Printed as the estimate it started as (the folder's estimate row), it is
+  // no invoice, so it needs no ABN.
+  const asEstimate = await api(`/api/estimates/${taxInvoice.id}/pdf`, { method: 'POST', body: JSON.stringify({ as: 'estimate' }) });
+  assert.notEqual(asEstimate.status, 422);
+  await asEstimate.arrayBuffer();
 
   // 200 with Chromium present, 503 without — either way, not refused.
   for (const est of [freeInvoice, quote]) {
@@ -1398,7 +1409,7 @@ test('calendar: only days dated in the range, with what a tile shows, and none o
   let [status, body] = await cal('?from=2026-10-01&to=2026-10-31');
   assert.equal(status, 200);
   assert.deepEqual(body.days, [{
-    id: 'k1', estimateId: e.body.estimate.id, date: '2026-10-03', status: 'confirmed',
+    id: 'k1', estimateId: e.body.estimate.id, projectId: e.body.estimate.projectId, date: '2026-10-03', status: 'confirmed',
     startTime: '20:00', endTime: '02:00', overrideNote: '', upid: 'UPID-077', projectName: 'Launch film',
     client: 'Acme Pty Ltd', items: ['Video Capture', 'Drone'],
   }]);
@@ -1600,8 +1611,8 @@ test('estimates: travel, crew and gear on days and two rentals round-trip, price
   // The calendar: both rentals overlap October; a range after Grip Co's one date holds only Lensworks.
   const cal = async (q) => (await api('/api/calendar' + q).then((r) => r.json())).rentals.filter((r) => r.estimateId === saved.id);
   assert.deepEqual(await cal('?from=2026-10-01&to=2026-10-31'), [
-    { id: 'rn_lens', estimateId: saved.id, upid: 'UP-B2', projectName: 'Two-day shoot', vendor: 'Lensworks', outDate: '2026-10-02', outMethod: 'pickup', backDate: '2026-10-05', backMethod: 'return' },
-    { id: 'rn_grip', estimateId: saved.id, upid: 'UP-B2', projectName: 'Two-day shoot', vendor: 'Grip Co', outDate: '2026-10-04', outMethod: 'postage', backDate: null, backMethod: null },
+    { id: 'rn_lens', estimateId: saved.id, projectId: saved.projectId, upid: 'UP-B2', projectName: 'Two-day shoot', vendor: 'Lensworks', outDate: '2026-10-02', outMethod: 'pickup', backDate: '2026-10-05', backMethod: 'return' },
+    { id: 'rn_grip', estimateId: saved.id, projectId: saved.projectId, upid: 'UP-B2', projectName: 'Two-day shoot', vendor: 'Grip Co', outDate: '2026-10-04', outMethod: 'postage', backDate: null, backMethod: null },
   ]);
   assert.deepEqual((await cal('?from=2026-10-05&to=2026-10-31')).map((r) => r.id), ['rn_lens']); // the back date, inclusive
   assert.deepEqual((await cal('?from=2026-10-04&to=2026-10-04')).map((r) => r.id), ['rn_lens', 'rn_grip']);
@@ -2157,4 +2168,161 @@ test('projects list: a kept-together project is one card, named and totalled by 
   assert.deepEqual(list.body.projects.map((p) => [p.id, p.upid, p.needsUpid]), [[a.projectId, null, true]]);
   assert.ok(list.body.needsUpid >= 1);
   await dropEstimates(a.id, b.id);
+});
+
+/* ── The project folder (task 18) ──────────────────────────────────────── */
+const T18_TODAY = '2026-10-04';
+const folderOf = (id, today) => api(`/api/projects/${id}?today=${today || T18_TODAY}`)
+  .then(async (r) => ({ status: r.status, body: await r.json() }));
+const act = (id, action, body) => api(`/api/projects/${id}/${action}?today=${T18_TODAY}`, {
+  method: 'POST',
+  body: JSON.stringify(body || {}),
+}).then(async (r) => ({ status: r.status, body: await r.json() }));
+
+test('project folder: the card the list shows, each estimate whole, invoices, and activity newest first', async () => {
+  const est = (await saveEstimate({
+    name: 'T18 Folder', upid: 'T18-FOLD',
+    activeRows: { prod: [capture('d_t18_f1')] },
+    days: [pbDay('d_t18_f1', '2026-10-09', 'pencilled'), pbDay('d_t18_ftbc', null, 'proposed')],
+  })).body.estimate;
+  db.prepare("INSERT INTO invoices (id, project_id, estimate_id, kind, number, status, totals_json, created_at, updated_at) VALUES ('inv_t18f', ?, ?, 'legacy', 'INV-OLD-7', 'sent', '{\"totalIncGst\":1232}', 'x', 'x')")
+    .run(est.projectId, est.id);
+  db.prepare("INSERT INTO activity (id, project_id, at, kind, detail_json) VALUES ('act_t18a', ?, '2026-10-01T00:00:00.000Z', 'note', '{}'), ('act_t18b', ?, '2026-10-02T00:00:00.000Z', 'note', '{\"x\":1}')")
+    .run(est.projectId, est.projectId);
+
+  const f = await folderOf(est.projectId);
+  assert.equal(f.status, 200, JSON.stringify(f.body));
+  const card = (await listProjects({ q: 't18-fold', today: T18_TODAY })).body.projects[0];
+  // One summary for the list, the client and the folder: the folder's adds to it, never differs.
+  for (const key of Object.keys(card)) assert.deepEqual(f.body.project[key], card[key], key);
+  assert.deepEqual([f.body.project.stage, f.body.project.stageDetail.step, f.body.project.nextDay],
+    ['invoiced', 'legacy', { date: '2026-10-09', status: 'pencilled' }]);
+  assert.deepEqual([f.body.project.declinedAt, f.body.project.acceptedAt], [null, null]);
+  assert.deepEqual(f.body.estimates.map((e) => [e.id, e.days.length]), [[est.id, 2]]);
+  assert.deepEqual(f.body.invoices.map((i) => [i.id, i.kind, i.number, i.status, i.estimateId, i.totalIncGst]),
+    [['inv_t18f', 'legacy', 'INV-OLD-7', 'sent', est.id, 1232]]);
+  assert.deepEqual(f.body.activity.map((a) => [a.id, a.detail]), [['act_t18b', { x: 1 }], ['act_t18a', {}]]);
+
+  assert.equal((await folderOf('prj_nope')).status, 404);
+  assert.equal((await folderOf(est.projectId, '2026-13-01')).body.error, 'today_invalid');
+  await dropEstimates(est.id);
+});
+
+test('project folder: Mark sent records the valid-until the stage line reads, and only a draft or sent project can', async () => {
+  const est = (await saveEstimate({ name: 'T18 Send', upid: 'T18-SEND' })).body.estimate;
+  assert.equal((await act(est.projectId, 'sent', {})).body.error, 'valid_until_invalid');
+  assert.equal((await act(est.projectId, 'sent', { validUntil: '2026-02-30' })).body.error, 'valid_until_invalid');
+
+  const sent = await act(est.projectId, 'sent', { validUntil: '2026-11-03' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.equal(sent.body.estimates[0].status, 'sent');
+  assert.deepEqual([sent.body.project.stage, sent.body.project.stageDetail.validUntil, sent.body.project.stageDetail.version],
+    ['sent', '2026-11-03', null]);
+  assert.deepEqual([sent.body.activity[0].kind, sent.body.activity[0].detail], ['sent', { validUntil: '2026-11-03', estimateId: est.id }]);
+  // Sent again after changes: the latest send is the one the line reads, on the list too.
+  const again = await act(est.projectId, 'sent', { validUntil: '2026-11-20' });
+  assert.equal(again.body.project.stageDetail.validUntil, '2026-11-20');
+  assert.equal((await listProjects({ q: 't18-send' })).body.projects[0].stageDetail.validUntil, '2026-11-20');
+
+  db.prepare("UPDATE projects SET accepted_at = 'x' WHERE id = ?").run(est.projectId);
+  assert.deepEqual([(await act(est.projectId, 'sent', { validUntil: '2026-11-20' })).status,
+    (await act(est.projectId, 'sent', { validUntil: '2026-11-20' })).body.error], [409, 'project_accepted']);
+  db.prepare('UPDATE projects SET accepted_at = NULL WHERE id = ?').run(est.projectId);
+  await act(est.projectId, 'decline');
+  assert.equal((await act(est.projectId, 'sent', { validUntil: '2026-11-20' })).body.error, 'project_declined');
+  assert.equal((await act('prj_nope', 'sent', { validUntil: '2026-11-20' })).status, 404);
+  await dropEstimates(est.id);
+});
+
+test('project folder: Decline takes the days off every calendar; Reopen puts them back through the clash check', async () => {
+  const range = '/api/calendar?from=2026-11-01&to=2026-11-30';
+  const mine = async (id) => (await api(range).then((r) => r.json())).days.filter((d) => d.estimateId === id);
+  const a = (await saveEstimate({
+    name: 'T18 Decline', upid: 'T18-DECL',
+    activeRows: { prod: [capture('d_t18_d1'), capture('d_t18_d2'), capture('d_t18_d3')] },
+    days: [pbDay('d_t18_d1', '2026-11-10', 'confirmed'), pbDay('d_t18_d2', '2026-11-11', 'pencilled'),
+      pbDay('d_t18_d3', '2026-11-12', 'proposed')],
+  })).body.estimate;
+  assert.equal((await mine(a.id)).length, 3);
+  assert.equal((await mine(a.id))[0].projectId, a.projectId);
+
+  const declined = await act(a.projectId, 'decline');
+  assert.equal(declined.status, 200, JSON.stringify(declined.body));
+  assert.deepEqual([declined.body.project.stage, declined.body.estimates[0].status, declined.body.activity[0].kind],
+    ['declined', 'declined', 'declined']);
+  assert.ok(declined.body.project.declinedAt);
+  assert.equal((await mine(a.id)).length, 0);
+  // A second decline changes nothing.
+  const twice = await act(a.projectId, 'decline');
+  assert.deepEqual([twice.status, twice.body.project.declinedAt, twice.body.activity.length],
+    [200, declined.body.project.declinedAt, 1]);
+
+  // Meanwhile another project confirms two of its dates and pencils the third.
+  const b = (await saveEstimate({
+    name: 'T18 Taker', upid: 'T18-TAKE',
+    activeRows: { prod: [capture('d_t18_b1'), capture('d_t18_b2'), capture('d_t18_b3')] },
+    days: [pbDay('d_t18_b1', '2026-11-10', 'confirmed'), pbDay('d_t18_b2', '2026-11-11', 'confirmed'),
+      pbDay('d_t18_b3', '2026-11-12', 'pencilled')],
+  })).body.estimate;
+  const refused = await act(a.projectId, 'reopen');
+  assert.deepEqual([refused.status, refused.body.error], [409, 'date_locked']);
+  assert.deepEqual(refused.body.clashes.map((c) => [c.date, c.upid]), [['2026-11-10', 'T18-TAKE'], ['2026-11-11', 'T18-TAKE']]);
+  assert.match(refused.body.message, /2026-11-10 is now confirmed for T18-TAKE \(and 1 more date\)/);
+  assert.equal((await folderOf(a.projectId)).body.project.stage, 'declined');
+
+  // A specification note on each clashing day is the override (D16); the
+  // pencilled date is only named.
+  db.prepare("UPDATE production_days SET override_note = 'Second shooter' WHERE id IN ('d_t18_d1', 'd_t18_d2')").run();
+  const reopened = await act(a.projectId, 'reopen');
+  assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  assert.deepEqual(reopened.body.pencilled.map((c) => [c.date, c.upid]), [['2026-11-12', 'T18-TAKE']]);
+  assert.deepEqual([reopened.body.project.stage, reopened.body.estimates[0].status, reopened.body.project.declinedAt,
+    reopened.body.activity[0].kind], ['draft', 'draft', null, 'reopened']);
+  assert.equal((await mine(a.id)).length, 3);
+  assert.equal((await act(a.projectId, 'reopen')).body.error, 'not_declined');
+
+  // An invoice means the job went ahead: no declining it.
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, created_at, updated_at) VALUES ('inv_t18d', ?, 'deposit', 'INV-T18-DECL-D', 'draft', 'x', 'x')")
+    .run(a.projectId);
+  assert.deepEqual([(await act(a.projectId, 'decline')).status, (await act(a.projectId, 'decline')).body.error],
+    [409, 'has_invoices']);
+  db.prepare("UPDATE invoices SET status = 'void' WHERE id = 'inv_t18d'").run();
+  assert.equal((await act(a.projectId, 'decline')).status, 200);
+  await dropEstimates(a.id, b.id);
+});
+
+test('project folder: Delete takes everything in the project, unless an invoice has gone out', async () => {
+  const est = (await saveEstimate({
+    name: 'T18 Delete', upid: 'T18-DEL',
+    activeRows: { prod: [capture('d_t18_x')] },
+    days: [pbDay('d_t18_x', '2026-12-01', 'pencilled')],
+  })).body.estimate;
+  await act(est.projectId, 'sent', { validUntil: '2026-12-01' });
+  db.prepare("INSERT INTO invoices (id, project_id, estimate_id, kind, number, status, created_at, updated_at) VALUES ('inv_t18x', ?, ?, 'legacy', 'INV-OLD', 'paid', 'x', 'x'), ('inv_t18y', ?, NULL, 'single', 'INV-T18-DEL', 'sent', 'x', 'x')")
+    .run(est.projectId, est.id, est.projectId);
+  const del = () => api(`/api/projects/${est.projectId}`, { method: 'DELETE' }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  const refused = await del();
+  assert.deepEqual([refused.status, refused.body.error], [409, 'has_sent_invoices']);
+  assert.match(refused.body.message, /INV-T18-DEL/);
+
+  // A made-the-old-way invoice goes with it, as deleting its estimate always took it.
+  db.prepare("DELETE FROM invoices WHERE id = 'inv_t18y'").run();
+  assert.equal((await del()).status, 200);
+  const left = (table, col) => db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${col} = ?`);
+  assert.deepEqual([projectRow(est.projectId), left('estimates', 'project_id').get(est.projectId).n,
+    left('production_days', 'estimate_id').get(est.id).n, left('invoices', 'project_id').get(est.projectId).n,
+    left('activity', 'project_id').get(est.projectId).n], [undefined, 0, 0, 0, 0]);
+  assert.equal((await del()).status, 404);
+});
+
+test('estimates: the retired doc type and invoice number are never written (D62), and an old row keeps its own', async () => {
+  const made = await saveEstimate({ upid: 'T18-DOC', docType: 'invoice', invoiceNumber: 'INV-NEW' });
+  assert.deepEqual([made.body.estimate.docType, made.body.estimate.invoiceNumber], ['estimate', '']);
+  db.prepare("UPDATE estimates SET doc_type = 'invoice', invoice_number = 'INV-OLD-3' WHERE id = ?").run(made.body.estimate.id);
+  for (const extra of [{}, { docType: 'estimate', invoiceNumber: '' }]) {
+    const saved = await saveEstimate({ upid: 'T18-DOC', ...extra }, made.body.estimate.id);
+    assert.equal(saved.status, 200);
+    assert.deepEqual([saved.body.estimate.docType, saved.body.estimate.invoiceNumber], ['invoice', 'INV-OLD-3']);
+  }
+  await dropEstimates(made.body.estimate.id);
 });
