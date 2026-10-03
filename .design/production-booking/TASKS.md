@@ -260,7 +260,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
 ## Stage D — Projects and invoices (migration v13)
 
-- [x] **14. Invoice maths** (money math — Opus/high). **Done 2026-10-03, uncommitted.**
+- [x] **14. Invoice maths** (money math — Opus/high). **Done 2026-10-03, committed `bd85aa9`.**
 
   **Done note (2026-10-03).** In both `calc.js` copies: `depositAmount`, `extrasTotals`,
   `finalInvoiceTotals`, `singleInvoiceTotals`, and `WON_STATUSES` gains `accepted`. Worked examples

@@ -47,7 +47,7 @@ Design is complete: Grill Me (D1–D99), `DESIGN_BRIEF.md`, `INFORMATION_ARCHITE
   add Deliverable Types on the Rate Card.
 - **C, tasks 11–13** (hash router `web/js/router.js`, Home calendar dashboard, deploy). **Live
   2026-10-03** (Pages only, `main` `7910c53`). The user skipped the VoiceOver pass on Home.
-- **Stage C code-review fixes, 2026-10-03, uncommitted and not deployed** (Pages only, no server
+- **Stage C code-review fixes, 2026-10-03, committed `ff3f8fa`, not deployed** (Pages only, no server
   change). The router also listens to `popstate`, so Back between two entries with the same
   address (left by a replace: a deleted client's entry becoming the list, or a bad address
   becoming Home) keeps its index in step. Before this, a refused Back could undo by the wrong
@@ -65,8 +65,8 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
 `Production booking: <task>`.
 
 - **D, task 14** (invoice maths in `calc.js`: `depositAmount`, `extrasTotals`,
-  `finalInvoiceTotals`, `singleInvoiceTotals`; `accepted` counts as won). 2026-10-03,
-  **uncommitted**, nothing to deploy alone. See its Done note in `TASKS.md`.
+  `finalInvoiceTotals`, `singleInvoiceTotals`; `accepted` counts as won). 2026-10-03, committed `bd85aa9`,
+  nothing to deploy alone. See its Done note in `TASKS.md`.
 
 **Exact next item: TASKS.md task 15, schema v13** (projects, statuses, invoices, activity; money
 math, Opus/high).
