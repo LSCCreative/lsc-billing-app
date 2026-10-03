@@ -2658,8 +2658,133 @@ function postPlan(activeRows, pricing) {
   return { captureHours, shares, recommended, onPostLines };
 }
 
-/** Statuses that mean the work was won. Draft and sent are still quotes. */
-const WON_STATUSES = ['approved', 'invoiced', 'paid'];
+/* ── Invoices (production-booking task 14) ───────────────────────────────────
+   An accepted estimate is billed as a deposit + final pair, or as one single
+   invoice (D32). Every figure below is built from three numbers in the shape
+   computeTotals returns them — clientPriceExGst, gst, totalIncGst — so the
+   invoice screen and the PDF read each block the way they read an estimate.
+
+   THE ESTIMATE IS NEVER REPRICED. An invoice starts from the totals the
+   estimate stored when it was saved (its snapshot), which is exactly what the
+   client accepted. Extras added after the shoot (Overtime, an extra revision
+   round, D35) are priced on their own through computeTotals (extrasTotals)
+   and added on top, block by block.
+
+   CENTS, AND ONE FIGURE DERIVED. The sums run in whole cents, and each
+   block's ex-GST is its total less its GST, never rounded on its own (the same
+   rule as computeTotals' GST split). So the deposit's ex-GST and GST add up to
+   its total, and deposit + balance is the estimate plus extras exactly, in
+   every one of the three figures. */
+
+/* A stored totals object as whole cents: { ex, gst, total }. Nothing given
+   is nothing billed. */
+function invoiceCents(totals) {
+  const t = totals || {};
+  const total = centsOf(num(t.totalIncGst));
+  const gst = centsOf(num(t.gst));
+  return { ex: total - gst, gst, total };
+}
+
+/* Whole cents back to the three figures computeTotals names. */
+function invoiceFigures(c) {
+  return { clientPriceExGst: c.ex / 100, gst: c.gst / 100, totalIncGst: c.total / 100 };
+}
+
+/**
+ * The deposit (D33, D37): `pct` of the estimate's total inc GST, rounded to the
+ * cent, with GST in the same proportion as the estimate's.
+ *
+ * `pct` IS A PERCENT, as projects.deposit_pct and the setting store it (50 is
+ * 50%), like every other *Pct in this file. A blank, unreadable or negative pct
+ * is no deposit, and one above 100 is the whole total: the routes refuse both
+ * before they get here, and the deposit must never bill more than the job.
+ *
+ * GST is the estimate's GST × deposit ÷ estimate total, rounded to the cent,
+ * and the ex-GST is the rest. On a business that isn't registered (or a
+ * GST-free estimate) that is $0 of GST.
+ *
+ * @param {object} estimateTotals — the estimate's stored totals.
+ * @param {number} pct — 0 to 100.
+ * @returns {{pct:number, clientPriceExGst:number, gst:number, totalIncGst:number}}
+ */
+function depositAmount(estimateTotals, pct) {
+  const raw = numOrNull(pct);
+  const p = raw === null || raw <= 0 ? 0 : Math.min(raw, 100);
+  const job = invoiceCents(estimateTotals);
+  const total = job.total > 0 ? Math.round((job.total * p) / 100) : 0;
+  const gst = job.total > 0 ? Math.round((job.gst * total) / job.total) : 0;
+  return { pct: p, ...invoiceFigures({ ex: total - gst, gst, total }) };
+}
+
+/**
+ * Extras, priced: the lines added to a final or single invoice after the shoot
+ * (D35), through computeTotals like any estimate's lines.
+ *
+ * With no days and no surcharges, whatever the lines carry: an extra is never
+ * surcharged (D14), and Overtime is billed for the hours, not the day. GST
+ * follows the estimate: a GST-free job's extras are GST-free too.
+ *
+ * @param {object} extraRows — activeRows-shaped, normally `{ additional: [...] }`.
+ * @param {object} pricing — the rate card (lines carry their own snapshots).
+ * @param {object} settings — { gst }.
+ * @param {boolean} gstFree — the estimate's own gst_free.
+ * @returns {object} computeTotals' totals for the extras alone.
+ */
+function extrasTotals(extraRows, pricing, settings, gstFree) {
+  return computeTotals(extraRows || {}, pricing, settings, { gstFree: gstFree === true });
+}
+
+/* The full job (the estimate plus extras), less a deposit when there is one. */
+function invoiceTotals(snapshot, extras, deposit) {
+  const job = invoiceCents(snapshot);
+  const add = invoiceCents(extras);
+  const full = { ex: job.ex + add.ex, gst: job.gst + add.gst, total: job.total + add.total };
+  const less = deposit === null ? null : invoiceCents(deposit);
+  const balance = less
+    ? { ex: full.ex - less.ex, gst: full.gst - less.gst, total: full.total - less.total }
+    : full;
+  return {
+    job: invoiceFigures(job),
+    extras: invoiceFigures(add),
+    total: invoiceFigures(full),
+    deposit: less ? invoiceFigures(less) : null,
+    balance: invoiceFigures(balance),
+    balanceDue: balance.total / 100,
+  };
+}
+
+/**
+ * The final invoice (D35): every item of the accepted estimate, plus extras,
+ * then "Less deposit paid", then the balance due.
+ *
+ * The balance is not clamped. Deposit and estimate come from the same snapshot
+ * and pct is at most 100, so it can't go below zero; if a caller ever passed a
+ * deposit from elsewhere, an honest negative balance is easier to catch than a
+ * deposit and balance that no longer add up to the job.
+ *
+ * @param {object} snapshot — the accepted estimate's stored totals.
+ * @param {object|null} extras — extrasTotals(...), or nothing for no extras.
+ * @param {object} deposit — depositAmount(...) as stored on the deposit invoice.
+ * @returns {{job, extras, total, deposit, balance, balanceDue:number}} — each
+ *   block in computeTotals' three figures; balance = total − deposit.
+ */
+function finalInvoiceTotals(snapshot, extras, deposit) {
+  return invoiceTotals(snapshot, extras, deposit || {});
+}
+
+/**
+ * A single invoice (D32, "no deposit"): the accepted estimate plus extras, all
+ * due. The same shape as the final invoice, with `deposit` null.
+ */
+function singleInvoiceTotals(snapshot, extras) {
+  return invoiceTotals(snapshot, extras, null);
+}
+
+/** Statuses that mean the work was won. Draft, sent and declined are not
+    jobs. `accepted` is the one status from migration v13 on (task 15);
+    approved, invoiced and paid are the old ones, still read for any row the
+    migration hasn't reached. */
+const WON_STATUSES = ['accepted', 'approved', 'invoiced', 'paid'];
 
 /**
  * The same calendar date one year earlier, as 'YYYY-MM-DD', computed as text.
@@ -2678,8 +2803,9 @@ function oneYearBefore(ymd) {
  * The average value of a job actually won in the last twelve months — the
  * divisor for "jobs needed per year".
  *
- * Counts an estimate when its status is approved, invoiced or paid (a draft or
- * a sent quote is not a job), its date falls after the same date a year ago
+ * Counts an estimate when its status is accepted (or, on a row not yet
+ * migrated, approved, invoiced or paid; a draft, a sent or a declined estimate
+ * is not a job), its date falls after the same date a year ago
  * (future-dated bookings count: they are won work), and its ex-GST client price
  * is above zero. The price is `totals.clientPriceExGst` as stored at save time —
  * what the job was actually quoted at, not a re-pricing against today's card.
@@ -2848,6 +2974,10 @@ if (typeof module === 'object' && module.exports) {
     surchargeSummary,
     bookedHoursOf,
     postPlan,
+    depositAmount,
+    extrasTotals,
+    finalInvoiceTotals,
+    singleInvoiceTotals,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,
@@ -2908,6 +3038,10 @@ if (typeof module === 'object' && module.exports) {
     surchargeSummary,
     bookedHoursOf,
     postPlan,
+    depositAmount,
+    extrasTotals,
+    finalInvoiceTotals,
+    singleInvoiceTotals,
     averageJobValue,
     jobsNeededPerYear,
     postRatioReadout,

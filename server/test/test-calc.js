@@ -3112,3 +3112,178 @@ test('a travel, crew or equipment line on a Saturday after-hours short-notice da
   assert.deepEqual(b.travel.map((l) => l.amount), [105, 72, 40, 120]);
   assert.deepEqual([b.crew[0].amount, b.equip[0].amount], [600, 300]);
 });
+
+/* ── Invoices (production-booking task 14) ─────────────────────────────────
+   The brief's worked example: a $5,000 estimate at a 50% deposit, and $420 of
+   Overtime added to the final. A deposit is a PERCENT (50 is 50%). */
+const { depositAmount, extrasTotals, finalInvoiceTotals, singleInvoiceTotals } = require('../src/calc');
+
+const INVOICE_CARD = {
+  labourSections: [
+    { id: 'prod', label: 'Production', rows: [] },
+    { id: 'additional', label: 'Additional work', rows: [{ id: 'r_ot', name: 'Overtime — per hour', prices: { hour: 210, half: null, full: null } }] },
+  ],
+  travelRows: [],
+};
+// Two hours of Overtime, snapshotted at $210 when it was added: $420 on the card.
+const OVERTIME = { additional: [{ name: 'Overtime — per hour', rowId: 'r_ot', qty: 2, mu: 210, hoursPerUnit: 1 }] };
+const figures = (ex, gst, total) => ({ clientPriceExGst: ex, gst, totalIncGst: total });
+
+test('invoices worked example, unregistered: $5,000 at 50% is $2,500, and the final is $5,420 − $2,500 = $2,920', () => {
+  const unreg = settingsWith({ registered: false });
+  const estimate = computeTotals({ prod: [{ name: 'Shoot', qty: 1, mu: 5000, hoursPerUnit: 8 }] }, INVOICE_CARD, unreg);
+  assert.deepEqual([estimate.clientPriceExGst, estimate.gst, estimate.totalIncGst], [5000, 0, 5000]);
+
+  const deposit = depositAmount(estimate, 50);
+  assert.deepEqual(deposit, { pct: 50, ...figures(2500, 0, 2500) });
+
+  const extras = extrasTotals(OVERTIME, INVOICE_CARD, unreg, false);
+  assert.equal(extras.totalIncGst, 420);
+
+  const final = finalInvoiceTotals(estimate, extras, deposit);
+  assert.deepEqual(final, {
+    job: figures(5000, 0, 5000),
+    extras: figures(420, 0, 420),
+    total: figures(5420, 0, 5420),
+    deposit: figures(2500, 0, 2500),
+    balance: figures(2920, 0, 2920),
+    balanceDue: 2920,
+  });
+});
+
+test('invoices worked example, GST-inclusive card: the same $2,920 due, with GST split to the cent', () => {
+  const inc = settingsWith(GST_INCLUSIVE);
+  const estimate = figures(4545.45, 454.55, 5000); // as computeTotals stores $5,000 inc GST
+  // GST is 454.55 × 2,500 / 5,000 = 227.275, rounded to 227.28; ex-GST is the rest.
+  const deposit = depositAmount(estimate, 50);
+  assert.deepEqual(deposit, { pct: 50, ...figures(2272.72, 227.28, 2500) });
+
+  const extras = extrasTotals(OVERTIME, INVOICE_CARD, inc, false);
+  assert.deepEqual([extras.clientPriceExGst, extras.gst, extras.totalIncGst], [381.82, 38.18, 420]);
+
+  const final = finalInvoiceTotals(estimate, extras, deposit);
+  assert.deepEqual(final.total, figures(4927.27, 492.73, 5420));
+  assert.deepEqual(final.balance, figures(2654.55, 265.45, 2920));
+  assert.equal(final.balanceDue, 2920);
+});
+
+test('invoices worked example, GST-exclusive card: $5,000 + GST is $5,500, deposit $2,750, balance $3,212', () => {
+  const exc = settingsWith(GST_EXCLUSIVE);
+  const estimate = computeTotals({ prod: [{ name: 'Shoot', qty: 1, mu: 5000, hoursPerUnit: 8 }] }, INVOICE_CARD, exc);
+  assert.deepEqual([estimate.clientPriceExGst, estimate.gst, estimate.totalIncGst], [5000, 500, 5500]);
+
+  const deposit = depositAmount(estimate, 50);
+  assert.deepEqual(deposit, { pct: 50, ...figures(2500, 250, 2750) });
+
+  const extras = extrasTotals(OVERTIME, INVOICE_CARD, exc, false);
+  const final = finalInvoiceTotals(estimate, extras, deposit);
+  assert.deepEqual(final.extras, figures(420, 42, 462));
+  assert.deepEqual(final.total, figures(5420, 542, 5962));
+  // Ex GST, the balance is the brief's $5,420 − $2,500 = $2,920.
+  assert.deepEqual(final.balance, figures(2920, 292, 3212));
+  assert.equal(final.balanceDue, 3212);
+});
+
+test('deposit: 30% and 0%, and a pct that is blank, negative, over 100 or text', () => {
+  const unregJob = figures(5000, 0, 5000);
+  const incJob = figures(4545.45, 454.55, 5000);
+  assert.deepEqual(depositAmount(unregJob, 30), { pct: 30, ...figures(1500, 0, 1500) });
+  // 454.55 × 0.3 = 136.365, rounded to 136.37.
+  assert.deepEqual(depositAmount(incJob, 30), { pct: 30, ...figures(1363.63, 136.37, 1500) });
+  assert.deepEqual(depositAmount(incJob, 0), { pct: 0, ...figures(0, 0, 0) });
+  // GST is split on the deposit as rounded, not on the percent: 30% of $1,000.41 is $300.12,
+  // whose GST is 300.12 ÷ 11 = 27.28. Taking 30% of the GST instead gives 27.29.
+  assert.deepEqual(depositAmount(figures(909.46, 90.95, 1000.41), 30), { pct: 30, ...figures(272.84, 27.28, 300.12) });
+  // The whole job is the estimate's own figures, GST and all.
+  assert.deepEqual(depositAmount(incJob, 100), { pct: 100, ...incJob });
+
+  // A PERCENT, not a fraction: 0.5 is half of one percent.
+  assert.deepEqual(depositAmount(unregJob, 0.5), { pct: 0.5, ...figures(25, 0, 25) });
+  assert.deepEqual(depositAmount(unregJob, '50'), { pct: 50, ...figures(2500, 0, 2500) });
+  for (const none of [undefined, null, '', 'half', -10, NaN]) {
+    assert.deepEqual(depositAmount(unregJob, none), { pct: 0, ...figures(0, 0, 0) }, String(none));
+  }
+  assert.deepEqual(depositAmount(incJob, 150), { pct: 100, ...incJob });
+  assert.deepEqual(depositAmount(undefined, 50), { pct: 50, ...figures(0, 0, 0) });
+
+  // With no deposit, the final is the whole job.
+  const final = finalInvoiceTotals(incJob, null, depositAmount(incJob, 0));
+  assert.deepEqual(final.balance, incJob);
+  assert.equal(final.balanceDue, 5000);
+});
+
+test('single invoice: the estimate plus extras, all due, no deposit', () => {
+  const inc = settingsWith(GST_INCLUSIVE);
+  const single = singleInvoiceTotals(figures(4545.45, 454.55, 5000), extrasTotals(OVERTIME, INVOICE_CARD, inc, false));
+  assert.deepEqual(single, {
+    job: figures(4545.45, 454.55, 5000),
+    extras: figures(381.82, 38.18, 420),
+    total: figures(4927.27, 492.73, 5420),
+    deposit: null,
+    balance: figures(4927.27, 492.73, 5420),
+    balanceDue: 5420,
+  });
+  // No extras: exactly the estimate.
+  assert.deepEqual(singleInvoiceTotals(figures(1234.57, 0, 1234.57), null).balance, figures(1234.57, 0, 1234.57));
+});
+
+test('extras follow the estimate\'s GST-free tick and are never surcharged', () => {
+  const exc = settingsWith(GST_EXCLUSIVE);
+  assert.deepEqual(
+    [extrasTotals(OVERTIME, INVOICE_CARD, exc, true).gst, extrasTotals(OVERTIME, INVOICE_CARD, exc, true).totalIncGst],
+    [0, 420],
+  );
+  // Only `=== true` drops GST, as computeTotals' gstFree.
+  assert.equal(extrasTotals(OVERTIME, INVOICE_CARD, exc, 'yes').gst, 42);
+  // A production line with a dayId, even on a Saturday, prices at its base: an extra carries no days.
+  const onDay = { prod: [{ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8, dayId: 'd_sat' }] };
+  const t = extrasTotals(onDay, INVOICE_CARD, settingsWith({ registered: false }), false);
+  assert.deepEqual([t.totalIncGst, t.surchargeTotal], [1120, 0]);
+  assert.deepEqual(extrasTotals(undefined, INVOICE_CARD, exc, false).totalIncGst, 0);
+});
+
+test('invoices: across a sweep of totals, percents and GST cards, deposit + balance is the estimate plus extras to the cent', () => {
+  const cards = [settingsWith({ registered: false }), settingsWith(GST_EXCLUSIVE), settingsWith(GST_INCLUSIVE)];
+  let checked = 0;
+  for (const settings of cards) {
+    for (let mu = 97.13; mu < 9000; mu += 731.37) {
+      const estimate = computeTotals({ prod: [{ name: 'Shoot', qty: 1, mu, hoursPerUnit: 8 }] }, INVOICE_CARD, settings);
+      for (const extraHours of [0, 1.5, 3]) {
+        const extras = extrasTotals({ additional: [{ ...OVERTIME.additional[0], qty: extraHours, mu: mu / 7 }] }, INVOICE_CARD, settings, false);
+        for (const pct of [0, 10, 25, 30, 33.3, 50, 66.67, 100]) {
+          const deposit = depositAmount(estimate, pct);
+          const label = `mu ${mu}, pct ${pct}, extras ${extraHours}`;
+          assert.equal(cents(deposit.clientPriceExGst) + cents(deposit.gst), cents(deposit.totalIncGst), label);
+          const final = finalInvoiceTotals(estimate, extras, deposit);
+          for (const key of ['clientPriceExGst', 'gst', 'totalIncGst']) {
+            assert.equal(cents(deposit[key]) + cents(final.balance[key]), cents(estimate[key]) + cents(extras[key]), `${key}, ${label}`);
+          }
+          assert.equal(cents(final.balance.clientPriceExGst) + cents(final.balance.gst), cents(final.balance.totalIncGst), label);
+          assert.ok(final.balance.totalIncGst >= 0, label);
+          const single = singleInvoiceTotals(estimate, extras);
+          assert.equal(cents(single.balanceDue), cents(final.balanceDue) + cents(deposit.totalIncGst), label);
+          checked += 1;
+        }
+      }
+    }
+  }
+  assert.equal(checked, 3 * 13 * 3 * 8);
+});
+
+test('average job value counts accepted estimates; declined and sent ones are not jobs', () => {
+  const job = (status, date, price) => ({ status, date, totals: { clientPriceExGst: price } });
+  assert.deepEqual(
+    averageJobValue(
+      [
+        job('accepted', '2026-09-01', 3000),
+        job('approved', '2026-08-01', 1000), // not yet migrated: still read
+        job('declined', '2026-09-01', 9000),
+        job('sent', '2026-09-01', 9000),
+        job('draft', '2026-09-01', 9000),
+      ],
+      '2026-10-03',
+    ),
+    { average: 2000, count: 2 },
+  );
+  assert.equal(averageJobValue([job('declined', '2026-09-01', 9000)], '2026-10-03'), null);
+});
