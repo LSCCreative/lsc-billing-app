@@ -363,9 +363,9 @@ times.
             (the main one: the pre-B2 Custom, Direct and Your time ticks got the same 44px
             label as Capture) and the VoiceOver checklist.
 
-**Exact next item: TASKS.md B2-13, deploy B2** (deploy, Sonnet/medium; **ask the user first**).
-Commit B2-12 before it. The deploy goes NAS v12 before Pages, because `PRICING_SHAPE` changes.
-After B2 is deployed, task 11, the hash router (Stage C; frontend, Opus/high).
+**B2-13 done 2026-10-03: B2 is deployed** (NAS v12, then Pages run 37094465617, `main` at `930249c`; B2-12 committed `930249c`). Still for the user: tick Capture on their real capture services and add their Deliverable Types on the Rate Card.
+
+**Exact next item: TASKS.md task 11, the hash router** (Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the

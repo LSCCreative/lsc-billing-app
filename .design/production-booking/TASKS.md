@@ -2084,7 +2084,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **`not (any-pointer: fine)` needs Safari 16.4+ or Chrome 104+.** An older engine ignores
       the rule and shows the handle, where a press still opens the list.
 
-- [ ] **B2-13. Deploy B2** (deploy — Sonnet/medium). **Ask first.** NAS before Pages:
+- [x] **B2-13. Deploy B2** (deploy — Sonnet/medium). **Deployed 2026-10-03** (backup `pre-v12-20261003-1346.db`, integrity ok; `server/` tar-copied excluding `node_modules`, `data`, `.env`, `docker-compose.yml`, the last two md5-identical after; boot log `[db] migrated to v12 — gear rentals`, `healthy`; container carries `deliverable-types`, `rentals` table present, `/api/calendar` 401 signed out and its route reads `rentals`; Pages run 37094465617 success, `main` at `930249c`, live `index.html` carries `calendar.js?v=930249c5`). **Ask first.** NAS before Pages:
   1. back up;
   2. NAS v12 (check the boot log);
   3. check that `/api/calendar` returns `rentals`;
