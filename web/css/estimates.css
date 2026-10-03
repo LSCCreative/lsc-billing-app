@@ -656,3 +656,123 @@
 .post-tag.is-unnamed {
   font-style: italic;
 }
+
+/* ── The surcharge box (production-booking B2-11, D87) ─────────────────────
+   Bordered like the summary bars it sits above, so it reads as part of the
+   totals block. A list: what and where on the left, the $ right, then the
+   total under a rule — the one place in the box the reader is asked to see a
+   sum. Owner-only, and not a headline figure, so it stays neutral. */
+.sur-box {
+  margin: 0 0 24px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+}
+.sur-box[hidden],
+.sur-box-rows[hidden],
+.sur-box-total[hidden],
+.sur-box-none[hidden] {
+  display: none;
+}
+.sur-box-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.sur-box-h {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+.sur-box-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sur-box-row,
+.sur-box-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 16px;
+}
+.sur-box-row {
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.sur-box-detail {
+  color: var(--muted);
+}
+.sur-box-amt {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sur-box-total {
+  margin: 8px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.sur-box-total-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.sur-box-total .sur-box-amt {
+  grid-row: span 2;
+  font-size: 17px;
+}
+.sur-box-note,
+.sur-box-none {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── The Totals row (B2-11, D88) ───────────────────────────────────────────
+   The page's last word: every figure a step up from the bar above (19px),
+   and Total (inc GST) above the 30px page title, the largest on the screen.
+   Prefixed with .totals-row so these outrank the bands' plain .sum-value
+   sizes in responsive.css, which load later. */
+.totals-row .sum-value {
+  font-size: 25px;
+  line-height: 1.15;
+}
+.totals-row .sum-value.tot-main {
+  font-size: 36px;
+}
+/* The take-home ⓘ (D88) inside a 9px label: kept from growing the line. */
+.totals-row .sum-label .info {
+  margin: -5px 0;
+}
+.totals-row .sum-label .info-btn {
+  vertical-align: middle;
+}
+@media (max-width: 1099px) {
+  .totals-row .sum-value {
+    font-size: 20px;
+  }
+  .totals-row .sum-value.tot-main {
+    font-size: 28px;
+  }
+}
+@media (max-width: 767px) {
+  .totals-row .sum-value {
+    font-size: 22px;
+  }
+  .totals-row .sum-value.tot-main {
+    font-size: 30px;
+  }
+  .sur-box {
+    padding: 12px 14px;
+  }
+}

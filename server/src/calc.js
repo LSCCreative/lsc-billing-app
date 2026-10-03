@@ -2515,6 +2515,74 @@ function costBreakdown(activeRows, pricing, options) {
   };
 }
 
+/**
+ * The editor's surcharge box (production-booking B2-11, D87): the Cost
+ * Breakdown's surcharge rows, gathered per day. Its figures ARE the Cost
+ * Breakdown's, so the box and the PDF can never disagree.
+ *
+ * One row per day, surcharge type and multiplier, carry-over rows apart: two
+ * items on one Saturday make one "Weekend ×1.5" row, with both items' $ in it.
+ * Rows follow the days' order; within a day, weekend, public holiday, after
+ * hours, then the carry-overs. Short notice is the breakdown's one row for the
+ * whole estimate.
+ *
+ * Every row's `amount` is a sum of whole cents, and so is `total`: the rows
+ * and short notice add up to it exactly, and it is the breakdown's
+ * surchargeTotal.
+ *
+ * @param {object} breakdown — what costBreakdown returned.
+ * @returns {{rows:Array<{dayId:string, date:string|null, carryDate:string|null,
+ *   type:string, multiplier:number, carry:boolean, amount:number,
+ *   items:Array<{name:string, hours:number, coveredHours:number,
+ *   share:number, timed:boolean}>}>,
+ *   shortNotice:{multiplier:number, amount:number, items:number}|null,
+ *   total:number}} `items` are the production items behind a row, each with
+ *   the hours it applied to of the hours that item covers (`timed` false when
+ *   the day has no times, so there are no hours to divide).
+ */
+function surchargeSummary(breakdown) {
+  const b = breakdown || {};
+  const ORDER = ['weekend', 'holiday', 'afterHours'];
+  const rank = (r) => (r.carry ? ORDER.length : 0) + ORDER.indexOf(r.type);
+  const rows = [];
+  let cents = 0;
+  (Array.isArray(b.days) ? b.days : []).forEach((day) => {
+    const byKey = new Map();
+    day.lines.forEach((l) => {
+      l.surcharges.forEach((r) => {
+        const key = r.type + '|' + r.multiplier + (r.carry ? '|carry' : '');
+        let row = byKey.get(key);
+        if (!row) {
+          row = {
+            dayId: day.id,
+            date: day.date,
+            carryDate: r.carry ? l.carryDate : null,
+            type: r.type,
+            multiplier: r.multiplier,
+            carry: r.carry,
+            cents: 0,
+            items: [],
+          };
+          byKey.set(key, row);
+        }
+        row.cents += centsOf(r.amount);
+        row.items.push({ name: l.name, hours: r.hours, coveredHours: l.coveredHours, share: r.share, timed: Boolean(l.window) });
+      });
+    });
+    Array.from(byKey.values())
+      .sort((x, y) => rank(x) - rank(y))
+      .forEach((row) => {
+        cents += row.cents;
+        const out = Object.assign({}, row, { amount: row.cents / 100 });
+        delete out.cents;
+        rows.push(out);
+      });
+  });
+  const shortNotice = b.shortNotice ? Object.assign({}, b.shortNotice) : null;
+  if (shortNotice) cents += centsOf(shortNotice.amount);
+  return { rows, shortNotice, total: cents / 100 };
+}
+
 /* ── The post-production planner (production-booking B2-1) ──────────────────
    Suggests, never prices (the brief's B2 principle 2): nothing here reaches
    computeTotals, a stored line or a client document. The owner types the post
@@ -2777,6 +2845,7 @@ if (typeof module === 'object' && module.exports) {
     surchargeSnapshot,
     stampSurchargedPrices,
     costBreakdown,
+    surchargeSummary,
     bookedHoursOf,
     postPlan,
     averageJobValue,
@@ -2836,6 +2905,7 @@ if (typeof module === 'object' && module.exports) {
     surchargeSnapshot,
     stampSurchargedPrices,
     costBreakdown,
+    surchargeSummary,
     bookedHoursOf,
     postPlan,
     averageJobValue,

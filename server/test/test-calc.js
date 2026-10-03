@@ -2818,6 +2818,109 @@ test('costBreakdown: a sweep of prices, days, modes and GST cards always adds up
   assert.equal(checked, 3 * 2 * 3 * 11);
 });
 
+/* ── The editor's surcharge box (production-booking B2-11, D87) ───────────
+   The Cost Breakdown's surcharge rows, one per day and kind. The box and the
+   PDF read the same figures, so they agree to the cent. */
+const { surchargeSummary } = require('../src/calc');
+
+const boxRows = (s) => s.rows.map((r) => [r.dayId, r.type, r.multiplier, r.carry, r.amount, r.items.length]);
+const cents = (n) => Math.round(n * 100);
+
+test('surchargeSummary: two items on a Saturday are one weekend row; short notice is one row; it all adds up', () => {
+  const drone = capture({ name: 'Drone', dayId: 'd_sat', dayUnit: undefined, hoursPerUnit: 1, mu: 150, qty: 2 });
+  const rows = { prod: [capture({ dayId: 'd_sat' }), drone, capture({ dayId: 'd_fri' })] };
+  const { totals, b } = breakdownOf(rows, UNREG, booked([SAT_DAY, FRI_DAY], { shortNotice: true }));
+  const s = surchargeSummary(b);
+  // Saturday: $560 on the full day and $150 on the drone's $300. Friday's full day covers 9–5: nothing.
+  assert.deepEqual(boxRows(s), [['d_sat', 'weekend', 1.5, false, 710, 2]]);
+  assert.deepEqual([s.rows[0].date, s.rows[0].carryDate], [SAT, null]);
+  // Short notice ×2 on the three items' surcharged prices: 1,680 + 450 + 1,120.
+  assert.deepEqual(s.shortNotice, { multiplier: 2, amount: 3250, items: 3 });
+  assert.equal(s.total, 3960);
+  assert.equal(s.total, b.surchargeTotal);
+  assert.equal(s.total, totals.surchargeTotal);
+});
+
+test('surchargeSummary: a row names the hours each item covered; carry-overs are their own rows, after the day\'s', () => {
+  const day = { ...FRI_DAY, startTime: '15:00', endTime: '21:00' };
+  const drone = capture({ name: 'Drone', dayId: 'd_fri', dayUnit: undefined, hoursPerUnit: 1, mu: 150, qty: 2 });
+  const one = surchargeSummary(breakdownOf({ prod: [capture({ dayId: 'd_fri' }), drone] }, UNREG, booked([day])).b);
+  // Only the full day reaches past 5pm: 4 of its 6 hrs. The drone (3–5pm) isn't in the row.
+  assert.deepEqual(boxRows(one), [['d_fri', 'afterHours', 1.25, false, 187, 1]]);
+  assert.deepEqual(one.rows[0].items, [{ name: 'Video Capture', hours: 4, coveredHours: 6, share: 4 / 6, timed: true }]);
+
+  const fri = { id: 'd_fn', date: FRI, status: 'confirmed', startTime: '20:00', endTime: '02:00' };
+  const sun = { id: 'd_sn', date: '2026-10-04', status: 'confirmed', startTime: '20:00', endTime: '03:00' };
+  const { totals, b } = breakdownOf({ prod: [capture({ dayId: 'd_fn' }), capture({ dayId: 'd_sn' })] }, UNREG, booked([fri, sun]));
+  const s = surchargeSummary(b);
+  assert.deepEqual(boxRows(s), [
+    ['d_fn', 'afterHours', 1.25, false, 186.67, 1],
+    ['d_fn', 'weekend', 1.5, true, 187.33, 1],
+    ['d_sn', 'weekend', 1.5, false, 320, 1],
+    ['d_sn', 'afterHours', 1.25, true, 120, 1],
+  ]);
+  assert.deepEqual(s.rows.map((r) => r.carryDate), [null, SAT, null, '2026-10-05']);
+  assert.deepEqual([s.shortNotice, s.total, totals.surchargeTotal], [null, 814, 814]);
+});
+
+test('surchargeSummary: rows are in a fixed order within a day, whichever item came first', () => {
+  // Sat 5am–1pm, only the highest rate, after hours ×2: the drone (5–6am) is all after hours;
+  // the full day (5am–1pm) is after hours until the 7am office start, weekend after.
+  const day = { ...SAT_DAY, startTime: '05:00', endTime: '13:00' };
+  const drone = capture({ name: 'Drone', dayId: 'd_sat', dayUnit: undefined, hoursPerUnit: 1, mu: 150, qty: 1 });
+  const opts = booked([day]);
+  Object.assign(opts.surcharges.settings, { mode: 'highest', afterHours: 2 });
+  const { totals, b } = breakdownOf({ prod: [drone, capture({ dayId: 'd_sat' })] }, UNREG, opts);
+  assert.deepEqual(b.days[0].lines.map((l) => l.surcharges.map((r) => r.type)), [['afterHours'], ['weekend', 'afterHours']]);
+  const s = surchargeSummary(b);
+  assert.deepEqual(s.rows.map((r) => [r.type, r.items.length]), [['weekend', 1], ['afterHours', 2]]);
+  assert.equal(s.total, totals.surchargeTotal);
+});
+
+test('surchargeSummary: nothing surcharged, or no days at all, is no rows and a zero total', () => {
+  const plain = surchargeSummary(breakdownOf({ prod: [capture({ dayId: 'd_fri' })] }, UNREG, booked([FRI_DAY, TBC_DAY])).b);
+  assert.deepEqual([plain.rows, plain.shortNotice, plain.total], [[], null, 0]);
+  const none = surchargeSummary(breakdownOf({ prod: [capture()] }, UNREG, {}).b);
+  assert.deepEqual([none.rows, none.shortNotice, none.total], [[], null, 0]);
+  assert.deepEqual(surchargeSummary(undefined), { rows: [], shortNotice: null, total: 0 });
+  // Short notice with every line on no day is still a surcharge, and the box's to show.
+  const loose = surchargeSummary(breakdownOf({ prod: [capture()] }, UNREG, { shortNotice: true, surcharges: booked([]).surcharges }).b);
+  assert.deepEqual([loose.rows, loose.shortNotice, loose.total], [[], { multiplier: 2, amount: 1120, items: 1 }, 1120]);
+});
+
+test('surchargeSummary: across a sweep of prices, days, modes and GST cards, the rows add up to surchargeTotal to the cent', () => {
+  const LATE = { id: 'd_late', date: FRI, status: 'proposed', startTime: '18:00', endTime: '02:00' };
+  const SUN = { id: 'd_sun', date: '2026-10-04', status: 'pencilled', startTime: '19:30', endTime: '04:15' };
+  let checked = 0;
+  for (const mode of ['higher', 'multiply', 'highest']) {
+    for (const shortNotice of [false, true]) {
+      for (const settings of [UNREG, settingsWith(GST_INCLUSIVE)]) {
+        for (let mu = 97; mu < 1500; mu += 137) {
+          const rows = {
+            prod: [capture({ dayId: 'd_sat', mu }), capture({ dayId: 'd_fri', mu: mu + 3, qty: 2 }),
+              capture({ dayId: 'd_late', mu: mu / 3 }), capture({ dayId: 'd_tbc', override: mu + 0.5 }), capture({ mu }),
+              capture({ dayId: 'd_sun', mu: mu + 7, dayUnit: undefined, hoursPerUnit: 1, qty: 3.5 }),
+              capture({ dayId: 'd_late', mu: mu + 1, dayUnit: 'half', hoursPerUnit: 4 })],
+          };
+          const opts = booked([SAT_DAY, FRI_DAY, LATE, TBC_DAY, SUN], { shortNotice });
+          opts.surcharges.settings.mode = mode;
+          const { totals, b } = breakdownOf(rows, settings, opts);
+          const s = surchargeSummary(b);
+          const sum = s.rows.reduce((n, r) => n + cents(r.amount), 0) + (s.shortNotice ? cents(s.shortNotice.amount) : 0);
+          assert.equal(sum, cents(s.total), `mode ${mode}, mu ${mu}`);
+          assert.equal(cents(s.total), cents(b.surchargeTotal));
+          assert.equal(cents(s.total), cents(totals.surchargeTotal));
+          // Every item row the PDF prints is in exactly one box row.
+          const itemRows = b.days.reduce((n, d) => n + d.lines.reduce((m, l) => m + l.surcharges.length, 0), 0);
+          assert.equal(s.rows.reduce((n, r) => n + r.items.length, 0), itemRows);
+          checked += 1;
+        }
+      }
+    }
+  }
+  assert.equal(checked, 3 * 2 * 2 * 11);
+});
+
 /* ── The post-production planner (production-booking B2-1) ────────────────
    The brief's B2 Key Interactions 3. Suggests only: postPlan never reaches
    computeTotals, so these figures guide the owner's typed post hours and

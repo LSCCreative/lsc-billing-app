@@ -2068,17 +2068,19 @@ const EstimateEditor = (() => {
     );
   }
 
-  /* "Surcharges +$X ⓘ" (brief, Key Interactions 2.6): owner-only, and not a
-     headline figure — it is already inside the Labour Subtotal — so it takes
-     the advisory line's shape rather than a .sum-item. Shown only when a
-     surcharge applies; not under the overhead switch, which governs the two
-     advisory floors, not this. The ⓘ's first paragraph is the estimate's own
-     settings, filled by paintSurcharges(). */
-  function surchargeLineMarkup() {
+  /* The surcharge box (B2-11, D87): one row per surcharge applied, from the
+     Cost Breakdown's own figures (calc.js surchargeSummary), then the total,
+     already folded into the prices. Owner-only, and not a headline figure —
+     it is already inside the Labour Subtotal — so it sits above the totals
+     as a list, not as a .sum-item. Not under the overhead switch, which
+     governs the two advisory floors, not this. Hidden with no days and
+     nothing surcharged; "No surcharges apply." with days and none. The ⓘ's
+     first paragraph is the estimate's own settings, filled by
+     paintSurcharges(). */
+  function surchargeBoxMarkup() {
     return (
-      '<div class="mjp-line sur-line" id="sur-line" hidden>' +
-      '<span class="mjp-line-label">Surcharges</span>' +
-      '<span class="mjp-line-fig"><span class="mjp-line-value" id="s-surcharges">+$0.00</span>' +
+      '<section class="sur-box" id="sur-box" aria-labelledby="sur-box-h" hidden>' +
+      '<div class="sur-box-head"><h2 class="sur-box-h" id="sur-box-h">Surcharges</h2>' +
       LSCInfo.markup({
         id: 'surcharges',
         label: 'How the surcharges are worked out',
@@ -2093,14 +2095,46 @@ const EstimateEditor = (() => {
             'rates</strong> takes today’s Rate Card and public holidays.',
         ],
       }) +
-      '</span>' +
-      '<span class="mjp-line-note">already in the Labour Subtotal, folded into each production line’s price</span>' +
-      '</div>'
+      '</div>' +
+      '<ul class="sur-box-rows" id="sur-box-rows"></ul>' +
+      '<p class="sur-box-none" id="sur-box-none" hidden>No surcharges apply.</p>' +
+      '<p class="sur-box-total" id="sur-box-total"><span class="sur-box-total-label">Total surcharges</span>' +
+      '<span class="sur-box-amt" id="s-surcharges">+$0.00</span>' +
+      '<span class="sur-box-note">already folded into each production line’s price</span></p>' +
+      '</section>'
     );
+  }
+
+  /* One row of the box: what, where and how much. The detail says the hours
+     a rate reached only when it reached part of an item's hours (after hours,
+     a carry-over), as the announcement does; a whole day's rate needs none. */
+  const SUR_BOX_WORD = { weekend: 'Weekend rate', holiday: 'Public holiday rate', afterHours: 'After hours' };
+  function surBoxRowMarkup(label, detail, amount) {
+    return '<li class="sur-box-row"><span class="sur-box-what">' + label +
+      (detail ? ' <span class="sur-box-detail">· ' + detail + '</span>' : '') + '</span>' +
+      '<span class="sur-box-amt">+' + fmt(amount) + '</span></li>';
+  }
+  function surBoxHours(items) {
+    const partial = items.filter((it) => it.timed && it.share < 1 - 1e-9);
+    const many = items.length > 1 ? plural(items.length, 'item', 'items') : '';
+    if (!partial.length) return many;
+    const of = (it) => LSCRows.hrsText(it.hours).replace(/ hrs?$/, '') + ' of ' + LSCRows.hrsText(it.coveredHours);
+    const same = items.every((it) => it.timed && of(it) === of(items[0]));
+    if (same) return 'on ' + of(items[0]) + (many ? ', ' + many : '');
+    return 'on part of ' + many;
+  }
+  function surBoxDayRow(r) {
+    const when = r.date ? LSCCalendar.shortDate(r.date) : 'Date TBC';
+    const label = r.carry && r.carryDate
+      ? esc(when + ' → ' + LSCCalendar.shortDate(r.carryDate)) + ' · ' + SUR_BOX_WORD[r.type] + ' ×' + r.multiplier + ' after midnight'
+      : esc(when) + ' · ' + SUR_BOX_WORD[r.type] + ' ×' + r.multiplier;
+    return surBoxRowMarkup(label, esc(surBoxHours(r.items)), r.amount);
   }
 
   function summaryMarkup() {
     return (
+      // D98: "On set, by day" → surcharge box → totals.
+      surchargeBoxMarkup() +
       overheadToggleMarkup() +
       '<div class="summary-bar">' +
       '<div class="sum-item"><div class="sum-label">Total Hours</div><div class="sum-value" id="s-hours">0</div></div>' +
@@ -2109,21 +2143,30 @@ const EstimateEditor = (() => {
       '<div class="sum-item"><div class="sum-label">Client Price (ex GST)</div><div class="sum-value" id="s-client-price">$0.00</div></div>' +
       '<div class="sum-item"><div class="sum-label">GST</div><div class="sum-value" id="s-gst" style="font-size:15px">$0.00</div></div>' +
       '</div>' +
-      '<div class="summary-bar" style="margin-bottom:24px">' +
+      /* The Totals row, the page's last word (D88): its figures a step up
+         from the bar above, Total (inc GST) the largest on the screen. */
+      '<div class="summary-bar totals-row" style="margin-bottom:24px">' +
       /* The two-column spans are a class, not the inline style they used to be:
          the mobile band stacks this bar into one column, and an inline
          grid-column would have needed !important to undo — which would then be
          undoable by nothing. Identical at every other width. */
       '<div class="sum-item sum-span2" style="background:rgba(184,84,68,0.08);border:1px solid rgba(184,84,68,0.3)">' +
       '<div class="sum-label sum-label-strong">Total (inc GST)</div>' +
-      '<div class="sum-value accent" id="s-total">$0.00</div></div>' +
+      '<div class="sum-value accent tot-main" id="s-total">$0.00</div></div>' +
       '<div class="sum-item"><div class="sum-label">Tax Set-Aside</div>' +
-      '<div class="sum-value" id="s-tax" style="font-size:15px">$0.00</div></div>' +
+      '<div class="sum-value" id="s-tax">$0.00</div></div>' +
       '<div class="sum-item sum-span2">' +
-      '<div class="sum-label">Est. Take-Home <span class="sum-label-note">(income ex GST, less the overhead its hours carry and the tax set-aside — pass-through excluded)</span></div>' +
+      // D88: the explanation that cluttered this cell is now its ⓘ, same words.
+      '<div class="sum-label">Est. Take-Home' +
+      LSCInfo.markup({
+        id: 'takehome',
+        label: 'What Est. Take-Home counts',
+        title: 'Est. Take-Home',
+        paragraphs: ['Income ex GST, less the overhead its hours carry and the tax set-aside — pass-through excluded.'],
+      }) +
+      '</div>' +
       '<div class="sum-value" id="s-takehome" style="color:var(--ok)">$0.00</div></div>' +
       '</div>' +
-      surchargeLineMarkup() +
       /* Under the bars, not inside them: a sixth .sum-item would read as one
          more headline figure, and this one is explicitly not that. */
       minimumLineMarkup()
@@ -2494,7 +2537,8 @@ const EstimateEditor = (() => {
 
     // The headline figures, from the same code the server will run on save.
     const totals = LSCCalc.computeTotals(active, pricing, LSCData.settings(), options);
-    paintSurcharges(totals, surcharges);
+    // The box's figures are the Cost Breakdown's, on the lines as they stand.
+    paintSurcharges(LSCCalc.surchargeSummary(LSCCalc.costBreakdown(active, pricing, options)), surcharges, days.length > 0);
     announceSurcharges(dayById, surcharges, shortNotice);
     setText('s-hours', totals.totalHours);
     setText('s-labour', fmt(totals.labourTotal));
@@ -2528,20 +2572,33 @@ const EstimateEditor = (() => {
     return b.hourlyHours ? days + ', plus ' + hrs(b.hourlyHours) + ' of hourly work' : days;
   }
 
-  /* The owner's "Surcharges +$X" line, from totals.surchargeTotal (calc.js),
-     and the settings it was priced under for its ⓘ. */
+  /* The owner's surcharge box (B2-11), from calc.js surchargeSummary, and the
+     settings it was priced under for its ⓘ. A short-notice surcharge on lines
+     that are on no day still shows it: the money is real, and the box is the
+     only place the owner sees it. */
   const MODE_WORDS = {
     higher: 'the higher of weekend and after hours applies, with short notice on top',
     multiply: 'they all multiply',
     highest: 'only the highest one applies',
   };
-  function paintSurcharges(totals, surcharges) {
-    const line = $('sur-line');
-    if (!line) return;
-    const amount = totals.surchargeTotal || 0;
-    line.hidden = !(amount > 0);
-    if (line.hidden) return;
-    setText('s-surcharges', '+' + fmt(amount));
+  function paintSurcharges(summary, surcharges, hasDays) {
+    const box = $('sur-box');
+    if (!box) return;
+    const any = summary.total > 0;
+    box.hidden = !any && !hasDays;
+    if (box.hidden) return;
+    let html = summary.rows.map(surBoxDayRow).join('');
+    const sn = summary.shortNotice;
+    if (sn) {
+      html += surBoxRowMarkup('Short notice ×' + sn.multiplier,
+        'on ' + plural(sn.items, 'production item', 'production items'), sn.amount);
+    }
+    const list = $('sur-box-rows');
+    if (list.innerHTML !== html) list.innerHTML = html;
+    list.hidden = !any;
+    $('sur-box-none').hidden = any;
+    $('sur-box-total').hidden = !any;
+    setText('s-surcharges', '+' + fmt(summary.total));
     const s = LSCCalc.surchargeSettings({ surcharges: surcharges.settings });
     setText(
       'sur-info-rules',

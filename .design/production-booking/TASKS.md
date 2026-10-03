@@ -1870,8 +1870,9 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **Scratch data:** "B2-10 planner" (B210-PLAN, `est_51f9dd87`): two Date TBC days of the
       worked example, Hero Film (Brand Story ×2) and Socials ×3, 68 of 70 post hours.
 
-- [ ] **B2-11. The surcharge box and the Totals row** (money math — Opus/high). _Independent of
-  B2-4 to B2-10; can be built any time after B2-2._
+- [x] **B2-11. The surcharge box and the Totals row** (money math — Opus/high). _Independent of
+  B2-4 to B2-10; can be built any time after B2-2._ **Done 2026-10-03, uncommitted** (B2-8 to
+  B2-10 committed `cd01500`).
   - **The box** replaces `#sur-line`. Its rows come from `calc.js` `costBreakdown()` surcharge
     entries (day, kind, multiplier, hours covered, $, carry-overs), then the total and "already
     folded into each production line's price". The ⓘ text carries over.
@@ -1881,6 +1882,76 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** the box's rows sum to `surchargeTotal` and match the Cost Breakdown PDF for Audit A
   to the cent, all three states show, and the larger figures fit at 375 without overflow.
+
+  **Done note (2026-10-03).** Changed both `calc.js` copies, `test-calc.js`,
+  `estimate-editor.js` and `estimates.css` (401/401; the copies are identical).
+  - **What was built:**
+    - **`calc.js` `surchargeSummary(breakdown)`** gathers `costBreakdown`'s per-item surcharge
+      rows into one row per day, type and multiplier, with carry-overs as their own rows. Rows
+      follow the days' order; within a day the order is weekend, holiday, after hours, then the
+      carry-overs, whichever item came first. Each row keeps its items (name, the hours it
+      reached of the hours that item covers, share, timed). Short notice is the breakdown's one
+      row. Everything is summed in whole cents, so the rows add up exactly to `total`, which is
+      the breakdown's `surchargeTotal`. Five tests: the worked example, hours and carry-overs,
+      the fixed order, the empty states, and a 132-case sweep checking that the rows sum to
+      `surchargeTotal` (both the breakdown's and `computeTotals`') and that every PDF item row
+      lands in exactly one box row.
+    - **The box** (`#sur-box`, a `<section>` with an `<h2>`, an ⓘ and a `<ul>`) replaces
+      `#sur-line`. It's fed by `surchargeSummary(costBreakdown(active, pricing, options))` on
+      every recalc, which is the PDF's own source. Rows read like these:
+      - "Sat 3 Oct · Weekend rate ×1.5 · +$560.00";
+      - "Fri 16 Oct · After hours ×1.25 · on 4 of 6 hrs";
+      - "Fri 16 Oct → Sat 17 Oct · Weekend rate ×1.5 after midnight · on 2 of 6 hrs";
+      - "Short notice ×2 · on 5 production items".
+
+      Then "Total surcharges +$X", "already folded into each production line's price". The ⓘ's
+      text carries over. The states: hidden with no days and nothing surcharged; with days and
+      none, "No surcharges apply."
+    - **Order (D98):** the box comes after "On set, by day" and before the overhead switch and
+      the bars.
+    - **The Totals row** (`.totals-row`): Total (inc GST) is 36px, the largest on the screen
+      (the page title is 30px). Tax Set-Aside and Est. Take-Home are 25px, against the first
+      bar's 19px. Tax's inline 15px is gone. At 768–1099 they're 28 and 20, against the band's
+      16. Under 768 they're 30 and 22. The take-home's "(income ex GST, less…)" is now an
+      `LSCInfo` ⓘ on its label, with the same words.
+  - **Verified** in the browser against `api-scratch` (dispatched events):
+    - **Audit A** (`est_8dca1cee`): the box reads 560.00 + 186.67 + 186.67 + 5,813.66 =
+      **+$6,747.00**. That equals the stored `totals.surchargeTotal` (6747). Row for row it
+      equals the Cost Breakdown PDF the route made from the same estimate (`pdftotext` on the
+      export).
+    - **Live:** unticking Short notice gave three rows, the carry-over taking the round-up
+      (+$187.33), +$934.00 in all. The Labour Subtotal dropped to $5,814 (4 × 1,120 + 400 +
+      934). Re-ticking brought back $6,747.00.
+    - **The three states:** B210-PLAN (TBC days) shows "No surcharges apply."; B2-3 old shape
+      and Test paid (no days) hide it; TST-001 shows its Saturday row.
+    - **Take-home ⓘ:** a mouse `pointerover` opens it, inside the viewport. The three labels
+      stay 11.5px high, so the ⓘ doesn't grow the label.
+    - **Layout:** no page overflow at 1280, 800 and 375.
+      - At 375, seven figures ($1,128,450.00 / $338,535.00 / $1,207,223.40, typed into the
+        page) stay on one line, and the box's amounts stay inside it.
+      - At 800, five figures fit on one line. A six-figure Tax Set-Aside wraps onto a second
+        line (the band's existing `overflow-wrap` backstop, never cut). That would take a job
+        of about $1.1M.
+  - **Mutations,** each failing the suite: no sort (2 failures), carry-overs merged into the
+    day's row (1), short notice left out of the total (4), amounts floored to the dollar (3).
+    `calc.js` restored, both copies identical.
+  - **Interpretations to show the user:**
+    1. **A short-notice surcharge on lines with no day still shows the box.** "Hidden with no
+       days" was read as "no days and nothing surcharged", because a ticked Short notice
+       charges lines on no day (D72), and the box is the only place the owner sees that money.
+    2. **One row per day and rate, not per item.** Two items on a Saturday make one "Weekend rate
+       ×1.5" row ("· 2 items"). Hours show only when a rate reached part of an item's hours
+       (after hours, a carry-over), as the announcement does. Items that differ read "on part
+       of N items". The PDF stays the per-item view.
+    3. **The box sits above the overhead switch,** per D98's order (box → totals). The IA's
+       "under the advisory lines' current spot" was read as the same place in the order.
+    4. **Short notice reads "on N production items"**, counting each item it reached, on a day
+       or not, as the PDF does.
+  - **Seams:**
+    - **B2-12:** the box's `<h2>` sits in the editor's outline after "On set, by day". The
+      take-home ⓘ is the shared 18px button (44px hit area). Check both with a screen reader.
+    - **The detail screen** still shows its own "incl. Surcharges" total (task 8). Giving it the
+      box wasn't in scope.
 
 - [ ] **B2-12. B2 responsive and accessibility pass** (frontend — Opus/high). Breakpoints 1280,
   800, 375. _Depends on: B2-3 to B2-11._

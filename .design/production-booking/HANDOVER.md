@@ -274,8 +274,8 @@ times.
           - **Read its Done note before B2-8.** It has four interpretations to show the user
             and the seams.
 
-        - [x] **B2-8, rental bars on the calendar**: done 2026-10-03, **uncommitted** (B2-7
-          committed `d9071b7`). Changed `calendar.js`, `calendar.css`, `booking-block.js` and
+        - [x] **B2-8, rental bars on the calendar**: done 2026-10-03, committed `cd01500` (with
+          B2-9 and B2-10). Changed `calendar.js`, `calendar.css`, `booking-block.js` and
           `estimate-editor.js`.
           - **What exists now:**
             - rentals are bars from out to back, split at week rows and labelled vendor · UPID;
@@ -289,7 +289,7 @@ times.
           - **Read its Done note before task 12.** It has the options Home passes.
 
         - [x] **B2-9, the Rate Card's Capture tick and Deliverable Types**: done 2026-10-03,
-          **uncommitted** (with B2-8). Changed only `pricing.js` and `pricing.css` (396/396).
+          committed `cd01500`. Changed only `pricing.js` and `pricing.css` (396/396).
           - **What exists now:**
             - a Capture column on the `prod` table, with an ⓘ in its head and a note under the
               category name on phones;
@@ -307,7 +307,7 @@ times.
             main one: a chip follows a post service renamed on the same screen) and the seams.
 
         - [x] **B2-10, the post-production planner in the editor**: done 2026-10-03,
-          **uncommitted** (with B2-8 and B2-9). Changed `estimate-editor.js`,
+          committed `cd01500`. Changed `estimate-editor.js`,
           `estimate-detail.js` and `estimates.css` (396/396; `calc.js` untouched).
           - **What exists now:**
             - picking a deliverable type lays its post services onto Post-Production at 0 hrs,
@@ -327,8 +327,25 @@ times.
           - **Read its Done note before B2-12.** It has five interpretations to show the user (the
             main one: cancelling the confirm cancels the whole change) and the seams.
 
-**Exact next item: TASKS.md B2-11, the surcharge box and the Totals row**
-(money math, Opus/high). After B2 is built and deployed, task 11, the hash router
+        - [x] **B2-11, the surcharge box and the Totals row**: done 2026-10-03, **uncommitted**.
+          Changed both `calc.js` copies, `test-calc.js`, `estimate-editor.js` and
+          `estimates.css` (401/401).
+          - **What exists now:**
+            - `calc.js` `surchargeSummary(costBreakdown(...))`: one row per day and rate,
+              carry-overs apart, and short notice once, summed in whole cents;
+            - the editor's `#sur-box` in place of `#sur-line`, between "On set, by day" and
+              the overhead switch (D98). It's hidden with no days and nothing surcharged, and
+              reads "No surcharges apply." with days and none;
+            - the Totals row at 36/25px (the page title is 30), with the take-home sentence in
+              an `LSCInfo` ⓘ.
+          - **Verified:** Audit A's box (+$6,747.00) equals the stored `surchargeTotal` and the
+            Cost Breakdown PDF row for row. The live short-notice toggle, all three states,
+            and seven figures at 375 were checked. Four mutations each fail the suite.
+          - **Read its Done note before B2-12.** It has four interpretations to show the user
+            (the main one: short notice on dayless lines still shows the box) and the seams.
+
+**Exact next item: TASKS.md B2-12, the B2 responsive and accessibility pass**
+(frontend, Opus/high). Then B2-13, the deploy (Sonnet/medium; ask first). After B2 is built and deployed, task 11, the hash router
 (Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**
