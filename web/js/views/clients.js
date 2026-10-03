@@ -349,6 +349,14 @@ const ClientsView = (() => {
   async function showClient(id, held) {
     if (held && held.id === id) return showEditor(held);
     const ticket = LSCRouter.ticket();
+    // The screen being left goes now, not when the reply comes: the router has
+    // already asked about its edits, so anything typed into it meanwhile
+    // would be lost without a question.
+    window.scrollTo(0, 0);
+    root.innerHTML =
+      '<button class="back-btn" id="js-back">← Clients</button>' +
+      '<div class="empty-state"><h3>Loading…</h3></div>';
+    root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(LIST));
     let client;
     try {
       client = (await LSCApi.get('/api/clients/' + encodeURIComponent(id))).client;

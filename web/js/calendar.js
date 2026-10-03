@@ -673,10 +673,10 @@ const LSCCalendar = (() => {
     return api;
   }
 
-  /* normRental, rentalRole and rentalDates are for Home's week view (task 12),
-     so a rental reads the same in both views. */
+  /* weekday through upidOf are for Home and its week view (task 12), so a
+     booking or a rental reads the same in every view. */
   return {
     mount, statusChip, describeDate, timeText, gridRange, longDate, shortDate, addDays, addMonths, isDate,
-    weekday, normRental, rentalRole, rentalDates,
+    weekday, normRental, rentalRole, rentalDates, upidOf, STATUS_WORD, MONTHS, DAY_SHORT,
   };
 })();

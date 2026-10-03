@@ -25,9 +25,10 @@ const HomeView = (() => {
   const C = LSCCalendar;
   const { esc } = LSCUtil;
 
+  const { STATUS_WORD } = C;
+
   const COMING_UP_DAYS = 14;
   const VIEW_KEY = 'lsc-home-view';
-  const STATUS_WORD = { confirmed: 'Confirmed', pencilled: 'Pencilled', proposed: 'Proposed' };
 
   let root = null;
   let handlers = null;
@@ -36,8 +37,11 @@ const HomeView = (() => {
   let anchorDay = null; // the day `anchor` was set on, so tomorrow's first visit starts on tomorrow
   let view = readView();
   let cal = null; // the month or week component on show
-  let visit = 0; // bumped on every show(), so a slow fetch from an old visit is dropped
   let rangeSeq = 0;
+  /* Coming up's window, { from, to, asked }, while it waits on a calendar
+     reply that covers it: the month on show usually does, so a visit is one
+     fetch rather than two. */
+  let upWanted = null;
 
   function readView() {
     try {
@@ -136,25 +140,47 @@ const HomeView = (() => {
     if (btn) btn.addEventListener('click', retry);
   }
 
+  const coversUp = (range) => Boolean(upWanted) && range.from <= upWanted.from && range.to >= upWanted.to;
+
+  /* Coming up's window, taken by the first reply that covers it (or fails
+     to). Null when it was already taken, or this range doesn't cover it. */
+  function claimUp(range) {
+    if (!coversUp(range)) return null;
+    const w = upWanted;
+    upWanted = null;
+    return w;
+  }
+
   /* One range's days and rentals onto whichever view asked, unless the user
-     has moved on (another range, another view, another screen) meanwhile. */
+     has moved on meanwhile. Off Home (the router's ticket has moved) nothing
+     is touched, a 401 included: it is not this screen's to report. Still on
+     Home but on another range or view, the reply can still serve Coming up. */
   async function loadRange(range, target, label) {
     const mine = ++rangeSeq;
-    const thisVisit = visit;
-    const stale = () => mine !== rangeSeq || thisVisit !== visit || cal !== target.component;
+    const ticket = LSCRouter.ticket();
+    if (coversUp(range)) upWanted.asked = true;
+    const gone = () => !LSCRouter.isCurrent(ticket);
+    const superseded = () => mine !== rangeSeq || cal !== target.component;
     let reply;
     try {
       reply = await LSCApi.get('/api/calendar?from=' + range.from + '&to=' + range.to);
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
-      if (stale()) return;
+      if (gone()) return;
       if (err.kind === 'auth') return handlers.onAuthLost();
+      // Coming up was waiting on this reply: it asks for itself, and says so if that fails too.
+      if (claimUp(range)) loadComingUp();
+      if (superseded()) return;
       calMessage('Couldn’t load the bookings for ' + label + ': ' + failureText(err), () => loadRange(range, target, label));
       return;
     }
-    if (stale()) return;
+    if (gone()) return;
+    const days = reply.days || [];
+    const w = claimUp(range);
+    if (w) showComingUp(days.filter((d) => d.date >= w.from && d.date <= w.to), w.from);
+    if (superseded()) return;
     calMessage('');
-    target.apply(reply.days || [], reply.rentals || []);
+    target.apply(days, reply.rentals || []);
   }
 
   function mountCalendar() {
@@ -252,9 +278,20 @@ const HomeView = (() => {
     }).join('') + '</ol>';
   }
 
+  function showComingUp(days, today) {
+    const box = root.querySelector('#home-up');
+    if (!box) return;
+    box.innerHTML = comingUpMarkup(days, today);
+    const count = days.filter((d) => STATUS_WORD[d.status]).length;
+    root.querySelector('#home-up-sub').textContent =
+      'Next ' + COMING_UP_DAYS + ' days' + (count ? ' · ' + count + ' booked day' + (count === 1 ? '' : 's') : '');
+  }
+
+  /* Coming up's own fetch, for when the calendar on show doesn't cover the
+     next fortnight (the week view, or a month left elsewhere last visit). */
   async function loadComingUp() {
     const box = root.querySelector('#home-up');
-    const thisVisit = visit;
+    const ticket = LSCRouter.ticket();
     const today = LSCUtil.today();
     const to = C.addDays(today, COMING_UP_DAYS - 1);
     let reply;
@@ -262,7 +299,7 @@ const HomeView = (() => {
       reply = await LSCApi.get('/api/calendar?from=' + today + '&to=' + to);
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
-      if (thisVisit !== visit || !box.isConnected) return;
+      if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
       if (err.kind === 'auth') return handlers.onAuthLost();
       box.innerHTML = '<p class="home-empty">Couldn’t load what’s coming up: ' + esc(failureText(err)) +
         '</p><button type="button" class="btn btn-ghost btn-sm" id="home-up-retry">Try Again</button>';
@@ -272,12 +309,8 @@ const HomeView = (() => {
       });
       return;
     }
-    if (thisVisit !== visit || !box.isConnected) return;
-    const days = reply.days || [];
-    box.innerHTML = comingUpMarkup(days, today);
-    const count = days.filter((d) => STATUS_WORD[d.status]).length;
-    root.querySelector('#home-up-sub').textContent =
-      'Next ' + COMING_UP_DAYS + ' days' + (count ? ' · ' + count + ' booked day' + (count === 1 ? '' : 's') : '');
+    if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
+    showComingUp(reply.days || [], today);
   }
 
   // ── The screen ─────────────────────────────────────────────────────────────
@@ -320,8 +353,12 @@ const HomeView = (() => {
     root.querySelectorAll('.home-switch-btn').forEach((b) =>
       b.addEventListener('click', () => setView(b.dataset.view, b)));
 
-    mountCalendar();
-    loadComingUp();
+    upWanted = { from: today, to: C.addDays(today, COMING_UP_DAYS - 1), asked: false };
+    mountCalendar(); // asks for its first range inside, which may cover Coming up's
+    if (!upWanted.asked) {
+      upWanted = null;
+      loadComingUp();
+    }
   }
 
   return {
@@ -333,7 +370,6 @@ const HomeView = (() => {
     show(segments) {
       if (segments.length) return false;
       closePop(false);
-      visit += 1;
       // Back from an estimate opens the month or week you left, not today's.
       if (cal) anchor = currentAnchor();
       cal = null;

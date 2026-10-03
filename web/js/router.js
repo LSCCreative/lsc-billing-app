@@ -100,22 +100,36 @@ const LSCRouter = (() => {
     history.go(delta);
   }
 
+  /* The entry the browser is now on: an unstamped one (a typed or clicked
+     hash) gets the next index and drops the old forward entries, as a push
+     would; a stamped one is where Back or Forward landed. */
+  function record(path, newIdx) {
+    if (newIdx === null) {
+      index += 1;
+      history.replaceState({ lscIdx: index }, '', location.hash);
+      forgetForward();
+    } else {
+      index = newIdx;
+    }
+    trail.set(index, path);
+  }
+
+  /* Arrived somewhere with nothing to render: only the bookkeeping moves, and
+     a leaveTo() waiting on this move has had it. */
+  function settle(path, newIdx) {
+    skipGuardOnce = false;
+    pending = null;
+    record(path, newIdx);
+  }
+
   function onHashChange() {
     const path = here();
     const newIdx = stampedIdx();
 
     if (!active || path === rendered) {
       /* Signed out (the route is shown after sign-in), or back on the screen
-         already showing — the far end of an undo. Only the bookkeeping moves. */
-      skipGuardOnce = false;
-      if (newIdx === null) {
-        index += 1;
-        history.replaceState({ lscIdx: index }, '', location.hash);
-        forgetForward();
-      } else {
-        index = newIdx;
-      }
-      trail.set(index, path);
+         already showing — the far end of an undo. */
+      settle(path, newIdx);
       return;
     }
 
@@ -126,15 +140,21 @@ const LSCRouter = (() => {
       return;
     }
 
-    if (newIdx === null) {
-      index += 1;
-      history.replaceState({ lscIdx: index }, '', location.hash);
-      forgetForward();
-    } else {
-      index = newIdx;
-    }
-    trail.set(index, path);
+    record(path, newIdx);
     show(path);
+  }
+
+  /* Back or Forward between two entries with the same address fires popstate
+     and no hashchange. A replace can leave such a pair: a deleted client's
+     entry becomes the list beside the list's own, an unknown address becomes
+     Home beside Home. Nothing renders, but the index must follow, or the next
+     refused Back is undone by the wrong distance and a leaveTo() waiting on a
+     hashchange keeps its skipped guard for the next one. A move to a
+     different address is hashchange's, which comes after. */
+  function onPopState() {
+    const newIdx = stampedIdx();
+    if (newIdx === null || newIdx === index || here() !== rendered) return;
+    settle(here(), newIdx);
   }
 
   /* Go to `path` ('/clients/cli_1a2b'). options:
@@ -191,6 +211,7 @@ const LSCRouter = (() => {
       index = idx === null ? 0 : idx;
       trail.set(index, here());
       window.addEventListener('hashchange', onHashChange);
+      window.addEventListener('popstate', onPopState);
     },
 
     /* Signed in. `force` renders the address whatever is on #main (a fresh

@@ -42,16 +42,15 @@ const HomeWeek = (() => {
   const C = LSCCalendar;
   const { esc } = LSCUtil;
 
-  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
-    'September', 'October', 'November', 'December'];
-  const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const STATUS_WORD = { confirmed: 'Confirmed', pencilled: 'Pencilled', proposed: 'Proposed' };
+  const { MONTHS, DAY_SHORT, STATUS_WORD, upidOf } = C;
 
   // The hour scale's default span, the office hours' neighbourhood.
   const SCALE_FROM = 7;
   const SCALE_TO = 19;
   // Shorter bookings are drawn this long, so a tile always has room for its UPID.
   const MIN_DRAWN = 45;
+  // The foot of a column. A drawn length never runs past it.
+  const MIDNIGHT = 24 * 60;
 
   function minutes(t) {
     const m = /^(\d{2}):(\d{2})$/.exec(t || '');
@@ -59,7 +58,6 @@ const HomeWeek = (() => {
   }
 
   const weekStart = (date) => C.addDays(date, -C.weekday(date));
-  const upidOf = (x) => (x.upid ? String(x.upid) : 'No UPID');
 
   // "5 – 11 October 2026", "28 September – 4 October 2026", "28 December 2026 – 3 January 2027".
   function weekTitle(from) {
@@ -77,9 +75,9 @@ const HomeWeek = (() => {
     const a = minutes(day.startTime);
     if (a === null) return null;
     const b = minutes(day.endTime);
-    if (b === null) return { a, b: a + 60, open: true, overnight: false };
-    if (b < a) return { a, b: 24 * 60, open: false, overnight: true };
-    return { a, b: Math.max(b, a + MIN_DRAWN), open: false, overnight: false };
+    if (b === null) return { a, b: Math.min(a + 60, MIDNIGHT), open: true, overnight: false };
+    if (b < a) return { a, b: MIDNIGHT, open: false, overnight: true };
+    return { a, b: Math.min(Math.max(b, a + MIN_DRAWN), MIDNIGHT), open: false, overnight: false };
   }
 
   /* Side by side when they overlap: each cluster of overlapping bookings is

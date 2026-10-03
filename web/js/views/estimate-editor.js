@@ -3390,10 +3390,10 @@ const EstimateEditor = (() => {
       // Nothing more to do to a screen the user has already left — and
       // snapshot() reads the form, which is no longer there to read.
       if (!onScreen()) return;
-      // What is on screen is now what is stored. onSaved fetches the estimate
-      // before replacing this screen, and for that moment the editor is still
-      // in the page — without this a reload in the gap would warn about an
-      // estimate that had just been saved.
+      // What is on screen is now what is stored. onSaved may go Back to the
+      // detail, and until that lands the editor is still in the page —
+      // without this a reload in the gap would warn about an estimate that
+      // had just been saved.
       baseline = snapshot();
       handlers.onSaved(reply.estimate);
     } catch (err) {

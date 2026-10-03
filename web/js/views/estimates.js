@@ -52,20 +52,29 @@ const EstimatesView = (() => {
      it was asked for (D59) rather than bouncing to the list with a toast, so a
      stale link or a Back onto it explains itself. */
   function showMissing(title, message, retry) {
+    showPlaceholder(
+      '<h3>' + esc(title) + '</h3><p>' + esc(message) + '</p>' +
+      (retry ? '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button>' : '')
+    );
+    if (retry) root.querySelector('#js-retry').addEventListener('click', retry);
+  }
+
+  function showPlaceholder(body) {
     root.innerHTML =
       '<button class="back-btn" id="js-back">← All Estimates</button>' +
-      '<div class="empty-state"><h3>' + esc(title) + '</h3><p>' + esc(message) + '</p>' +
-      (retry ? '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button>' : '') +
-      '</div>';
+      '<div class="empty-state">' + body + '</div>';
     root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(LIST));
-    if (retry) root.querySelector('#js-retry').addEventListener('click', retry);
   }
 
   /* The estimate behind a route, or null once the failure has been dealt with
      (shown in place, or handed to onAuthLost). Also null when the user moved
-     on while it loaded: the screen they went to is not this one's to replace. */
+     on while it loaded: the screen they went to is not this one's to replace.
+     The screen being left goes at once: the router has already asked about
+     its edits, so anything typed into it while this loads would be lost
+     without a question. */
   async function load(id, retry) {
     const ticket = LSCRouter.ticket();
+    showPlaceholder('<h3>Loading…</h3>');
     try {
       const reply = await LSCApi.get('/api/estimates/' + encodeURIComponent(id));
       return LSCRouter.isCurrent(ticket) ? reply.estimate : null;

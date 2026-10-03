@@ -28,7 +28,7 @@
   // True once a screen has been mounted on #main since the last sign-in.
   let appMounted = false;
   // Set when a session expires under a screen worth coming back to; the next
-  // sign-in un-hides it as it was instead of re-mounting the estimates list.
+  // sign-in un-hides it as it was instead of drawing the address's route afresh.
   let resumeOnSignIn = false;
 
   function showLogin(initialError) {
@@ -56,9 +56,10 @@
    * { keepScreen: true } when that screen is complete and worth returning to;
    * every screen resets its own pending state before calling this, so what
    * comes back is a live form, not a stuck spinner. Callers whose screen never
-   * finished drawing (a list that 401'd while loading) pass nothing and get a
-   * fresh estimates list after sign-in. Opt-in, so a new caller that forgets
-   * gets today's behaviour rather than a stranded "Loading…".
+   * finished drawing (a list that 401'd while loading) pass nothing, and
+   * after sign-in the router draws whatever the address says, from scratch.
+   * Opt-in, so a new caller that forgets gets a fresh screen rather than a
+   * stranded "Loading…".
    *
    * A reload on the login screen still loses it — this is in-memory only. */
   function onAuthLost(options) {
