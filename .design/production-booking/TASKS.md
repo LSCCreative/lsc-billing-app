@@ -2271,7 +2271,13 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
       Coming up, with no change here.
     - The scratch days `dhome1`–`dhome6` can stay for task 13's checks.
 
-- [ ] **13. C polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium).
+- [x] **13. C polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium).
+  **Deployed 2026-10-03, Pages only:** `main` fast-forwarded to `7910c53` (tasks 11 and 12),
+  Pages run 37099081882 success, and the live `index.html` carries `js/views/home.js?v=7910c530`,
+  `router.js` and `#modal-home-day`, with `LANDING = '/home'` in the live `app.js`. No NAS step:
+  no server change, and the NAS was already at v12. **The user chose to skip the VoiceOver pass**
+  on Home; the keyboard and focus checks in task 12's Done note are all that was done. (Task 13's
+  responsive checks were covered by task 12's at 1280 / 800 / 375.)
   - The accessibility pass on Home (the keyboard grid, pop-up focus return) and responsive checks.
   - Then Pages only: no migration, but Pages must go after NAS v11.
 

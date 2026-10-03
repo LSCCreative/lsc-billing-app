@@ -374,7 +374,7 @@ times.
       byte-identical `#main` at 1280 against `f019f5f` on six screens.
     - **Read its Done note before task 12.** It has five interpretations to show the user (the
       main one: `#/home` lands on the estimates list until task 12 sets `LANDING`) and the seams.
-  - [x] **Task 12, the Home screen**: done 2026-10-03, **uncommitted**. New `views/home.js`,
+  - [x] **Task 12, the Home screen**: done 2026-10-03, committed `7910c53`. New `views/home.js`,
     `views/home-week.js` and `css/home.css`; `app.js` lands on `#/home`. No server change
     (401/401).
     - **What exists now:** month and week views (week: an hour scale, a "No time" row, a gear
@@ -385,14 +385,18 @@ times.
     - **Read its Done note before task 13.** It has six interpretations to show the user (the
       main one: the button says "Open estimate" until stage D) and the seams.
 
-**Exact next item: TASKS.md task 13, C polish and deploy** (the Home accessibility pass is
-frontend, Opus/high; the Pages deploy is Sonnet/medium).
+  - [x] **Task 13, deploy**: **Stage C is live 2026-10-03** (Pages only, run 37099081882,
+    `main` at `7910c53`). The user skipped the VoiceOver pass on Home.
+
+**Exact next item: TASKS.md task 14, the invoice maths** (Stage D's first task; money math,
+Opus/high). Stage D begins with migration v13.
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
   two readers of a booked estimate. The client page lists days as the client PDF does, with
   stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.
-- **A VoiceOver pass by a person** (tasks 9 and B2-12 did everything short of it): the detail's
+- **A VoiceOver pass by a person** (tasks 9 and B2-12 did everything short of it; skipped for Home
+  by the user at task 13): the detail's
   day groups are `<tbody>` with a `scope="rowgroup"` head. Check how they read. B2-12's Done
   note lists the B2 parts to hear; one of them is whether a silently added gear rental is
   missed.
