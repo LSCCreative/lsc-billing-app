@@ -327,8 +327,8 @@ times.
           - **Read its Done note before B2-12.** It has five interpretations to show the user (the
             main one: cancelling the confirm cancels the whole change) and the seams.
 
-        - [x] **B2-11, the surcharge box and the Totals row**: done 2026-10-03, **uncommitted**.
-          Changed both `calc.js` copies, `test-calc.js`, `estimate-editor.js` and
+        - [x] **B2-11, the surcharge box and the Totals row**: done 2026-10-03, committed
+          `9d1f30f`. Changed both `calc.js` copies, `test-calc.js`, `estimate-editor.js` and
           `estimates.css` (401/401).
           - **What exists now:**
             - `calc.js` `surchargeSummary(costBreakdown(...))`: one row per day and rate,
@@ -344,16 +344,37 @@ times.
           - **Read its Done note before B2-12.** It has four interpretations to show the user
             (the main one: short notice on dayless lines still shows the box) and the seams.
 
-**Exact next item: TASKS.md B2-12, the B2 responsive and accessibility pass**
-(frontend, Opus/high). Then B2-13, the deploy (Sonnet/medium; ask first). After B2 is built and deployed, task 11, the hash router
-(Stage C; frontend, Opus/high).
+        - [x] **B2-12, the B2 responsive and accessibility pass**: done 2026-10-03,
+          **uncommitted**. Changed `estimate-editor.js`, `booking-block.js`, `pricing.js`,
+          `booking.css` and `responsive.css`. No server change (401/401).
+          - **Fixed six things:**
+            1. a drag cancelled with Escape no longer opens the Move to list on release
+               (mutation-checked);
+            2. focus follows a dropped line;
+            3. the open menu re-forms when the window crosses 768;
+            4. Production Booking is an `<h2>`, so Gear rentals and the menu nest under it, not
+               under Deliverables;
+            5. 44px targets at 375 for Not on a day's "Edit ↑" and the Rate Card's ticks;
+            6. no drag handle on touch-only screens at 768 and up.
+          - **Measured:** everything on the list at 1280, 800 and 375.
+          - **Nothing moved:** at 1280 and 800 against HEAD, and outside B2's blocks against
+            pre-B2 `6074c3e`.
+          - **Read its Done note** for the measurements, four interpretations to show the user
+            (the main one: the pre-B2 Custom, Direct and Your time ticks got the same 44px
+            label as Capture) and the VoiceOver checklist.
+
+**Exact next item: TASKS.md B2-13, deploy B2** (deploy, Sonnet/medium; **ask the user first**).
+Commit B2-12 before it. The deploy goes NAS v12 before Pages, because `PRICING_SHAPE` changes.
+After B2 is deployed, task 11, the hash router (Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
   two readers of a booked estimate. The client page lists days as the client PDF does, with
   stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.
-- **A VoiceOver pass by a person** (task 9 did everything short of it): the detail's day groups
-  are `<tbody>` with a `scope="rowgroup"` head. Check how they read.
+- **A VoiceOver pass by a person** (tasks 9 and B2-12 did everything short of it): the detail's
+  day groups are `<tbody>` with a `scope="rowgroup"` head. Check how they read. B2-12's Done
+  note lists the B2 parts to hear; one of them is whether a silently added gear rental is
+  missed.
 - **Holidays in the editor:** fetched once, the first time the estimate has a dated day. Until it
   arrives, or if it fails, new dates price as non-holidays. The server always prices with the real
   list on save, and the detail screen shows what was stored.

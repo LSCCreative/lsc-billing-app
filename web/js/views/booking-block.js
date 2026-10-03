@@ -271,8 +271,9 @@ const BookingBlock = (() => {
     slot.innerHTML =
       '<div class="billing-block booking-block" id="block-booking">' +
       '<div class="bb-head booking-head">' +
-      '<button type="button" class="booking-toggle" id="booking-toggle" aria-controls="booking-body">' +
-      '<span class="bb-chevron" aria-hidden="true">▶</span><span class="bb-label">Production Booking</span></button>' +
+      // A heading round the button (B2-12): the block's h3s (Gear rentals, the menu) need an h2 of their own.
+      '<h2 class="booking-h"><button type="button" class="booking-toggle" id="booking-toggle" aria-controls="booking-body">' +
+      '<span class="bb-chevron" aria-hidden="true">▶</span><span class="bb-label">Production Booking</span></button></h2>' +
       '<span class="bb-sum" id="booking-sum"></span>' +
       '</div>' +
       '<div class="booking-body" id="booking-body">' +

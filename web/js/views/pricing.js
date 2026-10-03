@@ -797,15 +797,16 @@ const PricingView = (() => {
         '" data-si="' + si + '" data-ri="' + ri + '" data-field="price" data-type="labour">' +
         '<div class="pricing-floor" id="pfl-' + si + '-' + ri + '">' + stateLineHtml(row, si, ri, st) + '</div>' +
         '<span hidden id="pfd-' + si + '-' + ri + '">' + esc(stateSentence(st)) + '</span></td>' +
-        '<td style="text-align:center" data-label="Custom"><input type="checkbox"' + (row.customBill ? ' checked' : '') +
+        // Each tick in a label (B2-12): on a phone it is the rest of the row, a 44px target (responsive.css).
+        '<td style="text-align:center" data-label="Custom"><label class="pricing-tick"><input type="checkbox"' + (row.customBill ? ' checked' : '') +
         ' data-si="' + si + '" data-ri="' + ri + '" data-field="customBill" data-type="labour"' +
         ' aria-label="Allow a custom bill amount for ' + esc(nameOf(row)) + '"' +
-        ' title="Allow a custom bill amount to override hours × mark-up"></td>' +
+        ' title="Allow a custom bill amount to override hours × mark-up"></label></td>' +
         (onSet
-          ? '<td style="text-align:center" data-label="Capture"><input type="checkbox"' + (row.capture === true ? ' checked' : '') +
+          ? '<td style="text-align:center" data-label="Capture"><label class="pricing-tick"><input type="checkbox"' + (row.capture === true ? ' checked' : '') +
             ' data-si="' + si + '" data-ri="' + ri + '" data-field="capture" data-type="labour"' +
             ' aria-label="Count ' + esc(nameOf(row)) + ' toward Production Capture Hours"' +
-            ' aria-describedby="pricing-capture-d"></td>'
+            ' aria-describedby="pricing-capture-d"></label></td>'
           : '') +
         '<td class="pricing-act"><button type="button" class="del-btn" title="Delete this service"' +
         ' aria-label="Delete ' + esc(nameOf(row)) + '" data-del-si="' + si + '" data-del-row="' + ri + '">×</button></td></tr>';
@@ -907,16 +908,16 @@ const PricingView = (() => {
             '" aria-label="Cost for ' + esc(row.name) + '" data-ri="' + ri + '" data-field="rate" data-type="travel">') +
         '</td>' +
         '<td style="text-align:right" data-label="Mark-Up ($)">' + travelPriceCell(row, ri) + '</td>' +
-        '<td style="text-align:center" data-label="Direct"><input type="checkbox"' + (row.directCost ? ' checked' : '') +
+        '<td style="text-align:center" data-label="Direct"><label class="pricing-tick"><input type="checkbox"' + (row.directCost ? ' checked' : '') +
         (km ? ' disabled' : '') +
         ' data-ri="' + ri + '" data-field="directCost" data-type="travel"' +
         ' aria-label="Bill ' + esc(row.name) + ' at cost"' +
-        ' title="Billed at cost — the quantity entered is the amount billed"></td>' +
-        '<td style="text-align:center" data-label="Your time"><input type="checkbox"' + (row.ownTime ? ' checked' : '') +
+        ' title="Billed at cost — the quantity entered is the amount billed"></label></td>' +
+        '<td style="text-align:center" data-label="Your time"><label class="pricing-tick"><input type="checkbox"' + (row.ownTime ? ' checked' : '') +
         (row.directCost || km ? ' disabled' : '') +
         ' data-ri="' + ri + '" data-field="ownTime" data-type="travel"' +
         ' aria-label="' + esc(row.name) + ' is your own time"' +
-        ' title="Your own hours: all of it is income, and the quantity counts as billable hours"></td>' +
+        ' title="Your own hours: all of it is income, and the quantity counts as billable hours"></label></td>' +
         '<td class="pricing-act"><button type="button" class="del-btn" title="Delete this item"' +
         ' aria-label="Delete ' + esc(row.name) + '" data-del-travel="' + ri + '">×</button></td></tr>';
     });

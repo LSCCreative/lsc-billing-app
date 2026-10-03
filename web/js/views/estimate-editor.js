@@ -1209,6 +1209,26 @@ const EstimateEditor = (() => {
     if (returnFocus && trigger && trigger.isConnected) trigger.focus();
   }
 
+  /* The window crossed 768 with the menu open (a tablet turned, a window
+     resized): open it again in the other form, on the same card, with what
+     it had added (its count; the last "Added …" isn't said again). Going to
+     the sheet takes focus, as the sheet is modal; going to the column takes
+     it only from inside the menu. */
+  function onMenuModeChange() {
+    if (!menu.el || menu.sheet === narrow()) return;
+    // Left open in a column when another screen replaced the editor: it goes, it doesn't come back as a sheet.
+    if (!onScreen() || !menu.el.isConnected) return closeMenu(false);
+    const { target, trigger, count } = menu;
+    const inside = menu.el.contains(document.activeElement);
+    const was = document.activeElement;
+    closeMenu(false);
+    openMenu(target, trigger);
+    menu.count = count;
+    paintMenuCount();
+    if (!menu.sheet && !inside && was && was.isConnected) was.focus({ preventScroll: true });
+  }
+  window.matchMedia('(max-width: 767px)').addEventListener('change', onMenuModeChange);
+
   function bindMenu(el) {
     el.querySelector('.day-menu-done').addEventListener('click', () => closeMenu(true));
     const filter = el.querySelector('.dm-filter');
@@ -1488,19 +1508,26 @@ const EstimateEditor = (() => {
     drag.tr = null;
     drag.on = false;
     drag.rule = null;
-    if (on && commit && body) moveLine(tr, body, before);
+    if (!(on && commit && body)) return;
+    moveLine(tr, body, before);
+    // Re-inserting the row drops focus to the page: put it back on the line, as Move to does (B2-12).
+    const again = tr.querySelector('.line-move');
+    if (again) again.focus({ preventScroll: true });
   }
 
   function onDragKey(e) {
     if (e.key !== 'Escape' || !drag.on) return;
     e.preventDefault();
     e.stopPropagation();
+    // The button is let go of after this, on the handle it was pressed on: that release isn't a press either.
+    drag.suppressClick = true;
     endDrag(false);
   }
 
   function bindDrag(tr, kind, handle) {
     handle.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch' || e.button !== 0) return;
+      drag.suppressClick = false; // a cancelled drag whose release made no click mustn't swallow this one
       drag.tr = tr;
       drag.kind = kind;
       drag.x = e.clientX;
@@ -1532,7 +1559,11 @@ const EstimateEditor = (() => {
       placeRule(e.clientX, e.clientY);
     });
     handle.addEventListener('pointerup', () => {
-      if (drag.tr !== tr) return;
+      if (drag.tr !== tr) {
+        // Let go after Escape: the click this release makes (if any) comes first, then the flag goes.
+        if (drag.suppressClick) setTimeout(() => (drag.suppressClick = false), 0);
+        return;
+      }
       drag.suppressClick = drag.on; // a drag isn't also a press
       endDrag(true);
     });

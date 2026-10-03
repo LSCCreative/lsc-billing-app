@@ -1871,8 +1871,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
       worked example, Hero Film (Brand Story ×2) and Socials ×3, 68 of 70 post hours.
 
 - [x] **B2-11. The surcharge box and the Totals row** (money math — Opus/high). _Independent of
-  B2-4 to B2-10; can be built any time after B2-2._ **Done 2026-10-03, uncommitted** (B2-8 to
-  B2-10 committed `cd01500`).
+  B2-4 to B2-10; can be built any time after B2-2._ **Done 2026-10-03, committed `9d1f30f`.**
   - **The box** replaces `#sur-line`. Its rows come from `calc.js` `costBreakdown()` surcharge
     entries (day, kind, multiplier, hours covered, $, carry-overs), then the total and "already
     folded into each production line's price". The ⓘ text carries over.
@@ -1953,8 +1952,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **The detail screen** still shows its own "incl. Surcharges" total (task 8). Giving it the
       box wasn't in scope.
 
-- [ ] **B2-12. B2 responsive and accessibility pass** (frontend — Opus/high). Breakpoints 1280,
-  800, 375. _Depends on: B2-3 to B2-11._
+- [x] **B2-12. B2 responsive and accessibility pass** (frontend — Opus/high). Breakpoints 1280,
+  800, 375. _Depends on: B2-3 to B2-11._ **Done 2026-10-03, uncommitted.**
   - **Check and fix:**
     - the menu's swap at ≥768 and its sheet at <768;
     - no drag handle on touch;
@@ -1967,6 +1966,123 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - no document overflow;
     - nothing moved at 1280 outside B2's blocks.
   - **Record** the measurements in its Done note. A real VoiceOver pass stays for a person.
+
+  **Done note (2026-10-03).** Changed `estimate-editor.js`, `booking-block.js`, `pricing.js`,
+  `booking.css` and `responsive.css`. No server change (401/401; the `calc.js` copies are
+  identical). Measured headless against `api-scratch` with puppeteer: dispatched events, real
+  mouse input for the drags, and one real Tab before the focus-ring sweep.
+  - **Fixed (six):**
+    1. **A drag cancelled with Escape, then let go, opened the Move to list.** The release
+       landed on the handle as a press. Escape now marks the release as not a press. The mark
+       clears after that release, and on the next pointer press, so it can't swallow a later
+       one. Mutation: with the line taken out, all three cancel cases opened the list again.
+    2. **Focus after a drop fell to the page,** because the row is re-inserted. It now goes to
+       the line's Move to, as Move to's own route does.
+    3. **The menu kept its form across 768** (B2-4's seam). A `matchMedia` listener now reopens
+       it in the other form, on the same card, keeping its "N added" count. Going to the sheet
+       takes focus, since it's modal. Going to the column takes focus only if it was inside the
+       menu. A menu left open in its column when another screen replaced the editor is closed,
+       never reopened as a sheet over that screen.
+    4. **The heading outline was wrong.** The Production Booking head had no heading, so "Gear
+       rentals" (h3) and the column menu's h3 read as part of "Deliverables". The disclosure
+       button now sits inside `<h2 class="booking-h">`, a flex box so it adds no line box.
+    5. **Targets under 44px at 375:**
+       - Not on a day's "Edit ↑" (29px wide) now has a 44px minimum width.
+       - The Rate Card's Capture tick was a bare 13px box. It now sits in a `label.pricing-tick`
+         that fills the rest of its row on phones: 44px tall, with a 20px box. At 768 and up
+         the label is plain inline.
+    6. **Touch-only screens at 768 and up** (a tablet): no drag handle, and Move to at 44px.
+       The rule is `@media (min-width: 768px) and (not (any-pointer: fine))`. A desktop, or a
+       tablet with a trackpad, keeps both as they were (checked: handle shown, Move to 20px at
+       800 and 1280 with a mouse; hidden and 44px at 800 with touch only).
+  - **Measured:**
+    - **The menu.**
+      - At 1280 and 800 it swaps into the calendar's column, with the calendar hidden. Focus
+        goes to its heading, the target card is edged and its button is `aria-expanded`.
+        Another card's button retargets it. Escape (with focus inside) and Done close it, with
+        focus back on the card's button.
+      - At 375 it's a sheet: `role=dialog`, `aria-modal`. Tab wraps (20 stops); Escape and a
+        backdrop click return focus to the button. Adding crew closes the sheet onto the new
+        line's role field.
+      - Adds are spoken by its `role=status` line ("Added Video Capture — Hour.").
+    - **Move to (WCAG 2.5.7):** the list's items are 29px at 1280 and 44px at 375, and the list
+      stays inside the viewport. The first item takes focus and the arrow keys move it.
+      Escape returns focus with `aria-expanded` false. Picking a card moves the line, puts
+      focus on its Move to, and says "Moved Video Capture — Full Day to Sat 10 Oct:
+      $2,400.00, weekend ×1.5."
+    - **Drag (real mouse):** every card's group of the line's kind shows as a dashed zone (5),
+      and the rule shows in the card under the pointer. The drop moves the line and announces
+      it as above. Escape mid-drag moves nothing.
+    - **Duplicate day:** focus goes to the copy's date. It says "Day 1 · Sat 10 Oct duplicated
+      as Day 4 — date TBC, with its 4 items."
+    - **Other announcements, re-checked:**
+      - removing a day: focus goes to the card that took its place, and "Day 1 — date TBC
+        removed." is said;
+      - the planner: "Removed 3 post lines for Hero Film." and "Added 3 post lines for Hero
+        Film to Post-Production, at 0 hrs.";
+      - the surcharge region: "Short notice removed.", with the box going to +$934.00 as B2-11
+        recorded.
+    - **≥44px under 768:** at 375, after the fixes, nothing is under 44 in the booking block,
+      the menu sheet, the Move to list, Deliverables, the four summaries, Post-Production and
+      its planner, the box or the Totals row. That holds on three estimates (B24-OLD, B210-PLAN,
+      Audit A), and on the Rate Card's Production table and Deliverable Types block. The ⓘ
+      buttons are excluded, as in task 9 (44px `::after`).
+    - **The tint's contrast** (composited through every background, at 1280). Everything
+      passes AA:
+      - Deliverables: the lowest is the accent "+ Add Deliverable" at 4.78:1 (10px). The
+        column heads and tag are 5.43–5.93, and the fields 14.61.
+      - The planner: 5.96. The box: 6.15. The menu: 4.78 (Done).
+      - The 36px Total: 4.29, which is large text (needs 3).
+    - **Reduced motion:** 162 moving elements in B2's blocks without the preference, 0 with it
+      (a11y.css). The swap and the drop have no animation of their own.
+    - **Focus rings:** after one real Tab, every focusable in B2's blocks matches
+      `:focus-visible` with a visible ring. That's 155 at 1280 (168 with the menu open) and 138
+      at 375 (158 with the sheet open).
+    - **No overflow:** the document, at 1280, 800 and 375, on the three estimates and the Rate
+      Card. The only clipped text is the calendar tiles' and bars' deliberate ellipsis and the
+      type block's visually hidden labels at ≥1100. The vendor typeahead isn't clipped by the
+      booking block on Not on a day: a list only appears once the estimate has a vendor, and
+      its rental puts the panel under the cards.
+    - **Nothing moved:**
+      - **This task vs HEAD** (`9d1f30f`, served by request interception; checked that the old
+        run had no `.booking-h`): 0 of 5,357 elements moved, at both 1280 and 800. That covers
+        the editor ×3, the detail, the list and the Rate Card.
+      - **Pre-B2 (`6074c3e`) vs now at 1280:** 0 of 1,424 elements moved on the list, Clients,
+        the Finance Dashboard, Overhead, Capacity, Profit Goals and two detail screens.
+      - **The editor at 1280,** block by block against its own origin: every field from UPID to
+        Notes kept its size and left edge, as did the document type, Short notice, the overhead
+        switch and the first summary bar. Pre-Production and Additional work have no real move
+        (only closed `<option>`s, which sit at the page origin). Post-Production grew by exactly
+        64px, B2-10's planner at its head, and everything under it shifted by those 64px at the
+        same sizes. The rest is B2's own blocks.
+    - **Console:** no errors in any run.
+  - **Interpretations to show the user:**
+    1. **The Rate Card's other ticks got the same label:** Custom, Direct and Your time
+       (pre-B2). They share Capture's row and rule, and leaving them 13px beside a 44px Capture
+       would make one row two sizes.
+    2. **A tablet without a trackpad loses the handle too,** not just phones, since `bindDrag`
+       never drags on touch. A tablet with a trackpad keeps it.
+    3. **The menu crossing 768 reopens without re-saying its last "Added …"**: only the count
+       carries over.
+    4. **Letting go after Escape does nothing.** It doesn't move the line and doesn't open the
+       list.
+  - **For a person (VoiceOver),** everything above being DOM and ARIA:
+    - the booking head (an `<h2>` holding a disclosure button);
+    - the menu sheet (a dialog labelled by its h3) and the column menu (a labelled `<section>`,
+      not a dialog);
+    - Move to (`role=menu` / `menuitem`);
+    - the summaries' `role=group` lists;
+    - the planner's `<dl>`;
+    - the box's `<h2>` and the take-home ⓘ;
+    - the Rate Card's chip list ("Post services for Brand Story").
+  - **Seams:**
+    - **A new gear rental appears without an announcement** when a vendor is typed (B2-7). Its
+      row and the head count change silently. Listen for whether that's missed. An
+      announcement while the vendor is still being typed would name a half-typed vendor, so
+      none was added here.
+    - **No auto-scroll while dragging** (B2-5): the wheel works mid-drag.
+    - **`not (any-pointer: fine)` needs Safari 16.4+ or Chrome 104+.** An older engine ignores
+      the rule and shows the handle, where a press still opens the list.
 
 - [ ] **B2-13. Deploy B2** (deploy — Sonnet/medium). **Ask first.** NAS before Pages:
   1. back up;

@@ -764,6 +764,25 @@
   .pricing-table input[type='number'] {
     width: 96px;
   }
+  /* A tick (Custom, Capture, Direct, Your time) sits in a label that fills
+     the rest of its row, so the whole row beside the column name is the
+     target, 44px tall, with the box 20px at its right (production-booking
+     B2-12). At 768 and up the label is plain inline and changes nothing. */
+  .pricing-table .pricing-tick {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 44px;
+    cursor: pointer;
+  }
+  .pricing-table .pricing-tick input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+  .pricing-table .pricing-tick:has(input:disabled) {
+    cursor: not-allowed;
+  }
   /* Every bar on the Pricing screen is a flex row of a sentence and a button. */
   .tax-setting,
   .pricing-catalogue-bar,
