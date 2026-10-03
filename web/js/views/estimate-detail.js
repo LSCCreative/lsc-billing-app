@@ -111,12 +111,13 @@ const EstimateDetail = (() => {
          units). The unit is the line's own, from its snapshot, like the
          Mark-Up beside it. A line with no price left says a bare number. */
       let subtotal = 0;
+      const tags = section.id === 'post' ? deliverableNames(activeRows) : null;
       const rows = lines
         .map((line) => {
           const def = labourDef(section, line, pricing);
           const bill = labourBill(def, line);
           if (bill !== null) subtotal += bill;
-          return labourRow(line, def, bill, '');
+          return labourRow(line, def, bill, '', tags && line.deliverableId ? tags.get(String(line.deliverableId)) : '');
         })
         .join('');
 
@@ -134,11 +135,24 @@ const EstimateDetail = (() => {
     '<thead><tr><th>Service</th><th class="right">Qty</th>' +
     '<th class="right">Mark-Up</th><th class="right">Bill</th></tr></thead>';
 
-  function labourRow(line, def, bill, note) {
+  /* A post line's deliverable tag (B2-10, D95): the deliverable's name as
+     saved with this estimate, as the client PDF prints it (pdf.js
+     deliverableNames). None for one that names no deliverable, or one with no
+     name. */
+  function deliverableNames(activeRows) {
+    const out = new Map();
+    (activeRows.deliverables || []).forEach((d) => {
+      if (d && d.id && String(d.name || '').trim()) out.set(String(d.id), String(d.name).trim());
+    });
+    return out;
+  }
+
+  function labourRow(line, def, bill, note, tag) {
     const unit = LSCRows.labourUnit(def);
     const qty = def ? line.qty + ' ' + LSCRows.unitWord(unit.kind, line.qty) : line.qty;
     return (
       '<tr><td data-label="Service">' + esc(line.name) +
+      (tag ? '<span class="post-tag">· ' + esc(tag) + '</span>' : '') +
       (note ? '<span class="sur-note est-sur-note">' + esc(note) + '</span>' : '') + '</td>' +
       '<td class="right muted-td" data-label="Qty">' + esc(qty) + '</td>' +
       '<td class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</td>' +
@@ -303,7 +317,10 @@ const EstimateDetail = (() => {
       lines
         .map(
           (d) =>
-            '<tr><td data-label="Deliverable">' + esc(d.name) + '</td>' +
+            '<tr><td data-label="Deliverable">' + esc(d.name) +
+            // Owner-only: the type it plans post with (B2-10). Never on a client document (D91).
+            (d.typeId ? '<span class="est-vendor">' + esc(d.typeName || 'Type') + ' · ' +
+              esc(String(Number(d.multiplier) || 0)) + ' × 1 capture hour</span>' : '') + '</td>' +
             '<td class="right muted-td" data-label="Format">' + esc(d.format || '—') + '</td>' +
             '<td class="right muted-td" data-label="Duration">' + esc(d.duration || '—') + '</td>' +
             '<td class="right muted-td" data-label="Qty">' + esc(String(d.qty || 1)) + '</td></tr>'

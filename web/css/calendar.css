@@ -29,6 +29,13 @@
   /* "Go to date" washes its date in the accent: a highlight, not a ring, so it
      never reads as the focus ring (also accent) sitting on another cell. */
   --cal-target: rgba(184, 84, 68, 0.2);
+  /* Gear rentals (B2-8): a cool steel blue, no status's colour and not the
+     accent, because a rental is logistics, not a booking. --cal-ink on it is
+     5.92:1, and it is 5.61 / 4.24 against --bg / --surface. The cap marks the out
+     and back ends. */
+  --cal-rental: #6e93c4;
+  --cal-rental-cap: #3d5f8c;
+  --cal-rental-wash: rgba(110, 147, 196, 0.1);
 }
 
 .cal {
@@ -513,6 +520,162 @@
 }
 .status-chip.is-proposed {
   background: var(--cal-proposed);
+}
+
+/* ── Rental bars (B2-8, D84) ───────────────────────────────────────────────────
+   A layer at the foot of each week row, under the tiles. Each cell makes room
+   for the week's lanes (--lanes, set on the row), and a bar is placed by its
+   first and last column (--s, --e) and its lane. A bar that carries on into
+   the next or last week runs to the row's edge with no cap on that side; a
+   real end is inset and capped in a darker blue, so out and back read at a
+   glance. Phone first: in dots mode a lane is a 3px line with no words. */
+
+.cal-row {
+  position: relative;
+  --lanes: 0;
+  --rb-pitch: 5px;
+  --rb-h: 3px;
+  --rb-base: 4px;
+}
+.cal-body .cal-cell {
+  padding-bottom: calc(var(--rb-base) + var(--lanes) * var(--rb-pitch));
+  min-height: calc(48px + var(--lanes) * var(--rb-pitch));
+}
+.cal-rbars {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--rb-base);
+  height: calc(var(--lanes) * var(--rb-pitch));
+  pointer-events: none;
+}
+.cal-rbar,
+.cal-rbar-more {
+  --il: 3px;
+  --ir: 3px;
+  position: absolute;
+  top: calc(var(--lane) * var(--rb-pitch));
+  height: var(--rb-h);
+  left: calc(100% * var(--s) / 7 + var(--il));
+  width: calc(100% * (var(--e) - var(--s) + 1) / 7 - var(--il) - var(--ir));
+}
+.cal-rbar {
+  display: block;
+  overflow: hidden;
+  background: var(--cal-rental);
+  color: var(--cal-ink);
+  border: 0 solid var(--cal-rental-cap);
+  border-left-width: 2px;
+  border-right-width: 2px;
+}
+.cal-rbar.is-cont-l {
+  --il: 0px;
+  border-left-width: 0;
+}
+.cal-rbar.is-cont-r {
+  --ir: 0px;
+  border-right-width: 0;
+}
+.cal-rbar.is-faded {
+  opacity: 0.45;
+}
+.cal-rbar-t,
+.cal-rbar-more {
+  display: none;
+}
+
+@container cal (min-width: 400px) {
+  .cal-row {
+    --rb-pitch: 16px;
+    --rb-h: 14px;
+  }
+  .cal-body .cal-cell {
+    min-height: calc(68px + var(--lanes) * var(--rb-pitch));
+  }
+  .cal-rbar {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  .cal-rbar:hover {
+    filter: brightness(1.12);
+  }
+  /* Another project's rental, beside this estimate's (D84, as D23 for days):
+     outlined in the blue, its words muted, the fill kept for this one's. */
+  .cal-rbar.is-faded {
+    opacity: 1;
+    background: var(--cal-rental-wash);
+    color: var(--muted);
+    border-color: var(--cal-rental);
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+  }
+  .cal-rbar-t {
+    display: block;
+    padding: 0 4px;
+    font-size: 9px;
+    line-height: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cal-rbar.is-faded .cal-rbar-t {
+    font-weight: 400;
+    line-height: 12px;
+  }
+  .cal-rbar-more {
+    display: block;
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 9px;
+    line-height: var(--rb-h);
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .cal-rbar-more:hover {
+    color: var(--text);
+  }
+}
+
+@container cal (min-width: 640px) {
+  .cal-row {
+    --rb-pitch: 19px;
+    --rb-h: 16px;
+    --rb-base: 6px;
+  }
+  .cal-body .cal-cell {
+    min-height: calc(104px + var(--lanes) * var(--rb-pitch));
+  }
+  .cal-rbar-t {
+    font-size: 10px;
+    line-height: 14px;
+    padding: 0 6px;
+  }
+  .cal-rbar.is-faded .cal-rbar-t {
+    line-height: 14px;
+  }
+}
+
+/* The selected date's gear, under its bookings. */
+.cal-entries + .cal-gear {
+  margin-top: 6px;
+}
+div.cal-rentry {
+  cursor: default;
+}
+div.cal-rentry:hover {
+  border-color: var(--border);
+}
+.cal-rentry:focus-visible,
+div.cal-rentry:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.status-chip.is-rental {
+  background: var(--cal-rental);
 }
 
 @media (prefers-reduced-motion: reduce) {

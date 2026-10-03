@@ -599,3 +599,60 @@
     min-height: 44px;
   }
 }
+
+/* ── The post-production planner (production-booking B2-10, D93, D95) ───────
+   The head of Post-Production: two figures in Delight, labelled like the
+   summary bar's, and the comparison in words. A guide, so it sits on the
+   picker's quiet tint rather than the accent. */
+.post-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 28px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(61, 74, 92, 0.12);
+}
+.post-plan[hidden] {
+  display: none;
+}
+.pp-figs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+}
+.pp-fig dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.pp-fig dt .info {
+  /* The 18px button inside a 9px label: kept from growing the label's line. */
+  margin: -5px 0;
+}
+.pp-fig dd {
+  margin: 0;
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--text);
+}
+.pp-on {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* "Video Editor · Brand Story" (D95), the tag muted after the name. */
+.post-tag {
+  margin-left: 4px;
+  color: var(--muted);
+}
+.post-tag.is-unnamed {
+  font-style: italic;
+}

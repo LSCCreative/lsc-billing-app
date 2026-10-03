@@ -1475,7 +1475,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **Scratch data:** "B2-4 old flat" now has a Day 4 (TBC) with a $1,600 Video Capture, its
       Saturday Video Capture moved to Monday, and a "Lensworks cine zoom" hire on Sunday.
 
-- [x] **B2-7. Gear rentals** (frontend — Opus/high). _Depends on: B2-4._ **Done 2026-10-03, uncommitted.**
+- [x] **B2-7. Gear rentals** (frontend — Opus/high). _Depends on: B2-4._ **Done 2026-10-03, committed `d9071b7`.**
   - **Equipment rows:** split into **Vendor** (a typeahead from this estimate's vendors) and
     **Item**. Old lines show their `vendor` text as the Item, with Vendor blank (confirmed
     2026-10-03).
@@ -1578,7 +1578,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
       vendors on three lines. The open editor had unsaved Kit Co and duplicate-day edits, which
       were never saved.
 
-- [ ] **B2-8. Rental bars on the calendar** (frontend — Opus/high). _Depends on: B2-2, B2-7. A
+- [x] **B2-8. Rental bars on the calendar** (frontend — Opus/high). _Depends on: B2-2, B2-7. A
   change to the shared `web/js/calendar.js`._
   - **A bar layer** spanning out → back across week rows, labelled vendor · UPID. A one-date
     rental is a one-day marker. Other estimates' bars are faded, and this estimate's come from live
@@ -1591,9 +1591,68 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** bars draw correctly across a month boundary and a week wrap, at 1280 and 375,
   against a second scratch project's rental.
+  **Done 2026-10-03, uncommitted.**
+  - **What was built:**
+    - **`calendar.js`:** `setRentals(rentals)` (an unchanged set draws nothing, so the editor
+      can call it per keystroke). Each week row gets a `.cal-rbars` layer (`aria-hidden`), with
+      a segment per rental crossing the week, placed by `--s`/`--e`/`--lane`. Lanes are this
+      estimate's first, then by out date, the longer first. There are at most 3 lanes; past
+      that, the last lane says "+N gear" per date, and pressing it selects the date. A rental
+      with one date is a one-day marker; one with neither, or back before out, is not drawn.
+      Each date's aria-label adds its gear ("gear: Lensworks for B24-OLD on hire"). The date's
+      list adds Gear lines after its bookings (a "Gear" chip, vendor, UPID · project, the role
+      on that date, and "Out Fri 9 Oct · Pickup — Back Mon 12 Oct · Return"). New options:
+      `onRentalActivate(rental, { trigger, entry })` and `rentalActionable(rental)`. A
+      line is a button only when it's actionable; otherwise it is text with `tabindex=-1`.
+    - **`calendar.css`:** `--cal-rental` steel blue `#6e93c4` (ink 5.92:1; 5.61 / 4.24
+      against --bg / --surface). Real ends are capped in `--cal-rental-cap` and inset 3px; a
+      continuation runs to the row's edge with no cap. Faded = an outline with muted words,
+      as faded tiles. Cells grow by `--lanes` × the pitch (5px dots, 16px tiles, 19px wide).
+      In dots mode a bar is a 3px line with no words and takes no clicks.
+    - **`booking-block.js`:** other projects' rentals are kept by id from `/api/calendar`.
+      A range reload drops the ones overlapping it first. This estimate's come from
+      `opts.ownRentals()`, which is the editor's `rentalsPayload`, labelled from `identity()`.
+      `refreshRentals()` is new. A bar or line of this estimate's calls
+      `opts.onRentalFocus(id)`; another's focuses its line in the list, which names it.
+    - **`estimate-editor.js`:** `paintRentals` ends with `booking.refreshRentals()`. The new
+      `focusRentalRow(id)` focuses the row's Out date; `focusRental(key)` now uses it.
+  - **Verified** against scratch "B2-8 second project" (B28-TWO, `est_0a38ac14`: CamHire
+    28 Oct → 3 Nov by postage, Gaffer Bros out 10 Oct only), beside "B2-4 old flat"'s
+    Lensworks 9–12 Oct:
+    - **Placement:**
+      - Lensworks splits Fri–Sun, then Mon.
+      - CamHire splits Wed 28 to Sun 1 Nov, then Mon 2 to Tue 3. It shows in October and in
+        the fetched November.
+      - Gaffer Bros is a one-day marker in lane 2.
+    - **Measured at 1280:** the bars are inside their rows and under the tiles; real ends are
+      inset 3px and continuations are at 0.
+    - **Clicks:**
+      - Own bar: its Out date is focused, and the clicked date is selected.
+      - Another's bar: that date is selected and its list line is focused.
+    - **Live edits:** a later Back extends the bar, Out only becomes a marker, no dates or
+      reversed dates draw nothing, restoring brings the bar back, and a UPID change
+      relabels it.
+    - **Overflow,** on a throwaway calendar with five overlapping rentals: two bars, then
+      "+N gear" with the right count for every date.
+    - **Layouts:** 800 (wide tiles); 375 (thin lines across the week and month breaks, own
+      solid, others faded, list lines ≥44px). No page overflow.
+    - **`npm test`:** 396/396 (no server change).
+  - **Interpretations to show the user:**
+    1. **Mid-span dates say "on hire"**, the out date "goes out" and the back date "comes back".
+    2. **The date list has no "Gear" heading**: each line's chip says Gear (the list is
+       labelled "Gear rentals" for screen readers).
+    3. **Steel blue for rentals**, a colour no status and not the accent, so a rental never
+       reads as a booking.
+    4. **Clicking a bar also selects the date under the pointer**, as a tile does.
+  - **Seams:**
+    - **Task 12 (Home):** mount with no emphasis, so all bars are equal. Pass
+      `onRentalActivate` (and `rentalActionable` if only some lines should be buttons), or
+      leave both out and a bar focuses its list line. Week view's strip is still to build.
+    - **B2-12:** a bar is a mouse shortcut only (aria-hidden, like tiles); the keyboard
+      route is the date's list.
 
-- [ ] **B2-9. Rate Card: the Capture tick and Deliverable Types** (frontend — Opus/high).
-  _Depends on: B2-1._
+- [x] **B2-9. Rate Card: the Capture tick and Deliverable Types** (frontend — Opus/high).
+  _Depends on: B2-1._ **Done 2026-10-03, uncommitted** (B2-8 is also still uncommitted).
   - **Capture:** a column beside Custom on `prod` rows only, with an ⓘ in its head. It's saved with
     the card and the existing outdated-card guard still holds.
   - **The Deliverable Types block,** after Travel and before Surcharges, saved by "Save Services".
@@ -1611,8 +1670,104 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   guard, and nothing in the existing tables moves at ≥1100 except the new column (Desktop
   Preservation Law, the brief's exception).
 
-- [ ] **B2-10. The post-production planner in the editor** (money math — Opus/high). _Depends on:
-  B2-1, B2-3, B2-9._
+  **Done note (2026-10-03).** Only `web/js/views/pricing.js` and `web/css/pricing.css` changed;
+  no server change (396/396).
+  - **What was built:**
+    - **Capture:** a sixth column on the `prod` table only, after Custom. Its head has an
+      `LSCInfo` ⓘ ("What the Capture tick does"). Each tick is labelled "Count <name> toward
+      Production Capture Hours" and described by `#pricing-capture-d`, the glossary sentence.
+      That sentence is also shown under the category's name below 768, where the head row is
+      hidden. A tick is absent rather than false when off, as Custom is, and `payload()` sends it
+      on `prod` rows only.
+    - **Deliverable Types:** a `.billing-block` after the tables and before Surcharges.
+      - The head is "Deliverable Types" with the tag "Plans post-production", followed by an
+        intro with a worked line ("2 × 1 capture hour on a 10-hour shoot recommends 20") and
+        "never print".
+      - Each row has Name, Description (a textarea that grows: CSS `field-sizing`, with a JS
+        fallback), Post services as chips, Multiplier "[ N ] × 1 capture hour" (step 0.25), and ×.
+      - **"+ Add service"** is a select of the Post-Production rows not yet listed. It's disabled,
+        and says why, when none are left or there's no post category.
+      - **A missing chip** is struck through, dashed, and says "missing", with a title explaining
+        it.
+      - **With no types:** the IA's empty-state sentence. "+ Add Deliverable Type" sits in a foot
+        with a count.
+    - **Validation** goes through the existing `problems()` → `LSCUtil.showFieldErrors`:
+      - a blank name;
+      - a duplicate name (case-insensitive);
+      - a multiplier that's blank, negative or not a number;
+      - more than two decimals.
+      A missing service doesn't block a save; the server allows it and B2-10 skips it.
+    - **Reset Defaults:** its confirm adds "Your deliverable types are deleted too." when there
+      are any. The default card has none (B2-1), so the existing reset clears them only after
+      that confirm.
+    - **Delete confirms:** deleting a post service, or the Post-Production category, says how
+      many types list it and that they'll show it as missing.
+    - **Layout:**
+      - **Phone first:** a stack with labels above each field, the × in the corner, 16px fields,
+        and every target ≥44px. The chip × covers the chip's own border, so it's 44, not 42.
+      - **768–1099:** two columns, name, description and multiplier beside the services, with
+        labels still shown. Measured at 800, the four-column row left Post services 129px wide,
+        and a long name broke over five lines.
+      - **≥1100:** one row per type under four column heads, with the labels kept for screen
+        readers only. The columns are fixed widths or shares, never `auto`, because the head and
+        each row are separate grids.
+    - The type block re-renders on its own (`paintTypes`), never the tables. Focus goes:
+      - after an add, back to "+ Add service", or to the last chip once nothing's left;
+      - after a chip is removed, to the next chip, the one before, or "+ Add service";
+      - after a type is removed, to the next type's name, the one before, or the add button;
+      - for a new type, to its name.
+      Adds and removes are announced through `#pricing-floor-live`.
+  - **Verified** against `api-scratch` at 1280 / 1100 / 800 / 375:
+    - **Saving:** chips added, Capture ticked and a type added all saved. The server's card
+      matches, they reload unchanged, and the screen isn't "unsaved" after a reload.
+    - **Validation:** a blank name, a duplicate name and a 0.333 multiplier were each refused,
+      naming and focusing the field.
+    - **Old builds:** a PUT with `pricingShape: 'production-days'`, and one with no shape and no
+      types, were both refused (400 `pricing_shape_outdated`), and the types survived.
+    - **Rename and delete:** renaming a listed post service renamed its chip, with focus kept in
+      the name. Deleting one showed it as missing and the confirm named the type count.
+    - **Confirms:** Reset and remove-type were cancelled, checking their wording. A blank type
+      removes without asking.
+    - **Desktop Preservation at 1280,** against the committed `pricing.js`/`pricing.css`
+      swapped in:
+      - every section and every element of the other categories matches to 0.1px;
+      - the Production table's rows, head and foot keep their heights;
+      - Deliverable Types starts exactly where Surcharges did;
+      - only the Production table's columns moved, for the new 79px column (its name column is
+        235 → 155px).
+      This caught the ⓘ making the Production head row 5px taller, which pushed the grid's second
+      row down. Negative margins on `.info` in that head fixed it.
+    - **Alignment and overflow:** the head and row columns line up at 1280 and 1100, and nothing
+      overflows at any width.
+  - **Scratch data:** the session's test edits were reverted from the pre-write backup (the post
+    rows keep their original ids). The card now has Video Capture and Drone ticked Capture,
+    **Brand Story ×2** (B-Roll Offline Edit, A-Roll Offline Edit, Longform Colour) and **Socials
+    ×0.5** (Video Editor — Socials). That's the brief's worked example, for B2-10.
+  - **Interpretations to show the user:**
+    1. **A chip follows a rename made on this screen.** Renaming a post service here renames it
+       on every type that lists it, in the same save. Matching is by row id, while the screen is
+       open. The IA's struck-through "missing" chip is then only for a deleted service, or a card
+       changed elsewhere.
+    2. **Types need a unique name.** Blank and duplicate names are refused, as services are; the
+       Type select on an estimate would otherwise show two the same.
+    3. **A multiplier allows at most two decimals** (D91's "to 2 decimals"). The server only
+       checks ≥ 0.
+    4. **New types start at ×1**, with the name empty and focused.
+    5. **Removing a type asks first only if it has a name or services**, and says estimates
+       already saved keep it.
+    6. **The Capture ⓘ says a line keeps the tick it was added with.** That's true once B2-10
+       snapshots `capture` on lines added from the menu. Until then, lines have no snapshot and
+       follow the card (`postPlan`'s fallback).
+  - **Seams:**
+    - **B2-10:** read `deliverableTypes` from `LSCData.pricing()` as the editor already does.
+      `services` are trimmed post-row names. Every type has a non-blank unique name and a numeric
+      multiplier, but a service can be missing, which B2-10 skips with a toast.
+    - **B2-12:** the type block's labels at ≥1100 are visually hidden, not `display:none`, so
+      each field keeps its name. Check how a screen reader reads the chip list
+      ("Post services for Brand Story") and a missing chip's ×.
+
+- [x] **B2-10. The post-production planner in the editor** (money math — Opus/high). _Depends on:
+  B2-1, B2-3, B2-9._ **Done 2026-10-03, uncommitted** (with B2-8 and B2-9).
   - **Picking a type** adds its post services to Post-Production at 0 hrs, each carrying
     `deliverableId`. A missing service is skipped with a toast naming it.
   - **Changing the type or removing the deliverable** removes its tagged lines, with a confirm
@@ -1633,6 +1788,87 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - a rename follows to the PDF;
   - an untyped deliverable adds nothing;
   - mutations: rounding down, qty ignored.
+
+  **Done note (2026-10-03).** Changed `estimate-editor.js`, `estimate-detail.js` and
+  `estimates.css`; no server change and `calc.js` untouched (396/396).
+  - **What was built:**
+    - **Picking a type** lays its post services onto Post-Production at 0 hrs, each tagged with
+      the deliverable's id (`layOutPost`). Each is priced as Add Service would (`unitSnap`, so the
+      last-project toggle applies), by the hour, or the first unit with a price when the hour has
+      none. A service not on the card's Post-Production is skipped, and a toast names it.
+    - **Changing the type, or removing the deliverable,** takes its tagged lines away first
+      (`dropTagged`). Lines at 0 hrs just go; when any has hours, a confirm names the count
+      ("Changing the type of Hero Film removes its post lines. 3 of Hero Film's post lines have
+      hours — remove them?"). The removal is announced politely.
+    - **Tags:** a post line shows "· <deliverable name>" after its name, read from the
+      deliverable's Name field live, so a rename follows. An unnamed deliverable shows
+      "· unnamed deliverable" in italics (editor only; the PDF prints no tag for it, B2-2).
+      `lineFrom` drops a tag whose deliverable isn't on the form, so a save is never refused with
+      `line_deliverable_unknown`.
+    - **The planner cell** heads Post-Production, above Add Service: a `<dl>` of Production
+      Capture Hours and Recommended Post Production Hours (with an `LSCInfo` ⓘ explaining the
+      sum), and "On post lines: X of Y recommended". Hidden with no capture and no typed
+      deliverable. Each deliverable's "Post hrs (rec.)" shows its share, "—" when untyped. All
+      of it is `postPlan` on the collected form, run by every recalc, and by the deliverables'
+      own Name and Qty fields (which price nothing).
+    - **Capture snapshot:** a production line added from the menu carries `capture` from its card
+      row (`true`, or `false` when unticked). It's kept on the row (`planMarks`) through a unit
+      switch, either rate action, a move and Duplicate day, and saved. A line saved before B2
+      has none and follows the card (`postPlan`'s fallback).
+    - **"Update to current rates"** also takes today's multiplier and name for a typed
+      deliverable whose type is still on the card. The post lines stay; only the recommendation
+      moves. The toast counts them. (B2-3 left this open.)
+    - **The detail screen** prints the tag after a post line's name, and the deliverable's type
+      under its name ("Brand Story · 2 × 1 capture hour", owner-only, `.est-vendor`).
+  - **Verified** in the browser against `api-scratch` (dispatched events; `window.confirm`
+    stubbed to record its text and answer):
+    - **The worked example:** Brand Story and Socials (qty 3) laid out 3 + 1 tagged lines at
+      0 hrs; a Date TBC day with Video Capture Day, Drone 2 hrs and Photo Capture 3 hrs (not
+      ticked) gave **Capture 10, shares 20 and 15, Recommended 35**. **Duplicate day → 20, 40 +
+      30 = 70.** Typing 20/16/4/28 read "On post lines: 68 of 70 recommended".
+    - **Save:** the server's total matched the screen to the cent ($10,564.00); `capture`
+      (true/true/false per day) and every `deliverableId` stored.
+    - **A rename follows to the PDF:** Brand Story's deliverable renamed "Hero Film" before
+      saving; the detail screen and the client PDF (`pdftotext` on the route's export) both print
+      "Video Editor — B-Roll Offline Edit · Hero Film". No type, multiplier or planner figure
+      prints.
+    - **Reopened** unsaved-clean, showing 20 / 70 and the tags.
+    - **Type change:** cancelled, the select went back and nothing changed; confirmed, the three
+      lines went and one Socials line came, tagged Hero Film, recommending 10.
+    - **Removing:** a deliverable with a line with hours asked ("1 of Socials's post lines has
+      hours — remove it?"), and cancelling kept both; one with only a 0-hr line went without
+      asking, and the empty-row text came back.
+    - **Untyped:** a new untyped deliverable added no lines and showed "—"; the cell stayed up for
+      the 20 capture hours.
+    - **Missing service:** with "Gone Service" added to Brand Story in memory, picking it added
+      the three real lines and toasted "Not on the Rate Card's Post-Production any more, so not
+      added: Gone Service."
+    - **Update to current rates:** Brand Story's multiplier changed to 3 in memory moved its share
+      40 → 60, with the toast; a second click said nothing changed.
+    - **Old estimates** ("B2-3 old shape", "B2-4 old flat") open unsaved-clean at their stored
+      totals. Their production lines have no `capture`, and fall back to the card (8 and 32
+      capture hours).
+    - **Layout:** 1280 (a tagged post row is the same 47px as an untagged one; the cell is
+      64.5px), 800 and 375, with no page overflow.
+  - **Mutations,** each failing the suite: shares rounded down (3 failures), qty dropped from
+    the share (4). `calc.js` restored, both copies identical.
+  - **Interpretations to show the user:**
+    1. **Cancelling the confirm cancels the whole action.** The deliverable stays, or keeps its
+       old type, with its lines. The other reading ("remove the deliverable but keep its lines
+       untagged") was not built.
+    2. **A deliverable's quantity is never below 1.** A cleared or 0 Qty becomes 1 when the field
+       is left, because a save has always stored it as 1 (`|| 1`). So "qty 0 adds 0" holds in
+       `postPlan` but can't happen on the form. (B2-1's seam.)
+    3. **"Update to current rates" refreshes deliverable multipliers** (B2-3's open question).
+       To get a type's new post services, pick the type again (which removes the old lines).
+    4. **Post lines a type adds are priced by the hour**, or at the first unit with a price when
+       the hour has none.
+    5. **Unnamed deliverables tag "· unnamed deliverable"** in the editor only.
+  - **Seams:**
+    - **B2-12:** the planner's ⓘ is the shared 18px `LSCInfo` button, as elsewhere. The removal
+      and lay-out announcements go through `#editor-live`. Check the `<dl>` with a screen reader.
+    - **Scratch data:** "B2-10 planner" (B210-PLAN, `est_51f9dd87`): two Date TBC days of the
+      worked example, Hero Film (Brand Story ×2) and Socials ×3, 68 of 70 post hours.
 
 - [ ] **B2-11. The surcharge box and the Totals row** (money math — Opus/high). _Independent of
   B2-4 to B2-10; can be built any time after B2-2._

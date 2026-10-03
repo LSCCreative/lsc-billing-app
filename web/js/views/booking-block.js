@@ -27,6 +27,14 @@
  * put once under both columns, like Not on a day's items. `opts.headNotes()`
  * gives the collapsed head's extra parts ("2 rentals", "3 off-day lines"),
  * and booking.refreshHead() repaints the head after they change.
+ * RENTAL BARS (B2-8, D84): `opts.ownRentals()` is this estimate's rentals as
+ * the editor holds them now (rentalsPayload), drawn at full strength beside
+ * the faded ones /api/calendar returns for other projects, which are kept per
+ * range like their days. booking.refreshRentals() redraws after an edit (the
+ * calendar ignores an unchanged set). A bar of this estimate's, or its line
+ * in the date's list, calls opts.onRentalFocus(id) to bring its rentals-panel
+ * row forward; another project's bar brings focus to its line in the list,
+ * which names it (UPID, vendor, dates).
  * Day ids are made here, in the browser, because production lines point at
  * their day (`dayId`) before the estimate has ever been saved.
  *
@@ -247,6 +255,7 @@ const BookingBlock = (() => {
     let cal = null;
     let loadFailed = false;
     const others = new Map(); // date → other estimates' days, as /api/calendar returns them
+    const otherRentals = new Map(); // id → other estimates' rentals, as /api/calendar returns them
     const covered = []; // [{ from, to }] ranges fetched, so an absent date means "nothing booked"
     const forced = new Map(); // date → UPID, for dates the server refused with date_locked
     const announced = new Set(); // `${id}|${date}` locks already announced
@@ -255,6 +264,8 @@ const BookingBlock = (() => {
     const onToggle = typeof opts.onToggle === 'function' ? opts.onToggle : () => {};
     const onDuplicate = typeof opts.onDuplicate === 'function' ? opts.onDuplicate : () => 0;
     const headNotes = typeof opts.headNotes === 'function' ? opts.headNotes : () => [];
+    const ownRentals = typeof opts.ownRentals === 'function' ? opts.ownRentals : () => [];
+    const onRentalFocus = typeof opts.onRentalFocus === 'function' ? opts.onRentalFocus : () => {};
     let targetId = null; // the card the service menu is adding to, edged
 
     slot.innerHTML =
@@ -308,6 +319,15 @@ const BookingBlock = (() => {
           if (d.estimateId === ownId) return; // drawn from this editor's own state instead
           if (!others.has(d.date)) others.set(d.date, []);
           others.get(d.date).push(d);
+        });
+        // The reply has every rental overlapping the range, so one known to overlap it and not sent has gone.
+        otherRentals.forEach((r, id) => {
+          const a = r.outDate || r.backDate;
+          const b = r.backDate || r.outDate;
+          if (a <= to && b >= from) otherRentals.delete(id);
+        });
+        (reply.rentals || []).forEach((r) => {
+          if (r.estimateId !== ownId) otherRentals.set(String(r.id), r);
         });
         covered.push({ from, to });
         loadFailed = false;
@@ -509,6 +529,16 @@ const BookingBlock = (() => {
       return Array.from(others.values()).flat().concat(mine);
     }
 
+    function calendarRentals() {
+      const who = opts.identity();
+      const mine = (ownRentals() || []).map((r) => Object.assign({}, r, {
+        estimateId: ownId,
+        upid: who.upid,
+        projectName: who.projectName,
+      }));
+      return Array.from(otherRentals.values()).concat(mine);
+    }
+
     function paintHead() {
       $('booking-sum').textContent = summary();
       const toggle = $('booking-toggle');
@@ -520,7 +550,10 @@ const BookingBlock = (() => {
     function paint() {
       paintHead();
       if (!open) return;
-      if (cal) cal.setDays(calendarDays());
+      if (cal) {
+        cal.setRentals(calendarRentals());
+        cal.setDays(calendarDays());
+      }
       $('booking-load-note').hidden = !loadFailed;
       paintCards();
     }
@@ -542,8 +575,15 @@ const BookingBlock = (() => {
           if (day.estimateId === ownId) return focusCard(day.id, 'date');
           addOn(day.date, ctx.trigger); // the dialog says whose it is (D23)
         },
+        // Only this estimate's rentals have somewhere to go; another's is named in the list (D84).
+        rentalActionable: (r) => r.estimateId === ownId,
+        onRentalActivate: (r, ctx) => {
+          if (r.estimateId === ownId) onRentalFocus(r.id);
+          else if (ctx.entry) ctx.entry.focus();
+        },
       });
       // This estimate's own days now; other projects' when the fetch the mount set off returns.
+      cal.setRentals(calendarRentals());
       cal.setDays(calendarDays());
       // The cards' own dates may sit outside the month on show.
       ensureCovered(days.map((d) => d.date));
@@ -755,7 +795,14 @@ const BookingBlock = (() => {
       },
 
       refreshIdentity() {
-        if (cal) cal.setDays(calendarDays());
+        if (!cal) return;
+        cal.setRentals(calendarRentals());
+        cal.setDays(calendarDays());
+      },
+
+      /** This estimate's rentals changed (B2-8): redraw their bars. */
+      refreshRentals() {
+        if (cal && alive()) cal.setRentals(calendarRentals());
       },
 
       /** The head's summary again: the editor's headNotes() changed (B2-7). */

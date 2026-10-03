@@ -16,7 +16,7 @@
  *     onDateActivate(date, { trigger }),
  *     onTileActivate(day, { trigger }),
  *   });
- *   cal.setDays(days); cal.setEmphasis(id); cal.goTo('2026-10-04');
+ *   cal.setDays(days); cal.setRentals(rentals); cal.setEmphasis(id); cal.goTo('2026-10-04');
  *
  * A day is { id, estimateId, date, status, startTime, endTime, upid,
  * projectName, client, overrideNote }. Date TBC days (date null) are on no
@@ -45,6 +45,24 @@
  * different problems, and the viewport can't tell them apart. Both are drawn;
  * CSS shows one.
  *
+ * RENTAL BARS (B2-8, D84)
+ * A gear rental is a bar from its out date to its back date, under each
+ * week's tiles, split where it crosses a week. A rental with one date is a
+ * one-day marker, and one with neither (or back before out) is on no
+ * calendar. Rentals come in the shape GET /api/calendar's `rentals` has:
+ * { id, estimateId, upid, projectName, vendor, outDate, outMethod, backDate,
+ * backMethod }. They follow the same emphasis as days: another project's are
+ * faded. There are no clash rules (D84): a bar never blocks a date.
+ *
+ * Bars are a mouse and touch shortcut, like tiles, and aria-hidden: each
+ * covered date's name says its gear ("gear: Lensworks for UPID-042 goes
+ * out"), and the selected date's list has its gear after its bookings. A bar or its list
+ * entry calls onRentalActivate(rental, { trigger, entry }); `entry` is the
+ * rental's line in the list, which names it. The entry is a button only when
+ * rentalActionable(rental) says so (default: whenever onRentalActivate is
+ * given); otherwise it is text that can take focus. In dots mode a bar is a
+ * thin line under each covered date, too thin to aim at: a tap is the date's.
+ *
  * Dates are 'YYYY-MM-DD' strings throughout, with arithmetic done on UTC
  * epoch days so a daylight-saving change can never skip or repeat a date.
  */
@@ -65,6 +83,8 @@ const LSCCalendar = (() => {
   const MAX_TILES = 3;
   const MAX_DOTS = 3;
   const WEEKS = 6;
+  // Rental bar lanes in one week. Past this, the last lane says "+N" per date.
+  const MAX_LANES = 3;
 
   // ── Date maths ──────────────────────────────────────────────────────────────
 
@@ -143,14 +163,67 @@ const LSCCalendar = (() => {
    * "Saturday 4 October: 1 confirmed, UPID-042". Statuses in a fixed order,
    * and only the ones present.
    */
-  function describeDate(ymd, days, today) {
+  function describeDate(ymd, days, today, rentals) {
     const head = (ymd === today ? 'Today, ' : '') + longDate(ymd, today);
-    if (!days || !days.length) return head + ': nothing booked';
+    const gear = (rentals || []).map((r) => r.vendor + ' for ' + upidOf(r) + ' ' + rentalRole(r, ymd));
+    if ((!days || !days.length) && !gear.length) return head + ': nothing booked';
     const parts = STATUS_ORDER.map((s) => {
-      const of = days.filter((d) => d.status === s);
+      const of = (days || []).filter((d) => d.status === s);
       return of.length ? of.length + ' ' + s + ', ' + joinAnd(of.map(upidOf)) : null;
     }).filter(Boolean);
+    if (gear.length) parts.push('gear: ' + joinAnd(gear));
     return head + ': ' + parts.join('; ');
+  }
+
+  // ── Rentals ─────────────────────────────────────────────────────────────────
+
+  const METHOD_WORD = { pickup: 'Pickup', postage: 'Postage', return: 'Return' };
+
+  /* A rental as the calendar draws it, with the span it covers (`from`, `to`),
+     or null for one on no calendar. */
+  function normRental(r) {
+    if (!r || typeof r !== 'object') return null;
+    const out = isDate(r.outDate) ? r.outDate : null;
+    const back = isDate(r.backDate) ? r.backDate : null;
+    const from = out || back;
+    const to = back || out;
+    if (!from || to < from) return null;
+    return {
+      id: String(r.id),
+      estimateId: r.estimateId,
+      upid: r.upid || '',
+      projectName: r.projectName || '',
+      vendor: String(r.vendor || '').trim() || 'No vendor',
+      outDate: out,
+      outMethod: METHOD_WORD[r.outMethod] ? r.outMethod : null,
+      backDate: back,
+      backMethod: METHOD_WORD[r.backMethod] ? r.backMethod : null,
+      from,
+      to,
+    };
+  }
+
+  /* What the gear is doing on a date it covers. */
+  function rentalRole(r, ymd) {
+    if (r.outDate && r.backDate) {
+      if (r.from === r.to) return 'goes out and comes back';
+      if (ymd === r.from) return 'goes out';
+      if (ymd === r.to) return 'comes back';
+      return 'on hire';
+    }
+    return r.outDate ? 'goes out' : 'comes back';
+  }
+
+  // "Out Fri 9 Oct · Pickup — Back Mon 12 Oct · Return"; the spoken form, lower case with commas.
+  function rentalDates(r, spoken) {
+    const end = (word, date, method) => {
+      if (!date) return spoken ? 'no ' + word.toLowerCase() + ' date' : 'No ' + word.toLowerCase() + ' date';
+      const m = method ? METHOD_WORD[method] : '';
+      return spoken
+        ? word.toLowerCase() + ' ' + shortDate(date) + (m ? ', ' + m.toLowerCase() : '')
+        : word + ' ' + shortDate(date) + (m ? ' · ' + m : '');
+    };
+    return end('Out', r.outDate, r.outMethod) + (spoken ? '; ' : ' — ') + end('Back', r.backDate, r.backMethod);
   }
 
   /**
@@ -178,6 +251,8 @@ const LSCCalendar = (() => {
         onRangeChange: null,
         onDateActivate: null,
         onTileActivate: null,
+        onRentalActivate: null,
+        rentalActionable: null,
       },
       options || {}
     );
@@ -191,6 +266,8 @@ const LSCCalendar = (() => {
       emphasis: o.emphasis || null,
       byDate: new Map(),
       byId: new Map(),
+      rentals: [], // normalised, own first (see sortRentals)
+      rentalSig: '[]',
     };
     st.view = monthOf(st.active);
 
@@ -236,6 +313,62 @@ const LSCCalendar = (() => {
     const daysOn = (date) => st.byDate.get(date) || [];
     const isOwn = (day) => st.emphasis && day.estimateId === st.emphasis;
     const isFaded = (day) => !!st.emphasis && day.estimateId !== st.emphasis;
+    const rentalsOn = (date) => st.rentals.filter((r) => r.from <= date && date <= r.to);
+
+    // This estimate's first, then by out date, the longer first, then vendor: the lane order.
+    function sortRentals() {
+      st.rentals.sort((a, b) =>
+        Number(Boolean(isOwn(b))) - Number(Boolean(isOwn(a))) ||
+        (a.from < b.from ? -1 : a.from > b.from ? 1 : 0) ||
+        (toEpoch(b.to) - toEpoch(a.to)) ||
+        a.vendor.localeCompare(b.vendor));
+    }
+
+    function rentalLabel(r) {
+      return 'Gear rental: ' + r.vendor + ', ' + upidOf(r) + (r.projectName ? ', ' + r.projectName : '') + ', ' +
+        rentalDates(r, true) + (isOwn(r) ? ', this estimate' : '');
+    }
+
+    const rentalActionable = (r) => typeof o.onRentalActivate === 'function' &&
+      (typeof o.rentalActionable !== 'function' || Boolean(o.rentalActionable(r)));
+
+    /* One week's bars: each rental crossing it is a segment from its first to
+       its last column there, in the first lane free for it. */
+    function weekBars(weekFrom) {
+      const weekTo = addDays(weekFrom, 6);
+      const base = toEpoch(weekFrom);
+      const lanes = []; // lane → last column taken
+      const segs = st.rentals.filter((r) => r.from <= weekTo && r.to >= weekFrom).map((r) => {
+        const s = Math.max(0, toEpoch(r.from) - base);
+        const e = Math.min(6, toEpoch(r.to) - base);
+        let lane = lanes.findIndex((end) => end < s);
+        if (lane === -1) lane = lanes.length;
+        lanes[lane] = e;
+        return { r, s, e, lane, contL: r.from < weekFrom, contR: r.to > weekTo };
+      });
+      if (!segs.length) return { lanes: 0, html: '' };
+      const over = lanes.length > MAX_LANES;
+      const keep = over ? MAX_LANES - 1 : MAX_LANES;
+      let html = segs.filter((g) => g.lane < keep).map((g) => {
+        const cls = ['cal-rbar'];
+        if (isFaded(g.r)) cls.push('is-faded');
+        if (g.contL) cls.push('is-cont-l');
+        if (g.contR) cls.push('is-cont-r');
+        return '<span class="' + cls.join(' ') + '" data-rental-id="' + esc(g.r.id) + '"' +
+          ' style="--s:' + g.s + ';--e:' + g.e + ';--lane:' + g.lane + '" title="' + esc(rentalLabel(g.r)) + '">' +
+          '<span class="cal-rbar-t">' + esc(g.r.vendor + ' · ' + upidOf(g.r)) + '</span></span>';
+      }).join('');
+      if (over) {
+        for (let c = 0; c < 7; c++) {
+          const n = segs.filter((g) => g.lane >= keep && g.s <= c && c <= g.e).length;
+          if (n) {
+            html += '<span class="cal-rbar-more" data-date="' + addDays(weekFrom, c) + '"' +
+              ' style="--s:' + c + ';--e:' + c + ';--lane:' + keep + '">+' + n + ' gear</span>';
+          }
+        }
+      }
+      return { lanes: Math.min(lanes.length, MAX_LANES), html };
+    }
 
     function entryLabel(day) {
       return STATUS_WORD[day.status] + ': ' + upidOf(day) +
@@ -268,7 +401,7 @@ const LSCCalendar = (() => {
         ' tabindex="' + (date === st.active ? '0' : '-1') + '"' +
         ' aria-selected="' + (date === st.active) + '"' +
         (date === today ? ' aria-current="date"' : '') +
-        ' aria-label="' + esc(describeDate(date, days, today)) + '">' +
+        ' aria-label="' + esc(describeDate(date, days, today, rentalsOn(date))) + '">' +
         '<span class="cal-num" aria-hidden="true">' + d + '</span>' +
         '<span class="cal-tiles" aria-hidden="true">' +
         days.slice(0, extra > 0 ? MAX_TILES - 1 : MAX_TILES).map(tileMarkup).join('') +
@@ -289,8 +422,11 @@ const LSCCalendar = (() => {
       const { from } = gridRange(st.view);
       let html = '';
       for (let w = 0; w < WEEKS; w++) {
-        html += '<div class="cal-row" role="row">';
-        for (let i = 0; i < 7; i++) html += cellMarkup(addDays(from, w * 7 + i));
+        const weekFrom = addDays(from, w * 7);
+        const bars = weekBars(weekFrom);
+        html += '<div class="cal-row" role="row"' + (bars.lanes ? ' style="--lanes:' + bars.lanes + '"' : '') + '>';
+        for (let i = 0; i < 7; i++) html += cellMarkup(addDays(weekFrom, i));
+        if (bars.html) html += '<div class="cal-rbars" aria-hidden="true">' + bars.html + '</div>';
         html += '</div>';
       }
       els.body.innerHTML = html;
@@ -306,11 +442,31 @@ const LSCCalendar = (() => {
       if (hadFocus) activeCell().focus();
     }
 
+    function rentalEntryMarkup(r) {
+      const role = rentalRole(r, st.active);
+      const inner =
+        '<span class="status-chip is-rental">Gear</span>' +
+        '<span class="cal-entry-main">' +
+        '<span class="cal-entry-upid">' + esc(r.vendor) + '</span>' +
+        '<span class="cal-entry-name">' + esc(upidOf(r)) + (r.projectName ? ' · ' + esc(r.projectName) : '') + '</span>' +
+        '</span>' +
+        '<span class="cal-entry-time">' + esc(role.charAt(0).toUpperCase() + role.slice(1)) + '</span>' +
+        '<span class="cal-entry-note">' + esc(rentalDates(r)) + '</span>';
+      const cls = 'cal-entry cal-rentry' + (isFaded(r) ? ' is-faded' : '') + (isOwn(r) ? ' is-own' : '');
+      return '<li>' + (rentalActionable(r)
+        ? '<button type="button" class="' + cls + '" data-rental-id="' + esc(r.id) + '"' +
+          ' aria-label="' + esc(rentalLabel(r) + ', ' + role) + '">' + inner + '</button>'
+        // Not something to press here, but a bar click brings focus to it, so it names the rental.
+        : '<div class="' + cls + '" data-rental-id="' + esc(r.id) + '" tabindex="-1">' + inner + '</div>') +
+        '</li>';
+    }
+
     function renderList() {
       if (!o.showList) return;
       const days = daysOn(st.active);
+      const gear = rentalsOn(st.active);
       els.listTitle.textContent = (st.active === today ? 'Today, ' : '') + longDate(st.active, today);
-      els.list.innerHTML = days.length
+      els.list.innerHTML = (days.length
         ? '<ul class="cal-entries">' +
           days.map((day) =>
             '<li><button type="button" class="cal-entry' + (isFaded(day) ? ' is-faded' : '') + (isOwn(day) ? ' is-own' : '') + '"' +
@@ -326,7 +482,11 @@ const LSCCalendar = (() => {
             '</button></li>'
           ).join('') +
           '</ul>'
-        : '<p class="cal-empty">Nothing booked.</p>';
+        : gear.length ? '' : '<p class="cal-empty">Nothing booked.</p>') +
+        (gear.length
+          // Each line's chip says "Gear", so the list needs no visible heading of its own.
+          ? '<ul class="cal-entries cal-gear" aria-label="Gear rentals">' + gear.map(rentalEntryMarkup).join('') + '</ul>'
+          : '');
     }
 
     function render(slide) {
@@ -375,6 +535,26 @@ const LSCCalendar = (() => {
     });
 
     els.body.addEventListener('click', (e) => {
+      // A bar sits over the foot of its week's cells: the date under the pointer is the one chosen.
+      const bar = e.target.closest('.cal-rbar');
+      const rental = bar && st.rentals.find((r) => r.id === bar.dataset.rentalId);
+      if (rental) {
+        const row = bar.closest('.cal-row');
+        const box = row.getBoundingClientRect();
+        const col = Math.min(6, Math.max(0, Math.floor(((e.clientX - box.left) / box.width) * 7)));
+        let date = row.querySelectorAll('[role="gridcell"]')[col].dataset.date;
+        if (date < rental.from) date = rental.from;
+        if (date > rental.to) date = rental.to;
+        if (date !== st.active || monthOf(date) !== st.view) moveTo(date, true);
+        activateRental(rental, activeCell());
+        return;
+      }
+      // "+N gear": the date, so its list shows every rental. Never a booking.
+      const more = e.target.closest('.cal-rbar-more');
+      if (more) {
+        moveTo(more.dataset.date, true);
+        return;
+      }
       const cell = e.target.closest('[role="gridcell"]');
       if (!cell) return;
       const tile = e.target.closest('.cal-tile');
@@ -413,8 +593,20 @@ const LSCCalendar = (() => {
       moveTo(next, true);
     });
 
+    function activateRental(rental, trigger) {
+      const entry = o.showList ? els.list.querySelector('.cal-rentry[data-rental-id="' + CSS.escape(rental.id) + '"]') : null;
+      if (typeof o.onRentalActivate === 'function') o.onRentalActivate(rental, { trigger, entry });
+      else if (entry) entry.focus();
+    }
+
     if (o.showList) {
       els.list.addEventListener('click', (e) => {
+        const rb = e.target.closest('button.cal-rentry');
+        const rental = rb && st.rentals.find((r) => r.id === rb.dataset.rentalId);
+        if (rental) {
+          activateRental(rental, rb);
+          return;
+        }
         const btn = e.target.closest('.cal-entry');
         const day = btn && st.byId.get(btn.dataset.dayId);
         if (day && typeof o.onTileActivate === 'function') o.onTileActivate(day, { trigger: btn });
@@ -436,6 +628,19 @@ const LSCCalendar = (() => {
         });
         api.setEmphasis(st.emphasis);
       },
+      /**
+       * Replace every rental bar. Called as often as the caller likes (the
+       * editor does on each keystroke): an unchanged set draws nothing.
+       */
+      setRentals(rentals) {
+        const list = (Array.isArray(rentals) ? rentals : []).map(normRental).filter(Boolean);
+        const sig = JSON.stringify(list);
+        if (sig === st.rentalSig) return;
+        st.rentalSig = sig;
+        st.rentals = list;
+        sortRentals();
+        render(0);
+      },
       /** Draw one estimate's days at full strength, listed first; every other one faded. */
       setEmphasis(estimateId) {
         st.emphasis = estimateId || null;
@@ -443,6 +648,7 @@ const LSCCalendar = (() => {
           // A stable sort: the server's order (time, then UPID) holds within each group.
           st.byDate.forEach((list) => list.sort((a, b) => Number(isOwn(b)) - Number(isOwn(a))));
         }
+        sortRentals();
         render(0);
       },
       /** Jump to a date's month, select it and wash it in accent until the next jump ("Go to date"). */

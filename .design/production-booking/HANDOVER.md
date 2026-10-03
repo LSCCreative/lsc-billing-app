@@ -258,7 +258,7 @@ times.
           - **Read its Done note before B2-7.** It has four interpretations to show the user and
             the Equipment summary's seam.
 
-        - [x] **B2-7, gear rentals**: done 2026-10-03, **uncommitted**. Changed
+        - [x] **B2-7, gear rentals**: done 2026-10-03, committed `d9071b7`. Changed
           `estimate-editor.js`, `estimate-detail.js`, `booking-block.js`, `typeahead.js` and
           `booking.css`.
           - **What exists now:**
@@ -274,8 +274,61 @@ times.
           - **Read its Done note before B2-8.** It has four interpretations to show the user
             and the seams.
 
-**Exact next item: TASKS.md B2-8, Rental bars on the calendar** (frontend, Opus/high; a change
-to the shared `web/js/calendar.js`). After B2 is built and deployed, task 11, the hash router
+        - [x] **B2-8, rental bars on the calendar**: done 2026-10-03, **uncommitted** (B2-7
+          committed `d9071b7`). Changed `calendar.js`, `calendar.css`, `booking-block.js` and
+          `estimate-editor.js`.
+          - **What exists now:**
+            - rentals are bars from out to back, split at week rows and labelled vendor · UPID;
+            - other projects' bars are faded, and this estimate's follow live edits;
+            - phones show thin lines;
+            - each date's name and list carry its gear;
+            - a bar of this estimate's leads to its rental row, and another's is named in the
+              list.
+          - **Verified:** across a month boundary and a week wrap at 1280, 800 and 375 against
+            scratch "B2-8 second project" (B28-TWO); 396/396.
+          - **Read its Done note before task 12.** It has the options Home passes.
+
+        - [x] **B2-9, the Rate Card's Capture tick and Deliverable Types**: done 2026-10-03,
+          **uncommitted** (with B2-8). Changed only `pricing.js` and `pricing.css` (396/396).
+          - **What exists now:**
+            - a Capture column on the `prod` table, with an ⓘ in its head and a note under the
+              category name on phones;
+            - a Deliverable Types block after the tables and before Surcharges. Rows have Name,
+              Description, Post-services chips with "+ Add service", "[ N ] × 1 capture hour"
+              and ×. It has an empty state and is saved by Save Services;
+            - validation, Reset's and the delete confirms' wording, and the layouts (phone stack,
+              two columns from 768, one row per type from 1100).
+          - **Verified:** save and reload, old builds refused by the shape guard, and the
+            Desktop Preservation check against the committed files at 1280. That check found and
+            fixed a 5px head-row growth. Also 1100, 800 and 375.
+          - **Scratch:** the card has Brand Story ×2 and Socials ×0.5, with Video Capture and
+            Drone ticked. That's the brief's worked example, ready for B2-10.
+          - **Read its Done note before B2-10.** It has six interpretations to show the user (the
+            main one: a chip follows a post service renamed on the same screen) and the seams.
+
+        - [x] **B2-10, the post-production planner in the editor**: done 2026-10-03,
+          **uncommitted** (with B2-8 and B2-9). Changed `estimate-editor.js`,
+          `estimate-detail.js` and `estimates.css` (396/396; `calc.js` untouched).
+          - **What exists now:**
+            - picking a deliverable type lays its post services onto Post-Production at 0 hrs,
+              tagged with `deliverableId`; a service gone from the card is skipped with a toast;
+            - changing the type or removing the deliverable removes its tagged lines, with a
+              confirm naming the count when any has hours;
+            - "· <deliverable>" tags that follow renames, and a tag to a gone deliverable dropped on
+              save;
+            - the planner cell (Capture · Recommended · "On post lines: X of Y") and each
+              deliverable's share, live from `postPlan`;
+            - production lines added from the menu snapshot `capture`;
+            - "Update to current rates" refreshes deliverable multipliers;
+            - the detail screen shows tags and each deliverable's type.
+          - **Verified:** the brief's worked example (10 → 35, then 20 → 70 after Duplicate day),
+            saved to the cent, a rename followed to the client PDF, an untyped deliverable adds
+            nothing, and both mutations (rounding down, qty ignored) fail the suite.
+          - **Read its Done note before B2-12.** It has five interpretations to show the user (the
+            main one: cancelling the confirm cancels the whole change) and the seams.
+
+**Exact next item: TASKS.md B2-11, the surcharge box and the Totals row**
+(money math, Opus/high). After B2 is built and deployed, task 11, the hash router
 (Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**

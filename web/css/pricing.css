@@ -854,3 +854,420 @@
     transition: none;
   }
 }
+
+/* ── Capture and Deliverable Types (production-booking B2-9) ────────────────
+   The Capture column is the one change inside the existing tables (the
+   brief's exception to the Desktop Preservation Law): a sixth column on the
+   On set category only. Its head carries the ⓘ, so it takes its own width
+   rather than the 48px the Custom/Direct heads hold.
+
+   The Deliverable Types block speaks the Surcharges block's language: a
+   .billing-block with a #111 head, hairline rules between rows, fields in
+   the #1a1c20 well, 16px and 44px on a phone. Phone first, as above. */
+
+.pricing-table th.pricing-capture-th {
+  width: auto;
+  white-space: nowrap;
+}
+/* The 18px circle would make the head row taller than every other
+   category's, pushing the grid's next row down (measured: 5px). Negative
+   margins keep it out of the line box; its 44px hit area is unchanged. */
+.pricing-capture-th .info {
+  margin: -4px 0;
+}
+.pricing-capture-th .info-btn {
+  margin-left: 4px;
+}
+/* What Capture means, for a phone, where the column head is hidden. */
+.pricing-capture-note {
+  padding: 10px 12px 2px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.billing-block.dtype-block {
+  overflow-x: hidden;
+}
+.billing-block.dtype-block .bb-head {
+  min-width: 0;
+}
+.dtype-intro {
+  padding: 12px 16px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+  max-width: 78ch;
+}
+.dtype-intro strong {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The column heads: only where the row is a row (768 up). */
+.dtype-head {
+  display: none;
+}
+.dtype-list {
+  list-style: none;
+  border-top: 1px solid rgba(61, 74, 92, 0.4);
+}
+
+/* Phone: one type is a stack, label above field, × in the corner. */
+.dtype-row {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 16px;
+  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+}
+.dtype-row:last-child {
+  border-bottom: 0;
+}
+.dtype-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+.dtype-lbl {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dtype-lbl-note {
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* Clear of the × in the row's corner. */
+.dtype-what .dtype-lbl:first-child {
+  padding-right: 44px;
+}
+.dtype-what .dtype-desc {
+  margin-bottom: 4px;
+}
+.dtype-what .dtype-lbl + .dtype-inp + .dtype-lbl {
+  margin-top: 6px;
+}
+
+.dtype-inp,
+.dtype-add {
+  background: #1a1c20;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Funnel Sans', sans-serif;
+  font-size: 16px;
+  padding: 6px 10px;
+  min-height: 44px;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 0;
+}
+.dtype-inp:focus,
+.dtype-add:focus {
+  border-color: var(--accent);
+}
+.dtype-inp[aria-invalid='true'] {
+  border-color: var(--err-text);
+}
+.dtype-name {
+  font-weight: 600;
+}
+.dtype-desc {
+  resize: none;
+  overflow: hidden;
+  field-sizing: content;
+  min-height: 44px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.dtype-inp::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.dtype-add {
+  cursor: pointer;
+}
+.dtype-add:disabled {
+  cursor: default;
+  color: var(--muted);
+  border-style: dashed;
+}
+.dtype-add option {
+  background: #1e2228;
+  color: var(--text);
+}
+
+/* Post services as chips. A chip's × is its own target, the whole chip's
+   height. */
+.dtype-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dtype-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding-left: 10px;
+  border: 1px solid var(--border);
+  background: rgba(61, 74, 92, 0.18);
+  font-size: 12px;
+  color: var(--text);
+}
+/* The name, then "missing" beside it if there's room, else under it: a
+   long name keeps its line rather than being squeezed beside the flag. */
+.dtype-chip-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  min-width: 0;
+  padding: 4px 0;
+}
+.dtype-chip-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.dtype-chip-x {
+  flex-shrink: 0;
+  align-self: stretch;
+  /* Over the chip's own border, so it's the chip's full 44px, not 42. */
+  margin: -1px -1px -1px 0;
+  min-width: 44px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.dtype-chip-x:hover {
+  color: #e06060;
+}
+.dtype-chip-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* A service no longer on the card: struck through, dashed, and the word
+   itself, so it never rests on colour alone. */
+.dtype-chip.dtype-chip-missing {
+  border-style: dashed;
+  border-color: var(--err-border);
+  background: none;
+}
+.dtype-chip-missing .dtype-chip-name {
+  color: var(--muted);
+}
+.dtype-chip-flag {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--err-text);
+}
+.dtype-none {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.dtype-mult-row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dtype-mult-inp {
+  width: 96px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dtype-mult-inp::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+.dtype-mult-unit {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.dtype-act {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.dtype-empty {
+  padding: 14px 16px;
+  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dtype-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
+}
+.dtype-foot .btn {
+  justify-content: center;
+}
+
+/* 768 up: compact fields (a mouse, not a thumb). 768–1099 a type is two
+   columns, what it is and its multiplier beside its services, labels still
+   above each field: at 800 the four-column row left Post services 129px
+   wide, and a long service name broke over five lines (measured). */
+@media (min-width: 768px) {
+  .pricing-capture-note {
+    display: none;
+  }
+
+  .dtype-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    grid-template-areas: 'what svcs' 'mult svcs';
+    column-gap: 20px;
+    row-gap: 12px;
+    align-items: start;
+    padding-right: 48px;
+  }
+  .dtype-what {
+    grid-area: what;
+  }
+  .dtype-svcs {
+    grid-area: svcs;
+  }
+  .dtype-mult {
+    grid-area: mult;
+  }
+  .dtype-what .dtype-lbl:first-child {
+    padding-right: 0;
+  }
+  .dtype-inp,
+  .dtype-add {
+    font-size: 13px;
+    min-height: 0;
+    padding: 5px 8px;
+  }
+  .dtype-desc {
+    min-height: 30px;
+    font-size: 12px;
+  }
+  /* A select is as wide as its longest option, a 40-character service name;
+     closed, it only ever says "+ Add service". */
+  .dtype-add {
+    align-self: flex-start;
+    width: 240px;
+    max-width: 100%;
+  }
+  .dtype-chip {
+    min-height: 28px;
+    font-size: 11px;
+    padding-left: 9px;
+  }
+  .dtype-chip-text {
+    padding: 3px 0;
+  }
+  .dtype-chip-x {
+    min-width: 28px;
+    font-size: 13px;
+  }
+  .dtype-none {
+    line-height: 28px;
+  }
+  .dtype-mult-row {
+    flex-wrap: nowrap;
+  }
+  .dtype-mult-inp {
+    width: 64px;
+  }
+  .dtype-mult-unit {
+    font-size: 11px;
+  }
+  .dtype-act {
+    top: 10px;
+    right: 10px;
+  }
+  .dtype-foot {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+/* 1100 up: one row per type under four column heads; the labels above each
+   field stay for screen readers only. The head and each row are separate
+   grids, so every column is a set width or a share, never `auto`, or the
+   heads would drift off their fields. */
+@media (min-width: 1100px) {
+  .dtype-head,
+  .dtype-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(0, 1.5fr) 168px 28px;
+    grid-template-areas: 'what svcs mult act';
+    column-gap: 20px;
+    padding-left: 16px;
+    padding-right: 10px;
+  }
+  .dtype-head {
+    padding-top: 7px;
+    padding-bottom: 7px;
+    border-top: 1px solid rgba(61, 74, 92, 0.4);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .dtype-head + .dtype-list {
+    border-top-color: var(--border);
+  }
+  .dtype-row {
+    padding-top: 10px;
+    padding-bottom: 12px;
+  }
+  .dtype-lbl {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .dtype-what .dtype-desc {
+    margin-bottom: 0;
+  }
+  .dtype-what .dtype-lbl + .dtype-inp + .dtype-lbl {
+    margin-top: 0;
+  }
+  .dtype-act {
+    grid-area: act;
+    position: static;
+    display: flex;
+    justify-content: center;
+    padding-top: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dtype-inp,
+  .dtype-add,
+  .dtype-chip-x {
+    transition: none;
+  }
+}

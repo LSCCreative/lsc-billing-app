@@ -380,8 +380,27 @@ const EstimateEditor = (() => {
     if (withOverride) line.override = num(inputValue(tr, '.custom-bill-inp'));
     const dayId = rowDayId(tr);
     if (dayId) line.dayId = dayId;
+    // The planner's two marks (B2-10): see planMarks().
+    if (tr.dataset.capture) line.capture = tr.dataset.capture === 'true';
+    // A tag whose deliverable has gone is dropped (the server refuses one: line_deliverable_unknown).
+    if (tr.dataset.deliverableId && deliverableRow(tr.dataset.deliverableId)) line.deliverableId = tr.dataset.deliverableId;
     return line;
   }
+
+  /* What a labour row carries for the post-production planner (B2-10), kept
+     on the row like its snapshot and through every rebuild (reprice,
+     Duplicate day): a production line's `capture`, taken from its card row
+     when it was added from the menu, so the line keeps the tick it was added
+     with (a line saved before B2 has none and follows the card: calc.js
+     postPlan); and a post line's `deliverableId`, the deliverable it was laid
+     out for. Neither prices anything. */
+  function planMarks(tr, section, line) {
+    if (section.id === 'prod' && typeof line.capture === 'boolean') tr.dataset.capture = String(line.capture);
+    if (section.id === 'post' && line.deliverableId) tr.dataset.deliverableId = String(line.deliverableId);
+  }
+
+  const deliverableRow = (did) =>
+    Array.from(root.querySelectorAll('#tbody-deliverables [data-did]')).find((tr) => tr.dataset.did === did) || null;
 
   /* An on-set row's day is the card it sits in (B2-4: production, travel,
      crew and gear). Not on a day's panel has an empty data-items-day. */
@@ -423,6 +442,7 @@ const EstimateEditor = (() => {
     tr.dataset.rid = rid();
     tr.dataset.section = section.id;
     tr.dataset.name = line.name;
+    planMarks(tr, section, line);
     const snap = snapFor(def, line);
     if (snap) tr.dataset.snap = JSON.stringify(snap);
     def = snap ? Object.assign({ name: line.name }, snap) : null;
@@ -447,7 +467,14 @@ const EstimateEditor = (() => {
         '</div>';
 
     tr.innerHTML =
-      '<div data-label="Service"' + (unitLine ? ' class="lab-svc"' : '') + '>' + esc(line.name) + unitLine + '</div>' +
+      '<div data-label="Service"' + (unitLine ? ' class="lab-svc"' : '') + '>' +
+      /* A post line's "· Brand Story": the deliverable's current name, painted
+         by paintPlanner (D95). In one span with the name, so it reads on the
+         name's line rather than stacking under it in .lab-svc's column. */
+      (section.id === 'post'
+        ? '<span class="post-name">' + esc(line.name) + '<span class="post-tag" hidden></span></span>'
+        : esc(line.name)) +
+      unitLine + '</div>' +
       '<div class="right" data-label="' + qtyLabel + '"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
       (line.qty || '') + '" aria-label="' + qtyLabel + ' for ' + esc(line.name) + '"></div>' +
       '<div class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</div>' +
@@ -638,20 +665,173 @@ const EstimateEditor = (() => {
     };
     setType(saved);
 
-    tr.querySelector('.deliv-type-sel').addEventListener('change', (e) => {
-      const value = e.target.value;
-      if (!value) return setType(null);
-      if (savedGone && value === saved.typeId) return setType(saved);
-      const t = types.find((x) => x.id === value);
-      if (!t) return setType(null);
+    /* A new type lays out its post services; leaving one takes its lines
+       away first (B2-10, the brief's B2 Key Interactions 3). Cancelling that
+       leaves the row on the type it had. */
+    const sel = tr.querySelector('.deliv-type-sel');
+    let was = sel.value;
+    sel.addEventListener('change', () => {
+      const value = sel.value;
+      if (value === was) return;
+      if (!dropTagged(tr, 'change')) {
+        sel.value = was;
+        return;
+      }
+      was = value;
+      const t = value && !(savedGone && value === saved.typeId) ? types.find((x) => x.id === value) : null;
+      if (!value || !t) {
+        // None, or the removed type put back: its saved snapshot, with no services left to lay out.
+        setType(value && savedGone && value === saved.typeId ? saved : null);
+        return paintPlanner();
+      }
       setType({ typeId: t.id, typeName: String(t.name || ''), multiplier: Number(t.multiplier) || 0 });
       // The type's name fills a blank Name; a name already typed is the owner's.
       const name = tr.querySelector('.deliv-name-inp');
       if (!name.value.trim()) name.value = String(t.name || '');
+      layOutPost(tr, t);
     });
 
-    bindRow(tr, []);
+    // Names and quantities price nothing, but the planner and the post lines' tags read them.
+    tr.querySelector('.deliv-name-inp').addEventListener('input', () => paintPlanner());
+    const qty = tr.querySelector('.deliv-qty-inp');
+    qty.addEventListener('input', () => paintPlanner());
+    /* The saved quantity is never below 1 (collect's `|| 1`), so a cleared or
+       0 field shows the 1 it will be saved, and planned, as. */
+    qty.addEventListener('change', () => {
+      if (!(num(qty.value) > 0)) {
+        qty.value = '1';
+        paintPlanner();
+      }
+    });
+    tr.querySelector('.del-btn').addEventListener('click', () => {
+      if (dropTagged(tr, 'remove')) removeRow(tr);
+    });
     return tr;
+  }
+
+  // ── The post-production planner (B2-10, D89–D96) ──────────────────────────
+  /* Suggest, don't price (the brief's B2 principle 2). A typed deliverable
+     lays its type's post services out in Post-Production at 0 hrs, each
+     tagged with the deliverable (`deliverableId`); the planner cell heading
+     that section shows Production Capture Hours and the hours recommended,
+     and each deliverable its share, all from calc.js postPlan — the editor
+     works none of it out. The owner's typed hours are the price; lines left
+     at 0 never print (the 9a rule). */
+
+  const postSectionLive = () => sections.find((s) => s.id === 'post' && !s.archived) || null;
+  const taggedRows = (did) => rowsIn('post').filter((tr) => tr.dataset.deliverableId === did);
+  const lineCount = (n) => n + ' post line' + (n === 1 ? '' : 's');
+
+  function deliverableLabel(tr) {
+    const name = inputValue(tr, '.deliv-name-inp').trim();
+    return name || 'this deliverable';
+  }
+
+  /* Takes a deliverable's tagged post lines away, when its type changes or
+     it is removed. Lines with hours are the owner's work, so they go only
+     after a confirm naming how many; lines at 0 hrs just go. False: the
+     owner said no, and nothing changed. */
+  function dropTagged(tr, why) {
+    const rows = taggedRows(tr.dataset.did);
+    if (!rows.length) return true;
+    const withHours = rows.filter((row) => num(inputValue(row, '.qty-inp')) > 0).length;
+    const name = deliverableLabel(tr);
+    if (withHours) {
+      const ask = (why === 'change' ? 'Changing the type of ' + name + ' removes its post lines. ' : '') +
+        withHours + ' of ' + (name === 'this deliverable' ? 'its' : name + '’s') + ' post lines ' +
+        (withHours === 1 ? 'has' : 'have') + ' hours — remove ' + (rows.length === 1 ? 'it' : 'them') + '?';
+      if (!window.confirm(ask)) return false;
+    }
+    rows.forEach((row) => row.remove());
+    restoreEmpty($('tbody-post'));
+    recalc();
+    LSCUtil.announce($('editor-live'), 'Removed ' + lineCount(rows.length) + ' for ' + name + '.');
+    return true;
+  }
+
+  /* A removeRow without the recalc, for several rows at once: the empty
+     text back when the body has none left. */
+  function restoreEmpty(body) {
+    if (!body || !body.dataset.emptyText || body.querySelector('[data-rid]') || body.querySelector('.empty-row')) return;
+    const empty = document.createElement('div');
+    empty.className = 'empty-row';
+    empty.textContent = body.dataset.emptyText;
+    body.appendChild(empty);
+  }
+
+  /* The type's post services, onto Post-Production at 0 hrs, tagged. Each is
+     priced as Add Service would price it (unitSnap), by the hour — or, when
+     the hour has no price yet, the first unit that has one. A service no
+     longer on the card, or with no price at all, is skipped and named. */
+  function layOutPost(tr, type) {
+    const section = postSectionLive();
+    const names = (Array.isArray(type.services) ? type.services : []).map((s) => String(s || '').trim()).filter(Boolean);
+    const skipped = [];
+    let added = 0;
+    names.forEach((svc) => {
+      const row = section && section.rows.find((r) => String(r.name || '').trim() === svc);
+      const units = row && row.prices ? ['hour'].concat(LSCCalc.SERVICE_UNITS.filter((u) => u !== 'hour')) : ['hour'];
+      const picked = row ? units.map((u) => unitSnap('post', row, u)).find((p) => p.snap) : null;
+      if (!picked) {
+        skipped.push(svc);
+        return;
+      }
+      const line = buildLabourRow(section, null,
+        Object.assign({ name: row.name, qty: 0, deliverableId: tr.dataset.did }, picked.snap));
+      markOwn(line, picked);
+      const body = $('tbody-post');
+      const empty = body.querySelector('.empty-row');
+      if (empty) empty.remove();
+      body.appendChild(line);
+      added += 1;
+    });
+    recalc();
+    const name = deliverableLabel(tr);
+    if (added) LSCUtil.announce($('editor-live'), 'Added ' + lineCount(added) + ' for ' + name + ' to Post-Production, at 0 hrs.');
+    if (skipped.length) {
+      Toast.error(
+        (section ? 'Not on the Rate Card’s Post-Production any more, so not added: ' : 'There’s no Post-Production on the Rate Card, so not added: ') +
+          skipped.join(', ') + '.'
+      );
+    }
+  }
+
+  // "10", "3.5", "12.25": hours as the planner shows them (no unit: its labels say hours).
+  const planHrs = (n) => String(Math.round((Number(n) || 0) * 100) / 100);
+
+  /* The planner cell, each deliverable's share, and every tag, from the form
+     as it stands. recalc calls it with what it has just collected; the
+     deliverables' own fields, which price nothing, call it alone. */
+  function paintPlanner(active) {
+    if (!root) return;
+    const plan = LSCCalc.postPlan(active || collect(), LSCData.pricing());
+    const delivs = rowsIn('deliverables');
+    delivs.forEach((tr, i) => {
+      const cell = tr.querySelector('.deliv-rec');
+      const share = plan.shares[i];
+      if (cell) cell.textContent = tr.dataset.typeId && share ? planHrs(share.hours) : '—';
+    });
+
+    const cell = $('post-plan');
+    if (cell) {
+      const typed = delivs.some((tr) => tr.dataset.typeId);
+      cell.hidden = !(plan.captureHours > 0 || typed);
+      setText('pp-capture', planHrs(plan.captureHours));
+      setText('pp-rec', planHrs(plan.recommended));
+      setText('pp-on', 'On post lines: ' + planHrs(plan.onPostLines) + ' of ' + planHrs(plan.recommended) + ' recommended');
+    }
+
+    // Each tag reads its deliverable's name now, so a rename follows (D95).
+    const names = new Map(delivs.map((tr) => [tr.dataset.did, inputValue(tr, '.deliv-name-inp').trim()]));
+    rowsIn('post').forEach((tr) => {
+      const tag = tr.querySelector('.post-tag');
+      if (!tag) return;
+      const did = tr.dataset.deliverableId;
+      const gone = !did || !names.has(did);
+      tag.hidden = gone;
+      tag.textContent = gone ? '' : '· ' + (names.get(did) || 'unnamed deliverable');
+      tag.classList.toggle('is-unnamed', !gone && !names.get(did));
+    });
   }
 
   function bindRow(tr, inputSelectors) {
@@ -723,11 +903,39 @@ const EstimateEditor = (() => {
       '<div class="billing-block">' +
       '<div class="bb-head"><div><h2 class="bb-label">' + esc(section.label) + '</h2>' + tag + '</div>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + esc(section.id) + '">$0.00</b></span></div>' +
+      (section.id === 'post' && !section.archived ? postPlanMarkup() : '') +
       picker +
       '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
       '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
       bodyMarkup(section.id, 'No services added. Use the selector above to add one.') +
       '</div>'
+    );
+  }
+
+  /* The planner cell (B2-10, D93): two labelled figures and the comparison
+     in words, not colour. Hidden until there is capture or a typed
+     deliverable (paintPlanner). */
+  function postPlanMarkup() {
+    return (
+      '<div class="post-plan" id="post-plan" hidden>' +
+      '<dl class="pp-figs">' +
+      '<div class="pp-fig"><dt>Production Capture Hours</dt><dd id="pp-capture">0</dd></div>' +
+      '<div class="pp-fig pp-rec"><dt>Recommended Post Production Hours' +
+      LSCInfo.markup({
+        id: 'post-plan',
+        label: 'How the recommended post-production hours are worked out',
+        title: 'Recommended Post Production Hours',
+        paragraphs: [
+          'Production Capture Hours add up the hours of every Production line ticked <strong>Capture</strong> on ' +
+            'the Rate Card, on every day. A line keeps the tick it was added with.',
+          'Each deliverable with a type recommends capture hours × its type’s multiplier × its quantity, rounded ' +
+            'up to the half hour. The recommendation is their sum.',
+          'A guide, never a price: the hours you type on the post lines are what’s billed, and lines left at 0 hrs ' +
+            'don’t print.',
+        ],
+      }) +
+      '</dt><dd id="pp-rec">0</dd></div></dl>' +
+      '<p class="pp-on" id="pp-on"></p></div>'
     );
   }
 
@@ -1041,7 +1249,8 @@ const EstimateEditor = (() => {
       if (!row) return;
       const picked = unitSnap('prod', row, row.prices ? unit : 'hour');
       if (!picked.snap) return;
-      tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 1 }, picked.snap));
+      // Capture is snapshotted from the card row as the line is added (B2-10, D89).
+      tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 1, capture: row.capture === true }, picked.snap));
       markOwn(tr, picked);
       said = row.name + ' — ' + UNIT_ADDED[row.prices ? unit : 'hour'];
     } else if (kind === 'travel') {
@@ -1590,12 +1799,19 @@ const EstimateEditor = (() => {
       const r = k ? shown.find((x) => x.key === k) : null;
       tr.querySelector('.rental-hint').hidden = !(r && !r.outDate && !r.backDate);
     });
+    // The calendar's bars (B2-8): an unchanged set redraws nothing.
+    if (booking) booking.refreshRentals();
   }
 
   /* From a line's hint: its rental's Out date. */
   function focusRental(key) {
     const r = shownRentals().find((x) => x.key === key);
-    const li = r && rentalRows.get(r.id);
+    if (r) focusRentalRow(r.id);
+  }
+
+  /* From a calendar bar (B2-8): the rental's row, at its Out date. */
+  function focusRentalRow(id) {
+    const li = rentalRows.get(id);
     if (!li) return;
     const out = li.querySelector('[data-r="outDate"]');
     out.scrollIntoView({ block: 'nearest' });
@@ -2269,6 +2485,8 @@ const EstimateEditor = (() => {
     });
     paintDays(perDay);
     paintOnSet(onSet);
+    // Capture follows every production line, wherever it sits; the shares follow capture.
+    paintPlanner(active);
     syncRentals();
     paintRentals();
     if (booking) booking.refreshHead();
@@ -2638,6 +2856,9 @@ const EstimateEditor = (() => {
       qty: inputValue(tr, '.qty-inp'),
       override: inputValue(tr, '.custom-bill-inp'),
     });
+    // A new price, not a new line: it keeps its Capture tick and its deliverable (planMarks).
+    if (tr.dataset.capture) line.capture = tr.dataset.capture === 'true';
+    if (tr.dataset.deliverableId) line.deliverableId = tr.dataset.deliverableId;
     const fresh = section ? buildLabourRow(section, null, line) : buildTravelRow(null, line);
     if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
     if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
@@ -2698,6 +2919,21 @@ const EstimateEditor = (() => {
         changed += 1;
       }
     });
+    /* A typed deliverable's multiplier is a Rate Card snapshot too (B2-3):
+       it takes today's, for a type still on the card. Its post lines stay as
+       they are; only the recommendation moves. */
+    let multipliers = 0;
+    const types = deliverableTypes();
+    rowsIn('deliverables').forEach((tr) => {
+      const t = tr.dataset.typeId && types.find((x) => x.id === tr.dataset.typeId);
+      if (!t) return;
+      const next = Number(t.multiplier) || 0;
+      if (Number(tr.dataset.multiplier) !== next || tr.dataset.typeName !== String(t.name || '')) {
+        tr.dataset.multiplier = String(next);
+        tr.dataset.typeName = String(t.name || '');
+        multipliers += 1;
+      }
+    });
     // Current rates are no longer the last project's.
     ratesFromLast = false;
     const box = $('f-rates-last');
@@ -2721,6 +2957,8 @@ const EstimateEditor = (() => {
     Toast.ok(
       (changed ? changed + ' price' + (changed === 1 ? '' : 's') + ' updated to the rate card' : 'Every price already matches the rate card') +
         (surchargesMoved ? '; surcharges now follow today’s Rate Card and public holidays' : '') +
+        (multipliers ? '; ' + multipliers + ' deliverable type' + (multipliers === 1 ? '' : 's') + ' now plan' +
+          (multipliers === 1 ? 's' : '') + ' with today’s multiplier' : '') +
         (missing ? '; ' + lines(missing) + (missing === 1 ? ' isn’t' : ' aren’t') + ' on it any more and' + keptIts(missing) : '') +
         (unpriced ? '; ' + lines(unpriced) + ' at a unit with no price on it yet' + keptIts(unpriced) : '') + '.'
     );
@@ -3325,6 +3563,9 @@ const EstimateEditor = (() => {
       // Gear rentals (B2-7): the panel under both columns, and the head's counts.
       rentals: rentalsPanel,
       headNotes: bookingHeadNotes,
+      // Rental bars (B2-8): this estimate's rentals as they stand, and where a bar of theirs leads.
+      ownRentals: rentalsPayload,
+      onRentalFocus: focusRentalRow,
     });
     bind(pricing);
     paintLink();
