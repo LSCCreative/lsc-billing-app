@@ -29,369 +29,54 @@ five stages. Build them in this order (decision 1):
 A and B ship together, because the weekend/holiday and after-hours surcharges need booked dates and
 times.
 
-## State as of 2026-09-30
+## State as of 2026-10-03
 
-- [x] Request captured, then folded into the brief (the raw `REQUEST.md` was deleted 2026-09-30).
-- [x] **Grill Me**: done 2026-09-30 across all five stages (D1–D52).
-- [x] **Design brief**: done 2026-09-30 (`DESIGN_BRIEF.md`), adding D53–D56 on the client pages'
-      look, voice, FAQ and the Client Hub. It fixes the surcharge maths (a three-mode table, plus
-      worked examples for tests) and one **interpretation flagged for the user**: office hours
-      define after hours on every day, so a weekend evening is both weekend and after hours (it
-      only matters under "All multiply").
-- [x] **Inputs received 2026-10-01**:
-      - the FAQ is live at https://lsccreative.studio/faq.html (D55, now the default FAQ URL);
-      - the brand fonts are in the git-ignored `Visual Design/` (D57). Copy only the `.woff2` a page
-        loads.
-      Still to come from the user: the service agreement text, the Google app password, and the
-      Stripe account.
-- [x] **Information architecture**: done 2026-10-02 (`INFORMATION_ARCHITECTURE.md`, D58–D66).
-      - **Navigation:** Projects replaces Estimates in the nav; Settings becomes a screen.
-      - **Routing:** the app gets hash routes, reversing the old "no router" stance.
-      - **UPIDs:** they become unique; Duplicate starts a new project; a one-off fix-up screen
-        handles shared or blank UPIDs.
-      - **Editor:** the Document Type switch is retired.
-      - **Day statuses:** Confirmed / Pencilled / Proposed.
-      - **Data model per stage** (migrations v11–v13): production days and holidays (A+B);
-        projects, invoices and activity (D); versions, sends, signatures and payments (E).
-      - **Public routes:** `/public/*` and `/hooks/stripe` sit before `requireAuth`, behind a
-        dedicated serializer.
-      - **Two code findings:** status is never set in the UI, so live estimates are all `draft`;
-        and backups cover only the database, so signed PDFs go in the database (D66).
-- [x] **Tasks**: done 2026-10-02 (`TASKS.md`), 33 tasks, each tagged with its bucket:
-      - A+B: 1–10 (migration v11);
-      - C: 11–13;
-      - D: 14–23 (migration v13, was v12 until B2 took v12 on 2026-10-03);
-      - E: 24–32 (migration v14, was v13);
-      - review: 33.
-- [ ] **Build A → E.** In progress on branch `production-booking`. It was branched 2026-10-02 from
-      `estimate-accuracy` at `e83533a`, where that track's work through v10 is committed but **not
-      deployed**. v10 deploys before v11.
-      - [x] **Task 1, the surcharge maths**: done and committed 2026-10-02 (`86edf25`).
-        - Pure functions in both `calc.js` copies.
-        - The settings, day and attribution shapes it chose are in TASKS.md task 1's Done note.
-      - [x] **Task 2, schema v11 with days on the server**: done 2026-10-02, committed `a571c67`.
-        - **What exists now:** migration v11, surcharged `computeTotals`, the estimate routes
-          taking `days`, the clash lock, and `GET /api/calendar`. `PRICING_SHAPE` is
-          `'production-days'`.
-        - **Not deployed.** Ship it with the rest of A+B (task 10): NAS before Pages, and v10
-          first.
-        - **Read task 2's Done note before tasks 6, 7 and 15.** It lists the write rules, error
-          codes and snapshot behaviour they build on.
+Design is complete: Grill Me (D1–D99), `DESIGN_BRIEF.md`, `INFORMATION_ARCHITECTURE.md` (hash routes,
+"Projects" replaces "Estimates" in the nav, unique UPIDs, Settings as a screen), and `TASKS.md`
+(33 tasks plus B2-1…B2-13). Migrations: v11 (A+B), v12 (B2 `rentals`), **v13 (Stage D)**, **v14 (E)**.
 
-      - [x] **Task 3, public holidays**: done and committed 2026-10-02 (`a7c1dc7`).
-        - **What exists now:** `GET /api/holidays`, `POST /api/holidays/fetch`, `PUT` and `DELETE
-          /api/holidays/:date`, and a non-blocking boot top-up from Nager.Date.
-        - **Read task 3's Done note before task 4.** It has the response shapes, the tombstone
-          rule and the one schema change (`holidays.fetched_at`, amended inside v11).
-        - **A dev DB already at v11** needs `DELETE FROM schema_version WHERE version >= 11` and a
-          restart to gain that column. `api-scratch` was done and now holds 22 fetched dates plus
-          a hand-added NSW Bank Holiday (2026-08-03).
+**Built and committed on branch `production-booking`:**
+- **A+B, tasks 1–10** (surcharge maths, schema v11 days/holidays, holidays fetch, Rate Card
+  Surcharges block, shared calendar `web/js/calendar.js`, editor Production Booking block, live
+  surcharged pricing, estimate detail + client PDF + Cost Breakdown PDF, a11y pass, money review
+  fixes D67–D72). **Deployed 2026-10-02** (NAS v11, Pages, `main` `6074c3e`).
+- **B2, B2-1…B2-13** (`postPlan`, rentals v12, service menu and on-set kinds on day cards, drag/Move
+  to/Duplicate day, "On set, by day" summaries, gear rentals, rental bars, Rate Card Capture tick and
+  Deliverable Types, post-production planner, surcharge box, a11y pass). **Deployed 2026-10-03**
+  (NAS v12, then Pages, `main` `930249c`). The user still needs to tick Capture on real services and
+  add Deliverable Types on the Rate Card.
+- **C, tasks 11–13** (hash router `web/js/router.js`, Home calendar dashboard, deploy). **Live
+  2026-10-03** (Pages only, `main` `7910c53`). The user skipped the VoiceOver pass on Home.
+- **Stage C code-review fixes, 2026-10-03, uncommitted and not deployed** (Pages only, no server
+  change). The router also listens to `popstate`, so Back between two entries with the same
+  address (left by a replace: a deleted client's entry becoming the list, or a bad address
+  becoming Home) keeps its index in step. Before this, a refused Back could undo by the wrong
+  distance, and a `leaveTo()` could leave its skipped guard set. Estimate and client routes that
+  fetch now show "Loading…" at once, so the screen being left can't take edits after the guard
+  has asked. Home checks the router's ticket and no longer has its own `visit` counter, so a late
+  401 after leaving Home is dropped. Coming up reuses the month's reply when it covers the next 14
+  days, so a visit makes one fetch. Week tiles stop at midnight. `STATUS_WORD`, `MONTHS`,
+  `DAY_SHORT` and `upidOf` are exported from `calendar.js`. Checked in the browser against
+  `api-scratch`.
 
-      - [x] **Task 4, the Rate Card blocks**: committed 2026-10-02 (`da2db86`).
-        - **What exists now:** the Surcharges block (saved with the card), the Public holidays
-          block (below the save bar, saves itself), an "On set" tag in place of Production's ×,
-          and `DEFAULT_PRICING` with an `additional` section holding Overtime plus `surcharges`.
-        - **Beyond the spec:** "+ Add Additional work" on any card without that section. It makes
-          an empty section under id `additional`, which later stages should look up by id.
-        - **Read task 4's Done note before task 6.** The 768–1099 `.bb-head` 660px floor in
-          `responsive.css` catches any new `.billing-block` without a grid. The Booking block will
-          meet the same thing.
+Per-task detail (shapes, error codes, mutation lists, verification logs) was removed from here and
+`TASKS.md` to save tokens: the code and tests are the record, and
+`git log -p -- .design/production-booking/` has the old text. Commits are named
+`Production booking: <task>`.
 
-      - [x] **Task 5, the month calendar component**: committed 2026-10-02 (`cbe5f07`).
-        - **What exists now:** `LSCCalendar.mount()` in `web/js/calendar.js` with
-          `web/css/calendar.css`, both loaded by `index.html` but not mounted anywhere yet. There's
-          also a shared `LSCCalendar.statusChip()` for the day cards and Coming up.
-        - **Read task 5's Done note before tasks 6 and 12.** It gives the API, the callbacks'
-          `{ trigger }` for `Modal`, and the interpretations to show the user:
-          - tiles aren't tab stops, because a list of the selected date's bookings under the grid
-            is the keyboard and phone route;
-          - "quarter tile" is read as half width × half height;
-          - faded is an outline, not opacity;
-          - tiles vs dots goes by the calendar's own width.
+- **D, task 14** (invoice maths in `calc.js`: `depositAmount`, `extrasTotals`,
+  `finalInvoiceTotals`, `singleInvoiceTotals`; `accepted` counts as won). 2026-10-03,
+  **uncommitted**, nothing to deploy alone. See its Done note in `TASKS.md`.
 
-      - [x] **Task 6, the editor's Production Booking block**: committed 2026-10-02 (`685ebbb`).
-        - **What exists now:** `web/js/views/booking-block.js` and `web/css/booking.css`. The
-          editor sends `days` on every save, blocks a save with a locked day, and handles the 409.
-          `api.js` refusals carry `err.data`.
-        - Its Done note has the block's API and the interpretations to show the user (TBC starts
-          Proposed; a day booked first needs no note; the same date twice is allowed).
-      - [x] **Task 7, production items on days, priced with surcharges**: committed 2026-10-02
-        (`5261323`). Only `estimate-editor.js`, `booking-block.js` and `booking.css` changed;
-        no server change, and `calc.js` is untouched (349/349).
-        - **What exists now:** each day card holds its production lines and its own picker. The
-          Production section lists the days, has "Add to a day ▾", and holds old lines under
-          "Unassigned — pick a day". Live surcharged prices, "incl. weekend ×1.5" notes,
-          "Surcharges +$X ⓘ", the short notice tick and hint, and D26's hours hint are all in.
-        - **Verified to the cent against the server** on every worked example, all three modes,
-          and the five task 1 mutations re-checked through the editor. Details are in TASKS.md
-          task 7's Done note.
-        - **The user confirmed all five interpretations on 2026-10-02**: the four in that Done note,
-          and task 2's custom-bill line being surcharged on its custom amount.
-      - [x] **Task 8, the estimate detail, the client PDF and the Cost Breakdown PDF**: committed
-        2026-10-02 (`0d82f73`). The suite is 366/366.
-        - **What exists now:**
-          - `calc.js` `costBreakdown()`, the figures;
-          - the client PDF's "Production Days" block, with folded prices and the proposed-days
-            disclaimer;
-          - `POST /api/estimates/:id/cost-breakdown`;
-          - the detail's Production grouped by day, an "incl. Surcharges" total, and a
-            "↓ Cost Breakdown" button.
-        - **Bug fixed:** the PDF route never loaded the estimate's days.
-        - **The user saw a sample Cost Breakdown and client PDF on 2026-10-02** and asked for the
-          commit with no changes. That settles the attribution question below and the five
-          interpretations in TASKS.md task 8's Done note.
-
-      - [x] **Task 9, the A+B responsive and accessibility pass**: done 2026-10-02,
-        **uncommitted**. Only `estimate-editor.js` and `booking.css` changed (366/366).
-        - **Built:** a debounced, polite surcharge announcement (`#sur-live`, "Saturday 24
-          October: weekend rate ×1.5 applied."), and the Short notice tick at 44px on phones.
-        - **Measured and recorded** in TASKS.md task 9's Done note: layout at 1280/800/375, the
-          add-day sheet, ≥44px targets, status words, the keyboard grid, reduced motion, focus
-          rings, and nothing moved at 1280/800.
-        - **Still for a person:** a real VoiceOver pass over the booking block, the add-day
-          sheet and the detail's day groups.
-
-      - [x] **Task 9a, the money review fixes**: done 2026-10-02, **uncommitted** (377/377).
-        - **What changed:** a code and accounting review of the whole pipeline raised ten findings.
-          The user decided D67–D72 for the ones that changed a rule:
-          - after hours per item, over its own hours from the booked start;
-          - after hours every day;
-          - the next morning's office hours count as in-hours;
-          - the hours after midnight take the next date's status, as a carry-over sub-line in the
-            Cost Breakdown;
-          - migration v11 moves Overtime off set;
-          - short notice reaches items on no day.
-        - **Also fixed:** the editor's holiday save guard, the Cost Breakdown refusing stale totals,
-          qty-0 items, and the duplicate's message.
-        - **Details** are in TASKS.md task 9a.
-        - **Brief:** its surcharge maths and worked examples are updated (the 9–7 full day is now
-          $1,120).
-
-- [x] **Tasks 9 and 9a committed** (`6074c3e`) and **task 10 deployed 2026-10-02**: NAS at v11
-      (v10 ran with it), Pages run 36971522863 success, `main` at `6074c3e`. Details in TASKS.md
-      task 10's Done note. The live card had no Overtime row, so the v11 move was a no-op.
-      **Still for the user:** check the Public holidays list, set the surcharge multipliers.
-
-- [ ] **Stage B2, day-built estimates and the post-production planner** (added 2026-10-03, to be
-      built **before** task 11, D73). It's going through the design flow:
-      - [x] **Grill Me**: done 2026-10-03 (D73–D97 in `DECISIONS.md`).
-      - [x] **Design brief**: done 2026-10-03 (the "Stage B2" section at the end of
-            `DESIGN_BRIEF.md`). The user confirmed its six interpretations the same day (recorded
-            under D99).
-      - [x] **Information architecture**: done 2026-10-03 (the "Stage B2 addendum" at the end of
-            `INFORMATION_ARCHITECTURE.md`, D98–D99). **B2 takes migration v12** (the `rentals`
-            table), so Stage D is now v13 and E v14. TASKS.md, the IA and the `db.js` trap comment
-            were renumbered. The tokens phase is skipped by choice.
-      - [x] **Tasks**: done 2026-10-03. TASKS.md's "Stage B2" section has **B2-1 … B2-13**, between
-            Stage A+B and Stage C, each tagged with its bucket. Task 12 gained rental bars, task 33's
-            review covers B2, and D97 (post days on the calendar) is under "Not in this list".
-      - [ ] **Build B2-1 → B2-13**, then deploy (NAS v12 before Pages).
-        - [x] **B2-1, `postPlan` and the card shape**: done 2026-10-03, committed `33af089` (387/387).
-          - **What exists now:** `calc.js` `postPlan`, and `PRICING_SHAPE` `'deliverable-types'`.
-            `DEFAULT_PRICING.deliverableTypes` is `[]`. `PUT /api/pricing` checks `capture` and
-            `deliverableTypes`. The Rate Card carries both through a save; there's no UI for them
-            yet (B2-9).
-          - **Read its Done note before B2-2 and B2-10.** It has three interpretations to show the
-            user, two seams, and the mutations. In short: capture counts the hours a line bills;
-            the fallback matches by row id, then name; untyped means no `typeId`.
-          - **Not deployed, and it can't go alone:** the shape bump means Pages must follow NAS.
-            It ships with B2-13.
-        - [x] **B2-2, schema v12, rentals, and the server's line rules**: done 2026-10-03,
-          committed `26e4e75` (396/396).
-          - **What exists now:** migration v12 (`rentals`), `src/rentals.js`, `dayId` allowed on
-            travel/crew/equip, the deliverable-tag checks, `rentals` on the estimate routes and
-            `/api/calendar`, and the PDF printing Item and tags. `api-scratch` is at v12.
-          - **Read its Done note before B2-4, B2-7 and B2-10.** It has every refusal code, four
-            interpretations to show the user, and two seams. The main one: the editor has no
-            wording for the new codes yet.
-
-        - [x] **B2-3, the Deliverables block and the Prices bar**: done 2026-10-03,
-          committed `51b3a80`. Only `estimate-editor.js` and `estimates.css` changed.
-          - **What exists now:**
-            - the order is Prices bar → Deliverables → booking;
-            - the tinted headline block;
-            - the Type ▾ column, snapshotting `typeId`/`typeName`/`multiplier`;
-            - every deliverable gets an id;
-            - a "Post hrs (rec.)" cell showing "—".
-          - **Read its Done note before B2-10.** It has three interpretations to show the user
-            (a removed type keeps its snapshot; re-picking keeps the old multiplier; Type first
-            on phones), the 1280/800/375 measurements, and the scratch data left for B2-10.
-
-        - [x] **B2-4, the service menu and every on-set kind on a day**: done 2026-10-03,
-          committed `c6f7457`. Changed `estimate-editor.js`, `booking-block.js`, `booking.css` and
-          `index.html`.
-          - **What exists now:**
-            - day cards hold Production · Travel · Crew · Equipment groups;
-            - a "Not on a day" last card;
-            - one service menu ("Add Production Service Items"), in the calendar's column at
-              ≥768 and a bottom sheet below;
-            - the flat Travel, Crew and Equipment sections are heads and subtotals only.
-          - **Verified:** to the cent against the server, including a surcharged production
-            line beside unsurcharged travel, crew and gear on a Saturday, and with short notice.
-          - **Not deployable until B2-6** fills those sections.
-          - **Read its Done note before B2-5 and B2-6.** It has five interpretations to show the
-            user and the seams: Move to has to replace the "Pick a day…" select, and lines on Not
-            on a day have no way onto a day until then.
-
-        - [x] **B2-5, moving lines: drag, Move to, Duplicate day**: done 2026-10-03,
-          committed `333c897`. Changed `estimate-editor.js`, `booking-block.js` and `booking.css`.
-          - **What exists now:** every on-set line has a drag handle (mouse and pen, ≥768) and
-            "Move to ▾" (any pointer, the keyboard). A move is the row moved into another card,
-            then a recalc, so its price follows the new day. Each card has "Duplicate day".
-          - **Verified:** Sat ↔ Mon round trips to the dollar; the save matched the server to
-            the cent; and removing the re-price was caught by the figure check.
-          - **Read its Done note before B2-12.** It has three interpretations to show the user
-            (the copy keeps the times; the handle isn't a tab stop; list names) and the
-            `login.css` `[hidden] !important` trap.
-
-        - [x] **B2-6, "On set, by day": the four read-only summaries and the editor order**:
-          done 2026-10-03, committed `77aebbb`. Changed `estimate-editor.js` and `booking.css`.
-          - **What exists now:** under Additional work, an "On set, by day" divider and four
-            read-only summaries (Production, Travel, External Crew & Contracts, Equipment Hire),
-            each grouped by card with "Edit on the day ↑", a group total and the subtotal, and
-            "Add to a day ▾" opening a card's menu at that category. Task 7's Production day
-            list and select are gone. **B2-4 and B2-5 are deployable now.**
-          - **Verified:** every summary's subtotal, group totals and lines equal `computeTotals`
-            on that kind's lines, before and after a save that matched the server to the cent; a
-            summary line at the unsurcharged price was caught; legacy estimates show one Not on
-            a day group; D98's order at 1280/800/375.
-          - **Read its Done note before B2-7.** It has four interpretations to show the user and
-            the Equipment summary's seam.
-
-        - [x] **B2-7, gear rentals**: done 2026-10-03, committed `d9071b7`. Changed
-          `estimate-editor.js`, `estimate-detail.js`, `booking-block.js`, `typeahead.js` and
-          `booking.css`.
-          - **What exists now:**
-            - equipment lines have Vendor (a typeahead of this estimate's vendors) and Item;
-            - one rental per vendor in a Gear rentals panel under the booking block's columns,
-              with Out/Back dates and methods and a note;
-            - rentals saved with the estimate;
-            - the head counts rentals and off-day lines;
-            - the detail shows Item with the vendor muted.
-            Old lines open with their text as the Item.
-          - **Verified:** the Done-when cases, a rename that keeps the rental's dates (and the
-            mutation that breaks it caught), and the save and reload against the server.
-          - **Read its Done note before B2-8.** It has four interpretations to show the user
-            and the seams.
-
-        - [x] **B2-8, rental bars on the calendar**: done 2026-10-03, committed `cd01500` (with
-          B2-9 and B2-10). Changed `calendar.js`, `calendar.css`, `booking-block.js` and
-          `estimate-editor.js`.
-          - **What exists now:**
-            - rentals are bars from out to back, split at week rows and labelled vendor · UPID;
-            - other projects' bars are faded, and this estimate's follow live edits;
-            - phones show thin lines;
-            - each date's name and list carry its gear;
-            - a bar of this estimate's leads to its rental row, and another's is named in the
-              list.
-          - **Verified:** across a month boundary and a week wrap at 1280, 800 and 375 against
-            scratch "B2-8 second project" (B28-TWO); 396/396.
-          - **Read its Done note before task 12.** It has the options Home passes.
-
-        - [x] **B2-9, the Rate Card's Capture tick and Deliverable Types**: done 2026-10-03,
-          committed `cd01500`. Changed only `pricing.js` and `pricing.css` (396/396).
-          - **What exists now:**
-            - a Capture column on the `prod` table, with an ⓘ in its head and a note under the
-              category name on phones;
-            - a Deliverable Types block after the tables and before Surcharges. Rows have Name,
-              Description, Post-services chips with "+ Add service", "[ N ] × 1 capture hour"
-              and ×. It has an empty state and is saved by Save Services;
-            - validation, Reset's and the delete confirms' wording, and the layouts (phone stack,
-              two columns from 768, one row per type from 1100).
-          - **Verified:** save and reload, old builds refused by the shape guard, and the
-            Desktop Preservation check against the committed files at 1280. That check found and
-            fixed a 5px head-row growth. Also 1100, 800 and 375.
-          - **Scratch:** the card has Brand Story ×2 and Socials ×0.5, with Video Capture and
-            Drone ticked. That's the brief's worked example, ready for B2-10.
-          - **Read its Done note before B2-10.** It has six interpretations to show the user (the
-            main one: a chip follows a post service renamed on the same screen) and the seams.
-
-        - [x] **B2-10, the post-production planner in the editor**: done 2026-10-03,
-          committed `cd01500`. Changed `estimate-editor.js`,
-          `estimate-detail.js` and `estimates.css` (396/396; `calc.js` untouched).
-          - **What exists now:**
-            - picking a deliverable type lays its post services onto Post-Production at 0 hrs,
-              tagged with `deliverableId`; a service gone from the card is skipped with a toast;
-            - changing the type or removing the deliverable removes its tagged lines, with a
-              confirm naming the count when any has hours;
-            - "· <deliverable>" tags that follow renames, and a tag to a gone deliverable dropped on
-              save;
-            - the planner cell (Capture · Recommended · "On post lines: X of Y") and each
-              deliverable's share, live from `postPlan`;
-            - production lines added from the menu snapshot `capture`;
-            - "Update to current rates" refreshes deliverable multipliers;
-            - the detail screen shows tags and each deliverable's type.
-          - **Verified:** the brief's worked example (10 → 35, then 20 → 70 after Duplicate day),
-            saved to the cent, a rename followed to the client PDF, an untyped deliverable adds
-            nothing, and both mutations (rounding down, qty ignored) fail the suite.
-          - **Read its Done note before B2-12.** It has five interpretations to show the user (the
-            main one: cancelling the confirm cancels the whole change) and the seams.
-
-        - [x] **B2-11, the surcharge box and the Totals row**: done 2026-10-03, committed
-          `9d1f30f`. Changed both `calc.js` copies, `test-calc.js`, `estimate-editor.js` and
-          `estimates.css` (401/401).
-          - **What exists now:**
-            - `calc.js` `surchargeSummary(costBreakdown(...))`: one row per day and rate,
-              carry-overs apart, and short notice once, summed in whole cents;
-            - the editor's `#sur-box` in place of `#sur-line`, between "On set, by day" and
-              the overhead switch (D98). It's hidden with no days and nothing surcharged, and
-              reads "No surcharges apply." with days and none;
-            - the Totals row at 36/25px (the page title is 30), with the take-home sentence in
-              an `LSCInfo` ⓘ.
-          - **Verified:** Audit A's box (+$6,747.00) equals the stored `surchargeTotal` and the
-            Cost Breakdown PDF row for row. The live short-notice toggle, all three states,
-            and seven figures at 375 were checked. Four mutations each fail the suite.
-          - **Read its Done note before B2-12.** It has four interpretations to show the user
-            (the main one: short notice on dayless lines still shows the box) and the seams.
-
-        - [x] **B2-12, the B2 responsive and accessibility pass**: done 2026-10-03,
-          **uncommitted**. Changed `estimate-editor.js`, `booking-block.js`, `pricing.js`,
-          `booking.css` and `responsive.css`. No server change (401/401).
-          - **Fixed six things:**
-            1. a drag cancelled with Escape no longer opens the Move to list on release
-               (mutation-checked);
-            2. focus follows a dropped line;
-            3. the open menu re-forms when the window crosses 768;
-            4. Production Booking is an `<h2>`, so Gear rentals and the menu nest under it, not
-               under Deliverables;
-            5. 44px targets at 375 for Not on a day's "Edit ↑" and the Rate Card's ticks;
-            6. no drag handle on touch-only screens at 768 and up.
-          - **Measured:** everything on the list at 1280, 800 and 375.
-          - **Nothing moved:** at 1280 and 800 against HEAD, and outside B2's blocks against
-            pre-B2 `6074c3e`.
-          - **Read its Done note** for the measurements, four interpretations to show the user
-            (the main one: the pre-B2 Custom, Direct and Your time ticks got the same 44px
-            label as Capture) and the VoiceOver checklist.
-
-**B2-13 done 2026-10-03: B2 is deployed** (NAS v12, then Pages run 37094465617, `main` at `930249c`; B2-12 committed `930249c`). Still for the user: tick Capture on their real capture services and add their Deliverable Types on the Rate Card.
-
-- [ ] **Stage C, the home dashboard.**
-  - [x] **Task 11, the hash router**: done 2026-10-03, committed `7ae182f`. New `web/js/router.js`;
-    `app.js` holds the route table (`renderRoute`, `LANDING`); each area's view has
-    `init()` + `show(segments, state)`. No server change (401/401).
-    - **Verified:** Back/Forward, reload, deep links, sign-in carry-on, the unsaved guard on
-      every exit (one question each), modals closed by Back, deleted ids in place, and
-      byte-identical `#main` at 1280 against `f019f5f` on six screens.
-    - **Read its Done note before task 12.** It has five interpretations to show the user (the
-      main one: `#/home` lands on the estimates list until task 12 sets `LANDING`) and the seams.
-  - [x] **Task 12, the Home screen**: done 2026-10-03, committed `7910c53`. New `views/home.js`,
-    `views/home-week.js` and `css/home.css`; `app.js` lands on `#/home`. No server change
-    (401/401).
-    - **What exists now:** month and week views (week: an hour scale, a "No time" row, a gear
-      strip; a day list under 600px), the tile pop-up with "Open estimate", Coming up (14 days,
-      links to the estimate), and Recent activity's empty state.
-    - **Verified** at 1280, 800 and 375 against `api-scratch`, with six days added across
-      October and November (`dhome1`–`dhome6`).
-    - **Read its Done note before task 13.** It has six interpretations to show the user (the
-      main one: the button says "Open estimate" until stage D) and the seams.
-
-  - [x] **Task 13, deploy**: **Stage C is live 2026-10-03** (Pages only, run 37099081882,
-    `main` at `7910c53`). The user skipped the VoiceOver pass on Home.
-
-**Exact next item: TASKS.md task 14, the invoice maths** (Stage D's first task; money math,
-Opus/high). Stage D begins with migration v13.
+**Exact next item: TASKS.md task 15, schema v13** (projects, statuses, invoices, activity; money
+math, Opus/high).
 
 **Seams left for later tasks:**
+- **Invoices (tasks 19–20):** store the deposit's `depositAmount(...)` result on the deposit invoice
+  and pass that stored object to `finalInvoiceTotals`; don't recompute it from a % later. On the
+  final's tax invoice, the GST for this supply is `balance.gst`, because the deposit's GST was
+  already on its own tax invoice. Show `total` as the full job, then "Less deposit paid", then
+  `balance`. Extras lines need price snapshots (`mu`) so later card changes don't move them.
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
   two readers of a booked estimate. The client page lists days as the client PDF does, with
   stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.

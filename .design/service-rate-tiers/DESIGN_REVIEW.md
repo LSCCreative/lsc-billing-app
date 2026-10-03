@@ -21,39 +21,9 @@ Not checked: a real VoiceOver pass (still a person's job, see the handover), the
 "no price yet, needs Profit Goals" option (needs a database with no tax scale; its width was stress-
 tested by injecting the option text), and the first-run empty state.
 
-## Screenshots Captured
+## Screenshots
 
-Full-page unless noted. Mobile pages are shown as side-by-side viewport slices, because a full-page
-capture of a 9,000px phone page duplicates its tail in Chrome.
-
-| Screenshot | Breakpoint | Description |
-| --- | --- | --- |
-| `screenshots/review-rate-card-desktop-1280.png` | Desktop (1280) | Whole Rate Card on Hourly: Service Day, Show switch, four tables, state lines |
-| `screenshots/review-rate-card-tablet-768.png` | Tablet (768) | Same |
-| `screenshots/review-rate-card-mobile-375.png` | Mobile (375), 3 slices | Settings stack, Show as three thirds, stacked rows |
-| `screenshots/review-rate-card-show-full-day-top-desktop-1280.png` | Desktop, viewport | Show = Full day: `120.96/day`, `· 8 billable hrs`, auto prices dimmed |
-| `screenshots/review-rate-card-show-full-day-desktop-1280.png` | Desktop, table | The Production table on Full day |
-| `screenshots/review-rate-card-show-full-day-tablet-768.png` | Tablet, top 1300px | Full day view; state line on one line |
-| `screenshots/review-rate-card-show-full-day-mobile-375.png` | Mobile, viewport | Full day on a stacked row |
-| `screenshots/review-rate-card-row-hidden-notice-desktop-1280.png` | Desktop, element | Hourly fine, half day typed below floor: the notice, select focused |
-| `screenshots/review-rate-card-row-half-below-floor-desktop-1280.png` | Desktop, element | The same row on Half day: typed 100, "set by you · below floor" |
-| `screenshots/review-rate-card-row-use-suggested-focus-desktop-1280.png` | Desktop, element | Real Tab from the price lands on `↺ use $103` with a focus ring |
-| `screenshots/review-rate-card-service-day-invalid-save-desktop-1280.png` | Desktop, viewport | Half 12 > Full 8, Save pressed: the field is outlined, no reason in view |
-| `screenshots/review-editor-desktop-1280.png` | Desktop (1280) | Edit Estimate, all sections, picker in each labour block |
-| `screenshots/review-editor-prod-lines-desktop-1280.png` | Desktop, element | Three lines: Video Capture per hour, Photo Capture per half day, Video Capture per full day |
-| `screenshots/review-editor-prod-lines-tablet-768.png` | Tablet, element | Same |
-| `screenshots/review-editor-prod-lines-mobile-375.png` | Mobile, element | Stacked lines, `HALF DAYS` / `FULL DAYS` quantity labels |
-| `screenshots/review-editor-preprod-lines-desktop-1280.png`, `-tablet-768.png`, `-mobile-375.png` | All three | The same for the Pre-Production block |
-| `screenshots/review-editor-line-unit-focus-desktop-1280.png` | Desktop, element | Line unit select after keyboard focus |
-| `screenshots/review-editor-picker-longest-option-tablet-768.png` | Tablet, element | Picker with the longest possible unit option injected |
-| `screenshots/review-dashboard-desktop-1280.png` | Desktop (1280) | Floors from Service Day, one comparison row per service |
-| `screenshots/review-dashboard-tablet-768.png` | Tablet (768) | Same |
-| `screenshots/review-dashboard-mobile-375.png` | Mobile (375), 3 slices | Floors stacked, comparison rows as cards |
-
-> All screenshots are in `.design/service-rate-tiers/screenshots/`. Earlier `responsive-*` files
-> there are task 8's before/after measurements and were left alone.
-
-Dark mode: not applicable. The site is dark-only by design.
+Removed to save space; re-capture if needed (the findings below stand alone).
 
 ## Summary
 
@@ -83,7 +53,6 @@ None.
    full day." is rendered in `#pricing-error` in the save bar at the bottom of the page (measured at
    y = 2,373 with the viewport at the top). A sighted user sees a red box and no reason. The brief
    (Key Interactions §1) says "an inline reason, the same as the existing hours field does".
-   See [`review-rate-card-service-day-invalid-save-desktop-1280.png`](screenshots/review-rate-card-service-day-invalid-save-desktop-1280.png).
    _Fix: put a `role="alert"` line inside the Service Day block (under its description, in
    `--accent-text`) and point the fields' `aria-describedby` at it, as `pricing-error-0` already does
    for the save bar. Keep the save-bar message._

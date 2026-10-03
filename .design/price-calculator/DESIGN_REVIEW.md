@@ -8,45 +8,9 @@ Reviewed live against `api-scratch` at commit `08d1c72` (all 23 build tasks): $2
 costs + $2,850 replacement reserve, 8/5/30/8 capacity (1,776 hrs), 25% margin → $18.90 hourly
 floor; one diminishing-value asset (Sony FX6, $8,800, 3-yr life) and one pooled MacBook.
 
-## Screenshots Captured
+## Screenshots
 
-Captured with headless Chrome (`puppeteer-core`, already a server dependency for PDF export),
-signed in to the local scratch server with the test login named in `.claude/launch.json`. Full-page
-unless noted. The below-floor states were produced by lowering three Mark-Ups **in the page's local
-cache only** — nothing was saved.
-
-| Screenshot | Breakpoint | Description |
-| --- | --- | --- |
-| `screenshots/review-dashboard-desktop-1280.png` | Desktop (1280) | Floors, comparison (all clear), how-the-floor-is-built panels, revenue/jobs, post ratio, GST |
-| `screenshots/review-dashboard-tablet-768.png` | Tablet (768) | Same; comparison table wrapping (Should fix 1) |
-| `screenshots/review-dashboard-mobile-375.png` | Mobile (375) | Horizontal rail, stacked floors, collapsed comparison |
-| `screenshots/review-dashboard-below-floor-desktop-1280.png` | Desktop (1280, viewport) | Top of the Dashboard with three rows below floor |
-| `screenshots/review-dashboard-below-floor-table-desktop-1280.png` | Desktop (1280, viewport) | Comparison table: "3 of 21 below floor", `Below by $X` links |
-| `screenshots/review-dashboard-below-floor-mobile-375.png` | Mobile (375) | Comparison opening on the three below-floor rows as cards |
-| `screenshots/review-dashboard-info-open-desktop-1280.png` | Desktop (1280, viewport) | "How the floor comparison works" popover open |
-| `screenshots/review-rate-card-desktop-1280.png` | Desktop (1280) | Rate Card with day rows, hours field, floor lines |
-| `screenshots/review-rate-card-below-floor-desktop-1280.png` | Desktop (1280, viewport) | Rate Card floor line in the below-floor state |
-| `screenshots/review-rate-card-tablet-768.png` | Tablet (768) | Rate Card at the tablet floor |
-| `screenshots/review-rate-card-mobile-375.png` | Mobile (375) | Stacked rate card |
-| `screenshots/review-overhead-desktop-1280.png` | Desktop (1280) | Operating Costs: summary, table, donut, trend |
-| `screenshots/review-overhead-tablet-768.png` | Tablet (768) | Same |
-| `screenshots/review-overhead-mobile-375.png` | Mobile (375) | Same |
-| `screenshots/review-depreciation-desktop-1280.png` | Desktop (1280) | Two numbers, register, decline curve, schedule, CSV, threshold |
-| `screenshots/review-depreciation-tablet-768.png` | Tablet (768) | Same; pinned actions column |
-| `screenshots/review-depreciation-mobile-375.png` | Mobile (375) | **Captured 407px wide** — the overflow in Must fix 1 |
-| `screenshots/review-depreciation-asset-modal-desktop-1280.png` | Desktop (1280, viewport) | Add Asset dialog, first field focused |
-| `screenshots/review-depreciation-dispose-modal-desktop-1280.png` | Desktop (1280, viewport) | Dispose dialog |
-| `screenshots/review-capacity-desktop-1280.png` | Desktop (1280) | Annual hours above the four fields, save bar, full-day hours |
-| `screenshots/review-capacity-tablet-768.png` | Tablet (768) | Same |
-| `screenshots/review-capacity-mobile-375.png` | Mobile (375) | Same |
-| `screenshots/review-profit-goals-desktop-1280.png` | Desktop (1280) | Fields, read-only capacity, shared tax control, target revenue |
-| `screenshots/review-profit-goals-tablet-768.png` | Tablet (768) | Same |
-| `screenshots/review-profit-goals-mobile-375.png` | Mobile (375) | Same |
-| `screenshots/review-rail-focus-desktop-1280.png` | Desktop (1280, viewport) | Keyboard focus ring on a rail item |
-
-> All screenshots are in `.design/price-calculator/screenshots/`.
-
-Dark mode: not applicable — the site is dark-only by design; there is no light theme or toggle.
+Removed to save space; re-capture if needed (the findings below stand alone).
 
 ## Summary
 

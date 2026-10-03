@@ -6,31 +6,9 @@ Date: 18 September 2026
 Reviewed live against `api-scratch` (the brief's worked example: $24,000/yr overhead, $90k net,
 25% margin, 20 hrs/wk → $25/hr; 12 overhead snapshots Jul 2025 – Sep 2026).
 
-## Screenshots Captured
+## Screenshots
 
-**These were captured and analysed in the Claude desktop app's built-in browser pane, which returns
-images to the reviewer but cannot write files to disk.** No Playwright/Cursor browser MCP was
-available, and the alternative — driving a separate headless browser — would have meant the
-reviewer signing in to the app itself, which it does not do. The table below names every view that
-was captured and examined, so findings stay traceable; `screenshots/` was not created. To keep a
-file record, capture these views manually (or run this review again in an environment with
-Playwright MCP).
-
-| Capture | Breakpoint | Description |
-| --- | --- | --- |
-| `review-pricing-desktop-1280` | Desktop (1280×800) | Pricing sub-tab: computed read-only rates beside editable Mark-Up, explanatory note |
-| `review-overhead-desktop-1280` (top, lower) | Desktop (1280×800) | Summary Card, GST note, expense table; donut + legend; trend chart |
-| `review-goals-desktop-1280` | Desktop (1280×800) | Goals form, shared tax control, save bar, Target Annual Revenue |
-| `review-add-expense-modal-error-desktop-1280` | Desktop (1280×800) | Add Expense dialog after submitting empty — validation state |
-| `review-overhead-empty-desktop-1280` | Desktop (1280×800) | First-run: no expenses, no snapshots |
-| `review-goals-empty-desktop-1280` | Desktop (1280×800) | First-run: no goals, no overhead (em-dash stat) |
-| `review-overhead-tablet-768` (top, lower) | Tablet (768×1024) | Full Overhead screen at the tablet floor |
-| `review-goals-tablet-768` | Tablet (768×1024) | Three-column form, save bar (post layout-check fix) |
-| `review-overhead-mobile-375` (top, charts) | Mobile (375×812) | Stacked table, stacked Summary Card, ring above legend, 2-label trend |
-| `review-editor-mjp-mobile-375` | Mobile (375×812) | Estimate editor: toggle, summary bars, Minimum Job Price line + `(?)` |
-| Cost breakdown dialog, desktop + 375px | — | Captured and reviewed in the cost-breakdown task this same session (HANDOVER.md entry 16) |
-
-Dark mode: not applicable — the site is dark-only by design; there is no light theme or toggle.
+Removed to save space; re-capture if needed (the findings below stand alone).
 
 ## Summary
 
