@@ -134,7 +134,13 @@ function registerEstimateRoutes(app, db) {
     const rows = db.prepare('SELECT * FROM estimates ORDER BY updated_at DESC').all();
     const days = readDaysByEstimate(db);
     const rentals = readRentalsByEstimate(db);
-    res.json({ ok: true, estimates: rows.map((row) => loadEstimate(row, days.get(row.id), rentals.get(row.id))) });
+    // How many projects still wait for the UPID fix-up (task 16): the list's banner.
+    const needsUpid = db.prepare('SELECT COUNT(*) AS n FROM projects WHERE needs_upid = 1').get().n;
+    res.json({
+      ok: true,
+      estimates: rows.map((row) => loadEstimate(row, days.get(row.id), rentals.get(row.id))),
+      needsUpid,
+    });
   });
 
   app.get('/api/estimates/:id', (req, res) => {

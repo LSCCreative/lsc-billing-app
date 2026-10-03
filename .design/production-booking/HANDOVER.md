@@ -73,11 +73,15 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   `upid_taken`; declined estimates leave the calendar and the lock). 2026-10-03, **not deployed**
   (NAS v13 ships with task 23). Its decisions are in its Done note in `TASKS.md`.
 
-**Exact next item: TASKS.md task 16, the UPID fix-up screen and Duplicate** (frontend, Opus/high).
-It needs `GET/POST /api/setup/upids`: group `projects.needs_upid = 1` by
-`lower(trim(estimates.upid))`, a blank one alone. "Keep together" moves the group's estimates into one
-project with that UPID and deletes the emptied projects. A new UPID goes through `projects.js`
-`upidTakenBy`.
+- **D, task 16** (the UPID fix-up `#/setup/upids` with `GET/POST /api/setup/upids`, the list
+  banner, Duplicate into the copy's editor). 2026-10-03, **uncommitted, not deployed** (ships with
+  v13 at task 23). Its decisions are in its Done note in `TASKS.md`. The `api-scratch` DB is now
+  v13, with every group settled and one duplicate (`B28-COPY`).
+
+**Exact next item: TASKS.md task 17, the Projects list** (frontend, Opus/high). Carry the fix-up
+banner over: it reads `needsUpid` from `GET /api/estimates` today, so `GET /api/projects` needs the
+same count, and the banner's "Fix now" goes to `/setup/upids` (`EstimatesView` handler
+`onFixUpids`).
 
 **Seams left for later tasks:**
 - **Invoices (tasks 19–20):** store the deposit's `depositAmount(...)` result on the deposit invoice
@@ -103,6 +107,8 @@ project with that UPID and deletes the emptied projects. A new UPID goes through
   `foreign_key_check` refuses the whole migration (and the boot) if the live DB already holds a row
   pointing at nothing. The boot log line `[db] v13: N project(s) … M need a UPID …` gives the fix-up
   count.
+- **Invoices on a waiting project (task 19):** the banner says invoicing waits for a UPID, and
+  invoice numbers carry it, so refuse creating an invoice while `projects.needs_upid = 1`.
 - **UPID lock (D36, task 19):** `planProjectWrite` (`projects.js`) lets the UPID change freely
   today. Once a project has a non-legacy invoice or a send, refuse a change there.
 - **Accept/decline (tasks 18–19)** set `estimates.status` and `projects.accepted_at` /

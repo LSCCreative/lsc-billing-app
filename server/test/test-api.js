@@ -1861,3 +1861,128 @@ test('projects: a declined estimate\'s days and rentals leave the calendar and l
   assert.equal(b.status, 201, JSON.stringify(b.body));
   await dropEstimates(a.body.estimate.id, b.body.estimate.id);
 });
+
+/* ── The UPID fix-up (task 16) ─────────────────────────────────────────── */
+/* As v13 leaves an estimate whose UPID was shared or blank: its own project,
+   with no UPID and waiting, and the old UPID kept on the estimate. */
+function makeWaiting(estimate, oldUpid) {
+  db.prepare('UPDATE estimates SET upid = ? WHERE id = ?').run(oldUpid, estimate.id);
+  db.prepare('UPDATE projects SET upid = NULL, needs_upid = 1 WHERE id = ?').run(estimate.projectId);
+}
+const fixups = () => api('/api/setup/upids').then((r) => r.json());
+const fixUp = (body) => api('/api/setup/upids', { method: 'POST', body: JSON.stringify(body) })
+  .then(async (r) => ({ status: r.status, body: await r.json() }));
+const groupOf = (listing, key) => listing.groups.find((g) => g.key === key);
+
+test('setup: waiting estimates are grouped by their old UPID, a blank one alone, and the list counts them', async () => {
+  const made = [];
+  for (const [upid, date] of [['T16-G1', '2026-01-02'], [' t16-g1 ', '2026-01-01'], ['', ''], ['', ''], ['T16-LONE', '']]) {
+    const r = await saveEstimate({ name: 'G ' + made.length, date });
+    makeWaiting(r.body.estimate, upid);
+    made.push(r.body.estimate);
+  }
+  const listing = await fixups();
+  const shared = groupOf(listing, 'u:t16-g1');
+  assert.deepEqual(shared.estimates.map((e) => e.id), [made[0].id, made[1].id], 'oldest first');
+  assert.deepEqual([shared.upid, shared.canKeepTogether, shared.clientsDiffer], ['T16-G1', true, false]);
+  assert.equal(typeof shared.estimates[0].totalIncGst, 'number');
+  for (const blank of [made[2], made[3]]) {
+    const g = groupOf(listing, 'e:' + blank.id);
+    assert.deepEqual([g.upid, g.estimates.length, g.canKeepTogether], ['', 1, false]);
+  }
+  assert.equal(groupOf(listing, 'u:t16-lone').canKeepTogether, false);
+  // Named groups first, blank ones after.
+  const keys = listing.groups.map((g) => g.key);
+  assert.ok(keys.indexOf('u:t16-lone') < keys.indexOf('e:' + made[2].id));
+  assert.ok(listing.remaining >= 5);
+  const list = await api('/api/estimates').then((r) => r.json());
+  assert.equal(list.needsUpid, listing.remaining);
+  await dropEstimates(...made.map((e) => e.id));
+});
+
+test('setup: assigning gives each estimate in the group its own UPID, one of them may keep the shared one', async () => {
+  const a = (await saveEstimate({ name: 'A' })).body.estimate;
+  const b = (await saveEstimate({ name: 'B' })).body.estimate;
+  const other = (await saveEstimate({ name: 'Other job', upid: 'T16-HELD' })).body.estimate;
+  const waiting = (await saveEstimate({ name: 'W' })).body.estimate;
+  makeWaiting(a, 'T16-S');
+  makeWaiting(b, 't16-s');
+  makeWaiting(waiting, 'T16-ELSEWHERE');
+  const key = 'u:t16-s';
+  const send = (ua, ub) => fixUp({ key, upids: [{ estimateId: a.id, upid: ua }, { estimateId: b.id, upid: ub }] });
+
+  // The whole group, as it stands, or nothing.
+  assert.deepEqual([(await fixUp({ key, upids: [{ estimateId: a.id, upid: 'X' }] })).body.error], ['group_changed']);
+  assert.equal((await fixUp({ key: 'u:no-such', upids: [] })).body.error, 'group_changed');
+  assert.equal((await fixUp({ key, upids: [{ estimateId: a.id, upid: 'X1' }, { estimateId: b.id, upid: 'X2' },
+    { estimateId: waiting.id, upid: 'X3' }] })).body.error, 'group_changed', 'an estimate from another group');
+  assert.deepEqual((await send('T16-A', '  ')).body, { error: 'upid_required', estimateId: b.id });
+  const repeated = await send('T16-SAME', ' t16-same ');
+  assert.deepEqual([repeated.status, repeated.body.error, repeated.body.estimateIds], [400, 'upid_repeated', [a.id, b.id]]);
+  const held = await send('T16-A', 't16-held');
+  assert.deepEqual([held.status, held.body.error, held.body.estimateId, held.body.projectId, held.body.projectName],
+    [409, 'upid_taken', b.id, other.projectId, 'Other job']);
+  // Another group still waiting carries its UPID too.
+  assert.equal((await send('T16-A', 'T16-ELSEWHERE')).body.error, 'upid_taken');
+  assert.equal(projectRow(a.projectId).needs_upid, 1, 'a refusal writes nothing');
+
+  const done = await send(' T16-S ', 'T16-S2');
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(groupOf(done.body, key), undefined);
+  assert.deepEqual([projectRow(a.projectId).upid, projectRow(a.projectId).needs_upid], ['T16-S', 0]);
+  assert.deepEqual([projectRow(b.projectId).upid, projectRow(b.projectId).needs_upid], ['T16-S2', 0]);
+  const read = (id) => api(`/api/estimates/${id}`).then((r) => r.json()).then((r) => r.estimate.upid);
+  assert.deepEqual([await read(a.id), await read(b.id)], ['T16-S', 'T16-S2']);
+  // Settled: an editor save now treats them as any other project.
+  assert.equal((await saveEstimate({ upid: 'T16-S' }, b.id)).body.error, 'upid_taken');
+
+  // A blank one alone takes a UPID the same way.
+  const blank = (await saveEstimate({ name: 'Blank' })).body.estimate;
+  makeWaiting(blank, '');
+  const settled = await fixUp({ key: 'e:' + blank.id, upids: [{ estimateId: blank.id, upid: 'T16-B' }] });
+  assert.equal(settled.status, 200);
+  assert.equal(projectRow(blank.projectId).upid, 'T16-B');
+  await dropEstimates(a.id, b.id, other.id, waiting.id, blank.id);
+});
+
+test('setup: keep together makes one project under the shared UPID, invoices and activity moved', async () => {
+  db.prepare("INSERT OR IGNORE INTO clients (id, business_name, created_at, updated_at) VALUES ('cl_t16a', 'T16 A', 'x', 'x')").run();
+  db.prepare("INSERT OR IGNORE INTO clients (id, business_name, created_at, updated_at) VALUES ('cl_t16b', 'T16 B', 'x', 'x')").run();
+  const old = (await saveEstimate({ name: 'Old', clientId: 'cl_t16a' })).body.estimate;
+  const newer = (await saveEstimate({ name: 'Newer' })).body.estimate;
+  db.prepare("UPDATE estimates SET created_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(old.id);
+  makeWaiting(old, 'T16-Keep');
+  makeWaiting(newer, ' t16-keep');
+  db.prepare("UPDATE projects SET accepted_at = '2025-05-05' WHERE id = ?").run(newer.projectId);
+  db.prepare("INSERT INTO invoices (id, project_id, estimate_id, kind, number, created_at, updated_at) VALUES ('inv_t16', ?, ?, 'legacy', 'INV-1', 'x', 'x')")
+    .run(newer.projectId, newer.id);
+  db.prepare("INSERT INTO activity (id, project_id, at, kind) VALUES ('act_t16', ?, 'x', 'note')").run(newer.projectId);
+
+  // A blank group, or one estimate, has nothing to keep together.
+  const lone = (await saveEstimate({ name: 'Lone' })).body.estimate;
+  makeWaiting(lone, '');
+  assert.equal((await fixUp({ key: 'e:' + lone.id, keepTogether: true })).body.error, 'nothing_to_keep');
+
+  // Two clients are two projects (D31).
+  db.prepare("UPDATE estimates SET client_id = 'cl_t16b' WHERE id = ?").run(newer.id);
+  assert.equal(groupOf(await fixups(), 'u:t16-keep').clientsDiffer, true);
+  assert.equal((await fixUp({ key: 'u:t16-keep', keepTogether: true })).body.error, 'clients_differ');
+  // An unlinked one goes along with the linked one.
+  db.prepare('UPDATE estimates SET client_id = NULL WHERE id = ?').run(newer.id);
+
+  const kept = await fixUp({ key: 'u:t16-keep', keepTogether: true });
+  assert.equal(kept.status, 200, JSON.stringify(kept.body));
+  assert.equal(groupOf(kept.body, 'u:t16-keep'), undefined);
+  const p = projectRow(old.projectId);
+  assert.deepEqual([p.upid, p.needs_upid, p.client_id, p.accepted_at], ['T16-Keep', 0, 'cl_t16a', '2025-05-05']);
+  assert.equal(projectRow(newer.projectId), undefined, 'the emptied project is gone');
+  const est = db.prepare('SELECT project_id, upid FROM estimates WHERE id IN (?, ?) ORDER BY id').all(old.id, newer.id);
+  assert.deepEqual(est.map((e) => [e.project_id, e.upid]), [[old.projectId, 'T16-Keep'], [old.projectId, 'T16-Keep']]);
+  assert.equal(db.prepare("SELECT project_id FROM invoices WHERE id = 'inv_t16'").get().project_id, old.projectId);
+  assert.equal(db.prepare("SELECT project_id FROM activity WHERE id = 'act_t16'").get().project_id, old.projectId);
+  // The kept-together project saves from the editor with its UPID, as one project.
+  assert.equal((await saveEstimate({ upid: 'T16-Keep' }, newer.id)).status, 200);
+
+  await dropEstimates(old.id, newer.id, lone.id);
+  assert.equal(projectRow(old.projectId), undefined);
+});

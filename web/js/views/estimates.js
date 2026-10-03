@@ -34,6 +34,11 @@ const EstimatesView = (() => {
       onNew: () => LSCRouter.go(LIST + '/new'),
       onOpen: (id) => LSCRouter.go(detailPath(id)),
       onEdit: (estimate) => LSCRouter.go(detailPath(estimate.id) + '/edit', { state: { estimate } }),
+      /* Duplicate (D60): straight into the copy's editor, its UPID blank and
+         focused, with what it was copied from said beside the field. */
+      onEditCopy: (copy, from) => LSCRouter.go(detailPath(copy.id) + '/edit', { state: { estimate: copy, copiedFrom: from } }),
+      // The banner on the list, while any project waits for a UPID (D61).
+      onFixUpids: () => LSCRouter.go('/setup/upids'),
       onBack: () => LSCRouter.leaveTo(LIST),
       // The editor's Back and Cancel. Off a deep link the editor's entry gives
       // way to the list, so Back afterwards doesn't reopen an abandoned form.
@@ -110,17 +115,21 @@ const EstimatesView = (() => {
   }
 
   /* id null for a new estimate. `held` is the estimate the detail screen
-     already fetched, handed through the route's state so Edit doesn't wait on
-     a second fetch of what is on screen; a reload or a deep link has none and
-     reads it. */
-  async function showEditor(id, held) {
+     already fetched (or Duplicate just made), handed through the route's state
+     so Edit doesn't wait on a second fetch of what is on screen; a reload or a
+     deep link has none and reads it. */
+  async function showEditor(id, state) {
     window.scrollTo(0, 0);
+    const held = state && state.estimate;
     let estimate = null;
     if (id) {
       estimate = held && held.id === id ? held : await load(id, () => showEditor(id));
       if (!estimate) return;
     }
-    EstimateEditor.mount(root, estimate, handlers());
+    // Only for the copy Duplicate just made: a reload of its editor is an
+    // ordinary edit, and the blank UPID still can't be saved.
+    const copiedFrom = estimate && held === estimate ? state.copiedFrom : null;
+    EstimateEditor.mount(root, estimate, handlers(), { copiedFrom });
   }
 
   return {
@@ -140,7 +149,7 @@ const EstimatesView = (() => {
       if (id === undefined) showList();
       else if (id === 'new' && sub === undefined) showEditor(null);
       else if (sub === undefined) showDetail(id);
-      else if (sub === 'edit') showEditor(id, state && state.estimate);
+      else if (sub === 'edit') showEditor(id, state);
       else return false;
       return true;
     },

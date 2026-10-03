@@ -153,6 +153,7 @@
       onOpenSettings: openSettings,
     });
     HomeView.init(main, { onAuthLost });
+    SetupView.init(main, { onAuthLost });
     ClientsView.init(main, {
       onAuthLost,
       onOpenEstimate: (id) => LSCRouter.go('/estimates/' + encodeURIComponent(id)),
@@ -184,6 +185,10 @@
     } else if (area === 'clients') {
       setNav('clients');
       shown = ClientsView.show(rest, state);
+    } else if (area === 'setup') {
+      // The UPID fix-up (task 16) is reached from the estimates list.
+      setNav('estimates');
+      shown = SetupView.show(rest, state);
     } else if (area === 'finance' && rest.length <= 1) {
       setNav('finance');
       shown = FinanceView.show(main, rest[0], state, {

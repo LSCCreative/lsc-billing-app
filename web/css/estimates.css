@@ -492,6 +492,14 @@
 .inv-num-wrap label.label-accent {
   color: var(--accent-text);
 }
+/* Under the blank UPID of a copy Duplicate just made (D60): where it came
+   from, and why it needs its own. */
+.field-copy-note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
 /* "Total (inc GST)" sits on the cell's own accent tint, which costs
    --accent-text its margin (4.29:1 at 9px). The tint and the accent figure
    under it already carry the emphasis; the label reads --text. */

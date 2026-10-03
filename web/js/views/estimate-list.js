@@ -105,14 +105,27 @@ const EstimateList = (() => {
     );
   }
 
-  function markup(estimates) {
+  /* While any project waits for the UPID fix-up (v13, D61). Gone, with its
+     route, once none do. */
+  function upidBanner(needsUpid) {
+    if (!needsUpid) return '';
+    return (
+      '<div class="upid-banner" role="note"><p><strong>' +
+      needsUpid + (needsUpid === 1 ? ' project needs' : ' projects need') + ' a UPID</strong> ' +
+      'before invoicing can be used. Some estimates share one, or have none.</p>' +
+      '<button type="button" class="btn btn-sm" id="js-fix-upids">Fix now</button></div>'
+    );
+  }
+
+  function markup(estimates, needsUpid) {
     const count = estimates.length;
     let html =
       '<div class="page-head"><div><h1 class="page-title">Estimates</h1>' +
       '<div class="page-sub">' +
       (count ? count + ' estimate' + (count !== 1 ? 's' : '') : 'No estimates yet') +
       '</div></div>' +
-      '<button class="btn btn-accent" id="js-new">+ New Estimate</button></div>';
+      '<button class="btn btn-accent" id="js-new">+ New Estimate</button></div>' +
+      upidBanner(needsUpid);
 
     if (!count) {
       html += emptyMarkup();
@@ -182,9 +195,11 @@ const EstimateList = (() => {
     const ticket = LSCRouter.ticket();
 
     let estimates;
+    let needsUpid = 0;
     try {
       const reply = await LSCApi.get('/api/estimates');
       estimates = reply.estimates || [];
+      needsUpid = reply.needsUpid || 0;
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (!LSCRouter.isCurrent(ticket)) return;
@@ -201,8 +216,10 @@ const EstimateList = (() => {
     }
 
     if (!LSCRouter.isCurrent(ticket)) return;
-    root.innerHTML = markup(estimates);
+    root.innerHTML = markup(estimates, needsUpid);
     root.querySelector('#js-new').addEventListener('click', () => handlers.onNew());
+    const fix = root.querySelector('#js-fix-upids');
+    if (fix) fix.addEventListener('click', () => handlers.onFixUpids());
     bindSetup(root, handlers);
 
     root.querySelectorAll('.proj-card').forEach((card) => {

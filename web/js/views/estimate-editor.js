@@ -105,6 +105,7 @@ const EstimateEditor = (() => {
   let root = null;
   let handlers = null;
   let existing = null; // the estimate being edited, or null for a new one
+  let copiedFrom = null; // { upid, name } when Duplicate just made this one (D60)
   let sections = []; // labour categories this form was built from
   let rowCounter = 0;
   let saving = false;
@@ -2230,7 +2231,14 @@ const EstimateEditor = (() => {
       '<div class="page-sub">Select services from each category to build your estimate</div></div></div>' +
       '<div class="form-grid">' +
       '<div class="field full"><label for="f-upid" class="label-accent">UPID — Unique Project Identifier *</label>' +
-      '<input id="f-upid" type="text" value="' + esc(estimate ? estimate.upid : '') + '"></div>' +
+      '<input id="f-upid" type="text" value="' + esc(estimate ? estimate.upid : '') + '"' +
+      (copiedFrom ? ' aria-describedby="f-upid-copy"' : '') + '>' +
+      (copiedFrom
+        ? '<p class="field-copy-note" id="f-upid-copy">Copied from ' +
+          esc([copiedFrom.upid, copiedFrom.name].filter(Boolean).join(' · ') || 'another estimate') +
+          '. A copy is a new project, so it needs a UPID of its own.</p>'
+        : '') +
+      '</div>' +
       '<div class="field"><label for="f-name">Project Name *</label>' +
       '<input id="f-name" type="text" value="' + esc(estimate ? estimate.name : '') + '"></div>' +
       '<div class="field"><label for="f-date">Date</label>' +
@@ -3410,6 +3418,10 @@ const EstimateEditor = (() => {
         return showError(lock.msg);
       }
       if (RENTAL_ERRORS[err.code]) return showError(RENTAL_ERRORS[err.code]);
+      // UPIDs are unique (D60): the server names the project that has it.
+      if (err.code === 'upid_taken') {
+        return fieldError(err.message || 'That UPID is already used by another project.', 'f-upid');
+      }
       showError(
         err.kind === 'network'
           ? 'Couldn’t save — the server is unreachable. Your work is still here; try again once it’s back.'
@@ -3559,10 +3571,13 @@ const EstimateEditor = (() => {
     );
   }
 
-  function mount(container, estimate, viewHandlers) {
+  /* options.copiedFrom: { upid, name } of the estimate Duplicate just copied
+     (D60), said under the blank UPID. */
+  function mount(container, estimate, viewHandlers, options) {
     root = container;
     handlers = viewHandlers;
     existing = estimate || null;
+    copiedFrom = (options && options.copiedFrom) || null;
     rowCounter = 0;
     saving = false;
     breakdownOverlay = document.getElementById('modal-cost-breakdown');

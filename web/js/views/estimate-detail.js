@@ -404,8 +404,8 @@ const EstimateDetail = (() => {
       Toast.ok(reply.unbooked
         ? 'Duplicated. Its ' + reply.unbooked + ' production ' + (reply.unbooked === 1 ? 'item is' : 'items are') +
           ' off their days and priced at the standard rate until you book ' + (reply.unbooked === 1 ? 'it' : 'them') + '.'
-        : 'Duplicated — opening the copy.');
-      handlers.onOpen(reply.estimate.id);
+        : 'Duplicated — give the copy its own UPID.');
+      handlers.onEditCopy(reply.estimate, { upid: estimate.upid, name: estimate.name });
     } catch (err) {
       els.duplicate.disabled = false;
       els.dupSpinner.style.display = 'none';

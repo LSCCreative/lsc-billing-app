@@ -1,0 +1,210 @@
+/* The UPID fix-up (production-booking task 16): the banner on the estimates
+   list, and #/setup/upids. Additive only; reuses .btn, .field, .page-head,
+   the --err-* tokens (a11y.css) and .sr-only.
+
+   One group per bordered block, headed like a billing block (#111 band): the
+   shared UPID is the block's title, in Delight, because it is the thing being
+   sorted out. --accent is used as a rule, never as text (a11y.css: under
+   4.5:1 at these sizes). */
+
+/* ── The banner on the list ───────────────────────────────────────────────
+   The Capacity first-run flag's mark: a 2px accent rule on the left. A note,
+   not an alert: it is there on arrival, not something that just happened. */
+.upid-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+}
+.upid-banner p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.upid-banner strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.upid-banner .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ── The screen ───────────────────────────────────────────────────────── */
+.fix-intro {
+  max-width: 68ch;
+  margin: -6px 0 28px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.fix-group {
+  border: 1px solid var(--border);
+  margin-bottom: 18px;
+}
+
+.fix-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 14px 20px;
+  background: #111;
+  border-bottom: 1px solid var(--border);
+}
+.fix-group-upid {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.fix-group-upid.is-blank {
+  color: var(--muted);
+}
+/* Focus lands here after a group above is settled, for the screen reader's
+   sake; a ring round a heading nobody clicked would only look like a bug. */
+.fix-group-upid:focus {
+  outline: none;
+}
+.fix-group-upid:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.fix-group-kicker {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.fix-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fix-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 220px;
+  align-items: center;
+  gap: 8px 24px;
+  padding: 14px 20px;
+}
+.fix-row + .fix-row {
+  border-top: 1px solid var(--border);
+}
+.fix-row-name {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.fix-row-meta {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.fix-row-total {
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* The label sits above the field as everywhere else; the row aligns on the
+   field, so the label hangs into the row's top padding. */
+.fix-row-field {
+  gap: 4px;
+}
+
+.fix-note {
+  margin: 0;
+  padding: 0 20px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* Same treatment as #editor-error. */
+.fix-error {
+  display: none;
+  margin: 0 20px 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fix-error.show {
+  display: block;
+}
+
+.fix-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Tablet: the field narrows before the name has to ─────────────────── */
+@media (max-width: 1099px) {
+  .fix-row {
+    grid-template-columns: minmax(0, 1fr) auto 180px;
+    gap: 8px 18px;
+  }
+}
+
+/* ── Phone: each estimate stacks — name, figures, then its field ──────── */
+@media (max-width: 767px) {
+  .upid-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .upid-banner .btn {
+    justify-content: center;
+  }
+  .fix-intro {
+    margin-top: 0;
+  }
+  .fix-group-head,
+  .fix-row,
+  .fix-actions {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .fix-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+  }
+  .fix-row-field {
+    grid-column: 1 / -1;
+    margin-top: 4px;
+  }
+  .fix-note {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .fix-error {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  /* The primary action on top, full width under the thumb. */
+  .fix-actions {
+    flex-direction: column-reverse;
+  }
+  .fix-actions .btn {
+    justify-content: center;
+  }
+}

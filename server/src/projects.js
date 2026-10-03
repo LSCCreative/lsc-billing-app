@@ -21,17 +21,46 @@ const { newId } = require('./db');
 
 const normUpid = (value) => String(value == null ? '' : value).trim();
 
-/** The project already using `upid`, other than `ownProjectId`; or null. */
-function upidTakenBy(db, upid, ownProjectId) {
+/**
+ * The project already using `upid`, other than `own` (a project id, or a list
+ * of them: the fix-up screen settles a whole group at once, and the group's
+ * own estimates still carry the UPID it is sorting out); or null.
+ */
+function upidTakenBy(db, upid, own) {
   if (!upid) return null;
+  const owned = JSON.stringify((Array.isArray(own) ? own : [own]).filter(Boolean));
   const row = db.prepare(`
-    SELECT id AS project_id FROM projects WHERE upid = @upid AND id <> @own
+    SELECT id AS project_id FROM projects
+     WHERE upid = @upid AND id NOT IN (SELECT value FROM json_each(@owned))
      UNION ALL
     SELECT project_id FROM estimates
-     WHERE lower(trim(upid)) = lower(@upid) AND project_id IS NOT NULL AND project_id <> @own
+     WHERE lower(trim(upid)) = lower(@upid) AND project_id IS NOT NULL
+       AND project_id NOT IN (SELECT value FROM json_each(@owned))
      LIMIT 1
-  `).get({ upid, own: ownProjectId || '' });
+  `).get({ upid, owned });
   return row ? row.project_id : null;
+}
+
+/**
+ * The 409 for a UPID another project uses. Names that project's estimate, so
+ * the owner can tell which job already has it.
+ */
+function upidTakenReply(db, upid, projectId) {
+  const holder = db.prepare(`
+    SELECT name FROM estimates WHERE project_id = ? ORDER BY created_at, id LIMIT 1
+  `).get(projectId);
+  const name = holder && holder.name ? holder.name.trim() : '';
+  return {
+    status: 409,
+    body: {
+      error: 'upid_taken',
+      upid,
+      projectId,
+      projectName: name,
+      message: `${upid} is already used by ${name ? `“${name}”` : 'another project'}. ` +
+        'Each project needs its own UPID.',
+    },
+  };
 }
 
 /**
@@ -55,17 +84,7 @@ function planProjectWrite(db, body, existing) {
     return { project, upid: existing.upid, unchanged: true };
   }
   const taken = upidTakenBy(db, upid, project && project.id);
-  if (taken) {
-    return {
-      status: 409,
-      body: {
-        error: 'upid_taken',
-        upid,
-        projectId: taken,
-        message: `${upid} is already used by another project. Each project needs its own UPID.`,
-      },
-    };
-  }
+  if (taken) return upidTakenReply(db, upid, taken);
   return { project, upid };
 }
 
@@ -102,4 +121,4 @@ function dropEmptyProject(db, projectId) {
   if (left === 0) db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 }
 
-module.exports = { normUpid, upidTakenBy, planProjectWrite, applyProjectWrite, dropEmptyProject };
+module.exports = { normUpid, upidTakenBy, upidTakenReply, planProjectWrite, applyProjectWrite, dropEmptyProject };

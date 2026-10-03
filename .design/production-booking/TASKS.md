@@ -340,8 +340,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - `doc_type` / `invoice_number` are still written as sent until task 18 removes them from the
     editor. `activity.kind` has no CHECK: Stage E adds kinds.
 
-- [ ] **16. The UPID fix-up screen and Duplicate** (frontend — Opus/high).
-  _Depends on: 11, 15._
+- [x] **16. The UPID fix-up screen and Duplicate** (frontend — Opus/high).
+  _Depends on: 11, 15._ **Done 2026-10-03, uncommitted** (see the Done note below).
   - **`#/setup/upids`** lists groups (estimates with name, date and total). Per estimate, the user
     types a new UPID; per group, they can choose "Keep together". It uses `GET/POST
     /api/setup/upids`.
@@ -351,6 +351,37 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     the UPID is unique (D60).
 
   **Done when** it's verified against a scratch DB seeded with a duplicate pair and a blank UPID.
+
+  **Done note (2026-10-03).** New `server/src/routes/setup.js`, `web/js/views/setup-upids.js`,
+  `web/css/setup.css`. Changed `projects.js` (`upidTakenBy` takes a list of own projects;
+  `upidTakenReply`), `routes/estimates.js` (`needsUpid` on the list reply), `app.js` (both), the
+  list, detail, editor and `estimates.js`. `npm test` 422/422 (was 419); `calc.js` untouched.
+  Mutations caught (9): the group's own projects counted as taking its UPID; invoices, then
+  activity, not moved; a repeat allowed; differing clients allowed; `accepted_at` dropped; an
+  extra estimate in the group allowed; the emptied project kept; blank groups first. Checked in
+  the browser against `api-scratch` (v12 seeded with a same-client pair, one an old invoice, then
+  migrated to v13: 6 waiting, 4 groups, alongside the existing different-clients pair and two
+  blanks) at 1280 / 800 / 375, with dispatched clicks and a stubbed `confirm`. Decisions taken in the code:
+  - **Each field starts on the estimate's current UPID**, so what's on screen is what it will be
+    called: one of a pair may keep the shared UPID. A group of one with a UPID (a sibling since
+    renamed in the editor) is confirmed by saving it as it is.
+  - **A group settles whole, in one write.** A POST whose estimates aren't the group as it
+    stands is `group_changed`, and the screen reloads. Blank, repeated (case-insensitive) and
+    taken UPIDs are refused per field (`upid_required`, `upid_repeated`, `upid_taken` with
+    `estimateId`).
+  - **Keep together** keeps the oldest estimate's project, under the UPID as the oldest spells
+    it; moves the others' estimates, invoices and activity into it and deletes their projects;
+    takes the earliest `accepted_at`, and `declined_at` only if every one was declined. **Two
+    different linked clients are refused** (`clients_differ`, D31: a project is under one
+    client); an unlinked estimate goes along. Blank UPIDs never group, so they can't be kept together.
+  - **`upid_taken` now names the holder** (`projectName`, its oldest estimate's name) in its
+    message, here and in the editor, which shows it on the UPID field.
+  - **Duplicate opens the copy's editor**, not its detail: UPID blank and focused, with
+    "Copied from <UPID> · <name>" under it (route state only; a reload is an ordinary edit).
+    Blank was already refused on save.
+  - The route goes when none remain: settling the last group, or arriving with none, leaves to
+    the list with a toast. The banner counts `needsUpid` from `GET /api/estimates`. The setup
+    area lights the Estimates nav item.
 
 - [ ] **17. The Projects list** (frontend — Opus/high). _Depends on: 15._
   - The nav item and route become **Projects** (`#/projects`), and the list shows **one card per
