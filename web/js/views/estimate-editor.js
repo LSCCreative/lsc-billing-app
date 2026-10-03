@@ -3474,11 +3474,9 @@ const EstimateEditor = (() => {
     /* Cancel and Back both drop the estimate on the floor. Cancel says so, but
        an hour of work is worth a question either way — and Back sits where the
        browser's own back button would, which is not where anyone expects to
-       lose a form. */
-    const leave = () => {
-      if (!LSCUnsaved.confirmLeave()) return;
-      handlers.onCancel();
-    };
+       lose a form. The question is the router's: onCancel is a route change,
+       and every route change asks it (js/router.js). */
+    const leave = () => handlers.onCancel();
     $('js-back').addEventListener('click', leave);
     $('js-cancel').addEventListener('click', leave);
     $('js-save').addEventListener('click', save);

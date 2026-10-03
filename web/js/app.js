@@ -1,10 +1,16 @@
 'use strict';
 
-/* Boot and top-level view switching.
+/* Boot, and the route table.
  *
  * On load the app asks GET /api/session, which answers 200 or 401 without
  * touching any data — so an expired session lands on the login screen instead
  * of firing a request that 401s halfway through rendering the estimates list.
+ *
+ * Which screen is on #main is the address's business (D59, js/router.js):
+ * nav items ask for a route, and renderRoute() below is the only place a
+ * top-level screen is chosen. A signed-out visit keeps its address through the
+ * login screen, so signing in carries on to the page that was asked for, and a
+ * reload stays where it was.
  */
 
 (() => {
@@ -14,6 +20,12 @@
   const signOutBtn = document.getElementById('nav-sign-out');
   const hdrRight = document.getElementById('hdr-right');
   const menuBtn = document.getElementById('nav-menu-btn');
+
+  /* Where #/, #/home and an unknown address land. The estimates list until
+     the Home screen exists (task 12), when this becomes '/home' — #/home is a
+     live address already, so the logo and old links keep working across that
+     change. */
+  const LANDING = '/estimates';
 
   // True once a screen has been mounted on #main since the last sign-in.
   let appMounted = false;
@@ -29,6 +41,7 @@
     // The panel lives inside #app-view, so hiding that takes it off the screen
     // but leaves .open set — and the login screen has no toggle to close it.
     closeMenu(false);
+    LSCRouter.stop(false);
     appView.hidden = true;
     loginView.hidden = false;
     document.title = 'Sign In — LSC Billing';
@@ -91,6 +104,7 @@
     // left in the DOM behind the login card, no cached rate card.
     appMounted = false;
     resumeOnSignIn = false;
+    LSCRouter.stop(true);
     main.innerHTML = '';
     LSCData.clear();
     setUser(null);
@@ -106,9 +120,12 @@
     document.title = 'LSC Billing';
     ConnectionBanner.enable();
 
+    /* The kept screen comes back as it was — unless the address moved while
+       the login screen was up (Back on the login card), in which case the
+       router asks about that screen's edits and goes where the address says. */
     if (resumeOnSignIn) {
       resumeOnSignIn = false;
-      Toast.ok('Signed back in. Anything you hadn’t saved is still here.');
+      if (!LSCRouter.start(false)) Toast.ok('Signed back in. Anything you hadn’t saved is still here.');
       return;
     }
 
@@ -128,18 +145,53 @@
       }
     }
 
-    setNav('estimates');
     /* onGoPricing keeps its name: the first-run setup step it serves means the
-       rate card specifically, so it names 'pricing' — toFinance() with no
-       argument now lands on the Dashboard. Wrapped rather than passed by
-       reference so a caller that ever hands it an event doesn't have that
-       event read as initialTab. */
-    EstimatesView.mount(main, {
+       rate card specifically, so it asks for #/finance/pricing — #/finance
+       alone lands on the Dashboard. */
+    EstimatesView.init(main, {
       onAuthLost,
-      onGoPricing: () => toFinance('pricing'),
+      onGoPricing: () => LSCRouter.go('/finance/pricing'),
       onOpenSettings: openSettings,
     });
+    ClientsView.init(main, {
+      onAuthLost,
+      onOpenEstimate: (id) => LSCRouter.go('/estimates/' + encodeURIComponent(id)),
+    });
+    // Whatever the address says, even if it is the screen that was there before
+    // a lost session: that screen never finished drawing, or it would have
+    // been kept.
+    LSCRouter.start(true);
     appMounted = true;
+  }
+
+  /* The route table. segments[0] is the area; each area's view reads the rest
+     and answers false for a shape it doesn't have. Nothing here checks the
+     unsaved guard — the router has, before calling this. */
+  function renderRoute(route, state) {
+    closeMenu(false);
+    const [area, ...rest] = route.segments;
+    if (area === undefined || area === 'home') {
+      LSCRouter.go(LANDING, { replace: true, skipGuard: true });
+      return;
+    }
+    let shown = false;
+    if (area === 'estimates') {
+      setNav('estimates');
+      shown = EstimatesView.show(rest, state);
+    } else if (area === 'clients') {
+      setNav('clients');
+      shown = ClientsView.show(rest, state);
+    } else if (area === 'finance' && rest.length <= 1) {
+      setNav('finance');
+      shown = FinanceView.show(main, rest[0], state, {
+        onAuthLost,
+        onNavigate: (tab, opts) => LSCRouter.go('/finance/' + tab, { state: opts }),
+      });
+    }
+    if (!shown) {
+      Toast.error('That page doesn’t exist any more.');
+      LSCRouter.go(LANDING, { replace: true, skipGuard: true });
+    }
   }
 
   function setNav(active) {
@@ -148,24 +200,9 @@
     document.getElementById('nav-finance').classList.toggle('active', active === 'finance');
   }
 
-  /* The header is no longer the only way to either of these: the estimates
-     list's first-run setup steps open them too, so they sit here rather than
-     inside bindNav's closure where only the header could reach them.
-
-     Finance & Price replaced the old standalone Pricing item, so this is where
-     toPricing used to be — the rate card is now one rail item inside it, and
-     FinanceView decides which screen to open. `initialTab` is passed straight
-     through: the header item passes nothing and lands on the Dashboard, and
-     callers that mean a specific screen (the first-run setup step means the
-     rate card) name it. */
-  function toFinance(initialTab) {
-    if (appView.hidden) return;
-    if (!LSCUnsaved.confirmLeave()) return;
-    setNav('finance');
-    window.scrollTo(0, 0);
-    FinanceView.mount(main, { onAuthLost, initialTab });
-  }
-
+  /* The header is no longer the only way to this: the estimates list's
+     first-run setup steps open it too, so it sits here rather than inside
+     bindNav's closure where only the header could reach it. */
   function openSettings(opener) {
     if (appView.hidden) return;
     SettingsView.open({ onAuthLost }, opener);
@@ -232,39 +269,22 @@
   }
 
   function bindNav() {
-    /* Every nav item replaces what is on #main, so each one asks first if the
-       screen it is about to overwrite has unsaved edits in it. The check is
-       here rather than inside each screen because the screen being left doesn't
-       know it is being left — the nav never tells it. */
-    const toEstimates = () => {
-      if (appView.hidden) return;
-      if (!LSCUnsaved.confirmLeave()) return;
-      setNav('estimates');
-      EstimatesView.showList();
-    };
-    const toClients = () => {
-      if (appView.hidden) return;
-      if (!LSCUnsaved.confirmLeave()) return;
-      setNav('clients');
-      ClientsView.mount(main, {
-        onAuthLost,
-        onOpenEstimate: (id) => {
-          setNav('estimates');
-          EstimatesView.showDetail(id);
-        },
-      });
-    };
+    /* Every nav item replaces what is on #main, so each one is a route: the
+       router asks first if the screen it is about to overwrite has unsaved
+       edits in it, because the screen being left doesn't know it is being
+       left. The router is stopped while the login screen is up, so these do
+       nothing then. */
+    const to = (path) => () => LSCRouter.go(path);
     /* Invoice Settings is a modal, not a screen: it opens over whatever is on
        #main and leaves it mounted, so the nav's active state stays where it is
        and an estimate being edited is still there afterwards. */
     const settingsBtn = document.getElementById('nav-invoice-settings');
     settingsBtn.addEventListener('click', () => openSettings(settingsBtn));
 
-    document.getElementById('logo-btn').addEventListener('click', toEstimates);
-    document.getElementById('nav-estimates').addEventListener('click', toEstimates);
-    document.getElementById('nav-clients').addEventListener('click', toClients);
-    // Wrapped: a bare toFinance would take the click event as its initialTab.
-    document.getElementById('nav-finance').addEventListener('click', () => toFinance());
+    document.getElementById('logo-btn').addEventListener('click', to('/home'));
+    document.getElementById('nav-estimates').addEventListener('click', to('/estimates'));
+    document.getElementById('nav-clients').addEventListener('click', to('/clients'));
+    document.getElementById('nav-finance').addEventListener('click', to('/finance'));
     signOutBtn.addEventListener('click', () => {
       if (appView.hidden) return;
       // A sign-out empties #main, so it discards unsaved work exactly as nav
@@ -279,6 +299,7 @@
     Toast.init();
     LSCUnsaved.init();
     SettingsView.init();
+    LSCRouter.init(renderRoute);
     bindNav();
     bindCompactNav();
     try {

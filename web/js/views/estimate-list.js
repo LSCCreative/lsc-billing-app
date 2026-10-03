@@ -177,6 +177,9 @@ const EstimateList = (() => {
     mountedRoot = root;
     mountedHandlers = handlers;
     root.innerHTML = loadingMarkup();
+    // The list can arrive after the user has gone elsewhere; it mustn't land
+    // on top of where they went.
+    const ticket = LSCRouter.ticket();
 
     let estimates;
     try {
@@ -184,6 +187,7 @@ const EstimateList = (() => {
       estimates = reply.estimates || [];
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (!LSCRouter.isCurrent(ticket)) return;
       if (err.kind === 'auth') return handlers.onAuthLost();
       // 'network' and 'server' also raise the connection banner; this screen
       // still needs to say something in place of the cards it can't draw.
@@ -196,6 +200,7 @@ const EstimateList = (() => {
       return;
     }
 
+    if (!LSCRouter.isCurrent(ticket)) return;
     root.innerHTML = markup(estimates);
     root.querySelector('#js-new').addEventListener('click', () => handlers.onNew());
     bindSetup(root, handlers);

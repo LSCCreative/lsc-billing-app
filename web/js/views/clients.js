@@ -27,6 +27,9 @@ const ClientsView = (() => {
   let root = null;
   let handlers = null;
 
+  const LIST = '/clients';
+  const clientPath = (id) => LIST + '/' + encodeURIComponent(id);
+
   const FIELDS = [
     ['businessName', 'c-business'],
     ['contactName', 'c-contact'],
@@ -69,12 +72,14 @@ const ClientsView = (() => {
   async function showList() {
     window.scrollTo(0, 0);
     root.innerHTML = listHead('Loading…');
+    const ticket = LSCRouter.ticket();
 
     let clients;
     try {
       clients = (await LSCApi.get('/api/clients')).clients || [];
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (!LSCRouter.isCurrent(ticket)) return; // moved on while it loaded
       if (err.kind === 'auth') return handlers.onAuthLost();
       root.innerHTML =
         listHead('Could not load', '<button class="btn btn-ghost" id="js-retry">Try Again</button>') +
@@ -85,6 +90,7 @@ const ClientsView = (() => {
       return;
     }
 
+    if (!LSCRouter.isCurrent(ticket)) return;
     const count = clients.length;
     root.innerHTML =
       listHead(
@@ -97,12 +103,13 @@ const ClientsView = (() => {
           '<p>Add one with <strong>New Client</strong>, or save an estimate with a business name ' +
           'and tick <strong>Save to client list</strong>.</p></div>');
 
-    root.querySelector('#js-new').addEventListener('click', () => showEditor(null));
+    root.querySelector('#js-new').addEventListener('click', () => LSCRouter.go(LIST + '/new'));
     root.querySelectorAll('.proj-card').forEach((card) => {
       const client = clients.find((c) => c.id === card.dataset.id);
       // Keyboard activation arrives here too: Enter/Space on the card's own
-      // .card-open button dispatch a click, which bubbles to the card.
-      card.addEventListener('click', () => showEditor(client));
+      // .card-open button dispatch a click, which bubbles to the card. The
+      // record rides along so opening it doesn't refetch what the list holds.
+      card.addEventListener('click', () => LSCRouter.go(clientPath(client.id), { state: { client } }));
     });
   }
 
@@ -195,12 +202,8 @@ const ClientsView = (() => {
     box.innerHTML = historyMarkup(estimates);
     box.querySelectorAll('.client-history-link').forEach((btn) => {
       // The history sits under the client form, so this link leaves a screen
-      // that may have edits in it — the one nav route out of here that isn't
-      // in the header.
-      btn.addEventListener('click', () => {
-        if (!LSCUnsaved.confirmLeave()) return;
-        handlers.onOpenEstimate(btn.closest('tr').dataset.id);
-      });
+      // that may have edits in it — the router's guard asks, as for the header.
+      btn.addEventListener('click', () => handlers.onOpenEstimate(btn.closest('tr').dataset.id));
     });
   }
 
@@ -277,7 +280,10 @@ const ClientsView = (() => {
           : await LSCApi.post('/api/clients', body);
         Toast.ok('Client saved.');
         if (!onScreen()) return;
-        showEditor(reply.client);
+        // A new client's #/clients/new becomes its own address; an existing
+        // one is already there and just redraws from the server's copy.
+        if (client) showEditor(reply.client);
+        else LSCRouter.go(clientPath(reply.client.id), { replace: true, skipGuard: true, state: { client: reply.client } });
       } catch (err) {
         setSaving(false);
         Toast.hide();
@@ -302,7 +308,8 @@ const ClientsView = (() => {
         await LSCApi.del('/api/clients/' + encodeURIComponent(client.id));
         Toast.ok('Client deleted.');
         if (!onScreen()) return;
-        showList();
+        // Replaces rather than going Back: the record behind it is gone.
+        LSCRouter.go(LIST, { replace: true, skipGuard: true });
       } catch (err) {
         setSaving(false);
         Toast.hide();
@@ -324,11 +331,10 @@ const ClientsView = (() => {
     });
 
     // A successful save re-mounts this screen with the server's copy, which
-    // re-registers the watcher against a fresh baseline.
-    const leave = () => {
-      if (!LSCUnsaved.confirmLeave()) return;
-      showList();
-    };
+    // re-registers the watcher against a fresh baseline. Leaving is a route
+    // change, so the router asks about unsaved edits; off a deep link this
+    // entry gives way to the list.
+    const leave = () => LSCRouter.leaveTo(LIST, { replace: true });
     $('js-back').addEventListener('click', leave);
     $('js-cancel').addEventListener('click', leave);
     $('js-save').addEventListener('click', save);
@@ -338,11 +344,50 @@ const ClientsView = (() => {
     if (client) loadHistory(client);
   }
 
+  /* #/clients/<id>: the record the list handed over, or a fresh read for a
+     reload or a deep link. A deleted one says so in place (D59). */
+  async function showClient(id, held) {
+    if (held && held.id === id) return showEditor(held);
+    const ticket = LSCRouter.ticket();
+    let client;
+    try {
+      client = (await LSCApi.get('/api/clients/' + encodeURIComponent(id))).client;
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (!LSCRouter.isCurrent(ticket)) return;
+      if (err.kind === 'auth') return handlers.onAuthLost();
+      window.scrollTo(0, 0);
+      const gone = err.status === 404;
+      root.innerHTML =
+        '<button class="back-btn" id="js-back">← Clients</button>' +
+        '<div class="empty-state"><h3>' +
+        (gone ? 'That client doesn’t exist any more' : 'Couldn’t open that client') + '</h3><p>' +
+        esc(gone ? 'They may have been deleted. Estimates saved for them keep their own copy of the details.' : failureText(err, 'load them')) +
+        '</p>' + (gone ? '' : '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button>') +
+        '</div>';
+      root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(LIST));
+      if (!gone) root.querySelector('#js-retry').addEventListener('click', () => showClient(id));
+      return;
+    }
+    if (LSCRouter.isCurrent(ticket)) showEditor(client);
+  }
+
   return {
-    mount(container, options) {
+    /* Once per sign-in. */
+    init(container, options) {
       root = container;
       handlers = options;
-      showList();
+    },
+
+    /* The router's way in: the route after 'clients'. False for a shape this
+       area doesn't have. */
+    show(segments, state) {
+      const [id, extra] = segments;
+      if (extra !== undefined) return false;
+      if (id === undefined) showList();
+      else if (id === 'new') showEditor(null);
+      else showClient(id, state && state.client);
+      return true;
     },
   };
 })();

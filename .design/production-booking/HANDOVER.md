@@ -365,7 +365,17 @@ times.
 
 **B2-13 done 2026-10-03: B2 is deployed** (NAS v12, then Pages run 37094465617, `main` at `930249c`; B2-12 committed `930249c`). Still for the user: tick Capture on their real capture services and add their Deliverable Types on the Rate Card.
 
-**Exact next item: TASKS.md task 11, the hash router** (Stage C; frontend, Opus/high).
+- [ ] **Stage C, the home dashboard.**
+  - [x] **Task 11, the hash router**: done 2026-10-03, **uncommitted**. New `web/js/router.js`;
+    `app.js` holds the route table (`renderRoute`, `LANDING`); each area's view has
+    `init()` + `show(segments, state)`. No server change (401/401).
+    - **Verified:** Back/Forward, reload, deep links, sign-in carry-on, the unsaved guard on
+      every exit (one question each), modals closed by Back, deleted ids in place, and
+      byte-identical `#main` at 1280 against `f019f5f` on six screens.
+    - **Read its Done note before task 12.** It has five interpretations to show the user (the
+      main one: `#/home` lands on the estimates list until task 12 sets `LANDING`) and the seams.
+
+**Exact next item: TASKS.md task 12, the Home screen** (Stage C; frontend, Opus/high).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the

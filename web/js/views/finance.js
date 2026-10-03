@@ -33,12 +33,13 @@
  * behaviour that isn't implemented. If these ever grow into real tabs, that is
  * a deliberate change with roving tabindex attached, not a class rename.
  *
- * UNSAVED EDITS
- * Switching rail items discards a screen exactly as switching nav items does,
- * so it asks the same question, through the same LSCUnsaved.confirmLeave() —
- * the precedent is toFinance() in app.js, which does this one level up.
- * Overhead's own edits live in a modal that resolves on close, so only the Rate
- * Card and Profit Goals register watchers today; Capacity will be the third.
+ * EACH SCREEN HAS AN ADDRESS
+ * Since the app's hash router (D59), a rail item doesn't mount its screen: it
+ * asks for #/finance/<tab>, and the router calls show() back. So Back and
+ * Forward walk the rail, a reload stays on the screen it was on, and switching
+ * rail items asks about unsaved edits through the router's guard, exactly as
+ * the header's items do. Overhead's own edits live in a modal that resolves on
+ * close, so only the Rate Card, Profit Goals and Capacity register watchers.
  */
 
 const FinanceView = (() => {
@@ -126,7 +127,8 @@ const FinanceView = (() => {
     sub.querySelector('[data-go-tab]').addEventListener('click', () => selectTab('pricing'));
   }
 
-  /* opts: the optional second argument of selectTab, handed to the child's
+  /* opts: the optional second argument of selectTab, carried through the
+     route's in-memory state (never the address) and handed to the child's
      mount alongside the router's own handlers. Two callers, both on the
      Dashboard: the deep link into Overhead's Depreciation inner tab —
      onGoTab('overhead', { inner: 'depreciation' }) — and "Below by $X", which
@@ -153,9 +155,8 @@ const FinanceView = (() => {
       mountPending();
       return;
     }
-    /* onGoTab is selectTab, which is the in-router equivalent of app.js's
-       toFinance(tab): same destination, same LSCUnsaved.confirmLeave() guard,
-       without tearing down and rebuilding this router to land one div lower.
+    /* onGoTab is selectTab, a route change to #/finance/<tab> that lands back
+       in show(), which swaps only the child rather than rebuilding the rail.
        Wrapped rather than passed by reference so a child that ever hands it a
        click event doesn't have that event read as a tab id (selectTab's own
        isTab() check is the second half of that belt). */
@@ -179,13 +180,9 @@ const FinanceView = (() => {
     // Re-clicking the item you are on is not leaving a screen, so it must not
     // ask about unsaved edits — and re-mounting would throw away the edits it
     // just declined to ask about. Moving between a screen's own inner tabs is
-    // that screen's job, not the router's.
+    // that screen's job, not the router's. The guard itself is the router's.
     if (id === activeTab || !isTab(id)) return;
-    if (!LSCUnsaved.confirmLeave()) return;
-    activeTab = id;
-    syncRail();
-    window.scrollTo(0, 0);
-    mountChild(plainOpts(opts));
+    handlers.onNavigate(id, plainOpts(opts));
   }
 
   function bindRail() {
@@ -195,24 +192,29 @@ const FinanceView = (() => {
     });
   }
 
-  /* initialTab: which screen to open on. The header's Finance & Price item
-     passes nothing and lands on the Dashboard — it answers "is my pricing
-     right?", which is the question the area exists for. (It used to land on
-     Pricing so nobody's muscle memory broke in the move into Finance; that was
-     written when Pricing was the only built screen.) Callers that mean the rate
-     card specifically — the first-run setup step — say 'pricing'. An unknown
-     value falls back to the Dashboard rather than mounting nothing. */
-  function mount(container, viewHandlers) {
-    root = container;
+  /* The router's way in, for #/finance (the Dashboard: it answers "is my
+     pricing right?", the question the area exists for) and #/finance/<tab>.
+     The rail is built once and kept while the route stays inside Finance, so
+     moving between its screens swaps only #finance-sub, as it always has.
+     viewHandlers: onAuthLost, and onNavigate(tab, opts) to ask for a route.
+     False for a tab that doesn't exist, which app.js treats as an unknown
+     route. */
+  function show(container, tab, opts, viewHandlers) {
+    const id = tab === undefined ? TABS[0].id : tab;
+    if (!isTab(id)) return false;
     handlers = viewHandlers || {};
-    activeTab = isTab(handlers.initialTab) ? handlers.initialTab : TABS[0].id;
-
-    root.innerHTML = markup();
-    sub = root.querySelector('#finance-sub');
+    activeTab = id;
+    if (root !== container || !container.querySelector('.finance-shell')) {
+      root = container;
+      root.innerHTML = markup();
+      sub = root.querySelector('#finance-sub');
+      bindRail();
+    }
     syncRail();
-    bindRail();
-    mountChild();
+    window.scrollTo(0, 0);
+    mountChild(plainOpts(opts));
+    return true;
   }
 
-  return { mount };
+  return { show };
 })();

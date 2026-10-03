@@ -2095,8 +2095,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
 ## Stage C — Home: the production calendar (no migration)
 
-- [ ] **11. Hash router** (frontend — Opus/high). _New `web/js/router.js`._ The foundation for C
-  and everything after it (D59).
+- [x] **11. Hash router** (frontend — Opus/high). _New `web/js/router.js`._ The foundation for C
+  and everything after it (D59). **Done 2026-10-03, uncommitted** (see the Done note below).
   - **Routes:** `#/home`, `#/estimates` (renamed `#/projects` in task 17), `#/estimates/<id>`,
     `#/clients[/<id>]`, `#/finance[/<tab>]`.
   - **The router drives `setNav`**, and `hashchange` runs `LSCUnsaved.confirmLeave()`. A refusal
@@ -2110,6 +2110,71 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** Back and Forward, reload and deep links work across every screen, the unsaved guard
   still catches every exit, and nothing moves at 1280.
+
+  **Done note (2026-10-03).** Changed `router.js` (new), `app.js`, `index.html` (one `<script>`),
+  `views/estimates.js`, `views/clients.js`, `views/finance.js`, `views/estimate-list.js` and
+  `views/estimate-editor.js`. No server change (401/401).
+  - **How it works.** `LSCRouter` owns history; `app.js` `renderRoute()` is the route table and the
+    only place a top-level screen is chosen. In-app clicks call `LSCRouter.go(path, { replace,
+    skipGuard, state })`, which asks the guard *before* `pushState`, so it never has to undo.
+    Back/Forward/typed hashes arrive as `hashchange`; every entry is stamped `history.state.lscIdx`,
+    so a refusal is undone with `history.go(delta)` (keeping the entries on both sides), or
+    `history.back()` for a fresh unstamped entry. Landing on the path already showing renders
+    nothing, which makes the undo silent. `leaveTo(path)` uses `history.back()` when that path is
+    the entry behind (so Back afterwards doesn't reopen the screen just left), else `go()`.
+    `state` is in-memory only (the Dashboard's `focusRow` / `inner` deep links, a record the caller
+    already holds) and never in the address.
+  - **Each area's view** now has `init()` + `show(segments, state)` (`FinanceView.show(main, tab,
+    opts, handlers)`), returning false for a shape it doesn't have. The views' own
+    `confirmLeave()` calls before navigation were removed (editor Back/Cancel, client Back/Cancel,
+    client history link, Finance rail): the router asks once. Modal "Closing this window" guards
+    and Overhead's inner tabs are unchanged.
+  - **Async screens** take `LSCRouter.ticket()` before a fetch and drop the result if
+    `isCurrent()` is false, so a slow list or record can't mount over where the user went (this
+    race existed before too).
+  - **Verified in the browser against `api-scratch`:**
+    - list → detail → editor; Back/Forward between them; detail Back and editor Cancel go *Back*
+      when the list is behind them (idx returns to 0);
+    - with an unsaved editor: a refused Back, a nav click, Cancel and a typed hash each ask
+      **once** and leave the same editor node on screen at the same idx; an accepted Back goes;
+    - a save goes Back to the detail with no question; a new estimate's save replaces
+      `#/estimates/new` with its detail; delete replaces with the list, and Back onto the
+      deleted id says "That estimate doesn't exist any more" in place;
+    - clients: list → record → history link → estimate (nav follows) → Back; new client save
+      replaces `#/clients/new` with `#/clients/<id>`; delete asks only its own question;
+    - Finance: rail items route without rebuilding the rail (same node), Back/Forward walk the
+      rail, the Dashboard's Depreciation deep link still opens Overhead on Depreciation;
+    - `#/nope/x` and `#/finance/bogus` → the landing with the toast; `#/home` and `#/` → the
+      landing; `#/clients/<gone>` says so in place;
+    - reload on `#/finance/goals` stays there, and Back after the reload renders the previous
+      entry;
+    - Back with Invoice Settings open closes it, address unchanged, focus back on the nav item;
+      Back with a dirty Add Expense dialog asks its own "Closing this window" question, and a
+      refusal keeps it open;
+    - Back with the editor's add-day dialog open closes it and stays in the editor;
+    - signed out, then `#/clients` typed, then sign in → lands on Clients;
+    - **nothing moved at 1280:** `#main`'s HTML, the page height and the header for the list,
+      detail, Clients, Dashboard, Rate Card and Profit Goals are byte-identical to HEAD
+      `f019f5f` served side by side;
+    - the in-place missing state at 375 (back link 44px tall, no overflow) and 800.
+  - **Interpretations to show the user:**
+    1. **`#/home` lands on the estimates list until task 12.** `LANDING` in `app.js` is
+       `'/estimates'`; task 12 sets it to `'/home'`. The logo already asks for `#/home`.
+    2. **The editor has addresses beyond the spec's list:** `#/estimates/new` and
+       `#/estimates/<id>/edit`, so a reload in the editor stays in it (from the server copy; the
+       browser's own reload warning still covers unsaved edits). They become
+       `#/projects/new` and `#/projects/<id>/estimate` in task 17. Likewise `#/clients/new`.
+    3. **Back closes a modal through its own Escape**, so a dialog with edits asks, a save in
+       flight isn't interrupted, and a typeahead open inside a dialog closes first (a second Back
+       then closes the dialog).
+    4. **The kept screen after a lost session** stays as before, unless the address moved while
+       the login was up; then its edits are asked about and a refusal puts the address back.
+    5. **Clicking the nav item you're on refreshes the screen in place** (no new history entry),
+       as it did before.
+  - **Seams:** the session-expiry resume (`start(false)`) wasn't exercised live (no way to expire
+    the cookie from the page); its logic is the same as the guard path that was. Task 12 needs only
+    `LANDING`, a `home` branch in `renderRoute()` and `setNav('home')`. Task 17 renames the
+    `estimates` area; the old `#/estimates/...` addresses should redirect then.
 
 - [ ] **12. Home screen** (frontend — Opus/high). _Depends on: 5, 11._ `#/home` becomes the landing
   route and the logo goes there (D27).
