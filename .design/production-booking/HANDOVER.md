@@ -68,8 +68,16 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   `finalInvoiceTotals`, `singleInvoiceTotals`; `accepted` counts as won). 2026-10-03, committed `bd85aa9`,
   nothing to deploy alone. See its Done note in `TASKS.md`.
 
-**Exact next item: TASKS.md task 15, schema v13** (projects, statuses, invoices, activity; money
-math, Opus/high).
+- **D, task 15** (schema v13: `projects`, the draft/sent/accepted/declined rebuild, `invoices`
+  with legacy ones, `activity`; the estimate routes keep the UPID on the project and refuse
+  `upid_taken`; declined estimates leave the calendar and the lock). 2026-10-03, **not deployed**
+  (NAS v13 ships with task 23). Its decisions are in its Done note in `TASKS.md`.
+
+**Exact next item: TASKS.md task 16, the UPID fix-up screen and Duplicate** (frontend, Opus/high).
+It needs `GET/POST /api/setup/upids`: group `projects.needs_upid = 1` by
+`lower(trim(estimates.upid))`, a blank one alone. "Keep together" moves the group's estimates into one
+project with that UPID and deletes the emptied projects. A new UPID goes through `projects.js`
+`upidTakenBy`.
 
 **Seams left for later tasks:**
 - **Invoices (tasks 19–20):** store the deposit's `depositAmount(...)` result on the deposit invoice
@@ -88,9 +96,17 @@ math, Opus/high).
 - **Holidays in the editor:** fetched once, the first time the estimate has a dated day. Until it
   arrives, or if it fails, new dates price as non-holidays. The server always prices with the real
   list on save, and the detail screen shows what was stored.
-- **Status migration (task 15):** turn foreign keys off for the `estimates` rebuild, or the cascade
-  deletes every production day. Also exclude declined estimates in `lockedDay` (`days.js`) and in
-  `routes/calendar.js`.
+- **Any later rebuild of `estimates` or `projects`:** flag the migration `foreignKeysOff: true`
+  (`db.js`). `production_days`, `rentals` and `invoices` hang off `estimates`; estimates,
+  invoices and activity hang off `projects`.
+- **Before deploying v13 (task 23):** run the migration on a copy of the live backup first. Its
+  `foreign_key_check` refuses the whole migration (and the boot) if the live DB already holds a row
+  pointing at nothing. The boot log line `[db] v13: N project(s) … M need a UPID …` gives the fix-up
+  count.
+- **UPID lock (D36, task 19):** `planProjectWrite` (`projects.js`) lets the UPID change freely
+  today. Once a project has a non-legacy invoice or a send, refuse a change there.
+- **Accept/decline (tasks 18–19)** set `estimates.status` and `projects.accepted_at` /
+  `declined_at` together; estimate saves no longer touch the status.
 
 **For review at task 8 (Cost Breakdown); settled 2026-10-02, the user approved the sample:** how attribution splits money between surcharges is an
 implementation choice, not a user decision. For example, under "multiply", after hours is charged

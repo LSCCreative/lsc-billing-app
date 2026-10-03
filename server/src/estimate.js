@@ -25,7 +25,11 @@ function loadEstimate(row, days, rentals) {
     upid: row.upid,
     name: row.name,
     date: row.date,
+    // draft | sent | accepted | declined (v13).
     status: row.status,
+    // The project this estimate belongs to (v13); null only for a row no
+    // write or migration has reached yet.
+    projectId: row.project_id || null,
     docType: row.doc_type,
     invoiceNumber: row.invoice_number,
     clientId: row.client_id,

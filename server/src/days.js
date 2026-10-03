@@ -170,8 +170,8 @@ function dayIdTakenElsewhere(db, estimateId, days) {
  * another confirmed it — the clash is for the user to sort out, and accepting
  * flags it (D18) rather than refusing.
  *
- * Declined estimates are excluded once task 15 adds that status; until then
- * every estimate's confirmed days count.
+ * A declined estimate's days leave every calendar (D22), so they lock
+ * nothing; reopening re-runs this check (task 18).
  *
  * @returns {{date, estimateId, upid, name}|null}
  */
@@ -180,7 +180,7 @@ function lockedDay(db, estimateId, days, storedDays) {
   const confirmedElsewhere = db.prepare(`
     SELECT e.id AS estimate_id, e.upid, e.name
       FROM production_days d JOIN estimates e ON e.id = d.estimate_id
-     WHERE d.date = ? AND d.status = 'confirmed' AND d.estimate_id <> ?
+     WHERE d.date = ? AND d.status = 'confirmed' AND d.estimate_id <> ? AND e.status <> 'declined'
      ORDER BY e.upid, e.id LIMIT 1
   `);
   for (const d of days) {

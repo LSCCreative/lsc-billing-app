@@ -22,8 +22,8 @@ function epochDay(ymd) {
  * client's business, status, times, the override note, and the names of the
  * production items on it.
  *
- * Declined estimates are excluded once task 15 adds that status; until then
- * every estimate's days are returned.
+ * A declined estimate's days and rentals are left out: they leave every
+ * calendar (D22).
  *
  * GEAR RENTALS (B2-2, D84) come back beside the days: each one whose out → back
  * span overlaps the range, for the calendar's bars. A rental with only one date
@@ -44,7 +44,7 @@ function registerCalendarRoutes(app, db) {
       SELECT d.id, d.estimate_id, d.date, d.status, d.start_time, d.end_time, d.override_note,
              e.upid, e.name, e.client_json, e.active_rows_json
         FROM production_days d JOIN estimates e ON e.id = d.estimate_id
-       WHERE d.date IS NOT NULL AND d.date BETWEEN ? AND ?
+       WHERE d.date IS NOT NULL AND d.date BETWEEN ? AND ? AND e.status <> 'declined'
        ORDER BY d.date, d.start_time, e.upid, d.id
     `).all(from, to);
 
@@ -74,7 +74,7 @@ function registerCalendarRoutes(app, db) {
       SELECT r.id, r.estimate_id, r.vendor, r.out_date, r.out_method, r.back_date, r.back_method,
              e.upid, e.name
         FROM rentals r JOIN estimates e ON e.id = r.estimate_id
-       WHERE COALESCE(r.out_date, r.back_date) IS NOT NULL
+       WHERE COALESCE(r.out_date, r.back_date) IS NOT NULL AND e.status <> 'declined'
          AND COALESCE(r.out_date, r.back_date) <= ?
          AND COALESCE(r.back_date, r.out_date) >= ?
        ORDER BY COALESCE(r.out_date, r.back_date), e.upid, r.sort, r.id

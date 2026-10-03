@@ -1731,3 +1731,133 @@ test('estimates: a duplicate takes its travel, crew and gear off their days, and
   assert.equal(copy.totals.totalIncGst, e.body.estimate.totals.totalIncGst - e.body.estimate.totals.surchargeTotal);
   await dropEstimates(e.body.estimate.id, copy.id);
 });
+
+/* ── Projects (v13, production-booking task 15) ────────────────────────── */
+const projectRow = (id) => db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+
+test('projects: a new estimate is a new project, the UPID is unique, and the estimate carries it', async () => {
+  const a = await saveEstimate({ upid: ' UP-T15A ' });
+  assert.equal(a.status, 201, JSON.stringify(a.body));
+  const est = a.body.estimate;
+  assert.equal(est.upid, 'UP-T15A');
+  assert.match(est.projectId, /^prj_/);
+  assert.deepEqual([projectRow(est.projectId).upid, projectRow(est.projectId).needs_upid], ['UP-T15A', 0]);
+
+  // Taken, whatever the case and spacing.
+  const clash = await saveEstimate({ upid: 'up-t15a' });
+  assert.deepEqual([clash.status, clash.body.error, clash.body.upid, clash.body.projectId],
+    [409, 'upid_taken', 'up-t15a', est.projectId]);
+
+  // A project holds its UPID even with no estimate carrying it.
+  db.prepare("INSERT INTO projects (id, upid, created_at, updated_at) VALUES ('prj_t15p', 'UP-T15P', 'x', 'x')").run();
+  const held = await saveEstimate({ upid: 'up-t15p' });
+  assert.deepEqual([held.status, held.body.error, held.body.projectId], [409, 'upid_taken', 'prj_t15p']);
+  db.prepare("DELETE FROM projects WHERE id = 'prj_t15p'").run();
+
+  // Any number of new drafts may have no UPID yet; none of them waits for the fix-up.
+  const b = await saveEstimate({ upid: '' });
+  const c = await saveEstimate({ upid: '   ' });
+  for (const r of [b, c]) {
+    assert.equal(r.status, 201);
+    assert.deepEqual([r.body.estimate.upid, projectRow(r.body.estimate.projectId).upid,
+      projectRow(r.body.estimate.projectId).needs_upid], ['', null, 0]);
+  }
+  assert.notEqual(b.body.estimate.projectId, c.body.estimate.projectId);
+
+  // Renaming moves the project's UPID; the old one is then free.
+  const renamed = await saveEstimate({ upid: 'UP-T15B' }, est.id);
+  assert.equal(renamed.status, 200);
+  assert.deepEqual([renamed.body.estimate.upid, renamed.body.estimate.projectId, projectRow(est.projectId).upid],
+    ['UP-T15B', est.projectId, 'UP-T15B']);
+  assert.equal((await saveEstimate({ upid: 'UP-T15B' }, b.body.estimate.id)).body.error, 'upid_taken');
+  const freed = await saveEstimate({ upid: 'UP-T15A' }, b.body.estimate.id);
+  assert.equal(freed.status, 200);
+  // Saving with its own UPID is not a clash.
+  assert.equal((await saveEstimate({ upid: 'up-t15a' }, b.body.estimate.id)).status, 200);
+  assert.equal(projectRow(b.body.estimate.projectId).upid, 'up-t15a');
+
+  // The project follows the estimate's client.
+  db.prepare("INSERT OR IGNORE INTO clients (id, business_name, created_at, updated_at) VALUES ('cl_t15', 'T15 Pty Ltd', 'x', 'x')").run();
+  await saveEstimate({ upid: 'UP-T15B', clientId: 'cl_t15' }, est.id);
+  assert.equal(projectRow(est.projectId).client_id, 'cl_t15');
+
+  await dropEstimates(est.id, b.body.estimate.id, c.body.estimate.id);
+});
+
+test('projects: an estimate save never moves its status', async () => {
+  const a = await saveEstimate({ status: 'accepted' });
+  assert.equal(a.body.estimate.status, 'draft');
+  db.prepare("UPDATE estimates SET status = 'sent' WHERE id = ?").run(a.body.estimate.id);
+  const saved = await saveEstimate({ upid: a.body.estimate.upid, status: 'draft' }, a.body.estimate.id);
+  assert.equal(saved.body.estimate.status, 'sent');
+  const omitted = await saveEstimate({ upid: a.body.estimate.upid }, a.body.estimate.id);
+  assert.equal(omitted.body.estimate.status, 'sent');
+  await dropEstimates(a.body.estimate.id);
+});
+
+test('projects: a duplicate is a new project with no UPID; deleting the last estimate deletes its project', async () => {
+  const a = await saveEstimate({ upid: 'UP-T15D', docType: 'invoice', invoiceNumber: 'INV-9' });
+  const dup = await api(`/api/estimates/${a.body.estimate.id}/duplicate`, { method: 'POST' }).then((r) => r.json());
+  assert.deepEqual([dup.estimate.upid, dup.estimate.status, dup.estimate.docType, dup.estimate.invoiceNumber],
+    ['', 'draft', 'estimate', '']);
+  assert.notEqual(dup.estimate.projectId, a.body.estimate.projectId);
+  assert.deepEqual([projectRow(dup.estimate.projectId).upid, projectRow(dup.estimate.projectId).needs_upid], [null, 0]);
+
+  // A project the fix-up kept together: renaming one estimate renames them all,
+  // and it loses its project only with its last estimate.
+  db.prepare('UPDATE estimates SET project_id = ? WHERE id = ?').run(a.body.estimate.projectId, dup.estimate.id);
+  db.prepare('DELETE FROM projects WHERE id = ?').run(dup.estimate.projectId);
+  assert.equal((await saveEstimate({ upid: 'UP-T15E' }, a.body.estimate.id)).status, 200);
+  assert.equal(db.prepare('SELECT upid FROM estimates WHERE id = ?').get(dup.estimate.id).upid, 'UP-T15E');
+  await dropEstimates(dup.estimate.id);
+  assert.ok(projectRow(a.body.estimate.projectId), 'still has an estimate');
+  await dropEstimates(a.body.estimate.id);
+  assert.equal(projectRow(a.body.estimate.projectId), undefined);
+});
+
+test('projects: one waiting for the fix-up saves with its shared UPID, and settles on a free one', async () => {
+  const a = await saveEstimate({});
+  const b = await saveEstimate({});
+  // As v13 leaves two estimates that shared a UPID.
+  for (const e of [a, b]) {
+    db.prepare("UPDATE estimates SET upid = 'UP-SHARED' WHERE id = ?").run(e.body.estimate.id);
+    db.prepare('UPDATE projects SET upid = NULL, needs_upid = 1 WHERE id = ?').run(e.body.estimate.projectId);
+  }
+  const pa = a.body.estimate.projectId;
+
+  const same = await saveEstimate({ upid: ' up-shared ' }, a.body.estimate.id);
+  assert.equal(same.status, 200, JSON.stringify(same.body));
+  assert.equal(same.body.estimate.upid, 'UP-SHARED');
+  assert.deepEqual([projectRow(pa).upid, projectRow(pa).needs_upid], [null, 1]);
+
+  // Nobody else can take a UPID a waiting group still carries.
+  assert.equal((await saveEstimate({ upid: 'UP-SHARED' })).body.error, 'upid_taken');
+
+  const settled = await saveEstimate({ upid: 'UP-T15S' }, a.body.estimate.id);
+  assert.equal(settled.status, 200);
+  assert.deepEqual([projectRow(pa).upid, projectRow(pa).needs_upid], ['UP-T15S', 0]);
+  assert.equal(projectRow(b.body.estimate.projectId).needs_upid, 1);
+  await dropEstimates(a.body.estimate.id, b.body.estimate.id);
+});
+
+test('projects: a declined estimate\'s days and rentals leave the calendar and lock nothing', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const a = await saveEstimate({
+    activeRows: { prod: [capture('t15_a')], equip: [{ vendor: 'Lensworks', item: 'Kit', days: 1, cost: 100 }] },
+    days: [pbDay('t15_a', '2026-11-03', 'confirmed')],
+    rentals: [rental('t15_rn', 'Lensworks', { outDate: '2026-11-02' })],
+  });
+  assert.equal(a.status, 201, JSON.stringify(a.body));
+  const range = '/api/calendar?from=2026-11-01&to=2026-11-30';
+  const mine = (cal) => [cal.days.filter((d) => d.estimateId === a.body.estimate.id).length,
+    cal.rentals.filter((r) => r.estimateId === a.body.estimate.id).length];
+  assert.deepEqual(mine(await api(range).then((r) => r.json())), [1, 1]);
+  const locked = await saveEstimate({ activeRows: { prod: [capture('t15_b')] }, days: [pbDay('t15_b', '2026-11-03', 'confirmed')] });
+  assert.equal(locked.body.error, 'date_locked');
+
+  db.prepare("UPDATE estimates SET status = 'declined' WHERE id = ?").run(a.body.estimate.id);
+  assert.deepEqual(mine(await api(range).then((r) => r.json())), [0, 0]);
+  const b = await saveEstimate({ activeRows: { prod: [capture('t15_b')] }, days: [pbDay('t15_b', '2026-11-03', 'confirmed')] });
+  assert.equal(b.status, 201, JSON.stringify(b.body));
+  await dropEstimates(a.body.estimate.id, b.body.estimate.id);
+});

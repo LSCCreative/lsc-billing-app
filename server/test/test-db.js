@@ -816,8 +816,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v12', () => {
-  assert.equal(LATEST_VERSION, 12);
+test('the schema knows it is at v13', () => {
+  assert.equal(LATEST_VERSION, 13);
 });
 
 /**
@@ -877,7 +877,9 @@ test('v11 leaves every estimate as it was, with no days and nothing surcharged',
   assert.deepEqual([result.from, result.to, result.applied], [10, LATEST_VERSION, LATEST_VERSION - 10]);
 
   const after = db.prepare('SELECT * FROM estimates').get();
-  assert.deepEqual(after, { ...before, short_notice: 0, surcharges_json: '{}' });
+  // v13 also runs, and gives the raw-inserted row the project it lacked.
+  assert.match(after.project_id, /^prj_/);
+  assert.deepEqual(after, { ...before, short_notice: 0, surcharges_json: '{}', project_id: after.project_id });
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_days').get().n, 0);
 
   // Again, with everything already there: it runs, and nothing moves.
@@ -997,8 +999,9 @@ test('v12 adds the rentals table and leaves every estimate as it was', () => {
   db.exec('DROP TABLE rentals;');
   db.prepare('DELETE FROM schema_version WHERE version >= 12').run();
   const result = migrate(db);
-  assert.deepEqual([result.from, result.to, result.applied], [11, 12, 1]);
-  assert.deepEqual(db.prepare('SELECT * FROM estimates').get(), before);
+  assert.deepEqual([result.from, result.to, result.applied], [11, LATEST_VERSION, LATEST_VERSION - 11]);
+  const after = db.prepare('SELECT * FROM estimates').get();
+  assert.deepEqual(after, { ...before, project_id: after.project_id }); // v13 gave it a project
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 0);
   const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'rentals'").all().map((r) => r.name);
   for (const name of ['idx_rentals_estimate', 'idx_rentals_out_date', 'idx_rentals_back_date']) assert.ok(indexes.includes(name), name);
@@ -1015,11 +1018,214 @@ test('v12 adds the rentals table and leaves every estimate as it was', () => {
 
   // Again, with the table already there: it runs, and nothing moves.
   db.prepare('DELETE FROM schema_version WHERE version >= 12').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db).applied, LATEST_VERSION - 11);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 2);
 
   // Deleting the estimate takes its rentals.
   db.prepare("DELETE FROM estimates WHERE id = 'est_old'").run();
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 0);
+  db.close();
+});
+
+/**
+ * MIGRATION v13 — projects, the new statuses, invoices and activity
+ * (production-booking task 15). Built on a real v12 database: every estimate
+ * keeps every stored value but its status (mapped) and project_id; days and
+ * rentals survive the estimates rebuild; shared and blank UPIDs are never
+ * guessed at; invoice-typed rows yield legacy invoices; a re-run is a no-op.
+ */
+function v12Fixture() {
+  const db = openDatabase(tempDbPath('v13'), { migrate: false });
+  db.pragma('foreign_keys = ON');
+  migrate(db, { to: 12 });
+  const now = '2026-09-20T01:00:00.000Z';
+  db.prepare('INSERT INTO clients (id, business_name, created_at, updated_at) VALUES (?,?,?,?)')
+    .run('cl_acme', 'Acme Pty Ltd', now, now);
+  const add = db.prepare(`
+    INSERT INTO estimates
+      (id, upid, name, date, status, doc_type, invoice_number, client_id, client_json,
+       active_rows_json, totals_json, gst_free, short_notice, surcharges_json, created_at, updated_at)
+    VALUES (@id, @upid, @name, @date, @status, @doc, @num, @client, '{"businessName":"Acme Pty Ltd"}',
+       @rows, @totals, 0, @sn, @sur, @created, @updated)
+  `);
+  const est = (id, upid, extra = {}) => add.run({
+    id, upid, name: `Job ${id}`, date: '', status: 'draft', doc: 'estimate', num: '', client: 'cl_acme',
+    rows: JSON.stringify({ prod: [{ name: 'Video Capture', qty: 1, mu: 1120.5, dayUnit: 'full', dayId: 'day_' + id }] }),
+    totals: JSON.stringify({ subtotal: 1120.5, gst: 112.05, totalIncGst: 1232.55 }),
+    sn: 0, sur: '{}', created: now, updated: '2026-09-21T02:00:00.000Z', ...extra,
+  });
+  est('est_unique', ' UP-100 ', { sn: 1, sur: '{"mode":"higher"}' });
+  est('est_shared1', 'UP-200');
+  est('est_shared2', 'up-200', { client: null });
+  est('est_blank', '');
+  est('est_doc_inv', 'UP-300', { doc: 'invoice', num: ' INV-0042 ', date: '2026-09-01' });
+  est('est_approved', 'UP-400', { status: 'approved' });
+  est('est_paid', 'UP-500', { status: 'paid', doc: 'invoice', num: 'INV-0050' });
+  est('est_paid_again', 'UP-501', { status: 'paid', doc: 'invoice', num: 'INV-0050' });
+  est('est_invoiced', 'UP-600', { status: 'invoiced' });
+  est('est_sent', 'UP-700', { status: 'sent' });
+  db.prepare(`INSERT INTO production_days (id, estimate_id, date, status, start_time, end_time, created_at, updated_at)
+    VALUES ('day_est_unique', 'est_unique', '2026-10-10', 'confirmed', '08:00', '18:00', ?, ?)`).run(now, now);
+  db.prepare(`INSERT INTO production_days (id, estimate_id, date, status, created_at, updated_at)
+    VALUES ('day_est_shared1', 'est_shared1', NULL, 'proposed', ?, ?)`).run(now, now);
+  db.prepare(`INSERT INTO rentals (id, estimate_id, vendor, out_date, created_at, updated_at)
+    VALUES ('rn_1', 'est_unique', 'Lensworks', '2026-10-09', ?, ?)`).run(now, now);
+  return db;
+}
+
+const dump = (db, table) => db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all();
+
+test('v13 keeps every estimate\'s stored values, days and rentals through the rebuild', () => {
+  const db = v12Fixture();
+  const estimates = dump(db, 'estimates');
+  const days = dump(db, 'production_days');
+  const rentals = dump(db, 'rentals');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [12, 13, 1]);
+  assert.equal(db.pragma('foreign_keys', { simple: true }), 1, 'foreign keys are back on');
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+
+  const after = new Map(dump(db, 'estimates').map((r) => [r.id, r]));
+  assert.equal(after.size, estimates.length);
+  for (const was of estimates) {
+    const now = after.get(was.id);
+    assert.match(now.project_id, /^prj_/, was.id);
+    // Totals byte-identical; the only other changes are the status and, for
+    // the one unique UPID with spaces round it, the trim.
+    const { status, project_id: _p, upid, ...rest } = now;
+    const { status: _s, upid: oldUpid, ...wasRest } = was;
+    assert.deepEqual(rest, wasRest, was.id);
+    assert.equal(now.totals_json, was.totals_json);
+    assert.equal(upid, was.id === 'est_unique' ? 'UP-100' : oldUpid, was.id);
+  }
+  assert.deepEqual(dump(db, 'production_days'), days);
+  assert.deepEqual(dump(db, 'rentals'), rentals);
+
+  const statuses = Object.fromEntries([...after.values()].map((r) => [r.id, r.status]));
+  assert.deepEqual(statuses, {
+    est_unique: 'draft', est_shared1: 'draft', est_shared2: 'draft', est_blank: 'draft',
+    est_doc_inv: 'accepted', est_approved: 'accepted', est_paid: 'accepted', est_paid_again: 'accepted',
+    est_invoiced: 'accepted', est_sent: 'sent',
+  });
+
+  // The new CHECK, and the indexes the old table had plus project_id's.
+  assert.throws(() => db.prepare("UPDATE estimates SET status = 'approved' WHERE id = 'est_sent'").run(), /CHECK/);
+  const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'estimates'").all().map((r) => r.name);
+  for (const name of ['idx_estimates_updated', 'idx_estimates_client', 'idx_estimates_status', 'idx_estimates_project']) {
+    assert.ok(indexes.includes(name), name);
+  }
+  assert.equal(db.prepare("SELECT total_inc_gst AS t FROM estimates WHERE id = 'est_unique'").get().t, 1232.55);
+  db.close();
+});
+
+test('v13 makes one project per unique UPID and flags shared and blank ones, guessing nothing', () => {
+  const db = v12Fixture();
+  migrate(db);
+  const projectOf = (id) => db.prepare(`
+    SELECT p.* FROM projects p JOIN estimates e ON e.project_id = p.id WHERE e.id = ?`).get(id);
+
+  const unique = projectOf('est_unique');
+  assert.deepEqual([unique.upid, unique.needs_upid, unique.client_id, unique.accepted_at],
+    ['UP-100', 0, 'cl_acme', null]);
+
+  // A UPID two estimates share (case and spaces aside): each its own project,
+  // no UPID, flagged; each estimate keeps the old UPID the fix-up groups by.
+  const s1 = projectOf('est_shared1');
+  const s2 = projectOf('est_shared2');
+  assert.notEqual(s1.id, s2.id);
+  assert.deepEqual([s1.upid, s1.needs_upid, s2.upid, s2.needs_upid, s2.client_id], [null, 1, null, 1, null]);
+  assert.deepEqual(db.prepare("SELECT upid FROM estimates WHERE id IN ('est_shared1', 'est_shared2') ORDER BY id").all()
+    .map((r) => r.upid), ['UP-200', 'up-200']);
+
+  const blank = projectOf('est_blank');
+  assert.deepEqual([blank.upid, blank.needs_upid], [null, 1]);
+
+  // Accepted projects are accepted when their estimate was last touched.
+  for (const id of ['est_doc_inv', 'est_approved', 'est_paid', 'est_invoiced']) {
+    const p = projectOf(id);
+    assert.deepEqual([p.accepted_at, p.needs_upid], ['2026-09-21T02:00:00.000Z', 0], id);
+  }
+  assert.equal(projectOf('est_sent').accepted_at, null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM projects').get().n, 10);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM projects WHERE needs_upid = 1').get().n, 3);
+
+  // UPIDs are unique, case-insensitively, and never blank or padded.
+  const insert = db.prepare("INSERT INTO projects (id, upid, created_at, updated_at) VALUES (?, ?, 'x', 'x')");
+  assert.throws(() => insert.run('prj_dupe', 'up-100'), /UNIQUE/);
+  assert.throws(() => insert.run('prj_blank', ''), /CHECK/);
+  assert.throws(() => insert.run('prj_pad', ' UP-900'), /CHECK/);
+  insert.run('prj_null_a', null);
+  insert.run('prj_null_b', null); // any number may wait for a UPID
+  db.close();
+});
+
+test('v13 turns each invoice-typed estimate into a legacy invoice, totals copied, never repriced', () => {
+  const db = v12Fixture();
+  const before = new Map(dump(db, 'estimates').map((r) => [r.id, r]));
+  migrate(db);
+  const invoices = db.prepare(`SELECT * FROM invoices ORDER BY estimate_id`).all();
+  assert.deepEqual(invoices.map((i) => [i.estimate_id, i.kind, i.number, i.status, i.issued_at, i.paid_at]), [
+    ['est_doc_inv', 'legacy', 'INV-0042', 'draft', '2026-09-01', null],
+    ['est_invoiced', 'legacy', null, 'sent', null, null],
+    ['est_paid', 'legacy', 'INV-0050', 'paid', null, null],
+    // Two old invoices printed with one number both survive: they went out.
+    ['est_paid_again', 'legacy', 'INV-0050', 'paid', null, null],
+  ]);
+  for (const inv of invoices) {
+    const was = before.get(inv.estimate_id);
+    const project = db.prepare('SELECT project_id FROM estimates WHERE id = ?').get(inv.estimate_id).project_id;
+    assert.equal(inv.project_id, project);
+    assert.equal(inv.totals_json, was.totals_json);
+    const snap = JSON.parse(inv.estimate_snapshot_json);
+    assert.deepEqual([snap.id, snap.status, snap.active_rows_json, snap.totals_json, snap.invoice_number],
+      [was.id, was.status, was.active_rows_json, was.totals_json, was.invoice_number]);
+    assert.deepEqual([inv.pct, inv.less_invoice_id, inv.extras_json], [null, null, '{}']);
+  }
+
+  // Numbers the app makes are unique (case aside); legacy ones are exempt.
+  const add = db.prepare(`INSERT INTO invoices (id, project_id, kind, number, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'x', 'x')`);
+  const project = invoices[0].project_id;
+  add.run('inv_d', project, 'deposit', 'INV-UP-300-D');
+  assert.throws(() => add.run('inv_d2', project, 'final', 'inv-up-300-d'), /UNIQUE/);
+  assert.throws(() => add.run('inv_k', project, 'quote', 'X'), /CHECK/);
+  db.close();
+});
+
+test('v13 run again changes nothing; deleting a project takes its estimates, days, invoices and activity', () => {
+  const db = v12Fixture();
+  migrate(db);
+  const tables = ['projects', 'estimates', 'invoices', 'activity', 'production_days', 'rentals'];
+  const once = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+
+  db.prepare('DELETE FROM schema_version WHERE version >= 13').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(Object.fromEntries(tables.map((t) => [t, dump(db, t)])), once);
+
+  const p = db.prepare("SELECT project_id FROM estimates WHERE id = 'est_unique'").get().project_id;
+  db.prepare("INSERT INTO activity (id, project_id, at, kind) VALUES ('act_1', ?, 'x', 'accepted')").run(p);
+  db.prepare('DELETE FROM projects WHERE id = ?').run(p);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM estimates WHERE id = 'est_unique'").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM production_days WHERE estimate_id = 'est_unique'").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM rentals").get().n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM activity').get().n, 0);
+
+  const paid = db.prepare("SELECT project_id FROM estimates WHERE id = 'est_paid'").get().project_id;
+  db.prepare('DELETE FROM projects WHERE id = ?').run(paid);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM invoices WHERE project_id = ?').get(paid).n, 0);
+  db.close();
+});
+
+test('a migration that would leave a dangling reference is refused whole', () => {
+  const db = v12Fixture();
+  // A day pointing at no estimate, as if an older build had left one behind.
+  db.pragma('foreign_keys = OFF');
+  db.prepare("INSERT INTO production_days (id, estimate_id, status, created_at, updated_at) VALUES ('day_x', 'est_gone', 'proposed', 'x', 'x')").run();
+  db.pragma('foreign_keys = ON');
+  assert.throws(() => migrate(db), /pointing at nothing/);
+  assert.equal(db.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 12);
+  assert.ok(!db.prepare('PRAGMA table_info(estimates)').all().some((c) => c.name === 'project_id'), 'rolled back');
+  assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
   db.close();
 });

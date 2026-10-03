@@ -688,6 +688,20 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 13,
+    name: 'projects, estimate statuses, invoices and activity',
+    // Rebuilds `estimates` (its status CHECK). With foreign keys on, that
+    // DROP TABLE would cascade-delete every production day and rental (the
+    // trap v11 and v12 warn about), so this one runs with them off and is
+    // checked with foreign_key_check before it commits. See migrate().
+    foreignKeysOff: true,
+    up(db) {
+      // .design/production-booking/ task 15 (2026-10-03; IA "Data Model",
+      // Stage D). The steps, and why, are in migrations/v13-projects.js.
+      require('./migrations/v13-projects').migrateV13(db);
+    },
+  },
 ];
 
 /**
@@ -744,8 +758,11 @@ function currentVersion(db) {
  * Applies any migrations newer than the file's recorded version. Safe to run on
  * a fresh file and on an existing one; running it twice does nothing the second
  * time.
+ *
+ * `options.to` stops at that version. Only the tests use it, to build a
+ * database exactly as an older build left it before upgrading it.
  */
-function migrate(db) {
+function migrate(db, options = {}) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version    INTEGER PRIMARY KEY,
@@ -761,15 +778,39 @@ function migrate(db) {
     );
   }
 
-  const pending = MIGRATIONS.filter((m) => m.version > from);
+  const to = options.to === undefined ? LATEST_VERSION : options.to;
+  const pending = MIGRATIONS.filter((m) => m.version > from && m.version <= to);
   const record = db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)');
 
   for (const migration of pending) {
-    // Each migration lands whole or not at all.
-    db.transaction(() => {
-      migration.up(db);
-      record.run(migration.version, nowIso());
-    })();
+    // A migration that rebuilds a parent table turns foreign keys off around
+    // its transaction (SQLite ignores the pragma inside one), as SQLite's own
+    // "making other kinds of table schema changes" procedure does: otherwise
+    // DROP TABLE runs the children's ON DELETE actions. Before it commits,
+    // foreign_key_check must come back empty, so a rebuild can't leave a row
+    // pointing at nothing.
+    const fkOff = migration.foreignKeysOff === true;
+    const fkWas = db.pragma('foreign_keys', { simple: true });
+    if (fkOff) db.pragma('foreign_keys = OFF');
+    try {
+      // Each migration lands whole or not at all.
+      db.transaction(() => {
+        migration.up(db);
+        if (fkOff) {
+          const broken = db.pragma('foreign_key_check');
+          if (broken.length) {
+            throw new Error(
+              `migration v${migration.version} would leave ${broken.length} row(s) pointing at ` +
+              `nothing (first: ${broken[0].table} row ${broken[0].rowid} → ${broken[0].parent}). ` +
+              'Nothing was changed.'
+            );
+          }
+        }
+        record.run(migration.version, nowIso());
+      })();
+    } finally {
+      if (fkOff) db.pragma(`foreign_keys = ${fkWas ? 'ON' : 'OFF'}`);
+    }
     console.log(`[db] migrated to v${migration.version} — ${migration.name}`);
   }
 

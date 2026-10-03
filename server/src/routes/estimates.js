@@ -11,6 +11,7 @@ const {
 const {
   readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
 } = require('../rentals');
+const { planProjectWrite, applyProjectWrite, dropEmptyProject } = require('../projects');
 
 /**
  * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
@@ -149,20 +150,27 @@ function registerEstimateRoutes(app, db) {
     const prepared = prepareWrite(db, body, null);
     if (!prepared.fields) return res.status(prepared.status).json(prepared.body);
     const { days, rentals, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
+    const plan = planProjectWrite(db, body, null);
+    if (plan.status) return res.status(plan.status).json(plan.body);
 
     db.transaction(() => {
+      // A new estimate is a new project (v13), and starts as a draft: since
+      // v13 a status moves only by the project's own actions (send, accept,
+      // decline), never by an estimate save.
+      const projectId = applyProjectWrite(db, plan, body.clientId, now);
       db.prepare(`
         INSERT INTO estimates
           (id, upid, name, date, status, doc_type, invoice_number, client_id,
            client_json, notes, active_rows_json, section_labels_json, gst_free,
-           short_notice, surcharges_json, totals_json, created_at, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           short_notice, surcharges_json, totals_json, created_at, updated_at, project_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
-        id, body.upid || '', body.name || '', body.date || '',
-        body.status || 'draft', body.docType || 'estimate', body.invoiceNumber || '',
+        id, plan.upid, body.name || '', body.date || '',
+        'draft', body.docType || 'estimate', body.invoiceNumber || '',
         body.clientId || null, JSON.stringify(body.client || {}), body.notes || '',
         JSON.stringify(activeRows), JSON.stringify(sectionLabels),
-        gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges), JSON.stringify(totals), now, now
+        gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges), JSON.stringify(totals), now, now,
+        projectId
       );
       replaceDays(db, id, days, now);
       replaceRentals(db, id, rentals, now);
@@ -184,22 +192,28 @@ function registerEstimateRoutes(app, db) {
     const prepared = prepareWrite(db, body, existing);
     if (!prepared.fields) return res.status(prepared.status).json(prepared.body);
     const { days, rentals, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } = prepared.fields;
+    const plan = planProjectWrite(db, body, existing);
+    if (plan.status) return res.status(plan.status).json(plan.body);
 
     db.transaction(() => {
+      // The status is kept as it is (v13): `status` in the body is ignored,
+      // because only the project's actions move it. The UPID is the project's
+      // (projects.js), copied here.
+      const projectId = applyProjectWrite(db, plan, body.clientId, now);
       db.prepare(`
         UPDATE estimates SET
-          upid = ?, name = ?, date = ?, status = ?, doc_type = ?, invoice_number = ?,
+          upid = ?, name = ?, date = ?, doc_type = ?, invoice_number = ?,
           client_id = ?, client_json = ?, notes = ?, active_rows_json = ?,
           section_labels_json = ?, gst_free = ?, short_notice = ?, surcharges_json = ?,
-          totals_json = ?, updated_at = ?
+          totals_json = ?, updated_at = ?, project_id = ?
         WHERE id = ?
       `).run(
-        body.upid || '', body.name || '', body.date || '', body.status || 'draft',
+        plan.upid, body.name || '', body.date || '',
         body.docType || 'estimate', body.invoiceNumber || '', body.clientId || null,
         JSON.stringify(body.client || {}), body.notes || '',
         JSON.stringify(activeRows), JSON.stringify(sectionLabels),
         gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges),
-        JSON.stringify(totals), now,
+        JSON.stringify(totals), now, projectId,
         req.params.id
       );
       replaceDays(db, req.params.id, days, now);
@@ -210,9 +224,16 @@ function registerEstimateRoutes(app, db) {
     res.json({ ok: true, estimate: loadJson(row) });
   });
 
+  // A project left with no estimate goes with it (v13), invoices and
+  // activity included — as deleting an invoice-typed estimate always took
+  // that invoice with it. Task 18's folder gets its own Delete.
   app.delete('/api/estimates/:id', (req, res) => {
-    const result = db.prepare('DELETE FROM estimates WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ error: 'not_found' });
+    const existing = db.prepare('SELECT project_id FROM estimates WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'not_found' });
+    db.transaction(() => {
+      db.prepare('DELETE FROM estimates WHERE id = ?').run(req.params.id);
+      dropEmptyProject(db, existing.project_id);
+    })();
     res.json({ ok: true });
   });
 
@@ -248,6 +269,10 @@ function registerEstimateRoutes(app, db) {
     // project has none (D60). Deliverables, their post-line tags and each
     // line's Capture flag are copied as they are — they say what's being
     // made, not when.
+    //
+    // SINCE v13 (task 15) the copy is a new project with no UPID (D60): UPIDs
+    // are unique, so the original's can't come with it. It is an estimate,
+    // whatever the original's retired doc type (D62), and a draft.
     const rows = JSON.parse(existing.active_rows_json || '{}');
     let unbooked = false;
     let offDays = 0;
@@ -267,18 +292,21 @@ function registerEstimateRoutes(app, db) {
         overheadRate: readOverheadRate(db),
       }))
       : existing.totals_json;
-    db.prepare(`
-      INSERT INTO estimates
-        (id, upid, name, date, status, doc_type, invoice_number, client_id,
-         client_json, notes, active_rows_json, section_labels_json, gst_free,
-         totals_json, created_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(
-      id, existing.upid, `${existing.name} (copy)`, existing.date, 'draft',
-      existing.doc_type, '', existing.client_id, existing.client_json,
-      existing.notes, unbooked ? JSON.stringify(rows) : existing.active_rows_json,
-      existing.section_labels_json, existing.gst_free, totalsJson, now, now
-    );
+    db.transaction(() => {
+      const projectId = applyProjectWrite(db, { project: null, upid: '' }, existing.client_id, now);
+      db.prepare(`
+        INSERT INTO estimates
+          (id, upid, name, date, status, doc_type, invoice_number, client_id,
+           client_json, notes, active_rows_json, section_labels_json, gst_free,
+           totals_json, created_at, updated_at, project_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        id, '', `${existing.name} (copy)`, existing.date, 'draft',
+        'estimate', '', existing.client_id, existing.client_json,
+        existing.notes, unbooked ? JSON.stringify(rows) : existing.active_rows_json,
+        existing.section_labels_json, existing.gst_free, totalsJson, now, now, projectId
+      );
+    })();
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(id);
     res.status(201).json({ ok: true, estimate: loadJson(row), unbooked: offDays });

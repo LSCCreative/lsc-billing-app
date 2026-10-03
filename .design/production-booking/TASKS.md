@@ -234,7 +234,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 ## Stage C — Home: the production calendar (no migration)
 
 - [x] **11. Hash router** (frontend — Opus/high). _New `web/js/router.js`._ The foundation for C
-  and everything after it (D59). **Done 2026-10-03, uncommitted** (see the Done note below).
+  and everything after it (D59). **Done 2026-10-03** (see the Done note below).
 
   **Done note (2026-10-03).** Changed `router.js` (new), `app.js`, `index.html` (one `<script>`),
   `views/estimates.js`, `views/clients.js`, `views/finance.js`, `views/estimate-list.js` and
@@ -280,8 +280,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     extras ignoring gstFree; `accepted`, then `approved`, dropped from the won set; the final ignoring
     its deposit; a single subtracting one.
 
-- [ ] **15. Schema v13: projects, statuses, invoices, activity** (money math — Opus/high).
-  _Depends on: 14._
+- [x] **15. Schema v13: projects, statuses, invoices, activity** (money math — Opus/high).
+  _Depends on: 14._ **Done 2026-10-03, uncommitted** (see the Done note below).
   - **`projects`** (IA Data Model). One per distinct non-blank UPID; shared or blank UPIDs become
     projects with `upid` NULL and `needs_upid` (D61). Also `estimates.project_id`.
   - **An `estimates` rebuild** for the status CHECK: draft / sent / accepted / declined.
@@ -294,6 +294,51 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   **Done when** migration tests on fixtures cover: unique UPIDs; two sharing one; a blank one; an
   `invoice`-typed row; and an `approved` row, each landing as specified. Every existing estimate's
   totals are byte-identical after the migration, and a re-run is a no-op.
+
+  **Done note (2026-10-03).** New `server/src/migrations/v13-projects.js` and `server/src/projects.js`.
+  Changed `db.js` (v13; a `foreignKeysOff` migration flag; `migrate(db, { to })` for tests),
+  `routes/estimates.js`, `estimate.js` (`projectId`), `days.js`, `routes/calendar.js`, `test-db.js`
+  and `test-api.js`. `npm test` 419/419 (was 409); `calc.js` untouched.
+  Mutations caught (36): every status mapping; FK-off flag, `foreign_key_check`, FK restore, the
+  rebuild guard; shared and blank UPIDs flagged; `accepted_at`; the unique trim; each legacy
+  status, number trim, `issued_at`, copied totals, idempotency, the legacy-number exemption and
+  both NOCASE uniques; the waiting-project keep, taken-by-project, taken-by-waiting-group,
+  settling, sibling sync, client sync, the UPID trim; POST draft, PUT keeps status; duplicate's
+  blank UPID and doc type; the dropped empty project; declined days, rentals and lock;
+  `projectId` on the reply. Dry run on a copy of the `api-scratch` DB (v12, 9 estimates, 18 days,
+  3 rentals): 9 projects, 4 need a UPID, 1 legacy invoice, rows and totals byte-identical, days
+  and rentals kept, FK and integrity checks clean. Decisions taken in the code:
+  - **The rebuild runs with foreign keys off.** SQLite ignores the pragma inside a transaction,
+    so the runner turns them off around a migration flagged `foreignKeysOff` and requires an empty
+    `foreign_key_check` before commit, or rolls the whole migration back. A dangling row already
+    in the live DB would stop the boot: **dry-run v13 on a copy of the live backup before task 23.**
+  - **Shared or blank UPIDs:** each estimate gets its own project (`upid` NULL, `needs_upid` 1)
+    and keeps its old UPID on the estimate row, which is what task 16 groups by. "Shared" ignores
+    case and surrounding spaces. A unique UPID is trimmed onto the estimate.
+  - **`projects.upid`** is UNIQUE `COLLATE NOCASE`, never blank or padded (CHECK). New drafts may
+    have none (`upid` NULL, `needs_upid` 0), so they don't trip the fix-up banner.
+  - **A doc-type Invoice row becomes `accepted`** as well as `approved` / `invoiced` / `paid`,
+    because no screen ever set a status and an invoice means the job went ahead. Its project's
+    `accepted_at` is the estimate's `updated_at`.
+  - **Legacy invoices** (one per invoice-typed or invoiced/paid row): number trimmed (NULL if
+    blank), status paid → `paid`, invoiced/sent → `sent`, else `draft`; `paid_at` NULL (never
+    recorded); `issued_at` the document's date; `totals_json` copied; `estimate_snapshot_json` the
+    whole old row. Invoice numbers are unique case-insensitively **except legacy** (a partial
+    index), so two old invoices printed with one number both survive. `invoices.estimate_id` is
+    added (not in the IA) to tie a legacy invoice to its row; `public_token` waits for v14.
+  - **Write routes:** a new estimate is a new project. `upid_taken` (409, with `projectId`) if
+    another project holds the UPID, or an estimate waiting for the fix-up still carries it. A
+    waiting project saved with its own shared UPID stays waiting; a free one settles it. Renaming
+    moves every estimate in the project. The project follows the estimate's client.
+  - **An estimate save never moves its status** (POST is always draft, PUT keeps it): from now on
+    only project actions do (tasks 18, 19). The web already sends the stored status back.
+  - **Duplicate** makes a new project with a blank UPID and doc type `estimate` (D60, D62). Task 16
+    still owns the editor side (focus, refusing to save until unique).
+  - **Deleting an estimate** deletes its project when no estimate is left (invoices and activity
+    cascade), as deleting an invoice-typed estimate always took that invoice with it.
+  - **Declined** estimates' days and rentals leave `/api/calendar` and lock no date.
+  - `doc_type` / `invoice_number` are still written as sent until task 18 removes them from the
+    editor. `activity.kind` has no CHECK: Stage E adds kinds.
 
 - [ ] **16. The UPID fix-up screen and Duplicate** (frontend — Opus/high).
   _Depends on: 11, 15._
