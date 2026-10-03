@@ -366,7 +366,7 @@ times.
 **B2-13 done 2026-10-03: B2 is deployed** (NAS v12, then Pages run 37094465617, `main` at `930249c`; B2-12 committed `930249c`). Still for the user: tick Capture on their real capture services and add their Deliverable Types on the Rate Card.
 
 - [ ] **Stage C, the home dashboard.**
-  - [x] **Task 11, the hash router**: done 2026-10-03, **uncommitted**. New `web/js/router.js`;
+  - [x] **Task 11, the hash router**: done 2026-10-03, committed `7ae182f`. New `web/js/router.js`;
     `app.js` holds the route table (`renderRoute`, `LANDING`); each area's view has
     `init()` + `show(segments, state)`. No server change (401/401).
     - **Verified:** Back/Forward, reload, deep links, sign-in carry-on, the unsaved guard on
@@ -374,8 +374,19 @@ times.
       byte-identical `#main` at 1280 against `f019f5f` on six screens.
     - **Read its Done note before task 12.** It has five interpretations to show the user (the
       main one: `#/home` lands on the estimates list until task 12 sets `LANDING`) and the seams.
+  - [x] **Task 12, the Home screen**: done 2026-10-03, **uncommitted**. New `views/home.js`,
+    `views/home-week.js` and `css/home.css`; `app.js` lands on `#/home`. No server change
+    (401/401).
+    - **What exists now:** month and week views (week: an hour scale, a "No time" row, a gear
+      strip; a day list under 600px), the tile pop-up with "Open estimate", Coming up (14 days,
+      links to the estimate), and Recent activity's empty state.
+    - **Verified** at 1280, 800 and 375 against `api-scratch`, with six days added across
+      October and November (`dhome1`–`dhome6`).
+    - **Read its Done note before task 13.** It has six interpretations to show the user (the
+      main one: the button says "Open estimate" until stage D) and the seams.
 
-**Exact next item: TASKS.md task 12, the Home screen** (Stage C; frontend, Opus/high).
+**Exact next item: TASKS.md task 13, C polish and deploy** (the Home accessibility pass is
+frontend, Opus/high; the Pages deploy is Sonnet/medium).
 
 **Seams left for later tasks:**
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the

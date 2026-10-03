@@ -673,5 +673,10 @@ const LSCCalendar = (() => {
     return api;
   }
 
-  return { mount, statusChip, describeDate, timeText, gridRange, longDate, shortDate, addDays, addMonths, isDate };
+  /* normRental, rentalRole and rentalDates are for Home's week view (task 12),
+     so a rental reads the same in both views. */
+  return {
+    mount, statusChip, describeDate, timeText, gridRange, longDate, shortDate, addDays, addMonths, isDate,
+    weekday, normRental, rentalRole, rentalDates,
+  };
 })();

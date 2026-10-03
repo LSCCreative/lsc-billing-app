@@ -2176,8 +2176,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     `LANDING`, a `home` branch in `renderRoute()` and `setNav('home')`. Task 17 renames the
     `estimates` area; the old `#/estimates/...` addresses should redirect then.
 
-- [ ] **12. Home screen** (frontend — Opus/high). _Depends on: 5, 11._ `#/home` becomes the landing
-  route and the logo goes there (D27).
+- [x] **12. Home screen** (frontend — Opus/high). _Depends on: 5, 11._ `#/home` becomes the landing
+  route and the logo goes there (D27). **Done 2026-10-03, uncommitted** (see the Done note below).
   - **The calendar** in month and week views (week: tiles at their times, untimed ones at the
     top), with all estimates' days equal.
   - **A tile pop-up** (`Modal`): UPID, project, business, times, production items, "Open project".
@@ -2189,6 +2189,87 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** it's verified against the scratch DB with days across two months and three
   statuses.
+
+  **Done note (2026-10-03).** New `web/js/views/home.js` (the screen), `web/js/views/home-week.js`
+  (the week view) and `web/css/home.css`. Changed `app.js` (`LANDING` is `'/home'`, a `home`
+  branch in `renderRoute()`, `HomeView.init`, and `setNav('home')` lights the logo),
+  `index.html` (two scripts, the stylesheet, `#modal-home-day`), `calendar.js` (exports only:
+  `weekday`, `normRental`, `rentalRole`, `rentalDates`) and one stale comment in
+  `estimate-list.js`. No server change (401/401).
+  - **What exists now:**
+    - **The head:** "LSC Creative", today's date, and a Month / Week switch (`aria-pressed`,
+      remembered per browser in `localStorage['lsc-home-view']`, try/catch).
+    - **Month:** the shared calendar with no emphasis, so every estimate's days and rental bars
+      are at equal strength. A tile or a list entry opens the pop-up.
+    - **Week:** seven columns on an hour scale (07:00–19:00, stretched to the week's earliest
+      start and latest end), untimed days in a "No time" row at the top, and the gear strip
+      above that, bars crossing days with the month's caps and continuations. Overlapping
+      bookings sit side by side. Below 600px of its own width it's a day-by-day list (D29), the
+      month list's markup per day with gear lines.
+    - **The pop-up** (`Modal` trap, Escape, Back closes it, focus returns to the tile, a bottom
+      sheet under 768): status chip and date, UPID and project, business, times, the note, the
+      production items, Close and **Open estimate**.
+    - **Coming up:** today + 13 days from `/api/calendar`, grouped under a Delight date block
+      with "Today / Tomorrow / In N days", rows that are links to `#/estimates/<id>` with the
+      chip, UPID, project, client and times. Proposed rows have a dashed edge.
+    - **Recent activity:** the panel with its empty state, until stage D records events.
+    - **Layout:** one column on phones; the calendar full width with the lists side by side
+      from 768; the calendar left (672px, so its wide tiles) and a 296px list column from 1100.
+    - **Keeping your place:** Back from an estimate reopens the month or week you left (in
+      memory, reset on a new day or a reload); switching views carries the selected date
+      across.
+  - **Verified in the browser against `api-scratch`** (dispatched clicks and keys, plus one
+    real Tab for the focus rings). Six days were added to the scratch DB for this: B28-TWO
+    confirmed 4 Nov 08–18 and pencilled 5 Nov 06–12, B210-PLAN proposed 5 Nov 10–15 and
+    confirmed 18 Nov untimed, B28-TWO confirmed 6 Oct from 09:00 with a note, B24-OLD proposed
+    6 Oct 11–14 (ids `dhome1`–`dhome6`). With the existing ones that's October and November
+    and all three statuses.
+    - `#/` lands on `#/home`; `#/home/nope` toasts and lands on Home; the logo is the active
+      nav item on Home only, and Back from Clients restores it.
+    - **1280:** month tiles carry the name; rental bars; Coming up's 9 days. Week of 5 Oct:
+      Gaffer Bros' one-day marker, the open-ended 09:00 stub, the 11–14 proposed tile beside
+      it. Week of 12 Oct: the 20:00–02:00 day runs to the foot and says "ends next day",
+      Lensworks continues in from the week before, and every column's hour scale starts at
+      the same pixel (found 1px out between gutter and columns and fixed).
+    - **The pop-up:** opens from a tile, a list entry and a week tile; Escape and Back each
+      close it with focus back on the trigger and the address unchanged; Audit A's 22 Oct
+      shows "Video Capture — Full Day"; Open estimate goes to the detail, and Back returns to
+      October with 22 Oct selected.
+    - **800:** the calendar at 737px with wide tiles and the week grid; the lists side by
+      side at 356px each.
+    - **375:** dots and thin gear lines; tapping 6 Oct lists both bookings; the pop-up is a
+      full-width bottom sheet with 44px buttons; the week is a list of seven days with gear
+      lines; no control under 44px; no page overflow.
+    - **Focus:** the view switch, a week tile and a Coming up row all show the 2px accent
+      `:focus-visible` ring.
+    - **Nothing moved elsewhere:** the only shared-file changes are new exports in
+      `calendar.js`, the logo's `active` class (Home only) and the route table; no rule in
+      an existing stylesheet changed.
+  - **Interpretations to show the user:**
+    1. **The button says "Open estimate", not "Open project"** (D28 and the IA say project).
+       Until stage D there's no project to open, and the button goes to the estimate. Task 17
+       renames it with the route.
+    2. **Week view tiles are buttons and real tab stops**, unlike the month grid's tiles: the
+       week isn't an ARIA grid with its own keys, so each tile is named in words ("Pencilled:
+       LSC-051, Acme launch, Sat 10 Oct, 09:00 to 17:00") in date-then-time order.
+    3. **Proposed keeps a "quarter" look in the week:** half the width its slot would have,
+       grey, at its real times. A start with no end is an hour's stub that fades at the foot.
+    4. **Gear on Home is read-only:** in month view a bar selects its date and focuses its list
+       line (the component's default); in week view the strip is a labelled list, not
+       buttons. A rental has nowhere of its own to go on Home.
+    5. **Coming up rows go straight to the estimate**, as the IA's contextual links say; only
+       calendar tiles open the pop-up.
+    6. **Page title "LSC Creative"**, matching the nav item, with today's date under it.
+  - **Seams:**
+    - **Task 13** has the accessibility pass to finish: a real VoiceOver pass over the month
+      grid on Home, the week tiles and the pop-up; and a check of reduced motion (only the
+      month slide and two hover transitions move).
+    - **Public holidays** still aren't marked on either view (task 5's seam). Pass the list in
+      and add a cell class if wanted.
+    - **Recent activity** needs stage D's activity table; it's a static empty state now.
+    - **Declined estimates** (task 15) must drop out of `/api/calendar`, and so out of Home and
+      Coming up, with no change here.
+    - The scratch days `dhome1`–`dhome6` can stay for task 13's checks.
 
 - [ ] **13. C polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium).
   - The accessibility pass on Home (the keyboard grid, pop-up focus return) and responsive checks.

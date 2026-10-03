@@ -1,6 +1,6 @@
 'use strict';
 
-/* The estimates list — the app's landing screen.
+/* The estimates list. (Home, js/views/home.js, is the landing screen since task 12.)
  *
  * Ported from renderList in the desktop app. The card markup is unchanged
  * except for the headline figure: the old card showed `p.net` under "Net

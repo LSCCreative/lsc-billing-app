@@ -1,0 +1,634 @@
+/* Home (js/views/home.js, js/views/home-week.js): new classes only, so no
+   existing screen can move.
+
+   The production office's wall: the calendar is the board, and Coming up reads
+   like the top of a call sheet, a date block in Delight beside each day's
+   bookings, hairline rules between days. The status colours, chip and tiles
+   are calendar.css's, so a booking looks the same everywhere it appears.
+
+   Written phone first (min-width queries):
+     - under 768px: one column, the calendar in dots (its own container query),
+       then Coming up, then Recent activity;
+     - 768–1099: the calendar full width, the two lists side by side below it;
+     - 1100 and up: the calendar left, the two lists in a right column. */
+
+/* ── The head: the title, and the Month / Week switch ─────────────────────── */
+
+.home-switch {
+  display: flex;
+  border: 1px solid var(--border);
+}
+.home-switch-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: 0 18px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.home-switch-btn + .home-switch-btn {
+  border-left: 1px solid var(--border);
+}
+.home-switch-btn:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+/* The chosen view: lit, with the nav's accent underline. aria-pressed says it in words. */
+.home-switch-btn[aria-pressed='true'] {
+  color: var(--text);
+  background: rgba(240, 237, 232, 0.06);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.home-switch-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (min-width: 768px) {
+  .home-switch-btn {
+    flex: 0 0 auto;
+    min-height: 30px;
+  }
+}
+
+/* ── The layout ─────────────────────────────────────────────────────────────── */
+
+.home-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+}
+.home-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  align-content: start;
+}
+@media (min-width: 768px) {
+  .home-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+  }
+}
+/* 1000px of #main: 296 for the lists leaves the calendar 672, past the 640
+   where its tiles carry the project name. */
+@media (min-width: 1100px) {
+  .home-layout {
+    grid-template-columns: minmax(0, 1fr) 296px;
+    align-items: start;
+  }
+  .home-side {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+}
+
+.home-cal-msg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.home-cal-msg span {
+  flex: 1 1 200px;
+}
+
+/* ── The side panels ───────────────────────────────────────────────────────── */
+
+.home-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.home-panel-title {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.home-panel-sub {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.home-empty {
+  padding: 10px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.home-empty + .btn {
+  margin-top: 2px;
+}
+
+/* ── Coming up: a call sheet's run of dates ────────────────────────────────── */
+
+.up-list {
+  list-style: none;
+}
+.up-date {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 0;
+}
+.up-date + .up-date {
+  border-top: 1px solid var(--cal-rule);
+}
+.up-when {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 1px;
+  line-height: 1;
+}
+.up-dow,
+.up-mon {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.up-num {
+  margin: 4px 0 3px;
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.up-date.is-today .up-num,
+.up-date.is-today .up-rel {
+  color: var(--accent-text);
+}
+.up-rel {
+  margin-bottom: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.up-rows {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.up-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.up-row:hover {
+  border-color: var(--accent);
+}
+.up-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Not locked in: the word says so; a dashed edge says it at a glance. */
+.up-row.is-proposed {
+  background: transparent;
+  border-style: dashed;
+}
+.up-row .status-chip {
+  min-width: 76px;
+  text-align: center;
+}
+.up-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.up-upid {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.up-name {
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.up-meta {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The week view (js/views/home-week.js) ─────────────────────────────────── */
+
+.wk {
+  --wk-hour: 36px; /* one hour of the scale: a one-hour tile fits two lines */
+  --wk-head: 46px; /* the day heads */
+  --wk-gpitch: 20px; /* one gear lane */
+  --wk-utile: 34px; /* an untimed tile */
+  --wk-gutter: 46px; /* the hours down the left */
+}
+
+/* Phone first: the day-by-day list (D29). */
+.wk-grid {
+  display: none;
+}
+.wk-list {
+  list-style: none;
+  border: 1px solid var(--border);
+}
+.wk-lday {
+  padding: 12px;
+}
+.wk-lday + .wk-lday {
+  border-top: 1px solid var(--cal-rule);
+}
+.wk-lday.is-today {
+  background: rgba(184, 84, 68, 0.06);
+}
+.wk-lhead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+.wk-ltoday {
+  font-size: 10px;
+  color: var(--accent-text);
+}
+.wk-lday .cal-empty {
+  font-size: 12px;
+}
+
+/* 600px of its own width and up: seven columns on an hour scale. */
+@container cal (min-width: 600px) {
+  .wk-list {
+    display: none;
+  }
+  .wk-grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--wk-gutter) repeat(7, minmax(0, 1fr));
+    border: 1px solid var(--border);
+  }
+}
+
+.wk-gutter,
+.wk-day {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.wk-day {
+  border-left: 1px solid var(--cal-rule);
+}
+.wk-day.is-weekend {
+  background: rgba(240, 237, 232, 0.025);
+}
+
+.wk-dhead {
+  height: var(--wk-head);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: #111;
+  border-bottom: 1px solid var(--border);
+}
+.wk-dow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.wk-dnum {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.wk-day.is-today .wk-dhead {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.wk-day.is-today .wk-dnum,
+.wk-day.is-today .wk-dow {
+  color: var(--accent-text);
+}
+
+/* The gear strip: room in every column for the week's lanes, and the bars
+   laid over it from the grid, so one bar can cross several days. */
+.wk-gearspace {
+  height: calc(var(--glanes) * var(--wk-gpitch));
+}
+.has-gear .wk-gearspace {
+  height: calc(var(--glanes) * var(--wk-gpitch) + 4px);
+  border-bottom: 1px solid var(--cal-rule);
+}
+.wk-gear {
+  position: absolute;
+  top: calc(var(--wk-head) + 2px);
+  left: var(--wk-gutter);
+  right: 0;
+  height: calc(var(--glanes) * var(--wk-gpitch));
+  list-style: none;
+}
+.wk-rbar {
+  --il: 3px;
+  --ir: 3px;
+  position: absolute;
+  top: calc(var(--lane) * var(--wk-gpitch));
+  height: calc(var(--wk-gpitch) - 4px);
+  left: calc(100% * var(--s) / 7 + var(--il));
+  width: calc(100% * (var(--e) - var(--s) + 1) / 7 - var(--il) - var(--ir));
+  overflow: hidden;
+  background: var(--cal-rental);
+  color: var(--cal-ink);
+  border: 0 solid var(--cal-rental-cap);
+  border-left-width: 2px;
+  border-right-width: 2px;
+}
+.wk-rbar.is-cont-l {
+  --il: 0px;
+  border-left-width: 0;
+}
+.wk-rbar.is-cont-r {
+  --ir: 0px;
+  border-right-width: 0;
+}
+.wk-rbar-t {
+  display: block;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Untimed days: the same height in every column, so the hour scale lines up. */
+.wk-untimed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.has-untimed .wk-untimed {
+  /* N tiles, N-1 gaps, the padding and the rule: the same height with or without tiles. */
+  min-height: calc(var(--untimed) * (var(--wk-utile) + 2px) + 5px);
+  padding: 3px 2px;
+  border-bottom: 1px solid var(--cal-rule);
+}
+.wk-glabel {
+  display: block;
+  padding: 3px 6px 0 0;
+  font-size: 9px;
+  line-height: 12px;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* The hour scale: a hairline at the top of every hour. */
+.wk-timed {
+  position: relative;
+  height: calc(var(--hours) * var(--wk-hour));
+  background-image: repeating-linear-gradient(to bottom, var(--cal-rule) 0 1px, transparent 1px var(--wk-hour));
+}
+.wk-gutter .wk-timed {
+  background-image: none;
+}
+.wk-day.is-today .wk-timed {
+  background-color: rgba(184, 84, 68, 0.05);
+}
+.wk-hour {
+  position: absolute;
+  top: calc(var(--h) * var(--wk-hour) + 2px);
+  right: 6px;
+  font-size: 9px;
+  line-height: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* ── Week tiles ────────────────────────────────────────────────────────────── */
+
+.wk-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 3px 5px;
+  background: var(--cal-confirmed);
+  color: var(--cal-ink);
+  border: none;
+  font-size: 10px;
+  line-height: 13px;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+}
+.wk-tile.is-pencilled {
+  background: var(--cal-hatch);
+}
+.wk-tile.is-proposed {
+  background: var(--cal-proposed);
+}
+.wk-tile:hover {
+  filter: brightness(1.12);
+}
+.wk-tile:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.wk-tile-time,
+.wk-tile-upid,
+.wk-tile-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wk-tile-time {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.wk-tile-upid {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.wk-untimed .wk-tile {
+  height: var(--wk-utile);
+  flex: 0 0 auto;
+}
+/* An untimed tile has two lines: what time it has (or "No time") and the UPID. */
+.wk-untimed .wk-tile-name,
+.wk-tile.is-short .wk-tile-name {
+  display: none;
+}
+
+/* At its times, side by side with any it overlaps. */
+.wk-timed .wk-tile {
+  position: absolute;
+  top: calc(var(--top) * var(--wk-hour) + 1px);
+  height: calc(var(--len) * var(--wk-hour) - 2px);
+  left: calc((100% - 4px) * var(--lane) / var(--lanes) + 2px);
+  width: calc((100% - 4px) / var(--lanes) - 2px);
+}
+/* Proposed keeps the month's shape language (D63): half the width it would
+   have, so it reads as not yet a booking even in a column of colour. */
+.wk-timed .wk-tile.is-proposed {
+  width: calc(((100% - 4px) / var(--lanes) - 2px) / 2);
+}
+.wk-untimed .wk-tile.is-proposed {
+  width: 50%;
+}
+/* A start with no end: an hour's stub that fades out at the foot. */
+.wk-tile.is-open-end {
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+
+/* ── The tile pop-up (D28) ─────────────────────────────────────────────────── */
+
+/* A bottom sheet on a phone, a centred box from 768px, as the add-day dialog. */
+#modal-home-day {
+  align-items: flex-end;
+}
+#modal-home-day .hd-box {
+  width: 100%;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  border-bottom: none;
+}
+@media (min-width: 768px) {
+  #modal-home-day {
+    align-items: center;
+  }
+  #modal-home-day .hd-box {
+    width: 460px;
+    max-width: 95vw;
+    padding: 26px 30px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+.hd-when {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+#modal-home-day .modal-title {
+  margin-bottom: 16px;
+  line-height: 1.2;
+}
+.hd-upid {
+  display: block;
+  margin-bottom: 4px;
+  font-family: 'Funnel Sans', 'FunnelSans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent-text);
+}
+.hd-facts {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.hd-facts div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+.hd-facts dt,
+.hd-sub {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.hd-facts dd {
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.hd-sub {
+  padding-top: 12px;
+  margin-bottom: 4px;
+  border-top: 1px solid var(--border);
+}
+.hd-items {
+  list-style: none;
+}
+.hd-items li {
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--cal-rule);
+}
+.hd-none {
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 767px) {
+  #modal-home-day .modal-actions .btn {
+    flex: 1 1 0;
+    min-height: 44px;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-switch-btn,
+  .up-row {
+    transition: none;
+  }
+}

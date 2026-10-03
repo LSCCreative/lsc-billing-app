@@ -21,11 +21,9 @@
   const hdrRight = document.getElementById('hdr-right');
   const menuBtn = document.getElementById('nav-menu-btn');
 
-  /* Where #/, #/home and an unknown address land. The estimates list until
-     the Home screen exists (task 12), when this becomes '/home' — #/home is a
-     live address already, so the logo and old links keep working across that
-     change. */
-  const LANDING = '/estimates';
+  /* Where #/ and an unknown address land: Home, the production calendar
+     (D27, task 12). */
+  const LANDING = '/home';
 
   // True once a screen has been mounted on #main since the last sign-in.
   let appMounted = false;
@@ -153,6 +151,7 @@
       onGoPricing: () => LSCRouter.go('/finance/pricing'),
       onOpenSettings: openSettings,
     });
+    HomeView.init(main, { onAuthLost });
     ClientsView.init(main, {
       onAuthLost,
       onOpenEstimate: (id) => LSCRouter.go('/estimates/' + encodeURIComponent(id)),
@@ -170,12 +169,15 @@
   function renderRoute(route, state) {
     closeMenu(false);
     const [area, ...rest] = route.segments;
-    if (area === undefined || area === 'home') {
+    if (area === undefined) {
       LSCRouter.go(LANDING, { replace: true, skipGuard: true });
       return;
     }
     let shown = false;
-    if (area === 'estimates') {
+    if (area === 'home') {
+      setNav('home');
+      shown = HomeView.show(rest, state);
+    } else if (area === 'estimates') {
       setNav('estimates');
       shown = EstimatesView.show(rest, state);
     } else if (area === 'clients') {
@@ -195,6 +197,7 @@
   }
 
   function setNav(active) {
+    document.getElementById('logo-btn').classList.toggle('active', active === 'home');
     document.getElementById('nav-estimates').classList.toggle('active', active === 'estimates');
     document.getElementById('nav-clients').classList.toggle('active', active === 'clients');
     document.getElementById('nav-finance').classList.toggle('active', active === 'finance');
