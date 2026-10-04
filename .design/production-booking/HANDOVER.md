@@ -136,9 +136,14 @@ of 32. The service agreement came as `LSC-Service-Agreement-Template.pdf`. `LSC-
 (both gitignored: personal details, public repo) is a Settings-ready draft that uses the existing
 fields, with "Quote" renamed to "Estimate" (D30), the fixed 50% replaced by `{deposit_pct}`, and the
 per-project scope boxes and signature block dropped (the Estimate and the signing dialog cover
-those). It still needs the user's answers on: the GST sentence (it says not registered); fields the
-PDF had that `documents.js` lacks (deposit/balance amounts and due dates, signatory email/phone and
-role), to add in task 27 if wanted; and pasting it into live Settings. The SMTP password is **not**
+those). The user confirmed the GST sentence (still not registered). Commit `6764113` (not deployed) added
+fields `client_email`, `client_phone`, `signatory_role` (typed at signing, task 27 passes it),
+`deposit_amount`, `balance_amount` (the caller passes calc.js `depositAmount` / `finalInvoiceTotals`
+figures; `documents.js` stays free of money maths) and `due_days`. The draft uses them. A
+single-invoice project prints "Deposit (): ," (no conditional text yet). **Not yet in live
+Settings:** the SSH write to the live DB was refused by the permission check; the user pastes the
+`.txt` into Settings → Service agreement, after this commit is deployed (NAS then Pages) or the
+new fields read as "not a field" in the live preview. The SMTP password is **not**
 set: the one supplied matched the app login, not a 16-letter Google app password, and the sending
 address isn't known yet.
 
