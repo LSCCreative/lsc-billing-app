@@ -131,6 +131,17 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
 `.env`, `data`, `docker-compose.yml`; boot log `v13: 1 project(s), 0 need a UPID`; `/api/projects`
 401 not 404), then Pages. No UPID fix-up is needed. rsync to the NAS is refused; use tar over ssh.
 
+**Stage E inputs (2026-10-04):** card payment is **held** (D101): skip task 31 and the card parts
+of 32. The service agreement came as `LSC-Service-Agreement-Template.pdf`. `LSC-Service-Agreement.txt`
+(both gitignored: personal details, public repo) is a Settings-ready draft that uses the existing
+fields, with "Quote" renamed to "Estimate" (D30), the fixed 50% replaced by `{deposit_pct}`, and the
+per-project scope boxes and signature block dropped (the Estimate and the signing dialog cover
+those). It still needs the user's answers on: the GST sentence (it says not registered); fields the
+PDF had that `documents.js` lacks (deposit/balance amounts and due dates, signatory email/phone and
+role), to add in task 27 if wanted; and pasting it into live Settings. The SMTP password is **not**
+set: the one supplied matched the app login, not a 16-letter Google app password, and the sending
+address isn't known yet.
+
 **Exact next item: stage E (v14), TASKS.md task 24.** Check the "Inputs needed from the user" list first.
 The user should also try the live site once (sign in, open a project).
 

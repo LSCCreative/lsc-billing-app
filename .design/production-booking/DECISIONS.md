@@ -454,11 +454,19 @@ The six interpretations in the brief's B2 Key Interactions were confirmed by the
      *Open with the user's accountant:* if GST-registered and a voided invoice was already reported
      on a BAS, the ATO may expect an adjustment note rather than a void alone.
 
+## 2026-10-04 — card payments held
+
+101. **Stripe card payment is on hold; don't build it.** Task 31 is held, and so is the card part
+     of task 32. Settings → Card payments stays "Not set up yet". Clients pay by bank transfer as
+     the invoices already say. D48/D49 stand for if and when it's picked up again.
+
 ## Left for the user to supply (not decisions, inputs)
 
-- The **service agreement text** (decision 39), ideally checked by a lawyer.
+- ~~The **service agreement text** (decision 39)~~: supplied 2026-10-04 as
+  `LSC-Service-Agreement-Template.pdf` (repo root, gitignored). A Settings-ready draft with fill-in
+  fields is `LSC-Service-Agreement.txt` beside it; open points are in HANDOVER.
 - A **Google Workspace app password** for sending email (38).
-- A **Stripe account** and its keys (48), plus the card-surcharge % matching Stripe's fee (49).
+- ~~A **Stripe account**~~: not needed while card payment is held (D101).
 - ~~The FAQ page URL~~: supplied 2026-10-01 (D55).
 - ~~The CS Felice Mono font files~~: supplied 2026-10-01 (D57).
 - ~~On the live Rate Card: move Overtime out of Production into Additional work~~: done by

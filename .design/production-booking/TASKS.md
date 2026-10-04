@@ -682,9 +682,9 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
 **Inputs needed from the user before tasks 27–31 can be finished:**
 
-- the service agreement text (D39);
+- ~~the service agreement text (D39)~~: supplied 2026-10-04 (see HANDOVER);
 - a Google Workspace app password, set in the NAS `.env`;
-- a Stripe account and keys, plus the webhook secret.
+- ~~a Stripe account and keys~~: card payment is held (D101).
 
 Tasks 24–26 can be built with placeholders.
 
@@ -794,7 +794,7 @@ Tasks 24–26 can be built with placeholders.
 
   **Done when** the leak test covers invoices too, and each kind renders correctly.
 
-- [ ] **31. Stripe card payment** (auth/security + money — Opus/high). _Depends on: 30._
+- [ ] **31. Stripe card payment — ON HOLD (D101), don't build.** (auth/security + money — Opus/high). _Depends on: 30._
   - **A per-invoice "Card payment on/off"** in the invoice screen.
   - **`POST /public/invoices/:token/checkout`** creates a Checkout session for the amount due plus
     a **card surcharge line** (Settings %, D49). The client page states the surcharge before
@@ -816,8 +816,8 @@ Tasks 24–26 can be built with placeholders.
   - **Deploy (ask first):** add the `.env` secrets on the NAS; NAS v14; check the boot log and the
     scheduler; then Pages.
   - **An end-to-end run with the user:** send a real estimate to their own address, sign it,
-    confirm the email, the invoices, the calendar and the signed PDF, then pay a deposit by card in
-    test mode.
+    confirm the email, the invoices, the calendar and the signed PDF. (The card payment step is
+    held, D101.)
 
 ## Review
 

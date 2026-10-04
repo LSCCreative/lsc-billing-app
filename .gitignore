@@ -32,3 +32,6 @@ web/js/config.js
 # .woff2 a page actually loads is copied into web/fonts/ (see
 # .design/production-booking/DECISIONS.md D57).
 /Visual Design/
+
+# Business documents (personal contact details; the repo is public)
+LSC-Service-Agreement*
