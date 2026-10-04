@@ -659,3 +659,147 @@ test('"today" on the client\'s pages is Sydney\'s, not the server\'s UTC', () =>
   // Winter (AEST, UTC+10).
   assert.equal(localToday(new Date('2026-06-30T14:00:00Z')), '2026-07-01');
 });
+
+// ── Email (task 28) ─────────────────────────────────────────────────────────
+
+const { createMailer } = require('../src/mail');
+const MAIL_CFG = { smtp: { host: 'h', port: 465, user: 'resend', pass: 're_KEY_NEVER_SHOWN' }, mailFrom: 'admin@lsccreative.studio', mailReplyTo: 'owner@example.com' };
+const outbox = [];
+const mailTransport = { async sendMail(m) { outbox.push(m); return { messageId: '<x@test>' }; } };
+const settle = async (check) => { for (let i = 0; i < 100 && !check(); i += 1) await new Promise((r) => setTimeout(r, 10)); };
+let mailUrl;
+async function mailServer() {
+  if (!mailUrl) mailUrl = await start({ renderPdf: fakeRender, publicLimits: LIMITS, appUrl: 'https://pages.example/app/', mailer: createMailer(MAIL_CFG, { transport: mailTransport }) });
+  return mailUrl;
+}
+
+test('signing queues the owner’s notice and the client’s signed copy (PDF attached), and sends them after the reply', async () => {
+  const url = await mailServer();
+  await setAgreement(AGREEMENT);
+  const est = await shoot();
+  const { token } = await sent(est);
+  outbox.length = 0;
+  const e = (await pub(token, url)).body.estimate;
+  const r = await fetch(`${url}/public/estimates/${token}/accept`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+  }).then(json);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const rows = db.prepare(`SELECT s.purpose, s.to_email, s.version_id FROM sends s WHERE s.doc_id = ? ORDER BY s.purpose`).all(est.id);
+  assert.deepEqual(rows.map((x) => [x.purpose, x.to_email]), [['client_signed_copy', 'priya@salt.example'], ['owner_signed', 'owner@example.com']]);
+  assert.equal(new Set(rows.map((x) => x.version_id)).size, 1, 'both belong to the signed version');
+
+  await settle(() => outbox.length === 2);
+  assert.equal(outbox.length, 2);
+  const owner = outbox.find((m) => m.to === 'owner@example.com');
+  const client = outbox.find((m) => m.to === 'priya@salt.example');
+  assert.match(owner.subject, /^Saltwater Co\. signed PUB-\d+: Harbour \d+$/);
+  assert.match(owner.text, new RegExp(`https://pages\\.example/app/#/projects/${est.projectId}`));
+  assert.equal(owner.replyTo, 'owner@example.com');
+  assert.match(client.subject, /^Your signed agreement PUB-\d+/);
+  assert.equal(client.attachments.length, 1);
+  assert.match(client.attachments[0].filename, /\.pdf$/);
+  assert.equal(client.attachments[0].content.subarray(0, 9).toString(), '%PDF-fake');
+  assert.ok(client.attachments[0].content.includes('Signatory: Priya Nair, Director'), 'the PDF is the signed text');
+  assert.doesNotMatch(JSON.stringify(outbox), /re_KEY_NEVER_SHOWN/);
+  assert.deepEqual(db.prepare('SELECT status FROM sends WHERE doc_id = ?').all(est.id).map((x) => x.status), ['sent', 'sent']);
+
+  // A second submit is the same signature: no more email.
+  const again = await fetch(`${url}/public/estimates/${token}/accept`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+  });
+  assert.equal(again.status, 200);
+  await new Promise((r2) => setTimeout(r2, 60));
+  assert.equal(outbox.length, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM sends WHERE doc_id = ?').get(est.id).c, 2);
+});
+
+test('signing still counts when email is down: the signature and accept stand, the sends are failed rows', async () => {
+  const dead = { async sendMail() { throw new Error('connect ECONNREFUSED'); } };
+  const url = await start({ renderPdf: fakeRender, publicLimits: LIMITS, appUrl: 'https://pages.example/app/', mailer: createMailer(MAIL_CFG, { transport: dead }) });
+  const est = await shoot();
+  const { token } = await sent(est);
+  const e = (await pub(token, url)).body.estimate;
+  const r = await fetch(`${url}/public/estimates/${token}/accept`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+  }).then(json);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.estimate.state, 'accepted');
+  await settle(() => db.prepare("SELECT COUNT(*) AS c FROM sends WHERE doc_id = ? AND status = 'failed'").get(est.id).c === 2);
+  const rows = db.prepare('SELECT status, error FROM sends WHERE doc_id = ?').all(est.id);
+  assert.deepEqual(rows.map((x) => x.status), ['failed', 'failed']);
+  rows.forEach((x) => assert.match(x.error, /ECONNREFUSED/));
+});
+
+test('no recipient, no email: a client with no address gets no signed copy', async () => {
+  const url = await mailServer();
+  const est = await shoot({ client: { businessName: 'Saltwater Co.', contactName: 'Priya Nair', email: '' } });
+  const { token } = await sent(est);
+  const e = (await pub(token, url)).body.estimate;
+  await fetch(`${url}/public/estimates/${token}/accept`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+  });
+  assert.deepEqual(db.prepare('SELECT purpose FROM sends WHERE doc_id = ?').all(est.id).map((x) => x.purpose), ['owner_signed']);
+});
+
+test('Settings → Email: status never shows the key; the test email goes to the owner, or says why not', async () => {
+  const url = await mailServer();
+  const call = (p, o = {}) => fetch(`${url}${p}`, { ...o, headers: { 'content-type': 'application/json', cookie, ...(o.headers || {}) } }).then(json);
+  assert.equal((await fetch(`${url}/api/email/status`)).status, 401, 'owner only');
+  assert.equal((await fetch(`${url}/api/email/test`, { method: 'POST' })).status, 401);
+  // This server has its own cookie jar? It shares the app's db and session table.
+  const status = await call('/api/email/status');
+  assert.equal(status.status, 200);
+  assert.deepEqual([status.body.configured, status.body.from, status.body.replyTo], [true, 'admin@lsccreative.studio', 'owner@example.com']);
+  assert.doesNotMatch(JSON.stringify(status.body), /KEY_NEVER_SHOWN/);
+
+  outbox.length = 0;
+  const ok = await call('/api/email/test', { method: 'POST', body: '{}' });
+  assert.deepEqual([ok.status, ok.body.to], [200, 'owner@example.com']);
+  assert.match(outbox[0].subject, /^Test email/);
+  const other = await call('/api/email/test', { method: 'POST', body: JSON.stringify({ to: 'me@elsewhere.co' }) });
+  assert.equal(other.body.to, 'me@elsewhere.co');
+  assert.equal((await call('/api/email/test', { method: 'POST', body: JSON.stringify({ to: 'nope' }) })).status, 400);
+  // The provider refusing it is a 200 with ok:false (not a 5xx, which would
+  // raise the app's "server problem" banner), the key scrubbed from the text.
+  const failUrl = await start({ mailer: createMailer(MAIL_CFG, { transport: { async sendMail() { throw new Error('535 rejected re_KEY_NEVER_SHOWN'); } } }) });
+  const refusedByProvider = await fetch(`${failUrl}/api/email/test`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: '{}' }).then(json);
+  assert.deepEqual([refusedByProvider.status, refusedByProvider.body.ok, refusedByProvider.body.error], [200, false, 'send_failed']);
+  assert.match(refusedByProvider.body.message, /535 rejected/);
+  assert.doesNotMatch(refusedByProvider.body.message, /KEY_NEVER_SHOWN/);
+
+  // Not connected (the default test server has no key): says so, sends nothing.
+  const off = await fetch(`${base}/api/email/status`, { headers: { cookie } }).then(json);
+  assert.equal(off.body.configured, false);
+  const refused = await api('/api/email/test', { method: 'POST', body: JSON.stringify({ to: 'me@elsewhere.co' }) }).then(json);
+  assert.deepEqual([refused.status, refused.body.error], [409, 'not_configured']);
+});
+
+test('the owner’s send routes: list, edit, cancel and retry', async () => {
+  const sends = require('../src/sends');
+  const est = await shoot();
+  await sent(est);
+  const soon = new Date(Date.now() + 3600e3).toISOString();
+  const row = sends.addSend(db, { docKind: 'estimate', docId: est.id, toEmail: 'priya@salt.example', message: 'hi', scheduledFor: soon });
+  const listed = await api(`/api/sends?docKind=estimate&docId=${est.id}`).then(json);
+  assert.deepEqual(listed.body.sends.map((s) => [s.id, s.status, s.to, s.late]), [[row.id, 'scheduled', 'priya@salt.example', false]]);
+  assert.equal((await api('/api/sends?docKind=bogus&docId=x').then(json)).status, 400);
+
+  const later = new Date(Date.now() + 7200e3).toISOString();
+  const put = (id, b) => api(`/api/sends/${id}`, { method: 'PUT', body: JSON.stringify(b) }).then(json);
+  assert.equal((await put(row.id, { scheduledFor: later, message: 'new', to: 'x@y.co' })).body.send.scheduledFor, later);
+  assert.equal((await put(row.id, { scheduledFor: 'tomorrow' })).status, 400);
+  assert.equal((await put(row.id, { to: 'nope' })).status, 400);
+  assert.equal((await put('snd_nope', { message: 'x' })).status, 404);
+  const cancel = await api(`/api/sends/${row.id}/cancel`, { method: 'POST' }).then(json);
+  assert.equal(cancel.body.send.status, 'cancelled');
+  assert.equal((await put(row.id, { message: 'x' })).status, 409);
+  assert.equal((await api(`/api/sends/${row.id}/retry`, { method: 'POST' }).then(json)).body.error, 'not_failed');
+  db.prepare("UPDATE sends SET status = 'failed', error = 'boom' WHERE id = ?").run(row.id);
+  const retry = await api(`/api/sends/${row.id}/retry`, { method: 'POST' }).then(json);
+  assert.equal(retry.status, 200);
+  assert.equal((await fetch(`${base}/api/sends/${row.id}/cancel`, { method: 'POST' })).status, 401, 'owner only');
+});

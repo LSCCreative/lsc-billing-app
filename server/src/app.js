@@ -20,6 +20,9 @@ const { registerSetupRoutes } = require('./routes/setup');
 const { registerProjectRoutes } = require('./routes/projects');
 const { registerInvoiceRoutes } = require('./routes/invoices');
 const { registerPublicRoutes } = require('./routes/public');
+const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
+const { createMailer } = require('./mail');
+const { createOutbox } = require('./sends');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -53,7 +56,9 @@ function corsMiddleware(req, res, next) {
 /**
  * Builds the Express app. Takes an open database handle so tests can pass a
  * throwaway one instead of the real billing.db. `opts.holidaySource` swaps the
- * public-holiday fetch for a stub.
+ * public-holiday fetch for a stub. `opts.mailer` swaps the email transport
+ * (mail.js createMailer) and `opts.renderPdf` the PDF renderer; the send
+ * queue's worker is `app.locals.outbox`, started by index.js.
  */
 function createApp(db, opts = {}) {
   const app = express();
@@ -63,6 +68,17 @@ function createApp(db, opts = {}) {
 
   app.use(corsMiddleware);
   app.use(express.json({ limit: '2mb' }));
+
+  // The send queue (task 28): signing queues email and kicks the worker, the
+  // owner's routes edit the queue. Built here so a test passes its own mailer.
+  // A test never reaches a real SMTP server, whatever the developer's .env holds.
+  const mailer = opts.mailer || createMailer(config.isTest ? {} : config);
+  const outbox = createOutbox(db, mailer, {
+    now: opts.now,
+    appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
+    render: opts.renderPdf,
+  });
+  app.locals.outbox = outbox;
 
   // ── /health — the only route besides /login that never requires a session.
   // Deliberately says nothing about the data; it is a liveness probe for
@@ -78,7 +94,7 @@ function createApp(db, opts = {}) {
 
   // ── The client's pages (stage E): no session, by unguessable link, and
   // outside /api so no owner route can be reached through them.
-  registerPublicRoutes(app, db, opts);
+  registerPublicRoutes(app, db, { ...opts, outbox, ownerEmail: mailer.replyTo });
 
   // ── Auth. /api/login, /api/logout and /api/session handle their own session
   // state and must be registered before the gate below.
@@ -92,6 +108,7 @@ function createApp(db, opts = {}) {
   // pre-write snapshot so exporting doesn't rotate real recovery points out
   // of the 10 kept.
   registerPdfRoutes(app, db);
+  registerEmailRoutes(app, db, { mailer });
 
   app.use('/api', preWriteBackup(db, config.backupDir));
 
@@ -108,6 +125,7 @@ function createApp(db, opts = {}) {
   registerSetupRoutes(app, db);
   registerProjectRoutes(app, db);
   registerInvoiceRoutes(app, db);
+  registerSendRoutes(app, db, { outbox });
 
   // ── Static app shell. Empty until the UI is ported off the Electron build.
   app.use(express.static(PUBLIC_DIR, { index: 'index.html', extensions: ['html'] }));

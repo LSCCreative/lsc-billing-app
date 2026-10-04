@@ -6,8 +6,9 @@
  * on #main. It is a screen now, with six sections, each linkable as
  * #/settings/<section>: Business, Payment, Estimates & invoices, Service
  * agreement, Email and Card payments. A rail beside them from 1100px, a jump
- * list above them below that. Email and Card payments read "Not set up yet"
- * until stage E builds them.
+ * list above them below that. Card payments reads "Not set up yet" (held, D101).
+ * Email shows whether the server's SMTP key is connected and sends a test
+ * (task 28); the key itself is set on the server, never typed in here.
  *
  * WHAT MOVED OVER UNCHANGED
  * The pop-up's fields, their checks and the shape they are stored in:
@@ -243,6 +244,23 @@ const SettingsView = (() => {
       '<p class="set-hint set-hint-lead">' + body + '</p>');
   }
 
+  /* Email (task 28, D102). The status and any failed sends come from
+     GET /api/email/status once the screen is drawn (EmailPanel). Nothing here
+     is saved with the settings: the key lives in the server's .env. */
+  function emailMarkup() {
+    return section('email', 'Email',
+      'Estimates, invoices and signed agreements are emailed from your own address through Resend. The key is set on the ' +
+      'server, never typed in here.',
+      '<p class="set-status" id="set-email-status"><span class="set-status-dot" aria-hidden="true"></span>' +
+        '<span id="set-email-status-text">Checking…</span></p>' +
+      '<p class="set-hint set-hint-lead" id="set-email-detail"></p>' +
+      '<div class="set-email-test">' +
+        field('set-email-to', 'Send a test email to', '', { type: 'email', attrs: ' inputmode="email" autocomplete="email" aria-describedby="set-email-result"' }) +
+        '<p class="set-preview-row"><button type="button" class="btn btn-ghost btn-sm" id="set-email-send" disabled>Send a test email</button></p>' +
+      '</div>' +
+      '<p class="set-hint" id="set-email-result" role="status" aria-live="polite"></p>');
+  }
+
   function screenMarkup(f, active) {
     return head +
       '<div class="set-shell">' + railMarkup(active) +
@@ -251,11 +269,9 @@ const SettingsView = (() => {
         paymentMarkup(f) +
         documentsMarkup(f) +
         agreementMarkup(f) +
-        pendingMarkup('email', 'Email',
-          'Estimates and invoices will be emailed from your Google Workspace address once client pages are built. ' +
-          'The app password is set on the server, never typed in here.') +
+        emailMarkup() +
         pendingMarkup('cards', 'Card payments',
-          'Paying an invoice by card through Stripe, with the card fee passed on to the client, arrives with client pages.') +
+          'Paying an invoice by card through Stripe, with the card fee passed on to the client, is on hold. Clients pay by bank transfer, as the invoices say.') +
         '<div id="settings-error" role="alert"></div>' +
         '<div class="pricing-save-bar set-save-bar">' +
           '<p id="set-save-state" aria-live="polite">No unsaved changes.</p>' +
@@ -535,6 +551,77 @@ const SettingsView = (() => {
     }
   }
 
+  // ── Email: status and the test ─────────────────────────────────────────────
+
+  const EmailPanel = (() => {
+    let mail = null; // the last status, or null while unknown
+
+    const failure = (err) => (err.kind === 'network'
+      ? 'Couldn’t reach the server. Try again once it’s back.'
+      : (err.message || 'The server refused the request.'));
+
+    function paint() {
+      const text = $('set-email-status-text');
+      if (!text) return; // the screen was left
+      const dot = document.querySelector('#set-email-status .set-status-dot');
+      const detail = $('set-email-detail');
+      const send = $('set-email-send');
+      if (!mail) {
+        text.textContent = 'Couldn’t check';
+        detail.textContent = '';
+        send.disabled = true;
+        return;
+      }
+      text.textContent = mail.configured ? 'Connected' : 'Not set up yet';
+      if (dot) dot.style.background = mail.configured ? 'var(--ok, currentColor)' : '';
+      let line = mail.configured
+        ? 'Sent from ' + mail.from + (mail.replyTo ? '; replies go to ' + mail.replyTo + '.' : '.')
+        : 'Add the Resend key and a From address to the server’s settings (SMTP_PASS and MAIL_FROM), then restart it.';
+      if (mail.failed) {
+        line += ' ' + mail.failed + (mail.failed === 1 ? ' email has' : ' emails have') + ' failed to send' +
+          (mail.lastError && mail.lastError.message ? ' (the latest: ' + mail.lastError.message + ')' : '') + '.';
+      }
+      detail.textContent = line;
+      send.disabled = !mail.configured;
+      const to = $('set-email-to');
+      if (to && !to.value && mail.replyTo) to.placeholder = mail.replyTo;
+    }
+
+    async function load(ticket) {
+      try {
+        mail = await LSCApi.get('/api/email/status');
+      } catch (err) {
+        if (!LSCRouter.isCurrent(ticket)) return;
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        if (err.kind === 'auth') { handlers.onAuthLost(); return; }
+        mail = null;
+      }
+      if (LSCRouter.isCurrent(ticket)) paint();
+    }
+
+    async function sendTest() {
+      const button = $('set-email-send');
+      const result = $('set-email-result');
+      const to = $('set-email-to').value.trim();
+      button.disabled = true;
+      result.textContent = 'Sending…';
+      try {
+        const reply = await LSCApi.post('/api/email/test', to ? { to } : {});
+        if (!$('set-email-result')) return;
+        $('set-email-result').textContent = reply.ok
+          ? 'Sent to ' + reply.to + '. Check that inbox (and its spam folder).'
+          : 'The test didn’t send: ' + (reply.message || 'the mail server refused it.');
+      } catch (err) {
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        if (err.kind === 'auth') { handlers.onAuthLost(); return; }
+        if ($('set-email-result')) $('set-email-result').textContent = 'The test didn’t send: ' + failure(err);
+      }
+      if ($('set-email-send')) $('set-email-send').disabled = !(mail && mail.configured);
+    }
+
+    return { load, sendTest, reset() { mail = null; } };
+  })();
+
   // ── Showing ───────────────────────────────────────────────────────────────
 
   async function draw(sectionId) {
@@ -542,6 +629,7 @@ const SettingsView = (() => {
     saving = false;
     form = null;
     Preview.reset();
+    EmailPanel.reset();
     root.innerHTML = head + '<div class="empty-state"><h3>Loading…</h3></div>';
     let settings;
     try {
@@ -564,6 +652,8 @@ const SettingsView = (() => {
     baseline = snapshot();
     root.innerHTML = screenMarkup(form, sectionId || SECTIONS[0][0]);
     bind();
+    $('set-email-send').addEventListener('click', EmailPanel.sendTest);
+    EmailPanel.load(ticket);
     LSCUtil.landFocus(root);
     LSCUnsaved.watch('settings', { label: 'your settings', onScreen, dirty });
     window.removeEventListener('scroll', onScroll);

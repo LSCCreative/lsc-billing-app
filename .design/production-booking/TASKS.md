@@ -885,6 +885,40 @@ Tasks 24–26 can be built with placeholders.
   **Done when** tests with a stubbed transport pin claiming (no double send across a simulated
   restart), late marking, cancel and edit, and that a failure is stored and shown, not swallowed.
 
+  **Built 2026-10-05, not ticked: the real send is unverified** (the Resend key isn't in any `.env`
+  yet; tick this once the Settings test email reaches an inbox). Not deployed (with stage E at
+  task 32). `npm test` 509/509 (18 new: `test-mail.js`, five in `test-public.js`); mutations
+  caught 12 of 12 (claim guards, boot recovery, late, key scrub, cancel/edit any state, signing
+  queues nothing, no kick, failure swallowed, retry marked late).
+  - **New:** `server/src/mail.js` (nodemailer, the four templates), `sends.js` (the queue and the
+    outbox: tick, kick, boot sweep), `routes/email.js`, `APP_URL` / `SMTP_*` / `MAIL_*` in
+    `config.js` and `.env.example`. `nodemailer` added to `package.json`.
+  - **Schema:** v14 (undeployed) was amended in place: `sends.purpose` (`document`,
+    `owner_signed`, `client_signed_copy`). The scratch DB needs
+    `ALTER TABLE sends ADD COLUMN purpose TEXT NOT NULL DEFAULT 'document'` if it was made at v14
+    before this (the one seeded 2026-10-05 is fresh).
+  - **No send goes twice.** A row is claimed (`scheduled` → `sending`) in one synchronous
+    transaction before the network. A row still `sending` at boot is marked **failed** ("may or
+    may not have gone out"), never re-sent. A failure stays `failed` (key scrubbed from the text)
+    until the owner retries; no tick retries behind their back. Late = sent over 5 minutes after
+    its time (D47); a retry is never late.
+  - **Signing's two emails are queued inside signing's transaction** (not after it, as the task
+    said): they exist exactly when the signature does, and a crash can't lose them. The outbox is
+    kicked after the commit. A client with no email gets no signed copy; the notice goes to
+    `MAIL_REPLY_TO`, else Settings' business email. A mail failure never touches the signature.
+  - **A due send with no key fails with "Email isn't set up"**, visible in Settings → Email
+    (count and latest error). Task 29 shows it on the document rows.
+  - **Routes** (owner): `GET /api/email/status`, `POST /api/email/test` (a provider refusal is a
+    200 `{ok:false,message}`: a 5xx would raise the app's "server problem" banner),
+    `GET /api/sends?docKind&docId`, `PUT /api/sends/:id`, `POST /api/sends/:id/cancel|retry`.
+    **Creating a send is task 29's** (it freezes the version first); `addSend` is ready for it.
+    An invoice's link is made the first time it's sent; the page is task 30's.
+  - **Settings → Email** shows Connected / Not set up, the From and Reply-To, any failed sends,
+    and "Send a test email". Checked in the browser against a scratch API (not connected,
+    connected with a dead SMTP host, 375px).
+  - **Tests never reach a real mailer:** `createApp` uses an unconfigured one under `NODE_ENV=test`
+    whatever `.env` holds.
+
 - [ ] **29. The send panel** (frontend — Opus/high). _Depends on: 18, 28._
   - **The panel** (`Modal`), for an estimate or any invoice: send date and time (default now), the
     pre-filled message per kind, **Confirm to send**, and **Copy link** off to the side (D43).

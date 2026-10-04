@@ -471,3 +471,10 @@
     border-left-color: var(--accent);
   }
 }
+
+/* ── Email's test send (task 28) ──────────────────────────────────────────── */
+
+.set-email-test {
+  max-width: 420px;
+  margin-top: 10px;
+}

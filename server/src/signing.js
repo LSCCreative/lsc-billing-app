@@ -32,6 +32,7 @@ const { docSettings, agreementValues, fillAgreement } = require('./documents');
 const { buildAgreementHtml, renderPdfBuffer } = require('./pdf');
 const { publicEstimate } = require('./public');
 const { acceptEstimate, depositPctFor, invoiceNumbers, cannotInvoice } = require('./routes/projects');
+const { queueSigningEmails } = require('./sends');
 
 /* Where the role goes until it's typed. NUL can't come from a typed role or a
    Settings text (both are stripped of it), so it can't be confused with one. */
@@ -162,7 +163,8 @@ function gate(db, token, body, today) {
  * POST /public/estimates/:token/accept. Resolves to { status, body }.
  *
  * @param {object} body  { fullName, role, agree: true, version, key }
- * @param {object} ctx   { ip, userAgent, now: () => ISO, today: () => 'YYYY-MM-DD', render }
+ * @param {object} ctx   { ip, userAgent, now: () => ISO, today: () => 'YYYY-MM-DD', render,
+ *                         ownerEmail, kick }
  */
 async function signEstimate(db, token, body, ctx) {
   const b = body && typeof body === 'object' ? body : {};
@@ -206,6 +208,7 @@ async function signEstimate(db, token, body, ctx) {
   }
 
   let out = null;
+  let queued = false;
   db.transaction(() => {
     const again = gate(db, token, b, ctx.today());
     if (again.reply) {
@@ -237,8 +240,21 @@ async function signEstimate(db, token, body, ctx) {
         ...(refusal ? { invoiceProblem: refusal.error } : {}),
       },
     });
+    // The owner's notice and the client's signed copy (task 28), queued in
+    // this transaction so they exist exactly when the signature does. They go
+    // out after it commits (the kick below); a mail problem never touches the
+    // signature, it only leaves a failed row.
+    const owner = ctx.ownerEmail || ((readSettings(db).business || {}).email || '');
+    queueSigningEmails(db, {
+      estimateId: link.row.id,
+      versionId: link.version.id,
+      ownerEmail: owner,
+      clientEmail: String((agreement.frozen.client || {}).email || '').trim(),
+    }, sig.signed_at);
     out = reply(200, { estimate: publicEstimate(db, token, ctx.today()) });
+    queued = true;
   })();
+  if (queued && ctx.kick) ctx.kick();
   return out;
 }
 

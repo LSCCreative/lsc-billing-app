@@ -31,6 +31,23 @@ const config = {
   // e.g. "https://lachlan.github.io". Empty = same-origin only (CORS off).
   corsOrigins: (process.env.CORS_ORIGINS || '')
     .split(',').map((s) => s.trim()).filter(Boolean),
+  // Outgoing email (task 28, D102): plain SMTP, Resend today. `smtp.pass` is
+  // the API key; it lives here and in .env only, never in the database, a log
+  // or a reply. Email counts as "connected" when the pass and a From address
+  // are both set.
+  smtp: {
+    host: process.env.SMTP_HOST || 'smtp.resend.com',
+    port: Number(process.env.SMTP_PORT || 465),
+    user: process.env.SMTP_USER || 'resend',
+    pass: process.env.SMTP_PASS || '',
+  },
+  mailFrom: process.env.MAIL_FROM || '',
+  // Replies go here, and so do the owner's notices ("a client signed").
+  mailReplyTo: process.env.MAIL_REPLY_TO || '',
+  // Where the app and the client pages are served (GitHub Pages), with the
+  // trailing slash: emails link to `${appUrl}c/#e/<token>` and
+  // `${appUrl}#/projects/<id>`.
+  appUrl: (process.env.APP_URL || '').replace(/\/*$/, '/'),
   isTest: process.env.NODE_ENV === 'test',
 };
 

@@ -27,6 +27,12 @@ function main() {
     console.log(`Data directory: ${config.dataDir}`);
   });
 
+  // The send queue: sweeps what the last shutdown left, sends what's overdue
+  // (marked late, D47), then ticks every minute. Without the SMTP key a due
+  // send fails visibly instead of waiting silently.
+  app.locals.outbox.start();
+  console.log(`[mail] ${config.smtp.pass && config.mailFrom ? `connected as ${config.mailFrom}` : 'not set up (no SMTP key / MAIL_FROM)'}`);
+
   // Top up the public-holiday list in the background. Not awaited and never
   // throws: a source being down must not hold up or stop the server.
   fetchIfNextYearMissing(db).then((r) => {
@@ -38,6 +44,7 @@ function main() {
   function shutdown(signal) {
     console.log(`\n${signal} received, shutting down.`);
     backupSchedule.stop();
+    app.locals.outbox.stop();
     server.close(() => {
       try { db.close(); } catch (_) { /* already closed */ }
       process.exit(0);

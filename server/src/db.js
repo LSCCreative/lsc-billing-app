@@ -750,6 +750,11 @@ const MIGRATIONS = [
           id            TEXT PRIMARY KEY,
           doc_kind      TEXT NOT NULL CHECK (doc_kind IN ('estimate', 'invoice')),
           doc_id        TEXT NOT NULL,
+          -- 'document' is the estimate or invoice going to the client; the two
+          -- signing emails (the owner's notice, the client's signed copy) use
+          -- doc_kind 'estimate' with the signed version's id.
+          purpose       TEXT NOT NULL DEFAULT 'document'
+                        CHECK (purpose IN ('document', 'owner_signed', 'client_signed_copy')),
           version_id    TEXT REFERENCES estimate_versions(id) ON DELETE SET NULL,
           to_email      TEXT NOT NULL DEFAULT '',
           message       TEXT NOT NULL DEFAULT '',

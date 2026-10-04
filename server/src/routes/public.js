@@ -89,6 +89,8 @@ const notFound = (res) => res.status(404).json({ error: 'not_found' });
  *                                      client could ask for an expired estimate to be open
  * @param {function} [opts.now]         ISO time now, for the `opened` log and a signature
  * @param {function} [opts.renderPdf]   html → PDF buffer, for tests (pdf.js renderPdfBuffer)
+ * @param {{kick:function}} [opts.outbox]  the send queue's worker; a signature kicks it (task 28)
+ * @param {string} [opts.ownerEmail]    where "a client signed" goes (the mailer's Reply-To)
  */
 function registerPublicRoutes(app, db, opts = {}) {
   const limits = Object.assign({
@@ -146,6 +148,8 @@ function registerPublicRoutes(app, db, opts = {}) {
         now,
         today,
         render,
+        ownerEmail: opts.ownerEmail,
+        kick: opts.outbox ? opts.outbox.kick : null,
       });
       return res.status(out.status).json(out.body);
     } catch (err) {

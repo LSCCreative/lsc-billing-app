@@ -165,12 +165,23 @@ has to create the account, add its DNS records in Cloudflare and supply the key 
 (Date TBC days stay as sent) and drops the proposed-dates warning. Applied live in
 `publicEstimate`; the stored client view stays the version as sent.
 
-**Exact next item: TASKS.md task 28** (email and the send queue, Sonnet/high). It needs the
-Resend SMTP key (D102), still not supplied: build `mail.js` against a stub transport, and ask
-for the key before calling it done. Signing's two emails (owner notice, signed copy to the
-client) are queued after `signing.js`'s transaction. If the key is still missing, task 30 (the
-client invoice page, Opus/high) needs nothing from the user. The user should also try the live
-site once (sign in, open a project).
+- **E, task 28** (`mail.js`, `sends.js` queue and outbox, `routes/email.js`, Settings → Email,
+  signing's two emails). 2026-10-05, committed, **not deployed**, **not ticked: no real email has
+  been sent yet.** See its note in `TASKS.md`.
+
+**Resend (2026-10-05):** `lsccreative.studio` is **Verified** in Resend. A key named
+"LSC Billing App SMTP" (Sending access, that domain only) was created in the user's account, but
+its value was never put in a file: the permission check refused reading it off the clipboard, and
+it is shown once. The two older keys ("Supabase SMTP", "Supabase SMTP v2") are not ours. So: **the
+key must be placed in `server/.env` as `SMTP_PASS`** (with `MAIL_FROM=admin@lsccreative.studio`,
+`MAIL_REPLY_TO=<the user's address>`, `APP_URL`; see `.env.example`), then Settings → Email → Send a test
+email, then tick task 28. If the dialog is gone, delete that key in Resend and make another.
+
+**Exact next item:** finish task 28 (above), then **task 29, the send panel** (Opus/high). It
+creates the sends (`sends.js addSend`, after `freezeVersion` for an estimate) and shows
+Scheduled / Sent late / Failed — retry on the document rows. Task 30 (the client invoice page)
+needs nothing from the user and can go first. The user should also try the live site once (sign
+in, open a project).
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
