@@ -773,7 +773,7 @@ Tasks 24–26 can be built with placeholders.
     check (wrong vs short token, 40 requests each, within 3×) is coarse by nature; the real
     guarantee is that every token takes the same lookup, with no early exit.
 
-- [ ] **26. The client estimate page, wired** (frontend — Opus/high). _Depends on: 24, 25._
+- [x] **26. The client estimate page, wired** (frontend — Opus/high). _Depends on: 24, 25._
   - `c/#e/<token>` renders the version: days with status words, times and items; the disclaimer;
     totals; valid-until.
   - **Accept** shows only in `open`. Each other state shows its notice (brief, Key Interactions 6),
@@ -783,6 +783,31 @@ Tasks 24–26 can be built with placeholders.
 
   **Done when** each state is checked in the browser against the scratch API, and the page stays a
   single column at 375.
+
+  **Done 2026-10-04** (commit below, not deployed). `npm test` 482/482.
+  - **`c/#e/<token>`** reads `GET /public/estimates/:token` from `../js/config.js`'s
+    `LSC_API_BASE` (the only app file the page loads), `credentials: 'omit'`. `fixture.js` and the
+    `#e/demo/<state>` previews are gone. A token that isn't base64url is "couldn't find" with no
+    fetch; 404 is the same page; 429 and a 5xx or no connection get their own words and Try again.
+    A newer version's link (`latestToken`) loads in place, focus on the document.
+  - **Superseded with no `latestToken`** (reopened, or reworked before a re-send) reads "We're
+    revising this estimate". **Accepted** offers "Download signed agreement" only when the reply
+    carries `signed` (task 27 adds it): an estimate accepted in the app has no signature.
+  - **Also included** shows each item's tag after a muted "·", as the PDF does.
+  - **Download PDF** fetches the blob and saves it under the server's filename, with a visible
+    status line under the button (busy, done, or why not).
+  - **"Opened"** is logged by the GET after the reply is sent (no timing tell; a failed log can't
+    cost the page), at most once a day per estimate version (`OPENED_EVERY_MS`), with
+    `{ estimateId, version }`. It's in `HOME_KINDS`; `activityText` reads "Client opened the
+    estimate (v2)". A mail scanner fetching the HTML logs nothing; the owner opening the link
+    themselves does.
+  - **Accept** is still a stub that only speaks to a screen reader: task 27 wires it.
+  - Checked in the browser against `api-scratch` (B210-PLAN): open, taken (5 Nov "No longer
+    available"), expired, declined, reopened, accepted set in the DB and put back; superseded-with-
+    link, 429 and offline by a stubbed fetch; the PDF downloads; Home shows the open. 375/800/1280:
+    no overflow, the column 720 wide, no target under 44px. Mutations caught 5 of 5 (no throttle,
+    version not in the throttle key, a two-day window, not in `HOME_KINDS`, never logged).
+  - Housekeeping: `GET /api/clients/:id/estimates` deleted (unused since D).
 
 - [ ] **27. Signing** (auth/security — Opus/high). _Depends on: 19, 26._
   - **The signing dialog** (full screen on phones):

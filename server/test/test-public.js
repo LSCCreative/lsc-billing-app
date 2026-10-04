@@ -318,3 +318,44 @@ test('the PDF prints the version that was sent, not today\'s edits', async () =>
   assert.match(r.headers.get('content-disposition'), /attachment/);
   assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
 });
+
+test('opening the link logs "opened" once a day per version, and Home shows it (task 26, D52)', async () => {
+  let clock = '2026-10-05T01:00:00.000Z';
+  const url = await start({ now: () => clock, publicLimits: { all: { max: 10000, windowMs: 60000 }, pdf: { max: 10000, windowMs: 60000 } } });
+  const est = await shoot();
+  const { token } = await sent(est);
+  const opened = () => db.prepare(`SELECT at, detail_json FROM activity WHERE project_id = ? AND kind = 'opened' ORDER BY at`)
+    .all(est.projectId).map((r) => [r.at, JSON.parse(r.detail_json)]);
+  // The log is written after the reply goes; a beat lets it land.
+  const open = async (t = token) => {
+    const r = await pub(t, url);
+    await new Promise((resolve) => setImmediate(resolve));
+    return r;
+  };
+
+  assert.equal((await open()).status, 200);
+  assert.deepEqual(opened(), [[clock, { estimateId: est.id, version: 1 }]]);
+  // Reloads the same day are the same open.
+  clock = '2026-10-05T23:30:00.000Z';
+  await open();
+  await open();
+  assert.equal(opened().length, 1);
+  // A day after the last one logged, it counts again.
+  clock = '2026-10-06T01:00:01.000Z';
+  await open();
+  assert.equal(opened().length, 2);
+  // A new version is a new thing to open, minutes after the last open.
+  await sent(est, '2026-11-20');
+  clock = '2026-10-06T01:05:00.000Z';
+  await open();
+  assert.deepEqual(opened().map(([, d]) => d.version), [1, 1, 2]);
+  // A wrong link logs nothing anywhere.
+  const before = db.prepare(`SELECT COUNT(*) AS c FROM activity WHERE kind = 'opened'`).get().c;
+  assert.equal((await open(token.slice(0, -2) + 'zz')).status, 404);
+  assert.equal(db.prepare(`SELECT COUNT(*) AS c FROM activity WHERE kind = 'opened'`).get().c, before);
+
+  // Home's Recent activity carries it, opening the project.
+  const home = await api('/api/activity?limit=50').then(json);
+  const mine = home.body.activity.filter((a) => a.kind === 'opened' && a.project.id === est.projectId);
+  assert.deepEqual(mine.map((a) => a.detail.version), [2, 1, 1]);
+});

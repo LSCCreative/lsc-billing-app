@@ -14,7 +14,8 @@
 
 const { config } = require('../config');
 const { buildEstimateHtml, exportFilename, renderPdfBuffer } = require('../pdf');
-const { publicEstimate, publicPdfSource } = require('../public');
+const { nowIso } = require('../db');
+const { publicEstimate, publicPdfSource, logOpened } = require('../public');
 const { localToday } = require('./projects');
 
 /* CORS for the Pages origin, without credentials: a client page has no
@@ -85,6 +86,7 @@ const notFound = (res) => res.status(404).json({ error: 'not_found' });
  * @param {object} [opts.publicLimits]  { all: {max, windowMs}, pdf: {max, windowMs} }, for tests
  * @param {function} [opts.today]       'YYYY-MM-DD' now; never from the request, or a
  *                                      client could ask for an expired estimate to be open
+ * @param {function} [opts.now]         ISO time now, for the `opened` log
  */
 function registerPublicRoutes(app, db, opts = {}) {
   const limits = Object.assign({
@@ -92,13 +94,22 @@ function registerPublicRoutes(app, db, opts = {}) {
     pdf: { max: 12, windowMs: 10 * 60 * 1000 },
   }, opts.publicLimits || {});
   const today = opts.today || localToday;
+  const now = opts.now || nowIso;
 
   app.use('/public', publicCors, rateLimit(limits.all));
 
   app.get('/public/estimates/:token', (req, res) => {
     const reply = publicEstimate(db, req.params.token, today());
     if (!reply) return notFound(res);
-    return res.json({ estimate: reply });
+    res.json({ estimate: reply });
+    // After the reply has gone, so a found link answers no slower than a
+    // wrong one, and a failed log can't cost the client their page.
+    try {
+      logOpened(db, req.params.token, now());
+    } catch (err) {
+      console.error('[public] could not log opened:', err.message);
+    }
+    return undefined;
   });
 
   app.get('/public/estimates/:token/pdf', rateLimit(limits.pdf), async (req, res, next) => {

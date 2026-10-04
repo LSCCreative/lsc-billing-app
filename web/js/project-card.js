@@ -123,6 +123,7 @@ const ProjectCard = (() => {
     const d = entry.detail || {};
     switch (entry.kind) {
       case 'sent': return 'Marked sent' + (C.isDate(d.validUntil) ? ', valid until ' + dayMonth(d.validUntil, today) : '');
+      case 'opened': return 'Client opened the estimate' + (d.version > 1 ? ' (v' + d.version + ')' : '');
       case 'accepted': return 'Marked accepted' + invoicesText(d);
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';

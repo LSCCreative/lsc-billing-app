@@ -6,9 +6,10 @@
  * `c/#e/<token>`; the token stays in the fragment so it never reaches a server
  * log or a Referer header.
  *
- * Task 24 renders a static fixture (fixture.js) so the look can be approved
- * before anything is wired to it. `#e/demo/<state>` previews each state's
- * notice. Task 26 swaps the fixture for GET /public/estimates/:token.
+ * It reads GET /public/estimates/:token (task 25's client view, with a live
+ * state) from the API named in ../js/config.js, without credentials: the
+ * client has no session and is never offered one. That GET is also what logs
+ * "opened" for the owner (task 26), at most once a day per version.
  */
 (function () {
   'use strict';
@@ -17,10 +18,19 @@
     'August', 'September', 'October', 'November', 'December'];
   const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const STATUS_WORD = { confirmed: 'Confirmed', pencilled: 'Pencilled', proposed: 'Proposed' };
-  const STATES = ['open', 'taken', 'expired', 'superseded', 'declined', 'accepted'];
+  const API = String(globalThis.LSC_API_BASE || '').replace(/\/+$/, '');
 
   const doc = document.getElementById('doc');
   const live = document.getElementById('c-status');
+
+  /* Says something to a screen reader. Cleared first, so the same words
+     twice are still read twice. */
+  function say(text) {
+    live.textContent = '';
+    setTimeout(() => {
+      live.textContent = text;
+    }, 50);
+  }
 
   function esc(s) {
     return String(s === undefined || s === null ? '' : s)
@@ -177,7 +187,8 @@
     return '<section class="block" aria-labelledby="h-incl">' + sectionHead('h-incl', 'Also included') +
       '<div class="incl">' + secs.map((s) =>
         '<div class="incl-group"><h3 class="incl-label">' + esc(s.label) + '</h3>' +
-        '<ul>' + s.items.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul></div>').join('') +
+        '<ul>' + s.items.map((it) => '<li>' + esc(it.name) +
+          (it.tag ? '<span class="incl-tag"> · ' + esc(it.tag) + '</span>' : '') + '</li>').join('') + '</ul></div>').join('') +
       '</div></section>';
   }
 
@@ -216,15 +227,22 @@
         return notice('This estimate has expired',
           'It was valid until ' + esc(longDate(e.validUntil)) + '. Contact ' + contact + ' and we’ll send you an updated one.');
       case 'superseded':
-        return notice('This estimate has been updated',
-          'We’ve sent a newer version.' + (e.latestUrl ? ' <a href="' + esc(e.latestUrl) + '">See the latest estimate</a>.' : ''));
+        // No newer link means nothing newer has gone out yet: the project was
+        // reopened, or is being reworked, and this version is off the table.
+        return e.latestToken
+          ? notice('This estimate has been updated',
+            'We’ve sent a newer version. <a href="#e/' + esc(e.latestToken) + '">See the latest estimate</a>.')
+          : notice('We’re revising this estimate',
+            'It’s no longer open to accept. We’ll send you the updated version when it’s ready. In the meantime, contact ' + contact + ' with any questions.');
       case 'declined':
         return notice('This estimate was declined',
           'If that’s changed, contact ' + contact + ' and we’ll put together a new one.');
       case 'accepted':
+        // An estimate accepted in the app was never signed here: no agreement
+        // to offer until signing (task 27) says there is one.
         return notice('Thank you',
           'We’ll be in touch to confirm the details.',
-          '<button type="button" class="btn btn-quiet" data-act="agreement">Download signed agreement</button>', 'done');
+          e.signed ? '<button type="button" class="btn btn-quiet" data-act="agreement">Download signed agreement</button>' : '', 'done');
       default:
         return '';
     }
@@ -246,6 +264,7 @@
         (b.phone ? '<a href="tel:' + esc(tel) + '">' + esc(b.phone) + '</a>' : '') +
       '</p>' +
       '<button type="button" class="btn btn-quiet" data-act="pdf">Download PDF</button>' +
+      '<p class="foot-msg" id="pdf-msg" role="status"></p>' +
       '<p class="foot-legal">' + [b.name, b.abn ? 'ABN ' + b.abn : ''].filter(Boolean).map((x) => '<span>' + esc(x) + '</span>').join('') + '</p>' +
     '</footer>';
   }
@@ -256,38 +275,127 @@
     document.title = (e.name ? e.name + ' — ' : '') + 'Estimate — LSC Creative';
   }
 
-  function renderMissing() {
+  /* A page with no estimate on it: a bad link, or the server out of reach. */
+  function renderNotice(title, body, retry) {
     doc.innerHTML = '<header class="mast"><p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p></header>' +
-      '<h1 class="title">We couldn’t find this page</h1>' +
-      '<p class="lede">The link may be incomplete. Check it against the email we sent, or ask us for a new one.</p>';
+      '<h1 class="title">' + esc(title) + '</h1>' +
+      '<p class="lede">' + esc(body) + '</p>' +
+      (retry ? '<button type="button" class="btn btn-quiet lede-btn" data-act="retry">Try again</button>' : '');
     doc.removeAttribute('aria-busy');
+    document.title = title + ' — LSC Creative';
+  }
+
+  const renderMissing = () => renderNotice('We couldn’t find this estimate',
+    'The link may be incomplete. Check it against the email we sent, or ask us for a new one.');
+
+  // ── Loading ───────────────────────────────────────────────────────────────
+
+  let token = '';
+  let ticket = 0;
+
+  function tokenOf(hash) {
+    const m = /^#e\/([A-Za-z0-9_-]+)$/.exec(hash);
+    return m ? m[1] : '';
+  }
+
+  async function load() {
+    const mine = ++ticket;
+    token = tokenOf(location.hash);
+    if (!token || !API) return renderMissing();
+    if (!doc.querySelector('.loading')) doc.innerHTML = '<p class="loading">Loading your estimate…</p>';
+    doc.setAttribute('aria-busy', 'true');
+    let res;
+    let body = null;
+    try {
+      res = await fetch(API + '/public/estimates/' + encodeURIComponent(token), {
+        credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' },
+      });
+      body = await res.json().catch(() => null);
+    } catch (_err) {
+      res = null;
+    }
+    if (mine !== ticket) return undefined;  // the address changed while this was on its way
+    if (res && res.ok && body && body.estimate) {
+      render(body.estimate);
+      return undefined;
+    }
+    if (res && res.status === 404) return renderMissing();
+    if (res && res.status === 429) {
+      return renderNotice('Please wait a moment',
+        'This page has been opened a lot in the last few minutes. Wait a minute, then try again.', true);
+    }
+    return renderNotice('We couldn’t load your estimate',
+      res ? 'Something went wrong on our side. Try again in a moment.' : 'Check your connection, then try again.', true);
+  }
+
+  // ── The PDF ───────────────────────────────────────────────────────────────
+
+  function filenameOf(disposition) {
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition || '');
+    if (star) {
+      try {
+        return decodeURIComponent(star[1]);
+      } catch (_err) { /* fall through to the plain name */ }
+    }
+    const plain = /filename="?([^";]+)"?/i.exec(disposition || '');
+    return plain ? plain[1] : 'Estimate.pdf';
+  }
+
+  async function downloadPdf(btn) {
+    const msg = document.getElementById('pdf-msg');
+    const show = (text) => {
+      if (msg) msg.textContent = text;
+    };
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Preparing PDF…';
+    show('');
+    try {
+      const res = await fetch(API + '/public/estimates/' + encodeURIComponent(token) + '/pdf', { credentials: 'omit', cache: 'no-store' });
+      if (!res.ok) throw res.status;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filenameOf(res.headers.get('Content-Disposition'));
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      show('Your PDF has downloaded.');
+    } catch (status) {
+      show(status === 429
+        ? 'That’s a lot of downloads in a short time. Try again in a few minutes.'
+        : status === 404
+          ? 'This estimate is no longer available. Ask us for a copy.'
+          : typeof status === 'number'
+            ? 'We couldn’t make the PDF just now. Try again shortly, or ask us for a copy.'
+            : 'Check your connection, then try again.');
+    } finally {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      btn.textContent = label;
+    }
   }
 
   // ── Wiring ────────────────────────────────────────────────────────────────
 
   doc.addEventListener('click', (ev) => {
     const btn = ev.target.closest('[data-act]');
-    if (!btn) return;
-    // Task 24 is the look only: signing (27) and the PDFs (25) come later.
-    live.textContent = '';
-    setTimeout(() => {
-      live.textContent = 'Preview only: this button is wired up in a later step.';
-    }, 50);
+    if (!btn || btn.disabled) return;
+    const act = btn.dataset.act;
+    if (act === 'pdf') return void downloadPdf(btn);
+    if (act === 'retry') return void load();
+    // Accept and the signed agreement are task 27 (signing).
+    say('Signing online isn’t switched on yet. Reply to our email to accept, and we’ll take it from there.');
   });
 
-  function route() {
-    const m = /^#e\/([^/]+)(?:\/([a-z]+))?$/.exec(location.hash);
-    const fixture = globalThis.LSC_FIXTURE;
-    if (!m || m[1] !== 'demo' || !fixture) return renderMissing();
-    const state = STATES.indexOf(m[2]) !== -1 ? m[2] : 'open';
-    const e = Object.assign({}, fixture, { state });
-    if (state === 'taken') {
-      e.days = fixture.days.map((d) => (d.status === 'proposed' ? Object.assign({}, d, { unavailable: true }) : d));
-    }
-    if (state === 'superseded') e.latestUrl = '#e/demo';
-    render(e);
-  }
-
-  window.addEventListener('hashchange', route);
-  route();
+  window.addEventListener('hashchange', () => {
+    // A link to the newer version: start at the top of it, with a screen
+    // reader's focus there too.
+    window.scrollTo(0, 0);
+    load().then(() => doc.focus({ preventScroll: true }));
+  });
+  load();
 }());

@@ -38,21 +38,6 @@ function registerClientRoutes(app, db) {
     res.json({ ok: true, client: loadJson(row) });
   });
 
-  // A client's estimate history, for the Clients screen.
-  app.get('/api/clients/:id/estimates', (req, res) => {
-    const rows = db.prepare(`
-      SELECT id, upid, name, date, status, total_inc_gst, updated_at
-      FROM estimates WHERE client_id = ? ORDER BY updated_at DESC
-    `).all(req.params.id);
-    res.json({
-      ok: true,
-      estimates: rows.map((r) => ({
-        id: r.id, upid: r.upid, name: r.name, date: r.date, status: r.status,
-        totalIncGst: r.total_inc_gst, updatedAt: r.updated_at,
-      })),
-    });
-  });
-
   function writeFields(body) {
     return [
       body.businessName || '', body.contactName || '', body.email || '',

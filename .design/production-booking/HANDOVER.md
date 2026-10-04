@@ -150,13 +150,17 @@ has to create the account, add its DNS records in Cloudflare and supply the key 
   committed, **not deployed** (v14 and new routes: NAS before Pages, with stage E at task 32).
   See their notes in `TASKS.md`. `api-scratch` is now v14 with B210-PLAN sent as v1.
 
-**Exact next item: TASKS.md task 26** (wire `c/#e/<token>` to the public route; replace
-`fixture.js`; sections' items are `{ name, tag }`; a `superseded` reply with no `latestToken` is a
-reopened project and needs its own words; log "opened" through the GET, throttled). Check the "Inputs needed from the user" list first.
-The user should also try the live site once (sign in, open a project).
+- **E, task 26** (`c/#e/<token>` wired to the public route; "opened" logged by the GET, once a day
+  per version, on Home). 2026-10-04, committed, **not deployed** (with stage E at task 32). See its
+  note in `TASKS.md`. `api-scratch` has one `opened` row for B210-PLAN; a backup from before is in
+  this session's scratchpad only.
 
-`GET /api/clients/:id/estimates` is no longer used by the web; the D deploy is done, so delete it
-(task 24 housekeeping).
+**Exact next item: TASKS.md task 27** (signing: the dialog, `POST /public/estimates/:token/accept`,
+the signature row and PDF, then task 19's accept transaction; add `signed` to the public reply so
+the thank-you offers "Download signed agreement", and replace c.js's Accept stub). The agreement
+text is in live Settings; fill it with `agreementValues` + `fillAgreement` from the frozen version.
+Check the "Inputs needed from the user" list first. The user should also try the live site once
+(sign in, open a project).
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
@@ -190,7 +194,7 @@ The user should also try the live site once (sign in, open a project).
 - **The invoice snapshot is owner-only:** `estimate_snapshot_json` is the whole estimate, including
   its `totals` with internal figures. A public invoice page (E) must print from it through the
   client PDF's fields, never send it whole.
-- **Stage E's client events** (opened, signed, paid by card) go into `HOME_KINDS`
+- **Stage E's client events** (signed; opened is in since task 26) go into `HOME_KINDS`
   (`routes/projects.js`) to reach Home, and get a case in `ProjectCard.activityText`.
 - **Stage E's send panel** replaces both Mark sents (estimate and invoice). An invoice's public page
   prints through `pdf.js` `buildInvoiceDocHtml`'s fields, never `invoiceJson` whole (its `estimate`

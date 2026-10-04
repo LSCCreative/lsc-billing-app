@@ -20,8 +20,8 @@ const MAX_PAGE = 200;
 /* What Home's Recent activity shows (task 22): a job moving on — sent,
    accepted, invoiced, paid, or declined. The owner's corrections (reopened,
    an invoice edited or voided) stay in the folder's log only. Stage E adds
-   its client events (opened, signed) here. */
-const HOME_KINDS = ['sent', 'accepted', 'invoices_created', 'invoice_sent', 'invoice_paid', 'declined'];
+   its client events here: opened (task 26), signed. */
+const HOME_KINDS = ['sent', 'opened', 'accepted', 'invoices_created', 'invoice_sent', 'invoice_paid', 'declined'];
 const HOME_LIMIT = 10;
 const HOME_MAX = 50;
 

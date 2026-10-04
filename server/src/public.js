@@ -225,6 +225,37 @@ function publicEstimate(db, token, today) {
   });
 }
 
+/* "Opened" (D52, IA "The client accepts" 1): logged by the page's GET, which
+   only a browser running the page makes, so a mail scanner fetching the link
+   logs nothing. At most once a day per sent version: a client reloading or
+   coming back to it the same day is one event on Home, not ten. */
+const OPENED_EVERY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Logs an `opened` activity for the link's newest version, unless one was
+ * logged for it in the last day. Returns whether it logged.
+ *
+ * @param {string} now  ISO time, the activity's `at`
+ */
+function logOpened(db, token, now) {
+  const row = db.prepare('SELECT id, project_id FROM estimates WHERE public_token = ?').get(String(token));
+  const version = row
+    ? db.prepare('SELECT n FROM estimate_versions WHERE estimate_id = ? ORDER BY n DESC LIMIT 1').get(row.id)
+    : null;
+  if (!version || !row.project_id) return false;
+  const since = new Date(Date.parse(now) - OPENED_EVERY_MS).toISOString();
+  const recent = db.prepare(`
+    SELECT 1 FROM activity
+     WHERE project_id = ? AND kind = 'opened' AND at > ?
+       AND json_extract(detail_json, '$.estimateId') = ? AND json_extract(detail_json, '$.version') = ?
+     LIMIT 1
+  `).get(row.project_id, since, row.id, version.n);
+  if (recent) return false;
+  db.prepare('INSERT INTO activity (id, project_id, at, kind, detail_json) VALUES (?, ?, ?, ?, ?)')
+    .run(newId('act'), row.project_id, now, 'opened', JSON.stringify({ estimateId: row.id, version: version.n }));
+  return true;
+}
+
 /** The version a link's PDF prints: the frozen estimate, rate card and business. */
 function publicPdfSource(db, token) {
   const row = db.prepare('SELECT id FROM estimates WHERE public_token = ?').get(String(token));
@@ -237,4 +268,4 @@ function publicPdfSource(db, token) {
   return { n: version.n, estimate: { ...snap.estimate, docType: 'estimate' }, pricing: snap.pricing, business: snap.business || {} };
 }
 
-module.exports = { newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource };
+module.exports = { newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource, logOpened, OPENED_EVERY_MS };
