@@ -19,6 +19,7 @@ const { registerHolidayRoutes } = require('./routes/holidays');
 const { registerSetupRoutes } = require('./routes/setup');
 const { registerProjectRoutes } = require('./routes/projects');
 const { registerInvoiceRoutes } = require('./routes/invoices');
+const { registerPublicRoutes } = require('./routes/public');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -29,6 +30,9 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
  * origin only); set it once the Pages URL is known.
  */
 function corsMiddleware(req, res, next) {
+  // The client's routes answer CORS themselves, without credentials
+  // (routes/public.js): a client page must never be offered the session.
+  if (req.path === '/public' || req.path.startsWith('/public/')) return next();
   const origin = req.headers.origin;
   if (origin && config.corsOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -71,6 +75,10 @@ function createApp(db, opts = {}) {
       res.type('text/plain').status(503).send('db unavailable');
     }
   });
+
+  // ── The client's pages (stage E): no session, by unguessable link, and
+  // outside /api so no owner route can be reached through them.
+  registerPublicRoutes(app, db, opts);
 
   // ── Auth. /api/login, /api/logout and /api/session handle their own session
   // state and must be registered before the gate below.

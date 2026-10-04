@@ -145,7 +145,14 @@ backup `data/exports/pre-agreement-20261004.db`). Until `6764113` is deployed (N
 six new fields read as "not a field" in the live preview. Email is **Resend over SMTP from `admin@lsccreative.studio`** (D102), not Gmail; the user still
 has to create the account, add its DNS records in Cloudflare and supply the key (needed at task 28).
 
-**Exact next item: TASKS.md task 25** (sent versions and the public estimate route; task 24 approved). Check the "Inputs needed from the user" list first.
+- **E, task 24** (the client page shell, `web/c/`, approved by the user) and **task 25** (v14, sent
+  versions, `/public/estimates/:token[/pdf]`, the editor's "Editing after vN was sent"). 2026-10-04,
+  committed, **not deployed** (v14 and new routes: NAS before Pages, with stage E at task 32).
+  See their notes in `TASKS.md`. `api-scratch` is now v14 with B210-PLAN sent as v1.
+
+**Exact next item: TASKS.md task 26** (wire `c/#e/<token>` to the public route; replace
+`fixture.js`; sections' items are `{ name, tag }`; a `superseded` reply with no `latestToken` is a
+reopened project and needs its own words; log "opened" through the GET, throttled). Check the "Inputs needed from the user" list first.
 The user should also try the live site once (sign in, open a project).
 
 `GET /api/clients/:id/estimates` is no longer used by the web; the D deploy is done, so delete it
@@ -170,8 +177,9 @@ The user should also try the live site once (sign in, open a project).
   arrives, or if it fails, new dates price as non-holidays. The server always prices with the real
   list on save, and the detail screen shows what was stored.
 - **Any later rebuild of `estimates` or `projects`:** flag the migration `foreignKeysOff: true`
-  (`db.js`). `production_days`, `rentals` and `invoices` hang off `estimates`; estimates,
-  invoices and activity hang off `projects`.
+  (`db.js`). `production_days`, `rentals`, `invoices` and (v14) `estimate_versions` hang off
+  `estimates`, and `signatures` off `estimate_versions`; estimates, invoices and activity hang off
+  `projects`.
 - **Before deploying v13 (task 23):** run the migration on a copy of the live backup first. Its
   `foreign_key_check` refuses the whole migration (and the boot) if the live DB already holds a row
   pointing at nothing. The boot log line `[db] v13: N project(s) … M need a UPID …` gives the fix-up
@@ -191,9 +199,8 @@ The user should also try the live site once (sign in, open a project).
   deleting that project's billed or last estimate in the editor (task 19). Voiding (task 20) leaves
   a draft replacement, so a project whose only sent invoice is voided can be deleted again.
 - **A paid invoice can't be un-marked** (D100: corrected by a credit note, not built).
-- **Stage E's sends:** Stage D's Mark sent logs `sent` with `{ validUntil, estimateId }` and **no
-  version** (nothing is frozen, D34). E's versions should write `version` on the same activity
-  kind, which the stage line already reads ("Sent v2").
+- **Sends:** Mark sent now freezes a version (task 25) and logs `sent` with `version`. Task 29's send
+  panel should call the same `freezeVersion` inside its transaction.
 
 **For review at task 8 (Cost Breakdown); settled 2026-10-02, the user approved the sample:** how attribution splits money between surcharges is an
 implementation choice, not a user decision. For example, under "multiply", after hours is charged

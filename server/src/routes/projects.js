@@ -9,6 +9,7 @@ const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
 const { amountDue } = require('../invoices');
 const { docSettings } = require('../documents');
+const { freezeVersion, versionsOf } = require('../public');
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -166,10 +167,14 @@ function readFolder(db, id, today) {
   project.upidLocked = upidLocked(db, id);
   const rows = db.prepare('SELECT * FROM estimates WHERE project_id = ?').all(id);
   const flags = rebookFlags(db, rows.map((r) => r.id));
+  const sent = versionsOf(db, rows.map((r) => r.id));
   const estimates = rows
     .map((row) => {
       const estimate = loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
       estimate.upidLocked = project.upidLocked;
+      // Owner-only: the client's link (stage E) and what was sent of this one.
+      estimate.publicToken = row.public_token || null;
+      estimate.versions = sent.get(row.id) || [];
       estimate.days.forEach((d) => {
         if (flags.has(d.id)) d.rebook = flags.get(d.id);
       });
@@ -644,8 +649,11 @@ function registerProjectRoutes(app, db) {
     const now = nowIso();
     db.transaction(() => {
       db.prepare("UPDATE estimates SET status = 'sent' WHERE id = ?").run(lead);
+      // Sending freezes the estimate as its next version (D34, task 25): the
+      // client's link shows exactly this until the next send.
+      const { n } = freezeVersion(db, lead, { issuedOn: todayOf(req) || localToday(), validUntil, now });
       db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(now, p.id);
-      logActivity(db, p.id, 'sent', { validUntil, estimateId: lead }, now);
+      logActivity(db, p.id, 'sent', { validUntil, estimateId: lead, version: n }, now);
     })();
     return folderReply(req, res);
   });
@@ -801,4 +809,4 @@ function registerProjectRoutes(app, db) {
   });
 }
 
-module.exports = { registerProjectRoutes, summarize, readFolder, logActivity, todayOf, isYmd };
+module.exports = { registerProjectRoutes, summarize, readFolder, logActivity, todayOf, localToday, isYmd };

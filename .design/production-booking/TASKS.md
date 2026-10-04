@@ -718,7 +718,7 @@ Tasks 24–26 can be built with placeholders.
   aspect ratio (square when the format isn't a ratio), stacked for a quantity over one; "Production
   total" (was "Your investment").
 
-- [ ] **25. Sent versions and the public estimate route** (auth/security — Opus/high).
+- [x] **25. Sent versions and the public estimate route** (auth/security — Opus/high).
   _Depends on: 19, 24._
   - **Migration v14:**
     - `estimate_versions`;
@@ -743,6 +743,35 @@ Tasks 24–26 can be built with placeholders.
   - each state;
   - a re-send keeping the link;
   - rate limiting kicking in.
+
+  **Done 2026-10-04** (commit below, not deployed). `npm test` 481/481 (was 472): new
+  `test-public.js` (9) and a v14 test in `test-db.js`.
+  - **v14** is additive and re-runnable: `estimate_versions` (with `snapshot_json` owner-only and
+    `client_view_json`, built once at send), `estimates.public_token` and `invoices.public_token`
+    (unique when set), `signatures` (one per version, `pdf_blob`), `sends`. **No `payments`
+    table** (D101).
+  - **Mark sent** freezes the next version (`public.js freezeVersion`), keeps the estimate's one
+    link, supersedes every earlier version in the project, and logs `sent` with `version`. The
+    folder's estimates and the estimate GET carry `publicToken` and `versions`.
+  - **`/public/*`** (`routes/public.js`) is mounted before auth, outside `/api`: its own CORS
+    (Pages origin, no credentials; the owner CORS skips `/public`), `no-store`, `noindex`,
+    `no-referrer`, and a fixed-window per-IP limit (120 / 10 min; the PDF 12 / 10 min) keyed on
+    `CF-Connecting-IP` behind the tunnel, since `TRUST_PROXY` makes `req.ip` the client-written
+    `X-Forwarded-For`. "Today" comes from the server, never the request.
+  - **The client view is an allow-list** (`clientView`), with days and services from the PDF's
+    own readers: `pdf.js serviceGroups` was split out of `serviceItemsHtml` (PDF HTML checked
+    byte-identical). Sections' items are `{ name, tag }`.
+  - **State order:** accepted → declined → superseded (newer send, project accepted with another
+    estimate, or reopened back to draft) → expired → taken (proposed date confirmed by another live
+    project; days marked `unavailable`) → open. A reopened project's old link reads `superseded`
+    with no `latestToken`: task 26 needs wording for that case.
+  - **The editor** shows "Editing after vN was sent…" while that version is live (checked in
+    headless Chrome against `api-scratch`; scratch's B210-PLAN is now sent as v1).
+  - Mutations caught 12 of 12: whole totals or client snapshot in the view, credentials on public
+    CORS, the owner CORS on public, no expiry / taken / declined, a reopened project left open, the
+    token rewritten on re-send, no supersede, no rate limit, the routes unmounted. The timing
+    check (wrong vs short token, 40 requests each, within 3×) is coarse by nature; the real
+    guarantee is that every token takes the same lookup, with no early exit.
 
 - [ ] **26. The client estimate page, wired** (frontend — Opus/high). _Depends on: 24, 25._
   - `c/#e/<token>` renders the version: days with status words, times and items; the disclaimer;

@@ -2220,6 +2220,18 @@ const EstimateEditor = (() => {
     );
   }
 
+  /* Editing an estimate the client already has (D34, task 25): the link keeps
+     showing the version that went out until the next send. Only while that
+     version is the live one; once something newer went out, or the project
+     moved on, there's nothing for an edit here to differ from. */
+  function sentNoteMarkup(estimate) {
+    const versions = (estimate && estimate.versions) || [];
+    const last = versions[versions.length - 1];
+    if (!last || last.supersededAt || estimate.status !== 'sent') return '';
+    return '<div class="upid-banner" role="note"><p><strong>Editing after v' + last.n + ' was sent.</strong> ' +
+      'Your client still sees v' + last.n + '. These changes reach them when you send it again, as v' + (last.n + 1) + '.</p></div>';
+  }
+
   function formMarkup(estimate, pricing) {
     const client = (estimate && estimate.client) || {};
 
@@ -2228,6 +2240,7 @@ const EstimateEditor = (() => {
       '<div class="page-head"><div><h1 class="page-title">' +
       (estimate ? 'Edit Estimate' : 'New Estimate') + '</h1>' +
       '<div class="page-sub">Select services from each category to build your estimate</div></div></div>' +
+      sentNoteMarkup(estimate) +
       '<div class="form-grid">' +
       '<div class="field full"><label for="f-upid" class="label-accent">UPID — Unique Project Identifier *</label>' +
       '<input id="f-upid" type="text" value="' + esc(estimate ? estimate.upid : '') + '"' +

@@ -59,26 +59,33 @@ function deliverableNames(activeRows) {
   return out;
 }
 
-function serviceItemsHtml(activeRows, labourSections, sectionLabels, dayIds) {
+/**
+ * Every service the client is shown as a name, grouped as the client's PDF
+ * lists them, with no prices: the labour sections in rate-card order (a post
+ * line tagged with its deliverable), then equipment hire, travel and external
+ * crew. A production item on a booked day is left out: it is listed under its
+ * day instead. One reader for the PDF and the client page (stage E's public
+ * view), so the two can't list different things.
+ *
+ * @returns {Array<{label:string, kind:'labour'|'extra', items:Array<{name:string, tag:string}>}>}
+ */
+function serviceGroups(activeRows, labourSections, sectionLabels, dayIds) {
   const ar = activeRows || {};
   const onDay = (s) => Boolean(dayIds && s.dayId && dayIds.has(String(s.dayId)));
   const tags = deliverableNames(ar);
-  const tagOf = (secId, s) => {
-    const name = secId === 'post' && s.deliverableId ? tags.get(String(s.deliverableId)) : '';
-    return name ? ' <span style="font-weight:400;color:#888">&middot; ' + esc(name) + '</span>' : '';
-  };
-  let html = '';
+  const out = [];
 
   sectionsFor(ar, labourSections, sectionLabels).forEach((sec) => {
-    // A production item on a booked day is listed under its day instead.
     const rows = (ar[sec.id] || []).filter((s) => (s.qty || 0) > 0 && !(sec.id === 'prod' && onDay(s)));
     if (!rows.length) return;
-    html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0">' +
-      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">' + esc(sec.label) + '</div>';
-    rows.forEach((s) => {
-      html += '<div style="font-size:10.5pt;font-weight:600;color:#181818;margin-bottom:3px">' + esc(s.name) + tagOf(sec.id, s) + '</div>';
+    out.push({
+      label: sec.label,
+      kind: 'labour',
+      items: rows.map((s) => ({
+        name: s.name,
+        tag: sec.id === 'post' && s.deliverableId ? (tags.get(String(s.deliverableId)) || '') : '',
+      })),
     });
-    html += '</div>';
   });
 
   /* Since B2 a hire line has a vendor and an Item (D82). The client sees the
@@ -87,23 +94,33 @@ function serviceItemsHtml(activeRows, labourSections, sectionLabels, dayIds) {
   const eqName = (e) => String(e.item || '').trim() || e.vendor;
   const eqActive = (ar.equip || []).filter((e) => eqName(e) || (e.days && e.cost));
   if (eqActive.length) {
-    html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0"><div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">Equipment Hire</div>' +
-      eqActive.map((e) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(eqName(e) || 'Equipment') + '</div>').join('') + '</div>';
+    out.push({ label: 'Equipment Hire', kind: 'extra', items: eqActive.map((e) => ({ name: eqName(e) || 'Equipment', tag: '' })) });
   }
 
   const tvActive = (ar.travel || []).filter((t) => (t.qty || 0) > 0);
   if (tvActive.length) {
-    html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0"><div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">Travel &amp; Accommodation</div>' +
-      tvActive.map((s) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(s.name) + '</div>').join('') + '</div>';
+    out.push({ label: 'Travel & Accommodation', kind: 'extra', items: tvActive.map((t) => ({ name: t.name, tag: '' })) });
   }
 
   const crActive = (ar.crew || []).filter((c) => c.role || (c.days && c.cost));
   if (crActive.length) {
-    html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0"><div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">External Crew &amp; Contracts</div>' +
-      crActive.map((c) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(c.role || 'Crew Member') + '</div>').join('') + '</div>';
+    out.push({ label: 'External Crew & Contracts', kind: 'extra', items: crActive.map((c) => ({ name: c.role || 'Crew Member', tag: '' })) });
   }
 
-  return html;
+  return out;
+}
+
+function serviceItemsHtml(activeRows, labourSections, sectionLabels, dayIds) {
+  return serviceGroups(activeRows, labourSections, sectionLabels, dayIds).map((g) => {
+    const head = '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0">' +
+      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#B85444;font-weight:700;margin-bottom:5px">' + esc(g.label) + '</div>';
+    const body = g.kind === 'labour'
+      ? g.items.map((it) =>
+        '<div style="font-size:10.5pt;font-weight:600;color:#181818;margin-bottom:3px">' + esc(it.name) +
+        (it.tag ? ' <span style="font-weight:400;color:#888">&middot; ' + esc(it.tag) + '</span>' : '') + '</div>').join('')
+      : g.items.map((it) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(it.name) + '</div>').join('');
+    return head + body + '</div>';
+  }).join('');
 }
 
 /* ── Production days (production-booking task 8) ─────────────────────────────
@@ -907,6 +924,13 @@ async function renderPdfBuffer(html) {
 
 module.exports = {
   buildEstimateHtml,
+  buildQuoteHtml,
+  serviceGroups,
+  daysWithItems,
+  qtyText,
+  dayIdsOf,
+  hasProposedDay,
+  PROPOSED_DISCLAIMER,
   buildInvoiceDocHtml,
   invoiceFilename,
   invoiceBlocker,

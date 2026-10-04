@@ -12,6 +12,7 @@ const {
   readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
 } = require('../rentals');
 const { planProjectWrite, applyProjectWrite, dropEmptyProject, upidLocked } = require('../projects');
+const { versionsOf } = require('../public');
 
 /**
  * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
@@ -130,8 +131,11 @@ function prepareWrite(db, body, existing) {
 function registerEstimateRoutes(app, db) {
   // `upidLocked` (D36, task 19): the editor shows the UPID read-only once the
   // project has an invoice the app made, as planProjectWrite refuses a change.
+  // `versions` (task 25, D34): what of it has been sent, for the editor's
+  // "Editing after v2 was sent" banner. Owner-only, like the rest.
   const loadJson = (row) => Object.assign(loadEstimate(row, readDays(db, row.id), readRentals(db, row.id)), {
     upidLocked: upidLocked(db, row.project_id),
+    versions: versionsOf(db, [row.id]).get(row.id) || [],
   });
 
   app.get('/api/estimates', (_req, res) => {

@@ -702,6 +702,81 @@ const MIGRATIONS = [
       require('./migrations/v13-projects').migrateV13(db);
     },
   },
+  {
+    version: 14,
+    name: 'sent versions, client links, signatures and the send queue',
+    up(db) {
+      // .design/production-booking/ task 25 (IA "Stage E (v14)"). Additive
+      // only: new tables and two nullable columns, so no rebuild and no
+      // foreign_keys dance.
+      //
+      // A sent estimate is frozen as a version (D34). `snapshot_json` is the
+      // whole estimate as sent (owner-only: its totals carry the internal
+      // figures) plus the rate-card sections its PDF reads; `client_view_json`
+      // is what the client page shows, built once at send time by
+      // public.js's serializer, so a public route only ever reads that.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS estimate_versions (
+          id               TEXT PRIMARY KEY,
+          estimate_id      TEXT NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+          n                INTEGER NOT NULL CHECK (n >= 1),
+          snapshot_json    TEXT NOT NULL,
+          client_view_json TEXT NOT NULL,
+          sent_at          TEXT NOT NULL,
+          valid_until      TEXT,
+          superseded_at    TEXT,
+          UNIQUE (estimate_id, n)
+        );
+        CREATE INDEX IF NOT EXISTS idx_estimate_versions_estimate ON estimate_versions(estimate_id);
+
+        -- One signature per version (D40, D66): the accept is idempotent per
+        -- version, and the signed PDF's bytes live here so the backup has them.
+        CREATE TABLE IF NOT EXISTS signatures (
+          id               TEXT PRIMARY KEY,
+          version_id       TEXT NOT NULL UNIQUE REFERENCES estimate_versions(id) ON DELETE CASCADE,
+          full_name        TEXT NOT NULL,
+          role             TEXT NOT NULL,
+          ip               TEXT NOT NULL DEFAULT '',
+          user_agent       TEXT NOT NULL DEFAULT '',
+          signed_at        TEXT NOT NULL,
+          agreement_text   TEXT NOT NULL,
+          agreement_sha256 TEXT NOT NULL,
+          pdf_blob         BLOB
+        );
+
+        -- The send queue (task 28, D43, D47). doc_id points at an estimate or
+        -- an invoice by doc_kind, so it carries no foreign key.
+        CREATE TABLE IF NOT EXISTS sends (
+          id            TEXT PRIMARY KEY,
+          doc_kind      TEXT NOT NULL CHECK (doc_kind IN ('estimate', 'invoice')),
+          doc_id        TEXT NOT NULL,
+          version_id    TEXT REFERENCES estimate_versions(id) ON DELETE SET NULL,
+          to_email      TEXT NOT NULL DEFAULT '',
+          message       TEXT NOT NULL DEFAULT '',
+          scheduled_for TEXT NOT NULL,
+          status        TEXT NOT NULL DEFAULT 'scheduled'
+                        CHECK (status IN ('scheduled', 'sending', 'sent', 'failed', 'cancelled')),
+          sent_at       TEXT,
+          late          INTEGER NOT NULL DEFAULT 0,
+          error         TEXT,
+          created_at    TEXT NOT NULL,
+          updated_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_sends_due ON sends(status, scheduled_for);
+        CREATE INDEX IF NOT EXISTS idx_sends_doc ON sends(doc_kind, doc_id);
+      `);
+      // One unguessable link per estimate, resolved to its latest version, so
+      // a re-send keeps the link (IA). Invoices get theirs at task 30.
+      ['estimates', 'invoices'].forEach((table) => {
+        const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === 'public_token');
+        if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN public_token TEXT;`);
+        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_public_token ON ${table}(public_token)
+                   WHERE public_token IS NOT NULL;`);
+      });
+      // No `payments` table: card payment is held (D101). It's a new table,
+      // so whoever picks Stripe up adds it in its own migration.
+    },
+  },
 ];
 
 /**

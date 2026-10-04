@@ -2217,8 +2217,8 @@ test('project folder: Mark sent records the valid-until the stage line reads, an
   assert.equal(sent.status, 200, JSON.stringify(sent.body));
   assert.equal(sent.body.estimates[0].status, 'sent');
   assert.deepEqual([sent.body.project.stage, sent.body.project.stageDetail.validUntil, sent.body.project.stageDetail.version],
-    ['sent', '2026-11-03', null]);
-  assert.deepEqual([sent.body.activity[0].kind, sent.body.activity[0].detail], ['sent', { validUntil: '2026-11-03', estimateId: est.id }]);
+    ['sent', '2026-11-03', 1]);
+  assert.deepEqual([sent.body.activity[0].kind, sent.body.activity[0].detail], ['sent', { validUntil: '2026-11-03', estimateId: est.id, version: 1 }]);
   // Sent again after changes: the latest send is the one the line reads, on the list too.
   const again = await act(est.projectId, 'sent', { validUntil: '2026-11-20' });
   assert.equal(again.body.project.stageDetail.validUntil, '2026-11-20');

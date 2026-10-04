@@ -816,8 +816,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v13', () => {
-  assert.equal(LATEST_VERSION, 13);
+test('the schema knows it is at v14', () => {
+  assert.equal(LATEST_VERSION, 14);
 });
 
 /**
@@ -1081,7 +1081,7 @@ test('v13 keeps every estimate\'s stored values, days and rentals through the re
   const days = dump(db, 'production_days');
   const rentals = dump(db, 'rentals');
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 13 });
   assert.deepEqual([result.from, result.to, result.applied], [12, 13, 1]);
   assert.equal(db.pragma('foreign_keys', { simple: true }), 1, 'foreign keys are back on');
   assert.deepEqual(db.pragma('foreign_key_check'), []);
@@ -1196,12 +1196,12 @@ test('v13 turns each invoice-typed estimate into a legacy invoice, totals copied
 
 test('v13 run again changes nothing; deleting a project takes its estimates, days, invoices and activity', () => {
   const db = v12Fixture();
-  migrate(db);
+  migrate(db, { to: 13 });
   const tables = ['projects', 'estimates', 'invoices', 'activity', 'production_days', 'rentals'];
   const once = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
 
   db.prepare('DELETE FROM schema_version WHERE version >= 13').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 13 }).applied, 1);
   assert.deepEqual(Object.fromEntries(tables.map((t) => [t, dump(db, t)])), once);
 
   const p = db.prepare("SELECT project_id FROM estimates WHERE id = 'est_unique'").get().project_id;
@@ -1228,5 +1228,52 @@ test('a migration that would leave a dangling reference is refused whole', () =>
   assert.equal(db.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 12);
   assert.ok(!db.prepare('PRAGMA table_info(estimates)').all().some((c) => c.name === 'project_id'), 'rolled back');
   assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
+  db.close();
+});
+
+/**
+ * MIGRATION v14 — sent versions, client links, signatures and the send queue
+ * (production-booking task 25). Additive: every v13 row is as it was, the
+ * links start unset, and running it again changes nothing.
+ */
+test('v14 adds the version, signature and send tables and an unset link, changing no row', () => {
+  const db = v12Fixture();
+  migrate(db, { to: 13 });
+  const tables = ['projects', 'estimates', 'invoices', 'activity', 'production_days', 'rentals'];
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [13, 14, 1]);
+  const after = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  for (const t of ['estimates', 'invoices']) {
+    assert.ok(after[t].length && after[t].every((r) => r.public_token === null), t + ': every link unset');
+    assert.deepEqual(after[t].map(({ public_token: _t, ...rest }) => rest), before[t], t);
+  }
+  for (const t of ['projects', 'activity', 'production_days', 'rentals']) assert.deepEqual(after[t], before[t], t);
+  for (const t of ['estimate_versions', 'signatures', 'sends']) assert.deepEqual(dump(db, t), [], t);
+  assert.ok(!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'payments'").get(), 'no payments table while cards are held (D101)');
+
+  // Run again: nothing moves, and no column is added twice.
+  db.prepare('DELETE FROM schema_version WHERE version >= 14').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(dump(db, 'estimates'), after.estimates);
+
+  // A link is unique; a version is unique per estimate and goes with it.
+  const [a, b] = after.estimates;
+  db.prepare("UPDATE estimates SET public_token = 'tok' WHERE id = ?").run(a.id);
+  assert.throws(() => db.prepare("UPDATE estimates SET public_token = 'tok' WHERE id = ?").run(b.id), /UNIQUE/);
+  const ver = db.prepare(`INSERT INTO estimate_versions (id, estimate_id, n, snapshot_json, client_view_json, sent_at)
+                          VALUES (?, ?, ?, '{}', '{}', 'x')`);
+  ver.run('ver_1', a.id, 1);
+  assert.throws(() => ver.run('ver_dup', a.id, 1), /UNIQUE/);
+  assert.throws(() => ver.run('ver_0', a.id, 0), /CHECK/);
+  db.prepare(`INSERT INTO signatures (id, version_id, full_name, role, signed_at, agreement_text, agreement_sha256)
+              VALUES ('sig_1', 'ver_1', 'Sam', 'Director', 'x', 't', 'h')`).run();
+  assert.throws(() => db.prepare(`INSERT INTO signatures (id, version_id, full_name, role, signed_at, agreement_text, agreement_sha256)
+              VALUES ('sig_2', 'ver_1', 'Sam', 'Director', 'x', 't', 'h')`).run(), /UNIQUE/, 'one signature per version');
+  db.prepare('DELETE FROM estimates WHERE id = ?').run(a.id);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM estimate_versions').get().n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM signatures').get().n, 0);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
   db.close();
 });
