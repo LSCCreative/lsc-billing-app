@@ -97,11 +97,15 @@ test('unusable stored values fall back to the default', () => {
 // ── The agreement ───────────────────────────────────────────────────────────
 
 const PROJECT = {
-  client: { businessName: 'Acme Pty Ltd', contactName: 'Sam Lee', abn: '51824753556' },
+  client: { businessName: 'Acme Pty Ltd', contactName: 'Sam Lee', abn: '51824753556', email: ' sam@acme.test ', phone: '0400 000 000' },
   upid: 'B210',
   projectName: 'Spring campaign',
   totalIncGst: 12345.6,
   depositPct: 40,
+  depositTotal: 4938.24,
+  balanceTotal: 7407.36,
+  dueDays: 7,
+  signatoryRole: 'Director',
   days: [
     { date: null, status: 'proposed', startTime: '', endTime: '' },
     { date: '2026-10-16', status: 'pencilled', startTime: '18:00', endTime: '02:00' },
@@ -121,6 +125,12 @@ test('every field has a value, in the words the client PDF uses', () => {
   assert.equal(v.project_name, 'Spring campaign');
   assert.equal(v.total, '$12,345.60');
   assert.equal(v.deposit_pct, '40%');
+  assert.equal(v.deposit_amount, '$4,938.24');
+  assert.equal(v.balance_amount, '$7,407.36');
+  assert.equal(v.due_days, '7');
+  assert.equal(v.client_email, 'sam@acme.test');
+  assert.equal(v.client_phone, '0400 000 000');
+  assert.equal(v.signatory_role, 'Director');
   assert.equal(v.business_name, 'Lachlan Sullivan-Carey');
   assert.equal(v.business_abn, '12 345 678 901');
   assert.equal(v.date, '4 October 2026');
@@ -149,6 +159,10 @@ test('missing inputs give blanks, never "undefined"', () => {
   for (const f of AGREEMENT_FIELDS) assert.equal(v[f.key], '', f.key);
   // A single invoice has no deposit.
   assert.equal(agreementValues({ depositPct: null }).deposit_pct, '');
+  // …and no deposit amount, even if one were passed.
+  assert.equal(agreementValues({ depositPct: null, depositTotal: 10 }).deposit_amount, '');
+  assert.equal(agreementValues({ dueDays: 0 }).due_days, '0');
+  assert.equal(agreementValues({ dueDays: 2.5 }).due_days, '');
   assert.equal(agreementValues({ totalIncGst: 0 }).total, '$0.00');
 });
 
@@ -173,4 +187,19 @@ test('fillAgreement on empty text, and a value is never re-read as a field', () 
   assert.deepEqual(fillAgreement(null, {}), { text: '', unknown: [], blank: [] });
   const r = fillAgreement('{client_business} / {upid}', { client_business: '{upid}', upid: 'B1' });
   assert.equal(r.text, '{upid} / B1');
+});
+
+test('the deposit and balance amounts agree with the invoices calc.js makes', () => {
+  const calc = require('../src/calc');
+  const totals = { totalIncGst: 12345.6, gst: 0 };
+  const deposit = calc.depositAmount(totals, 40);
+  const v = agreementValues({
+    totalIncGst: totals.totalIncGst, depositPct: 40,
+    depositTotal: deposit.totalIncGst,
+    balanceTotal: calc.finalInvoiceTotals(totals, null, deposit).balanceDue,
+  });
+  assert.equal(v.deposit_amount, '$4,938.24');
+  assert.equal(v.balance_amount, '$7,407.36');
+  // A single invoice: the balance is the whole total.
+  assert.equal(agreementValues({ balanceTotal: calc.finalInvoiceTotals(totals, null, null).balanceDue }).balance_amount, '$12,345.60');
 });

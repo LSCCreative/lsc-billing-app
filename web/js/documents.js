@@ -91,10 +91,16 @@
     { key: 'client_business', says: 'The client’s business name' },
     { key: 'client_contact', says: 'The client contact’s name' },
     { key: 'client_abn', says: 'The client’s ABN' },
+    { key: 'client_email', says: 'The client contact’s email' },
+    { key: 'client_phone', says: 'The client contact’s phone' },
+    { key: 'signatory_role', says: 'The role the client types when signing (blank in a preview)' },
     { key: 'upid', says: 'The project’s UPID' },
     { key: 'project_name', says: 'The project’s name' },
     { key: 'total', says: 'The estimate’s total, as the client sees it' },
     { key: 'deposit_pct', says: 'The deposit percentage, e.g. 50%' },
+    { key: 'deposit_amount', says: 'The deposit in dollars' },
+    { key: 'balance_amount', says: 'The balance in dollars (the total, with no deposit)' },
+    { key: 'due_days', says: 'How many days after it’s issued an invoice is due' },
     { key: 'production_days', says: 'The production days, one per line, with status and times' },
     { key: 'business_name', says: 'Your legal / business name' },
     { key: 'business_abn', says: 'Your ABN' },
@@ -147,6 +153,8 @@
     return digits.length === 11 ? digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3 $4') : raw;
   }
 
+  const isMoney = (n) => typeof n === 'number' && Number.isFinite(n);
+
   const pctText = (pct) => String(Math.round((Number(pct) || 0) * 100) / 100) + '%';
 
   /**
@@ -163,6 +171,12 @@
    * @param {string} input.projectName
    * @param {number} input.totalIncGst  the stored client total
    * @param {number|null} input.depositPct  null for a single invoice: the field is then blank
+   * @param {number|null} input.depositTotal  calc.js depositAmount(...).totalIncGst; null for a
+   *                                          single invoice. This file does no money maths, so
+   *                                          the amounts come from calc.js, as on the invoices.
+   * @param {number} input.balanceTotal  calc.js finalInvoiceTotals(...).balanceDue (or the total)
+   * @param {number} input.dueDays      docSettings().dueDays
+   * @param {string} input.signatoryRole  as typed when signing; '' in a preview
    * @param {Array}  input.days         [{ date, status, startTime, endTime }]
    * @param {object} input.business     settings.business ({ name, abn })
    * @param {string} input.today        'YYYY-MM-DD'
@@ -185,10 +199,16 @@
       client_business: String(client.businessName || '').trim(),
       client_contact: String(client.contactName || '').trim(),
       client_abn: abnText(client.abn),
+      client_email: String(client.email || '').trim(),
+      client_phone: String(client.phone || '').trim(),
+      signatory_role: String(i.signatoryRole || '').trim(),
       upid: String(i.upid || '').trim(),
       project_name: String(i.projectName || '').trim(),
-      total: typeof i.totalIncGst === 'number' && Number.isFinite(i.totalIncGst) ? money(i.totalIncGst) : '',
+      total: isMoney(i.totalIncGst) ? money(i.totalIncGst) : '',
       deposit_pct: isPct(i.depositPct) ? pctText(i.depositPct) : '',
+      deposit_amount: isPct(i.depositPct) && isMoney(i.depositTotal) ? money(i.depositTotal) : '',
+      balance_amount: isMoney(i.balanceTotal) ? money(i.balanceTotal) : '',
+      due_days: Number.isInteger(i.dueDays) && i.dueDays >= 0 ? String(i.dueDays) : '',
       production_days: days
         .map((d) => [dayDate(d.date), STATUS_WORD[d.status] || 'Proposed', dayTimes(d)].filter(Boolean).join(' · '))
         .join('\n'),

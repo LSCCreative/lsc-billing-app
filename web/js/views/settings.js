@@ -670,15 +670,22 @@ const SettingsView = (() => {
         return;
       }
       const ownPct = typeof project.depositPct === 'number' ? project.depositPct : null;
+      // A single invoice has no deposit. Otherwise the project's own %, or the
+      // one on this screen.
+      const pct = project.invoicing === 'single' ? null : (ownPct !== null ? ownPct : pctOf(form.depositRaw));
+      const totals = estimate.totals && typeof estimate.totals.totalIncGst === 'number'
+        ? estimate.totals : { totalIncGst: project.totalIncGst, gst: 0 };
+      // The amounts through calc.js, as task 19 makes the invoices.
+      const deposit = pct === null ? null : LSCCalc.depositAmount(totals, pct);
       const values = D.agreementValues({
         client: estimate.client,
         upid: project.upid || estimate.upid,
         projectName: estimate.name || project.name,
-        totalIncGst: estimate.totals && typeof estimate.totals.totalIncGst === 'number'
-          ? estimate.totals.totalIncGst : project.totalIncGst,
-        // A single invoice has no deposit. Otherwise the project's own %,
-        // or the one on this screen.
-        depositPct: project.invoicing === 'single' ? null : (ownPct !== null ? ownPct : pctOf(form.depositRaw)),
+        totalIncGst: totals.totalIncGst,
+        depositPct: pct,
+        depositTotal: deposit ? deposit.totalIncGst : null,
+        balanceTotal: LSCCalc.finalInvoiceTotals(totals, null, deposit).balanceDue,
+        dueDays: wholeIn(form.dueRaw, 0),
         days: estimate.days,
         business: { name: form.businessName, abn: abnDigits(form.abn) },
         today: LSCUtil.today(),
