@@ -161,9 +161,9 @@ has to create the account, add its DNS records in Cloudflare and supply the key 
   in `TASKS.md`. `localToday` is now Sydney's date. `api-scratch` is as it was (a backup from
   before is in this session's scratchpad only).
 
-**Open question for the user (task 27):** after signing, the client page still lists the days as
-sent ("Proposed", "Pencilled"), though the server has confirmed them. It's the frozen version,
-under a "Thank you" notice. Ask whether accepted pages should read the dated days as Confirmed.
+**Settled 2026-10-05 (the user):** an accepted estimate's page reads its dated days as Confirmed
+(Date TBC days stay as sent) and drops the proposed-dates warning. Applied live in
+`publicEstimate`; the stored client view stays the version as sent.
 
 **Exact next item: TASKS.md task 28** (email and the send queue, Sonnet/high). It needs the
 Resend SMTP key (D102), still not supplied: build `mail.js` against a stub transport, and ask

@@ -136,8 +136,11 @@ test('sending freezes v1: a 43-character link, and the client view the page read
   const r = await pub(token);
   assert.equal(r.status, 200);
   const e = r.body.estimate;
+  // Issued on the day it was marked sent: the server's (Sydney) date, as the
+  // send carried no `today`; not the test's fixed one.
+  const { localToday } = require('../src/routes/projects');
   assert.deepEqual([e.kind, e.state, e.version, e.upid, e.name, e.issuedOn, e.validUntil],
-    ['estimate', 'open', 1, est.upid, est.name, today, '2026-11-03']);
+    ['estimate', 'open', 1, est.upid, est.name, localToday(), '2026-11-03']);
   assert.deepEqual(e.client, { businessName: 'Saltwater Co.', contactName: 'Priya Nair' }, 'no email, phone or ABN of the client');
   assert.deepEqual(e.deliverables, [{ name: 'Brand film', format: '16:9', duration: '2–3 min', qty: 1 }]);
   assert.deepEqual(e.days.map((d) => [d.date, d.status, d.startTime, d.endTime, d.items.map((i) => i.name)]), [
@@ -256,7 +259,12 @@ test('each state: open, taken, expired, superseded, declined, accepted', async (
   // accepted.
   const acc = await act(a.projectId, 'accept', { invoicing: 'single' });
   assert.equal(acc.status, 200, JSON.stringify(acc.body));
-  assert.equal((await pub(token)).body.estimate.state, 'accepted');
+  e = (await pub(token)).body.estimate;
+  assert.equal(e.state, 'accepted');
+  assert.deepEqual(e.days.map((d) => d.status), ['confirmed', 'confirmed'], 'accepted in the app reads the same');
+  // The stored client view is untouched: it's the version as sent.
+  const stored = JSON.parse(db.prepare('SELECT client_view_json FROM estimate_versions v JOIN estimates x ON x.id = v.estimate_id WHERE x.public_token = ? ORDER BY n DESC LIMIT 1').get(token).client_view_json);
+  assert.deepEqual(stored.days.map((d) => d.status), ['pencilled', 'proposed']);
 });
 
 test('superseded by another estimate in the project points at the newer link', async () => {
@@ -422,6 +430,10 @@ test('signing: the agreement is offered while open, signed as shown, and accepts
   const r = await sign(token, body, { 'user-agent': 'TestBrowser/1.0' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual([r.body.estimate.state, r.body.estimate.signed, r.body.estimate.agreement], ['accepted', true, undefined]);
+  // Sent as pencilled and proposed; accepted, the page reads them confirmed.
+  assert.deepEqual(e.days.map((d) => d.status), ['pencilled', 'proposed']);
+  assert.deepEqual(r.body.estimate.days.map((d) => d.status), ['confirmed', 'confirmed']);
+  assert.equal(r.body.estimate.disclaimer, '');
   assert.equal(renders, 1);
 
   // The stored text is exactly what was shown, with its hash and the PDF of it.

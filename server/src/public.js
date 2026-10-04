@@ -207,6 +207,16 @@ function publicEstimate(db, token, today) {
     if (any && state === 'open') state = 'taken';
   }
 
+  // Accepted (D18): every dated day is now confirmed, so the page says so
+  // rather than showing them as they were sent. Date TBC days are untouched,
+  // and the "proposed dates aren't locked in" warning no longer applies.
+  if (state === 'accepted') {
+    view.days.forEach((d) => {
+      if (d.date) d.status = 'confirmed';
+    });
+    view.disclaimer = '';
+  }
+
   let latestToken = null;
   if (state === 'superseded' && project) {
     const newest = db.prepare(`

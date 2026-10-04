@@ -853,6 +853,9 @@ Tasks 24–26 can be built with placeholders.
     limit); owner `GET /api/projects/:id/agreements/:sigId/pdf`; the folder reply has `signatures`
     and Documents lists "Signed agreement". `signed` on the public reply drives the thank-you's
     download. With no agreement in Settings, `FALLBACK_TEXT` (accepting the estimate only).
+  - **Accepted pages read dated days as Confirmed** (the user, 2026-10-05): applied live in
+    `publicEstimate`; Date TBC days stay as sent, the proposed-dates warning goes, and the stored
+    client view is untouched.
   - **`localToday` is Sydney's date**, not the server's: the container is UTC, so expiry and an
     agreement's `{date}` were a day behind until 10–11am.
   - **The dialog** is a native `<dialog>` (the client page loads none of the app, so no `Modal`):
