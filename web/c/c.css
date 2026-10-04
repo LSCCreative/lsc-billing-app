@@ -458,6 +458,158 @@ a:hover { color: var(--ink); }
   .btn-primary { width: auto; min-width: 240px; }
 }
 
+/* A status line under a panel's button (the signed agreement's download). */
+.panel-msg:not(:empty) { margin-top: 10px; font-size: 15px; color: var(--muted); }
+
+/* ── Signing (task 27) ────────────────────────────────────────────────────────
+   Full screen on a phone, a sheet of paper over the page from 560px. The
+   agreement scrolls in its own box, so the fields and Sign & submit stay in
+   view under it (brief, Responsive). */
+
+.is-signing, .is-signing body { overflow: hidden; }
+
+.sign {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  overflow-y: auto;   /* a short phone with its keyboard up: the form scrolls, never clips */
+}
+.sign::backdrop { background: rgba(14, 14, 14, 0.5); }
+.sign-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px max(20px, env(safe-area-inset-bottom));
+}
+.sign-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--terra);
+}
+.sign-title {
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  padding-top: 10px;
+}
+.sign-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-right: -10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.sign-close:hover { background: var(--panel); }
+.sign-intro { margin-top: 12px; font-size: 15px; color: var(--muted); }
+.sign-text {
+  flex: 1 1 auto;
+  min-height: 140px;
+  margin-top: 12px;
+  padding: 16px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--panel);
+  border-radius: var(--radius);
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sign-text:focus-visible { outline: 3px solid var(--terra-dk); outline-offset: 2px; }
+/* The role, as typed, wherever the agreement names it. Until it's typed, a
+   marked gap that reads as one. */
+.sign-slot { font-weight: 700; }
+.sign-slot.is-empty {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--muted);
+  border-bottom: 1px dashed var(--muted);
+}
+.sign-faq { font-size: 15px; }
+.sign-faq a { display: inline-block; padding: 11px 0 3px; }   /* a 44px target with the line above */
+.sign-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.sign-field label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.sign-field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #FBFAF7;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;     /* 16px or more, or iOS zooms in on focus */
+}
+.sign-field input:focus-visible { outline: 3px solid var(--terra-dk); outline-offset: 1px; }
+.sign-agree {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+.sign-agree input {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--terra-dk);
+  cursor: pointer;
+}
+.sign-msg:not(:empty) {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-left: 4px solid var(--terra-dk);
+  background: var(--panel);
+  font-size: 15px;
+}
+.sign-form .btn-primary { margin-top: 12px; flex: none; }
+.sign-form .btn-primary:disabled { cursor: not-allowed; background: var(--muted); opacity: 1; }
+.sign-form .btn-primary[aria-busy="true"] { cursor: progress; background: var(--terra-dk); }
+.sign-hint { margin-top: 8px; font-size: 14px; color: var(--muted); min-height: 1.4em; }
+
+@media (min-width: 560px) {
+  .sign {
+    width: min(720px, calc(100% - 48px));
+    height: min(860px, calc(100% - 48px));
+    margin: auto;
+    border-radius: var(--radius);
+    box-shadow: 0 24px 64px rgba(14, 14, 14, 0.28);
+  }
+  .sign-form { padding: 22px 28px 24px; }
+  .sign-title { font-size: 26px; }
+  .sign-fields { grid-template-columns: 1fr 1fr; gap: 16px; }
+}
+
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 
 .foot {
@@ -514,6 +666,6 @@ a:hover { color: var(--ink); }
 }
 
 @media print {
-  .panel, .skip, .foot .btn { display: none; }
+  .panel, .skip, .foot .btn, .sign { display: none; }
   #doc { padding: 0; }
 }

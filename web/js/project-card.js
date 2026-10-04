@@ -125,6 +125,9 @@ const ProjectCard = (() => {
       case 'sent': return 'Marked sent' + (C.isDate(d.validUntil) ? ', valid until ' + dayMonth(d.validUntil, today) : '');
       case 'opened': return 'Client opened the estimate' + (d.version > 1 ? ' (v' + d.version + ')' : '');
       case 'accepted': return 'Marked accepted' + invoicesText(d);
+      case 'signed': return 'Client signed and accepted' + (d.version > 1 ? ' v' + d.version : '') +
+        (d.signedBy ? ' · ' + d.signedBy + (d.role ? ', ' + d.role : '') : '') + invoicesText(d) +
+        (d.invoiceProblem ? ' · no invoices made yet' : '');
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';

@@ -567,6 +567,56 @@ function invoiceFilename(doc) {
   return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
 }
 
+/* When a signature was made, in Sydney time with its zone ("4 October 2026,
+   2:15 pm AEDT"): the business's clock, whatever the server's is. */
+function signedAtText(iso) {
+  const t = new Date(iso);
+  if (!Number.isFinite(t.getTime())) return String(iso || '');
+  const part = (o) => new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', ...o }).format(t);
+  return part({ day: 'numeric', month: 'long', year: 'numeric' }) + ', ' +
+    part({ hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' }).replace(/\s+/g, ' ');
+}
+
+/**
+ * A signed service agreement as a PDF (task 27, D39, D40, D66): the exact text
+ * the client was shown and signed, then what records the signature. Built
+ * only from the signature row, so a later edit to Settings, the estimate or
+ * the business can never change it.
+ *
+ * @param {object} sig  public.js signatureRow: full_name, role, signed_at, ip,
+ *                      agreement_text, agreement_sha256, n, upid
+ */
+function buildAgreementHtml(sig) {
+  const rows = [
+    ['Signed by', sig.full_name],
+    ['Role', sig.role],
+    ['Signed on', signedAtText(sig.signed_at)],
+    ['Estimate', (sig.upid ? sig.upid + ', ' : '') + 'version ' + sig.n],
+    ['IP address', sig.ip || 'Not recorded'],
+    ['Agreement SHA-256', sig.agreement_sha256],
+  ];
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' + PDF_STYLE +
+    // A legal text runs to several pages: each one gets a margin, not just the first.
+    '@page{margin:14mm 0}' +
+    '.ag{white-space:pre-wrap;font-size:10pt;line-height:1.5;overflow-wrap:anywhere}' +
+    '.sig{margin-top:28px;break-inside:avoid}.sig table{width:100%;border-collapse:collapse;font-size:9.5pt}' +
+    '.sig th{text-align:left;color:#555;font-weight:400;width:34%;padding:5px 0;border-bottom:1px solid #ddd;vertical-align:top}' +
+    '.sig td{padding:5px 0;border-bottom:1px solid #ddd;overflow-wrap:anywhere}.sig .how{font-size:8.5pt;color:#555;margin-top:10px}' +
+    '</style></head>' + INVOICE_BODY +
+    '<div class="ag">' + esc(sig.agreement_text) + '</div>' +
+    '<div class="sig"><div class="sh">Signature</div><table>' +
+    rows.map(([k, v]) => '<tr><th>' + esc(k) + '</th><td>' + esc(v) + '</td></tr>').join('') +
+    '</table><p class="how">Signed online by typing a full name and role and ticking “I agree to the service agreement”. ' +
+    'The SHA-256 is of the agreement text above, exactly as it was shown and signed.</p></div>' +
+    '</body></html>';
+}
+
+/** `Service Agreement - ABC-123 v2 - Priya Nair.pdf`, filesystem-safe. */
+function agreementFilename(sig) {
+  const base = 'Service Agreement - ' + (sig.upid || 'Estimate') + ' v' + sig.n + ' - ' + (sig.full_name || 'Signed');
+  return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
+}
+
 /* As exportBlocker: a tax invoice without the seller's ABN isn't one. */
 function invoiceBlocker(doc, settings) {
   const business = (settings && settings.business) || {};
@@ -933,6 +983,8 @@ module.exports = {
   PROPOSED_DISCLAIMER,
   buildInvoiceDocHtml,
   invoiceFilename,
+  buildAgreementHtml,
+  agreementFilename,
   invoiceBlocker,
   buildCostBreakdownHtml,
   costBreakdownBlocker,

@@ -359,3 +359,291 @@ test('opening the link logs "opened" once a day per version, and Home shows it (
   const mine = home.body.activity.filter((a) => a.kind === 'opened' && a.project.id === est.projectId);
   assert.deepEqual(mine.map((a) => a.detail.version), [2, 1, 1]);
 });
+
+// ── Signing (task 27) ───────────────────────────────────────────────────────
+
+const crypto = require('node:crypto');
+const LIMITS = { all: { max: 10000, windowMs: 60000 }, pdf: { max: 10000, windowMs: 60000 }, sign: { max: 10000, windowMs: 60000 } };
+/* A stand-in renderer: the HTML behind a PDF header, so a test can read what
+   the PDF would say without Chromium. `renders` counts the calls. */
+let renders = 0;
+let renderFails = false;
+let midRender = null;
+const fakeRender = async (html) => {
+  renders += 1;
+  // A real render takes a while: long enough for a second submit, or another
+  // project's booking, to arrive while it runs.
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  if (midRender) midRender();
+  if (renderFails) throw Object.assign(new Error('no chromium'), { code: 'pdf_unavailable' });
+  return Buffer.from('%PDF-fake\n' + html);
+};
+let signUrl;
+async function signer() {
+  if (!signUrl) signUrl = await start({ renderPdf: fakeRender, publicLimits: LIMITS });
+  return signUrl;
+}
+const sha = (t) => crypto.createHash('sha256').update(t, 'utf8').digest('hex');
+const sign = async (token, body, headers = {}) => fetch(`${await signer()}/public/estimates/${token}/accept`, {
+  method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body),
+}).then(json);
+/* What the page sends: the agreement it was given, the version it shows. */
+async function offer(token) {
+  const e = (await pub(token, await signer())).body.estimate;
+  return { e, body: { fullName: 'Priya Nair', role: 'Marketing lead', agree: true, version: e.version, key: e.agreement && e.agreement.key } };
+}
+const AGREEMENT = 'SERVICE AGREEMENT\nClient: {client_business} (ABN {client_abn})\nSignatory: {client_contact}, {signatory_role}\n' +
+  'Total {total}. Deposit ({deposit_pct}): {deposit_amount}. Balance {balance_amount}, due {due_days} days.\nDays:\n{production_days}\n' +
+  'Signed as {signatory_role} on {date}.';
+const setAgreement = (text, extra = {}) => api('/api/settings', {
+  method: 'PUT', body: JSON.stringify({ business: { name: 'LSC Creative', abn: '12345678901' }, agreement: { text }, ...extra }),
+});
+
+test('signing: the agreement is offered while open, signed as shown, and accepts the estimate (D39, D40, D18)', async () => {
+  await setAgreement(AGREEMENT, { invoicing: { depositPct: 40 } });
+  const est = await shoot();
+  const { token } = await sent(est);
+  // Edited after sending, not re-sent: the client signs, and is billed for, v1.
+  await api(`/api/estimates/${est.id}`, { method: 'PUT', body: JSON.stringify({ ...est, name: 'Edited after', shortNotice: false }) });
+
+  const { e, body } = await offer(token);
+  assert.equal(e.state, 'open');
+  assert.equal(e.signed, false);
+  const { parts, key } = e.agreement;
+  assert.equal(parts.length, 3, 'two gaps for the role');
+  const shown = parts.join(body.role);
+  assert.match(shown, /Signatory: Priya Nair, Marketing lead\n/);
+  assert.match(shown, /Client: Saltwater Co\. \(ABN 51 824 753 556\)/);
+  assert.match(shown, /Deposit \(40%\): \$[\d,]+\.\d\d\. Balance \$[\d,]+\.\d\d, due 14 days/);
+  assert.match(shown, /Signed as Marketing lead on 4 October 2026\./);
+  assert.match(key, /^[0-9a-f]{64}$/);
+
+  renders = 0;
+  const r = await sign(token, body, { 'user-agent': 'TestBrowser/1.0' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual([r.body.estimate.state, r.body.estimate.signed, r.body.estimate.agreement], ['accepted', true, undefined]);
+  assert.equal(renders, 1);
+
+  // The stored text is exactly what was shown, with its hash and the PDF of it.
+  const s = db.prepare(`SELECT s.* FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).all(est.id);
+  assert.equal(s.length, 1);
+  assert.deepEqual([s[0].full_name, s[0].role, s[0].agreement_text, s[0].agreement_sha256, s[0].user_agent],
+    ['Priya Nair', 'Marketing lead', shown, sha(shown), 'TestBrowser/1.0']);
+  assert.ok(s[0].ip, 'the IP is recorded');
+  const pdf = Buffer.from(s[0].pdf_blob).toString();
+  assert.ok(pdf.startsWith('%PDF'));
+  assert.ok(pdf.includes('Signatory: Priya Nair, Marketing lead'), 'the PDF prints the signed text');
+  assert.ok(pdf.includes(sha(shown)));
+
+  // The accept: the estimate accepted, every dated day confirmed, the pair at
+  // the setting's 40% made from v1's totals, not the edit's.
+  const f = (await folder(est.projectId)).body;
+  const mine = f.estimates.find((x) => x.id === est.id);
+  assert.equal(mine.status, 'accepted');
+  assert.deepEqual(mine.days.map((d) => d.status), ['confirmed', 'confirmed']);
+  assert.deepEqual(f.invoices.map((i) => [i.kind, i.number, i.status, i.pct]),
+    [['deposit', `INV-${est.upid}-D`, 'draft', 40], ['final', `INV-${est.upid}-F`, 'draft', null]]);
+  const snap = JSON.parse(db.prepare('SELECT estimate_snapshot_json FROM invoices WHERE project_id = ? AND kind = ?').get(est.projectId, 'deposit').estimate_snapshot_json);
+  assert.deepEqual([snap.name, snap.totals.totalIncGst], [est.name, est.totals.totalIncGst], 'billed as sent');
+  const dep = f.invoices.find((i) => i.kind === 'deposit');
+  assert.ok(shown.includes('$' + dep.amountDue.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')), 'the agreement’s deposit is the invoice’s');
+
+  // One activity row, on Home too, and the signature in the folder.
+  const log = f.activity.filter((a) => a.kind === 'signed');
+  assert.equal(log.length, 1);
+  assert.deepEqual(log[0].detail, {
+    estimateId: est.id, invoicing: 'pair', depositPct: 40, invoices: [`INV-${est.upid}-D`, `INV-${est.upid}-F`], rebook: [],
+    version: 1, signatureId: s[0].id, signedBy: 'Priya Nair', role: 'Marketing lead',
+  });
+  assert.equal(f.activity.filter((a) => a.kind === 'accepted').length, 0);
+  const home = (await api('/api/activity?limit=50').then(json)).body.activity;
+  assert.ok(home.some((a) => a.kind === 'signed' && a.project.id === est.projectId));
+  assert.deepEqual(f.signatures.map((x) => [x.id, x.version, x.fullName, x.role, x.estimateId]),
+    [[s[0].id, 1, 'Priya Nair', 'Marketing lead', est.id]]);
+
+  // The PDF opens for the owner and the client, the same bytes.
+  const owner = await api(`/api/projects/${est.projectId}/agreements/${s[0].id}/pdf`);
+  assert.equal(owner.status, 200);
+  assert.equal(owner.headers.get('content-type'), 'application/pdf');
+  assert.match(owner.headers.get('content-disposition'), /Service Agreement - PUB-\d+ v1 - Priya Nair\.pdf/);
+  const client = await fetch(`${await signer()}/public/estimates/${token}/agreement`);
+  assert.equal(client.status, 200);
+  assert.deepEqual(Buffer.from(await client.arrayBuffer()), Buffer.from(await owner.arrayBuffer()));
+  assert.equal((await api(`/api/projects/${est.projectId}x/agreements/${s[0].id}/pdf`)).status, 404, 'only under its own project');
+  await setAgreement('');
+});
+
+test('signing: two submits at once make one signature and one set of invoices', async () => {
+  const est = await shoot();
+  const { token } = await sent(est);
+  const { body } = await offer(token);
+  const [a, b] = await Promise.all([sign(token, body), sign(token, body)]);
+  assert.deepEqual([a.status, b.status], [200, 200]);
+  assert.deepEqual([a.body.already, b.body.already].filter(Boolean), [true], 'one of them was the first');
+  assert.equal(db.prepare(`SELECT COUNT(*) AS c FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id).c, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM invoices WHERE project_id = ?').get(est.projectId).c, 2);
+  assert.equal(db.prepare(`SELECT COUNT(*) AS c FROM activity WHERE project_id = ? AND kind = 'signed'`).get(est.projectId).c, 1);
+  // And again later: still the one signature, answered as accepted.
+  const again = await sign(token, body);
+  assert.deepEqual([again.status, again.body.already, again.body.estimate.state], [200, true, 'accepted']);
+});
+
+test('signing: refused once a proposed date is taken, or in any state but open (D41)', async () => {
+  const est = await shoot();
+  const { token } = await sent(est);
+  const { body } = await offer(token);
+  // While the client reads, another project confirms the proposed Tuesday.
+  const other = await shoot({ days: [day('d_take', est.days[1].date, 'confirmed')], activeRows: { prod: [capture('d_take')] } });
+  const r = await sign(token, body);
+  assert.deepEqual([r.status, r.body.error, r.body.state], [409, 'not_open', 'taken']);
+  const nothing = () => [
+    db.prepare(`SELECT COUNT(*) AS c FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id).c,
+    db.prepare('SELECT COUNT(*) AS c FROM invoices WHERE project_id = ?').get(est.projectId).c,
+    db.prepare('SELECT status FROM estimates WHERE id = ?').get(est.id).status,
+  ];
+  assert.deepEqual(nothing(), [0, 0, 'sent']);
+  assert.equal((await pub(token)).body.estimate.agreement, null, 'no agreement offered while taken');
+  await act(other.projectId, 'decline');
+
+  // Taken while the signed PDF was being made: checked again before storing.
+  const fresh = (await offer(token)).body;
+  midRender = () => db.prepare("UPDATE estimates SET status = 'sent' WHERE id = ?").run(other.id);
+  const late = await sign(token, fresh);
+  midRender = null;
+  assert.deepEqual([late.status, late.body.state], [409, 'taken']);
+  assert.deepEqual(nothing(), [0, 0, 'sent']);
+  db.prepare("UPDATE estimates SET status = 'declined' WHERE id = ?").run(other.id);
+
+  // Expired, declined: the same refusal.
+  today = '2026-11-04';
+  assert.deepEqual([(await sign(token, body)).body.state], ['expired']);
+  today = '2026-10-04';
+  await act(est.projectId, 'decline');
+  assert.deepEqual([(await sign(token, body)).body.state], ['declined']);
+  assert.deepEqual(nothing(), [0, 0, 'declined']);
+  // Accepted in the app: no signature to offer, and nothing to sign.
+  await act(est.projectId, 'reopen');
+  await sent(est);
+  await act(est.projectId, 'accept', { invoicing: 'single' });
+  const after = await sign(token, (await offer(token)).body);
+  assert.deepEqual([after.status, after.body.state], [409, 'accepted']);
+  assert.equal((await pub(token)).body.estimate.signed, false);
+  assert.equal((await fetch(`${await signer()}/public/estimates/${token}/agreement`)).status, 404);
+});
+
+test('signing: what must be typed, and a changed version or agreement asks for a re-read', async () => {
+  const est = await shoot();
+  const { token } = await sent(est);
+  const { e, body } = await offer(token);
+  const codes = async (patch) => {
+    const r = await sign(token, { ...body, ...patch });
+    return [r.status, r.body.error];
+  };
+  assert.deepEqual(await codes({ fullName: '  ' }), [400, 'name_required']);
+  assert.deepEqual(await codes({ role: '' }), [400, 'role_required']);
+  assert.deepEqual(await codes({ agree: 'yes' }), [400, 'agree_required']);
+  assert.deepEqual(await codes({ fullName: 'x'.repeat(101) }), [400, 'too_long']);
+  assert.deepEqual(await codes({ key: 'nope' }), [409, 'agreement_changed']);
+  assert.deepEqual(await codes({ version: 0 }), [409, 'version_changed']);
+  assert.equal((await sign('x'.repeat(43), body)).status, 404);
+
+  // The owner edits the agreement while the client reads it: the client gets
+  // the new text to read, and its key signs.
+  await setAgreement('New terms for {client_business}, signed by {signatory_role}.');
+  const r = await sign(token, body);
+  assert.deepEqual([r.status, r.body.error], [409, 'agreement_changed']);
+  assert.deepEqual(r.body.agreement.parts, ['New terms for Saltwater Co., signed by ', '.']);
+  assert.notEqual(r.body.agreement.key, e.agreement.key);
+  // A re-send while they read: a new version to look at first.
+  await sent(est, '2026-11-21');
+  const v = await sign(token, { ...body, key: r.body.agreement.key });
+  assert.deepEqual([v.status, v.body.error], [409, 'version_changed']);
+  const fresh = await offer(token);
+  // Control characters and runs of spaces in what's typed come out as one space.
+  const ok = await sign(token, { ...fresh.body, fullName: ' Priya \u0000 Nair\n', role: 'Head\tof  brand' });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const s = db.prepare(`SELECT s.full_name, s.role, s.agreement_text FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id);
+  assert.deepEqual(s, { full_name: 'Priya Nair', role: 'Head of brand', agreement_text: 'New terms for Saltwater Co., signed by Head of brand.' });
+  await setAgreement('');
+});
+
+test('signing: with no agreement written, the client accepts the estimate itself; nothing internal leaks', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify({}) });
+  const est = await shoot();
+  const { token } = await sent(est);
+  const raw = await (await fetch(`${await signer()}/public/estimates/${token}`)).text();
+  assert.doesNotMatch(raw, FORBIDDEN);
+  const { e, body } = await offer(token);
+  assert.match(e.agreement.parts.join('Director'), new RegExp(`Saltwater Co\\. accepts estimate ${est.upid}, Harbour \\d+, for \\$[\\d,.]+, as set out in the estimate\\.[\\s\\S]*Priya Nair, Director, on 4 October 2026\\.`));
+  const r = await fetch(`${await signer()}/public/estimates/${token}/accept`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: PAGES }, body: JSON.stringify(body),
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('access-control-allow-origin'), PAGES);
+  assert.equal(r.headers.get('access-control-allow-credentials'), null);
+  const text = await r.text();
+  assert.doesNotMatch(text, FORBIDDEN);
+  keysOf(JSON.parse(text)).forEach((k) => assert.doesNotMatch(k, FORBIDDEN, k));
+});
+
+test('signing: the PDF renderer being down doesn\'t stop a signature; the PDF is made on first download', async () => {
+  const est = await shoot();
+  const { token } = await sent(est);
+  renderFails = true;
+  const r = await sign(token, (await offer(token)).body);
+  renderFails = false;
+  assert.equal(r.status, 200);
+  const blob = () => db.prepare(`SELECT s.pdf_blob FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id).pdf_blob;
+  assert.equal(blob(), null);
+  renders = 0;
+  const pdf = await fetch(`${await signer()}/public/estimates/${token}/agreement`);
+  assert.equal(pdf.status, 200);
+  assert.ok(Buffer.from(await pdf.arrayBuffer()).toString().startsWith('%PDF'));
+  assert.ok(blob(), 'kept');
+  await fetch(`${await signer()}/public/estimates/${token}/agreement`);
+  assert.equal(renders, 1, 'made once');
+});
+
+test('signing: a project that can\'t be invoiced yet is still accepted, with no invoices', async () => {
+  const est = await shoot();
+  const { token } = await sent(est);
+  // An invoice number another invoice already holds (D36).
+  db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, created_at, updated_at) VALUES ('inv_clash', ?, 'single', ?, 'draft', ?, ?)`)
+    .run(est.projectId, `INV-${est.upid}-D`, nowIso(), nowIso());
+  const r = await sign(token, (await offer(token)).body);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  db.prepare("DELETE FROM invoices WHERE id = 'inv_clash'").run();
+  const f = (await folder(est.projectId)).body;
+  assert.deepEqual([f.project.acceptedAt !== null, f.invoices.length], [true, 0]);
+  const log = f.activity.find((a) => a.kind === 'signed');
+  assert.deepEqual([log.detail.invoices, log.detail.invoiceProblem], [[], 'invoice_number_taken']);
+  // The owner then makes them as for any accepted project.
+  assert.equal((await act(est.projectId, 'invoices', {})).status, 200);
+});
+
+test('signing: the real renderer makes a PDF that opens', async () => {
+  const url = await start({ publicLimits: LIMITS });
+  const est = await shoot();
+  const { token } = await sent(est);
+  const e = (await pub(token, url)).body.estimate;
+  const r = await fetch(`${url}/public/estimates/${token}/accept`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+  });
+  assert.equal(r.status, 200);
+  const pdf = await fetch(`${url}/public/estimates/${token}/agreement`);
+  if (pdf.status === 503) return; // no Chromium on this machine
+  assert.equal(pdf.status, 200);
+  const bytes = Buffer.from(await pdf.arrayBuffer());
+  assert.equal(bytes.subarray(0, 5).toString(), '%PDF-');
+  assert.ok(bytes.length > 1000);
+});
+
+test('"today" on the client\'s pages is Sydney\'s, not the server\'s UTC', () => {
+  const { localToday } = require('../src/routes/projects');
+  // 7am on the 5th in Sydney (AEDT, UTC+11) is still the 4th in UTC.
+  assert.equal(localToday(new Date('2026-10-04T20:00:00Z')), '2026-10-05');
+  assert.equal(localToday(new Date('2026-10-04T12:59:00Z')), '2026-10-04');
+  // Winter (AEST, UTC+10).
+  assert.equal(localToday(new Date('2026-06-30T14:00:00Z')), '2026-07-01');
+});

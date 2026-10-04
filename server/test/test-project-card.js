@@ -136,6 +136,11 @@ test('activity reads the same in the folder and on Home: one function (task 22)'
   assert.equal(say22('invoice_paid', { number: 'INV-A-D', amount: 2000, via: 'bank' }), 'INV-A-D paid, $2,000.00 by bank transfer');
   assert.equal(say22('invoice_paid', { amount: 12.5, via: 'card' }), 'Invoice paid, $12.50 by card');
   assert.equal(say22('declined', {}), 'Declined');
+  // Signed on the client's page (task 27).
+  assert.equal(say22('signed', { version: 1, signedBy: 'Priya Nair', role: 'Producer', invoicing: 'pair', depositPct: 50, invoices: ['INV-A-D', 'INV-A-F'] }),
+    'Client signed and accepted · Priya Nair, Producer · INV-A-D, INV-A-F (50% deposit)');
+  assert.equal(say22('signed', { version: 2, signedBy: 'Priya Nair', role: 'Producer', invoices: [], invoiceProblem: 'needs_upid' }),
+    'Client signed and accepted v2 · Priya Nair, Producer · no invoices made yet');
   assert.equal(ProjectCard.activityText({ kind: 'estimate_opened' }, TODAY), 'Estimate opened');
 });
 

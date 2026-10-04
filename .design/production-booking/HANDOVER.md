@@ -155,12 +155,22 @@ has to create the account, add its DNS records in Cloudflare and supply the key 
   note in `TASKS.md`. `api-scratch` has one `opened` row for B210-PLAN; a backup from before is in
   this session's scratchpad only.
 
-**Exact next item: TASKS.md task 27** (signing: the dialog, `POST /public/estimates/:token/accept`,
-the signature row and PDF, then task 19's accept transaction; add `signed` to the public reply so
-the thank-you offers "Download signed agreement", and replace c.js's Accept stub). The agreement
-text is in live Settings; fill it with `agreementValues` + `fillAgreement` from the frozen version.
-Check the "Inputs needed from the user" list first. The user should also try the live site once
-(sign in, open a project).
+- **E, task 27** (signing: the dialog, `POST /public/estimates/:token/accept`, the signature and
+  its PDF, the accept through the shared `acceptEstimate`, the folder's "Signed agreement").
+  2026-10-04, committed, **not deployed** (with stage E at task 32). Its decisions are in its note
+  in `TASKS.md`. `localToday` is now Sydney's date. `api-scratch` is as it was (a backup from
+  before is in this session's scratchpad only).
+
+**Open question for the user (task 27):** after signing, the client page still lists the days as
+sent ("Proposed", "Pencilled"), though the server has confirmed them. It's the frozen version,
+under a "Thank you" notice. Ask whether accepted pages should read the dated days as Confirmed.
+
+**Exact next item: TASKS.md task 28** (email and the send queue, Sonnet/high). It needs the
+Resend SMTP key (D102), still not supplied: build `mail.js` against a stub transport, and ask
+for the key before calling it done. Signing's two emails (owner notice, signed copy to the
+client) are queued after `signing.js`'s transaction. If the key is still missing, task 30 (the
+client invoice page, Opus/high) needs nothing from the user. The user should also try the live
+site once (sign in, open a project).
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
@@ -188,14 +198,11 @@ Check the "Inputs needed from the user" list first. The user should also try the
   `foreign_key_check` refuses the whole migration (and the boot) if the live DB already holds a row
   pointing at nothing. The boot log line `[db] v13: N project(s) … M need a UPID …` gives the fix-up
   count.
-- **Stage E's accept** (the client page's Sign) should call the same pieces as task 19's route:
-  `confirmDays`, `createInvoices` and the `accepted` activity, inside its signing transaction. D41
-  pauses it while a proposed day is taken, which the in-app accept doesn't check.
 - **The invoice snapshot is owner-only:** `estimate_snapshot_json` is the whole estimate, including
   its `totals` with internal figures. A public invoice page (E) must print from it through the
   client PDF's fields, never send it whole.
-- **Stage E's client events** (signed; opened is in since task 26) go into `HOME_KINDS`
-  (`routes/projects.js`) to reach Home, and get a case in `ProjectCard.activityText`.
+- **Stage E's client events** (opened since task 26, signed since 27) are in `HOME_KINDS`
+  (`routes/projects.js`) and `ProjectCard.activityText`; a new one needs both.
 - **Stage E's send panel** replaces both Mark sents (estimate and invoice). An invoice's public page
   prints through `pdf.js` `buildInvoiceDocHtml`'s fields, never `invoiceJson` whole (its `estimate`
   is the owner-only snapshot).

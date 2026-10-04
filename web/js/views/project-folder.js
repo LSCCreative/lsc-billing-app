@@ -8,7 +8,8 @@
  *                    action as the primary button; the quiet actions under it.
  *   Production days  a compact, read-only list; each row opens the editor at
  *                    that day's card.
- *   Documents        the estimate, its Cost Breakdown, and the invoices.
+ *   Documents        the estimate, its Cost Breakdown, the signed agreement,
+ *                    and the invoices.
  *   Activity         this project's log, newest first.
  *
  * It is one read, GET /api/projects/:id, and every action answers with the
@@ -273,6 +274,16 @@ const ProjectFolder = (() => {
         name: 'Cost Breakdown' + (many ? ' — ' + esc(e.name || 'Untitled') : ''),
         meta: 'For you only: how the price is made up',
         actions: [{ id: 'breakdown', label: '↓ PDF', target: e.id, label2: 'Download the Cost Breakdown PDF' + (many ? ' for ' + (e.name || 'Untitled') : '') }],
+      });
+    });
+    // Signed service agreements (task 27, D42): the client's signature, kept
+    // as the PDF they signed.
+    (folder.signatures || []).forEach((sig) => {
+      const v = sig.version > 1 ? ' v' + sig.version : '';
+      docs.push({
+        name: 'Signed agreement' + esc(v),
+        meta: esc(sig.fullName + (sig.role ? ', ' + sig.role : '')) + ' · signed ' + esc(ProjectCard.dayMonth(sig.signedAt, today)),
+        actions: [{ id: 'agreement', label: '↓ PDF', target: sig.id, label2: 'Download the signed agreement' + v }],
       });
     });
     const numberOf = (id) => ((folder.invoices.find((i) => i.id === id) || {}).number || '');
@@ -839,11 +850,17 @@ const ProjectFolder = (() => {
     }
     const breakdown = kind === 'breakdown' || kind === 'inv-breakdown';
     const invoice = kind === 'inv-pdf' || kind === 'inv-breakdown' ? folder.invoices.find((i) => i.id === estimateId) : null;
-    const what = breakdown ? 'the Cost Breakdown' : kind === 'legacy-pdf' || invoice ? 'the invoice PDF' : 'the PDF';
+    const signed = kind === 'agreement' ? (folder.signatures || []).find((x) => x.id === estimateId) : null;
+    const what = breakdown ? 'the Cost Breakdown' : signed ? 'the signed agreement'
+      : kind === 'legacy-pdf' || invoice ? 'the invoice PDF' : 'the PDF';
     Toast.working(breakdown ? 'Generating the Cost Breakdown…' : 'Generating PDF…');
     try {
       let reply;
-      if (invoice) {
+      if (signed) {
+        // Stored at signing; nothing to generate unless the renderer was down then.
+        reply = await LSCApi.getPdf('/api/projects/' + encodeURIComponent(folder.project.id) + '/agreements/' +
+          encodeURIComponent(signed.id) + '/pdf');
+      } else if (invoice) {
         // An app-made invoice (task 20): its own routes. A draft prints issued today.
         reply = await LSCApi.postPdf('/api/invoices/' + encodeURIComponent(invoice.id) + '/' +
           (breakdown ? 'cost-breakdown' : 'pdf') + '?today=' + LSCUtil.today(), breakdown ? undefined : {});
@@ -854,7 +871,9 @@ const ProjectFolder = (() => {
           : await LSCApi.postPdf(base + '/pdf', kind === 'pdf' ? { as: 'estimate' } : undefined);
       }
       const estimate = folder.estimates.find((e) => e.id === estimateId) || {};
-      const fallback = invoice
+      const fallback = signed
+        ? 'Service Agreement - ' + (folder.project.upid || 'Estimate') + '.pdf'
+        : invoice
         ? (breakdown ? 'Cost Breakdown_' : '') + (invoice.number || 'invoice') + '.pdf'
         : breakdown
           ? 'Cost Breakdown_' + (estimate.upid || 'EST') + '.pdf'
@@ -868,7 +887,7 @@ const ProjectFolder = (() => {
       if (err.code === 'abn_required') report(err.message, true);
       else if (err.code === 'breakdown_stale') report(err.message);
       else if (err.code === 'pdf_unavailable') report('Couldn’t make ' + what + ' — the server has no PDF renderer. Check Chromium is installed in the container.');
-      else if (err.status === 404) report('Couldn’t make ' + what + ' — that ' + (invoice ? 'invoice' : 'estimate') + ' no longer exists on the server.');
+      else if (err.status === 404) report('Couldn’t make ' + what + ' — that ' + (signed ? 'signature' : invoice ? 'invoice' : 'estimate') + ' no longer exists on the server.');
       else report('Couldn’t make ' + what + ': ' + failureText(err));
     } finally {
       if (button.isConnected) {

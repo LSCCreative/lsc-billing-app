@@ -652,7 +652,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   client snapshot). Browser (api-scratch): 10 events, each to its folder; 1280/800/375 via headless
   Chrome, no overflow, focus ring visible.
 
-- [ ] **23. D polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium).
+- [x] **23. D polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium). **Deployed 2026-10-04** (`main` `2c7131b`; see HANDOVER).
   - **Accessibility:** the folder, Projects, Settings and fix-up screens.
   - **Responsive:** 1280, 800 and 375.
   - **Deploy:** ask first, then NAS v13 (back up first; read the boot log's project counts and
@@ -809,7 +809,7 @@ Tasks 24–26 can be built with placeholders.
     version not in the throttle key, a two-day window, not in `HOME_KINDS`, never logged).
   - Housekeeping: `GET /api/clients/:id/estimates` deleted (unused since D).
 
-- [ ] **27. Signing** (auth/security — Opus/high). _Depends on: 19, 26._
+- [x] **27. Signing** (auth/security — Opus/high). _Depends on: 19, 26._
   - **The signing dialog** (full screen on phones):
     - the agreement filled from the client snapshot (D39), in a focusable, labelled scroll box;
     - "Service agreement FAQ" (D55);
@@ -828,6 +828,44 @@ Tasks 24–26 can be built with placeholders.
   **Done when** tests cover a race (two submits), a submit after the state changes to `taken`, the
   stored text matching what was shown, and the PDF opening. Placeholder agreement text is allowed
   until the user supplies theirs.
+
+  **Done 2026-10-04** (commit below, not deployed: new routes, NAS before Pages with stage E at
+  task 32). `npm test` 491/491 (9 new in `test-public.js`). New `server/src/signing.js`.
+  - **What's signed is what was shown.** The GET carries `agreement: { parts, key }` only while
+    `open`: the Settings text filled (`agreementValues` + `fillAgreement`) from the FROZEN version,
+    with a gap wherever `{signatory_role}` goes. The dialog joins the parts with the role as it's
+    typed; signing joins the same parts with the same role and stores that text, its sha256 and
+    the PDF. `key` hashes the version and parts: if the agreement, the deposit % or the date
+    changed while the client read, the POST answers `agreement_changed` with the new text.
+  - **The accept** is task 19's, now one function (`routes/projects.js acceptEstimate`) for both
+    ways in. A signature bills the **frozen version's snapshot** (an edit after sending, not
+    re-sent, isn't billed) and confirms the **live** dated days. Pair at the project's deposit %,
+    or single if the project already chose single. It logs one **`signed`** activity (on Home;
+    "Client signed and accepted · name, role · invoices"), not `accepted`.
+  - **Never lost to an owner-side problem:** a project that can't be invoiced (needs a UPID, a
+    number taken) is still signed and accepted, with no invoices and `invoiceProblem` in the log
+    (the owner then uses Create invoices); a PDF renderer that's down still stores the signature,
+    and the PDF is made from the stored text on its first download (`public.js signaturePdf`).
+  - **Order:** validate → gate (link, already signed → 200 `already`, state `open`, version, key)
+    → render the PDF (async) → transaction: the gate again, insert, accept. Two submits: one
+    signature, both 200. A date taken during the render is refused.
+  - **Routes:** `POST /public/estimates/:token/accept` (10 / 10 min), `GET …/agreement` (the PDF
+    limit); owner `GET /api/projects/:id/agreements/:sigId/pdf`; the folder reply has `signatures`
+    and Documents lists "Signed agreement". `signed` on the public reply drives the thank-you's
+    download. With no agreement in Settings, `FALLBACK_TEXT` (accepting the estimate only).
+  - **`localToday` is Sydney's date**, not the server's: the container is UTC, so expiry and an
+    agreement's `{date}` were a day behind until 10–11am.
+  - **The dialog** is a native `<dialog>` (the client page loads none of the app, so no `Modal`):
+    full screen under 560px, a sheet above; the agreement box scrolls so the fields and Sign &
+    submit stay in view; Escape closes and focus returns to Accept; a line under the disabled
+    button says what's still missing.
+  - Checked in the browser against `api-scratch` at 375 / 800 / 1280 (dispatched clicks, a real
+    Escape): sign, the agreement changing mid-read, a date taken mid-sign, the thank-you's download,
+    the folder's row and download. Scratch put back as it was. Mutations caught 18 of 18 (no
+    in-transaction re-check, role not stored, billed live, no state / key / version check, tick
+    not required, name not cleaned, logged as accepted, fixed deposit %, a refusal blocking the
+    signature, `signed` never true, the PDF never kept, agreement offered in every state, `signed`
+    off Home, owner PDF under any project, today in UTC, no hash on the PDF).
 
 - [ ] **28. Email and the send queue** (backend — Sonnet/high). _Depends on: 25._
   - **`server/src/mail.js`:** `nodemailer` over plain SMTP (Resend, D102) with `SMTP_HOST`,

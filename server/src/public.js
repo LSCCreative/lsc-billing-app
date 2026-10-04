@@ -28,6 +28,7 @@ const { readPricing, readSettings } = require('./ratecard');
 const { docSettings } = require('./documents');
 const {
   serviceGroups, daysWithItems, qtyText, dayIdsOf, hasProposedDay, PROPOSED_DISCLAIMER,
+  buildAgreementHtml, renderPdfBuffer,
 } = require('./pdf');
 
 /* 32 random bytes, base64url: 43 characters, 256 bits. It travels in the
@@ -222,6 +223,9 @@ function publicEstimate(db, token, today) {
     unavailableDays: view.days.filter((d) => d.unavailable).map((d) => d.date),
     latestToken,
     faqUrl: docSettings(readSettings(db)).faqUrl,
+    // Whether this version was signed here (task 27): the thank-you then
+    // offers the signed agreement. One accepted in the app never was.
+    signed: Boolean(db.prepare('SELECT 1 FROM signatures WHERE version_id = ?').get(version.id)),
   });
 }
 
@@ -268,4 +272,41 @@ function publicPdfSource(db, token) {
   return { n: version.n, estimate: { ...snap.estimate, docType: 'estimate' }, pricing: snap.pricing, business: snap.business || {} };
 }
 
-module.exports = { newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource, logOpened, OPENED_EVERY_MS };
+/**
+ * A signature with what its PDF and the folder print: the version's number,
+ * the estimate's UPID and project. By the signature's id, or (for a client's
+ * link) by the link's newest version.
+ */
+const SIGNATURE_SQL = `
+  SELECT s.*, v.n, v.estimate_id, e.project_id, e.upid FROM signatures s
+    JOIN estimate_versions v ON v.id = s.version_id
+    JOIN estimates e ON e.id = v.estimate_id`;
+
+function signatureRow(db, id) {
+  return db.prepare(SIGNATURE_SQL + ' WHERE s.id = ?').get(String(id)) || null;
+}
+
+function signatureOfLink(db, token) {
+  return db.prepare(SIGNATURE_SQL + `
+     WHERE e.public_token = ?
+       AND v.n = (SELECT MAX(n) FROM estimate_versions WHERE estimate_id = e.id)
+  `).get(String(token)) || null;
+}
+
+/**
+ * The signed agreement's PDF bytes (D66). Signing stores them; if the
+ * renderer was down then, they're made now from the stored text (which is
+ * the record; the PDF is its print) and kept, so the next download is
+ * instant and never differs.
+ */
+async function signaturePdf(db, sig, render = renderPdfBuffer) {
+  if (sig.pdf_blob) return Buffer.from(sig.pdf_blob);
+  const buffer = await render(buildAgreementHtml(sig));
+  db.prepare('UPDATE signatures SET pdf_blob = ? WHERE id = ? AND pdf_blob IS NULL').run(buffer, sig.id);
+  return buffer;
+}
+
+module.exports = {
+  newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource, logOpened, OPENED_EVERY_MS,
+  signatureRow, signatureOfLink, signaturePdf,
+};

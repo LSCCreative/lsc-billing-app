@@ -10,6 +10,13 @@
  * state) from the API named in ../js/config.js, without credentials: the
  * client has no session and is never offered one. That GET is also what logs
  * "opened" for the owner (task 26), at most once a day per version.
+ *
+ * Accept opens the signing dialog (task 27, D40): the agreement the GET
+ * carried while the estimate is open, a full name, a role and the "I agree"
+ * tick. The agreement arrives as `parts`, the text with a gap wherever the
+ * signatory's role goes; the dialog joins them with the role as it's typed,
+ * and the server joins the same parts with the same role to store, so what is
+ * signed is exactly what was on screen.
  */
 (function () {
   'use strict';
@@ -242,7 +249,10 @@
         // to offer until signing (task 27) says there is one.
         return notice('Thank you',
           'We’ll be in touch to confirm the details.',
-          e.signed ? '<button type="button" class="btn btn-quiet" data-act="agreement">Download signed agreement</button>' : '', 'done');
+          e.signed
+            ? '<button type="button" class="btn btn-quiet" data-act="agreement">Download signed agreement</button>' +
+              '<p class="panel-msg" id="ag-msg" role="status"></p>'
+            : '', 'done');
       default:
         return '';
     }
@@ -269,7 +279,10 @@
     '</footer>';
   }
 
+  let current = null; // the estimate on screen
+
   function render(e) {
+    current = e;
     doc.innerHTML = masthead(e) + deliverables(e) + days(e) + included(e) + investment(e) + action(e) + footer(e);
     doc.removeAttribute('aria-busy');
     document.title = (e.name ? e.name + ' — ' : '') + 'Estimate — LSC Creative';
@@ -330,7 +343,7 @@
 
   // ── The PDF ───────────────────────────────────────────────────────────────
 
-  function filenameOf(disposition) {
+  function filenameOf(disposition, fallback) {
     const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition || '');
     if (star) {
       try {
@@ -338,11 +351,14 @@
       } catch (_err) { /* fall through to the plain name */ }
     }
     const plain = /filename="?([^";]+)"?/i.exec(disposition || '');
-    return plain ? plain[1] : 'Estimate.pdf';
+    return plain ? plain[1] : fallback;
   }
 
-  async function downloadPdf(btn) {
-    const msg = document.getElementById('pdf-msg');
+  /* The estimate's PDF (`/pdf`, status in #pdf-msg) or, once signed, the
+     signed agreement (`/agreement`, status in #ag-msg). */
+  async function downloadPdf(btn, what) {
+    const agreement = what === 'agreement';
+    const msg = document.getElementById(agreement ? 'ag-msg' : 'pdf-msg');
     const show = (text) => {
       if (msg) msg.textContent = text;
     };
@@ -352,13 +368,14 @@
     btn.textContent = 'Preparing PDF…';
     show('');
     try {
-      const res = await fetch(API + '/public/estimates/' + encodeURIComponent(token) + '/pdf', { credentials: 'omit', cache: 'no-store' });
+      const res = await fetch(API + '/public/estimates/' + encodeURIComponent(token) + (agreement ? '/agreement' : '/pdf'),
+        { credentials: 'omit', cache: 'no-store' });
       if (!res.ok) throw res.status;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filenameOf(res.headers.get('Content-Disposition'));
+      a.download = filenameOf(res.headers.get('Content-Disposition'), agreement ? 'Service Agreement.pdf' : 'Estimate.pdf');
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -368,7 +385,7 @@
       show(status === 429
         ? 'That’s a lot of downloads in a short time. Try again in a few minutes.'
         : status === 404
-          ? 'This estimate is no longer available. Ask us for a copy.'
+          ? (agreement ? 'We couldn’t find the signed agreement. Ask us for a copy.' : 'This estimate is no longer available. Ask us for a copy.')
           : typeof status === 'number'
             ? 'We couldn’t make the PDF just now. Try again shortly, or ask us for a copy.'
             : 'Check your connection, then try again.');
@@ -379,16 +396,245 @@
     }
   }
 
+  // ── Signing (task 27) ─────────────────────────────────────────────────────
+
+  /* One dialog for the page's life, so a client who closes it to look
+     something up finds what they typed when they come back. Native <dialog>:
+     showModal makes the page behind it inert, holds focus inside, and closes
+     on Escape. */
+  let dlg = null;
+  let agreement = null; // { parts, key } as last given by the server
+  let signing = false;
+  let opener = null;
+
+  const field = (id) => dlg.querySelector('#' + id);
+  const cleanRole = () => field('sg-role').value.replace(/\s+/g, ' ').trim();
+
+  function buildDialog() {
+    dlg = document.createElement('dialog');
+    dlg.className = 'sign';
+    dlg.setAttribute('aria-labelledby', 'sg-title');
+    dlg.setAttribute('aria-describedby', 'sg-intro');
+    dlg.innerHTML =
+      '<form class="sign-form" id="sg-form" novalidate>' +
+        '<div class="sign-head">' +
+          '<h2 class="sign-title" id="sg-title">Sign the service agreement</h2>' +
+          '<button type="button" class="sign-close" data-sign="close" aria-label="Close">' +
+            '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 4l12 12M16 4L4 16" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>' +
+          '</button>' +
+        '</div>' +
+        '<p class="sign-intro" id="sg-intro">Read it through, then sign with your full name and role.</p>' +
+        '<div class="sign-text" id="sg-text" tabindex="0" role="region" aria-label="Service agreement"></div>' +
+        '<p class="sign-faq" id="sg-faq"></p>' +
+        '<div class="sign-fields">' +
+          '<div class="sign-field"><label for="sg-name">Full name</label>' +
+            '<input id="sg-name" name="fullName" type="text" autocomplete="name" maxlength="100" required></div>' +
+          '<div class="sign-field"><label for="sg-role">Role</label>' +
+            '<input id="sg-role" name="role" type="text" autocomplete="organization-title" maxlength="100" required></div>' +
+        '</div>' +
+        '<label class="sign-agree"><input id="sg-agree" type="checkbox"> <span>I agree to the service agreement</span></label>' +
+        '<p class="sign-msg" id="sg-msg" role="alert"></p>' +
+        '<button type="submit" class="btn btn-primary" id="sg-submit" aria-describedby="sg-hint" disabled>Sign &amp; submit</button>' +
+        '<p class="sign-hint" id="sg-hint"></p>' +
+      '</form>';
+    document.body.appendChild(dlg);
+
+    field('sg-form').addEventListener('input', () => {
+      if (field('sg-msg').dataset.kind === 'input') showMsg('');
+      fillRole();
+      readiness();
+    });
+    field('sg-form').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      submit();
+    });
+    dlg.querySelector('[data-sign="close"]').addEventListener('click', () => closeSigning());
+    // Escape: not while a signature is on its way.
+    dlg.addEventListener('cancel', (ev) => {
+      if (signing) ev.preventDefault();
+    });
+    dlg.addEventListener('close', () => {
+      document.documentElement.classList.remove('is-signing');
+      if (opener && opener.isConnected) opener.focus();
+    });
+  }
+
+  /* The agreement, with the role (or a marked gap until there is one) in
+     each place it goes. Text nodes throughout: nothing in it is markup. */
+  function showAgreement() {
+    const box = field('sg-text');
+    box.textContent = '';
+    agreement.parts.forEach((part, i) => {
+      box.appendChild(document.createTextNode(part));
+      if (i < agreement.parts.length - 1) {
+        const slot = document.createElement('span');
+        slot.className = 'sign-slot';
+        box.appendChild(slot);
+      }
+    });
+    fillRole();
+  }
+
+  function fillRole() {
+    const role = cleanRole();
+    dlg.querySelectorAll('.sign-slot').forEach((slot) => {
+      slot.textContent = role || 'your role';
+      slot.classList.toggle('is-empty', !role);
+    });
+  }
+
+  function ready() {
+    return Boolean(field('sg-name').value.trim() && cleanRole() && field('sg-agree').checked);
+  }
+
+  /* Sign & submit stays disabled until all three are done (D40); the line
+     under it says what's still missing, so a disabled button is never a
+     mystery. */
+  function readiness() {
+    const missing = [];
+    if (!field('sg-name').value.trim()) missing.push('your full name');
+    if (!cleanRole()) missing.push('your role');
+    if (!field('sg-agree').checked) missing.push('the “I agree” tick');
+    field('sg-submit').disabled = signing || missing.length > 0;
+    field('sg-hint').textContent = signing ? '' : missing.length
+      ? 'Still needed: ' + missing.slice(0, -1).join(', ') + (missing.length > 1 ? ' and ' : '') + missing[missing.length - 1] + '.'
+      : 'Signing accepts the estimate and confirms its dates.';
+  }
+
+  function showMsg(text, kind) {
+    const msg = field('sg-msg');
+    msg.textContent = text;
+    msg.dataset.kind = kind || '';
+  }
+
+  function openSigning(btn) {
+    if (!current || current.state !== 'open' || !current.agreement) {
+      say('This estimate can’t be accepted just now. Reload the page to see why.');
+      return;
+    }
+    if (!dlg) buildDialog();
+    opener = btn;
+    // A newer agreement than the one in the dialog (the page was reloaded,
+    // or a newer version opened): show it from the top.
+    if (!agreement || agreement.key !== current.agreement.key) {
+      agreement = current.agreement;
+      showAgreement();
+      field('sg-agree').checked = false;
+      field('sg-text').scrollTop = 0;
+      showMsg('');
+    }
+    const faq = field('sg-faq');
+    faq.innerHTML = current.faqUrl
+      ? '<a href="' + esc(current.faqUrl) + '" target="_blank" rel="noopener">Service agreement FAQ<span class="visually-hidden"> (opens in a new tab)</span></a>'
+      : '';
+    readiness();
+    document.documentElement.classList.add('is-signing');
+    dlg.showModal();
+    // The agreement first: it's what to read.
+    field('sg-text').focus();
+  }
+
+  function closeSigning() {
+    if (signing || !dlg || !dlg.open) return;
+    dlg.close();
+  }
+
+  async function submit() {
+    if (signing || !ready()) return readiness();
+    signing = true;
+    const btn = field('sg-submit');
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Signing…';
+    showMsg('');
+    readiness();
+    let res = null;
+    let body = null;
+    try {
+      res = await fetch(API + '/public/estimates/' + encodeURIComponent(token) + '/accept', {
+        method: 'POST',
+        credentials: 'omit',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          fullName: field('sg-name').value,
+          role: field('sg-role').value,
+          agree: field('sg-agree').checked,
+          version: current.version,
+          key: agreement.key,
+        }),
+      });
+      body = await res.json().catch(() => null);
+    } catch (_err) {
+      res = null;
+    }
+    signing = false;
+    btn.removeAttribute('aria-busy');
+    btn.innerHTML = 'Sign &amp; submit';
+    readiness();
+
+    if (res && res.ok && body && body.estimate) {
+      // Signed: the page becomes the thank-you, read from the server's reply.
+      opener = null;
+      dlg.close();
+      render(body.estimate);
+      const thanks = doc.querySelector('#h-notice');
+      if (thanks) {
+        thanks.setAttribute('tabindex', '-1');
+        thanks.scrollIntoView({ block: 'center' });
+        thanks.focus({ preventScroll: true });
+      }
+      say('Signed. Thank you, we’ll be in touch to confirm the details.');
+      return undefined;
+    }
+    const code = body && body.error;
+    if (res && res.status === 409 && code === 'agreement_changed' && body.agreement) {
+      // The text changed while it was being read: the new one, from the top,
+      // and the tick asked for again.
+      agreement = body.agreement;
+      showAgreement();
+      field('sg-agree').checked = false;
+      field('sg-text').scrollTop = 0;
+      readiness();
+      showMsg(body.message || 'The agreement has just been updated. Read it through again before you sign.');
+      field('sg-text').focus();
+      return undefined;
+    }
+    if (res && (res.status === 409 || res.status === 404)) {
+      // Something about the estimate changed (a newer version, a date taken,
+      // it expired): the page shows where it now stands.
+      opener = null;
+      dlg.close();
+      await load();
+      doc.focus({ preventScroll: true });
+      say(code === 'version_changed'
+        ? 'We’ve just sent a newer version of this estimate. Look it over before you sign.'
+        : 'This estimate changed while you were signing, so it wasn’t signed. The page now shows where it stands.');
+      return undefined;
+    }
+    if (res && res.status === 400) {
+      showMsg((body && body.message) || 'Check your name, role and the tick, then try again.', 'input');
+    } else if (res && res.status === 429) {
+      showMsg('That’s a lot of attempts in a short time. Wait a few minutes, then try again.');
+    } else {
+      showMsg(res
+        ? 'Something went wrong on our side, and it wasn’t signed. Try again in a moment.'
+        : 'We couldn’t reach our server, so it wasn’t signed. Check your connection, then try again.');
+    }
+    btn.focus();
+    return undefined;
+  }
+
   // ── Wiring ────────────────────────────────────────────────────────────────
 
   doc.addEventListener('click', (ev) => {
     const btn = ev.target.closest('[data-act]');
     if (!btn || btn.disabled) return;
     const act = btn.dataset.act;
-    if (act === 'pdf') return void downloadPdf(btn);
+    if (act === 'pdf') return void downloadPdf(btn, 'pdf');
+    if (act === 'agreement') return void downloadPdf(btn, 'agreement');
     if (act === 'retry') return void load();
-    // Accept and the signed agreement are task 27 (signing).
-    say('Signing online isn’t switched on yet. Reply to our email to accept, and we’ll take it from there.');
+    if (act === 'accept') return void openSigning(btn);
+    return undefined;
   });
 
   window.addEventListener('hashchange', () => {

@@ -13,9 +13,10 @@
  */
 
 const { config } = require('../config');
-const { buildEstimateHtml, exportFilename, renderPdfBuffer } = require('../pdf');
+const { buildEstimateHtml, exportFilename, renderPdfBuffer, agreementFilename } = require('../pdf');
 const { nowIso } = require('../db');
-const { publicEstimate, publicPdfSource, logOpened } = require('../public');
+const { publicEstimate, publicPdfSource, logOpened, signatureOfLink, signaturePdf } = require('../public');
+const { signEstimate, agreementOffer } = require('../signing');
 const { localToday } = require('./projects');
 
 /* CORS for the Pages origin, without credentials: a client page has no
@@ -86,21 +87,27 @@ const notFound = (res) => res.status(404).json({ error: 'not_found' });
  * @param {object} [opts.publicLimits]  { all: {max, windowMs}, pdf: {max, windowMs} }, for tests
  * @param {function} [opts.today]       'YYYY-MM-DD' now; never from the request, or a
  *                                      client could ask for an expired estimate to be open
- * @param {function} [opts.now]         ISO time now, for the `opened` log
+ * @param {function} [opts.now]         ISO time now, for the `opened` log and a signature
+ * @param {function} [opts.renderPdf]   html → PDF buffer, for tests (pdf.js renderPdfBuffer)
  */
 function registerPublicRoutes(app, db, opts = {}) {
   const limits = Object.assign({
     all: { max: 120, windowMs: 10 * 60 * 1000 },
     pdf: { max: 12, windowMs: 10 * 60 * 1000 },
+    // Each signing attempt renders a PDF; a person signs once.
+    sign: { max: 10, windowMs: 10 * 60 * 1000 },
   }, opts.publicLimits || {});
-  const today = opts.today || localToday;
+  const today = () => (opts.today || localToday)();
   const now = opts.now || nowIso;
+  const render = opts.renderPdf || renderPdfBuffer;
 
   app.use('/public', publicCors, rateLimit(limits.all));
 
   app.get('/public/estimates/:token', (req, res) => {
     const reply = publicEstimate(db, req.params.token, today());
     if (!reply) return notFound(res);
+    // The agreement to sign (task 27) comes only while Accept is on offer.
+    reply.agreement = reply.state === 'open' ? agreementOffer(db, req.params.token, today()) : null;
     res.json({ estimate: reply });
     // After the reply has gone, so a found link answers no slower than a
     // wrong one, and a failed log can't cost the client their page.
@@ -125,6 +132,39 @@ function registerPublicRoutes(app, db, opts = {}) {
     // Not kept in exportDir as the owner's exports are: a client's downloads
     // would fill it.
     res.attachment(exportFilename(src.estimate));
+    res.type('application/pdf');
+    return res.send(buffer);
+  });
+
+  /* Signing (task 27): { fullName, role, agree, version, key }. The signature
+     and the accept are one transaction (signing.js). */
+  app.post('/public/estimates/:token/accept', rateLimit(limits.sign), async (req, res, next) => {
+    try {
+      const out = await signEstimate(db, req.params.token, req.body, {
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'],
+        now,
+        today,
+        render,
+      });
+      return res.status(out.status).json(out.body);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  /* The signed agreement, for the thank-you's download. */
+  app.get('/public/estimates/:token/agreement', rateLimit(limits.pdf), async (req, res, next) => {
+    const sig = signatureOfLink(db, req.params.token);
+    if (!sig) return notFound(res);
+    let buffer;
+    try {
+      buffer = await signaturePdf(db, sig, render);
+    } catch (err) {
+      if (err.code === 'pdf_unavailable') return res.status(503).json({ error: 'pdf_unavailable' });
+      return next(err);
+    }
+    res.attachment(agreementFilename(sig));
     res.type('application/pdf');
     return res.send(buffer);
   });

@@ -9,7 +9,8 @@ const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
 const { amountDue } = require('../invoices');
 const { docSettings } = require('../documents');
-const { freezeVersion, versionsOf } = require('../public');
+const { freezeVersion, versionsOf, signatureRow, signaturePdf } = require('../public');
+const { agreementFilename } = require('../pdf');
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -20,8 +21,8 @@ const MAX_PAGE = 200;
 /* What Home's Recent activity shows (task 22): a job moving on — sent,
    accepted, invoiced, paid, or declined. The owner's corrections (reopened,
    an invoice edited or voided) stay in the folder's log only. Stage E adds
-   its client events here: opened (task 26), signed. */
-const HOME_KINDS = ['sent', 'opened', 'accepted', 'invoices_created', 'invoice_sent', 'invoice_paid', 'declined'];
+   its client events here: opened (task 26), signed (task 27). */
+const HOME_KINDS = ['sent', 'opened', 'accepted', 'signed', 'invoices_created', 'invoice_sent', 'invoice_paid', 'declined'];
 const HOME_LIMIT = 10;
 const HOME_MAX = 50;
 
@@ -37,11 +38,13 @@ function addDays(ymd, n) {
   return new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 }
 
-/* The server's own date, only for a caller that sends no `today`. */
-function localToday() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+/* The business's date, only for a caller that sends no `today` (the client's
+   pages, and the date a client signs on). Sydney's, not the server's: the
+   container runs on UTC, which is still yesterday until 10 or 11am there. */
+function localToday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
 }
 
 /* `today` from the query, the server's date when absent, or null when bad. */
@@ -207,6 +210,16 @@ function readFolder(db, id, today) {
       updatedAt: i.updated_at,
     })),
     activity: log.map((a) => ({ id: a.id, at: a.at, kind: a.kind, detail: parseDetail(a.detail_json) })),
+    // Signed service agreements (task 27, D42): who, when and which version;
+    // the PDF opens through GET …/agreements/:id/pdf.
+    signatures: db.prepare(`
+      SELECT s.id, s.full_name, s.role, s.signed_at, v.n, v.estimate_id FROM signatures s
+        JOIN estimate_versions v ON v.id = s.version_id
+        JOIN estimates e ON e.id = v.estimate_id
+       WHERE e.project_id = ? ORDER BY s.signed_at DESC, s.id
+    `).all(id).map((s) => ({
+      id: s.id, estimateId: s.estimate_id, version: s.n, fullName: s.full_name, role: s.role, signedAt: s.signed_at,
+    })),
   };
 }
 
@@ -363,10 +376,14 @@ function cannotInvoice(db, p, numbers) {
  *     pointing at the deposit (less_invoice_id) for "Less deposit paid";
  *   - single: singleInvoiceTotals(totals, no extras yet).
  * All start as drafts: nothing is issued, due or sent until task 20 / E.
+ *
+ * `frozen` is the estimate to bill when it isn't the row as it stands: a
+ * client signing a sent version (task 27) is billed for that version, even
+ * if the owner has edited the estimate since without sending it again.
  */
-function createInvoices(db, p, estimateId, choice, now) {
+function createInvoices(db, p, estimateId, choice, now, frozen) {
   const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(estimateId);
-  const snapshot = loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
+  const snapshot = frozen || loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
   const json = JSON.stringify(snapshot);
   const insert = db.prepare(`
     INSERT INTO invoices
@@ -418,6 +435,44 @@ function confirmDays(db, estimateId, ownIds, now) {
     set.run(hit ? 1 : 0, now, d.id);
   });
   return flagged;
+}
+
+/**
+ * THE ACCEPT (D18, D32; IA flow 3 step 4), inside the caller's transaction,
+ * for both ways in: the owner's Mark accepted (task 19) and the client's
+ * signature (task 27). The estimate becomes accepted, its dated days are
+ * confirmed with any clash flagged (confirmDays), the invoices are made
+ * unsent (createInvoices), and the project records the choice and the
+ * moment. One activity row says so.
+ *
+ * @param {object} p        the project row
+ * @param {string} lead     the estimate accepted
+ * @param {string[]} ownIds every estimate in the project (a date they share isn't a clash)
+ * @param {object|null} choice  invoicingChoice's; null makes no invoices (a
+ *                          client signing a project that can't be invoiced
+ *                          yet: the owner fixes it, then Create invoices)
+ * @param {object} [opts]   { frozen: the estimate to bill, kind: the activity
+ *                          kind ('accepted'), detail: more for its detail }
+ * @returns {{rebook: Array, made: Array}}
+ */
+function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
+  db.prepare("UPDATE estimates SET status = 'accepted' WHERE id = ?").run(lead);
+  const rebook = confirmDays(db, lead, ownIds, now);
+  const made = choice ? createInvoices(db, p, lead, choice, now, opts.frozen) : [];
+  db.prepare(`
+    UPDATE projects SET accepted_at = ?, invoicing = COALESCE(?, invoicing), deposit_pct = COALESCE(?, deposit_pct),
+           updated_at = ?
+     WHERE id = ?
+  `).run(now, choice ? choice.invoicing : null, choice ? choice.pct : null, now, p.id);
+  logActivity(db, p.id, opts.kind || 'accepted', {
+    estimateId: lead,
+    invoicing: choice ? choice.invoicing : null,
+    depositPct: choice ? choice.pct : null,
+    invoices: made.map((i) => i.number),
+    rebook: rebook.map((r) => r.date),
+    ...(opts.detail || {}),
+  }, now);
+  return { rebook, made };
 }
 
 /**
@@ -729,23 +784,9 @@ function registerProjectRoutes(app, db) {
     if (refusal) return res.status(409).json(refusal);
     const lead = summarize(p, own, [], {}).estimateId;
     if (!lead) return res.status(409).json({ error: 'no_estimate' });
-    const now = nowIso();
     let rebook = [];
     db.transaction(() => {
-      db.prepare("UPDATE estimates SET status = 'accepted' WHERE id = ?").run(lead);
-      rebook = confirmDays(db, lead, own.map((e) => e.id), now);
-      const made = createInvoices(db, p, lead, choice, now);
-      db.prepare(`
-        UPDATE projects SET accepted_at = ?, invoicing = ?, deposit_pct = COALESCE(?, deposit_pct), updated_at = ?
-         WHERE id = ?
-      `).run(now, choice.invoicing, choice.pct, now, p.id);
-      logActivity(db, p.id, 'accepted', {
-        estimateId: lead,
-        invoicing: choice.invoicing,
-        depositPct: choice.pct,
-        invoices: made.map((i) => i.number),
-        rebook: rebook.map((r) => r.date),
-      }, now);
+      ({ rebook } = acceptEstimate(db, p, lead, own.map((e) => e.id), choice, nowIso()));
     })();
     return folderReply(req, res, { rebook });
   });
@@ -789,6 +830,23 @@ function registerProjectRoutes(app, db) {
     return folderReply(req, res);
   });
 
+  /* A signed agreement's PDF (D42, D66): the bytes stored at signing, or
+     rendered from the stored text now if the renderer was down then. */
+  app.get('/api/projects/:id/agreements/:signatureId/pdf', async (req, res, next) => {
+    const sig = signatureRow(db, req.params.signatureId);
+    if (!sig || sig.project_id !== req.params.id) return res.status(404).json({ error: 'not_found' });
+    let buffer;
+    try {
+      buffer = await signaturePdf(db, sig);
+    } catch (err) {
+      if (err.code === 'pdf_unavailable') return res.status(503).json({ error: 'pdf_unavailable' });
+      return next(err);
+    }
+    res.attachment(agreementFilename(sig));
+    res.type('application/pdf');
+    return res.send(buffer);
+  });
+
   app.delete('/api/projects/:id', (req, res) => {
     const p = projectFor(req, res);
     if (!p) return;
@@ -809,4 +867,8 @@ function registerProjectRoutes(app, db) {
   });
 }
 
-module.exports = { registerProjectRoutes, summarize, readFolder, logActivity, todayOf, localToday, isYmd };
+module.exports = {
+  registerProjectRoutes, summarize, readFolder, logActivity, todayOf, localToday, isYmd,
+  // The client's signature (signing.js) accepts through the same pieces.
+  acceptEstimate, depositPctFor, invoiceNumbers, cannotInvoice, stageNow,
+};
