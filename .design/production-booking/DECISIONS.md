@@ -440,6 +440,20 @@ The six interpretations in the brief's B2 Key Interactions were confirmed by the
 - "Add to a day ▾" kept on the summaries;
 - "On post lines" counting every Post-Production line.
 
+## 2026-10-04 — replacing an invoice (asked at task 19, for task 20)
+
+100. **A number a client has seen is never reused.** How an invoice is corrected depends on how far
+     it got:
+     - **Draft, never sent:** edited in place, keeping its number. Nothing is voided.
+     - **Sent, not paid:** voided (kept in the folder, marked void with the date and a reason), and
+       a replacement made with the next free suffix: `INV-<UPID>-D2`, `-F2`, or `INV-<UPID>-2` for
+       a single, then 3, 4… The existing number-clash check still applies. If the deposit was
+       replaced, the final's "Less deposit paid" names the deposit that was actually paid.
+     - **Paid:** never voided; corrected later by a credit note (not yet built).
+
+     *Open with the user's accountant:* if GST-registered and a voided invoice was already reported
+     on a BAS, the ATO may expect an adjustment note rather than a void alone.
+
 ## Left for the user to supply (not decisions, inputs)
 
 - The **service agreement text** (decision 39), ideally checked by a lawyer.

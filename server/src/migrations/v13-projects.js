@@ -49,11 +49,21 @@ const crypto = require('crypto');
  *    otherwise draft. The paid date was never recorded, so paid_at is NULL.
  *    issued_at is the document's own date, if it had one.
  *
+ * 5. THE CLASH FLAG (task 19, D18). `production_days.rebook` is set when
+ *    accepting confirms a day on a date another project had already
+ *    confirmed: the accept goes through, and that day is flagged "clash,
+ *    rebook" for the owner to sort out. Moving the day or giving it a
+ *    specification note clears it (days.js replaceDays). 0 on every existing
+ *    day: nothing was accepted through the app before v13.
+ *
  * Nothing touches a stored total: every estimate's totals_json, rows,
  * labels, days and rentals are copied across as they are.
  */
 function migrateV13(db) {
   createTables(db);
+  if (!hasColumn(db, 'production_days', 'rebook')) {
+    db.exec('ALTER TABLE production_days ADD COLUMN rebook INTEGER NOT NULL DEFAULT 0 CHECK (rebook IN (0, 1));');
+  }
   const legacy = legacyCandidates(db);
   if (!hasColumn(db, 'estimates', 'project_id')) rebuildEstimates(db);
   const made = assignProjects(db);

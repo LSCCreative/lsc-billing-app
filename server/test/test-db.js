@@ -1099,7 +1099,8 @@ test('v13 keeps every estimate\'s stored values, days and rentals through the re
     assert.equal(now.totals_json, was.totals_json);
     assert.equal(upid, was.id === 'est_unique' ? 'UP-100' : oldUpid, was.id);
   }
-  assert.deepEqual(dump(db, 'production_days'), days);
+  // Every day as it was, plus task 19's clash flag, off on all of them.
+  assert.deepEqual(dump(db, 'production_days'), days.map((d) => ({ ...d, rebook: 0 })));
   assert.deepEqual(dump(db, 'rentals'), rentals);
 
   const statuses = Object.fromEntries([...after.values()].map((r) => [r.id, r.status]));

@@ -194,21 +194,31 @@ function lockedDay(db, estimateId, days, storedDays) {
   return null;
 }
 
-/** Replaces an estimate's days with `days`, in their order. Call inside the save's transaction. */
+/**
+ * Replaces an estimate's days with `days`, in their order. Call inside the
+ * save's transaction.
+ *
+ * The "clash, rebook" flag (v13, task 19, D18) is the server's, never the
+ * browser's: a day keeps it while it stays on the same date with no
+ * specification note. Moving it, or noting why it may share the date (D16),
+ * is the owner sorting the clash out, and clears it.
+ */
 function replaceDays(db, estimateId, days, now) {
-  const created = new Map();
-  for (const r of db.prepare('SELECT id, created_at FROM production_days WHERE estimate_id = ?').all(estimateId)) {
-    created.set(r.id, r.created_at);
+  const stored = new Map();
+  for (const r of db.prepare('SELECT id, date, rebook, created_at FROM production_days WHERE estimate_id = ?').all(estimateId)) {
+    stored.set(r.id, r);
   }
   db.prepare('DELETE FROM production_days WHERE estimate_id = ?').run(estimateId);
   const insert = db.prepare(`
     INSERT INTO production_days
-      (id, estimate_id, date, status, start_time, end_time, override_note, sort, created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+      (id, estimate_id, date, status, start_time, end_time, override_note, sort, rebook, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `);
   days.forEach((d, i) => {
-    insert.run(d.id, estimateId, d.date, d.status, d.startTime, d.endTime, d.overrideNote, i,
-      created.get(d.id) || now, now);
+    const was = stored.get(d.id);
+    const rebook = was && was.rebook === 1 && was.date === d.date && !d.overrideNote ? 1 : 0;
+    insert.run(d.id, estimateId, d.date, d.status, d.startTime, d.endTime, d.overrideNote, i, rebook,
+      (was && was.created_at) || now, now);
   });
 }
 

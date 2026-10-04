@@ -1,7 +1,7 @@
 # Handover: Production Booking
 
 Read this first, then [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md) and [`DECISIONS.md`](DECISIONS.md) (the
-user's answers, D1–D99; don't re-ask), then
+user’s answers, D1–D100; don’t re-ask), then
 [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md) (routes, screens, data model). This track replaces
 `estimate-accuracy` task 8 (expected booking rate, scrapped) and task 11 (loadings, superseded). It
 sits on top of every earlier track, and those stay the authority for anything this one doesn't
@@ -31,7 +31,7 @@ times.
 
 ## State as of 2026-10-04
 
-Design is complete: Grill Me (D1–D99), `DESIGN_BRIEF.md`, `INFORMATION_ARCHITECTURE.md` (hash routes,
+Design is complete: Grill Me (D1–D99, plus D100 at task 19), `DESIGN_BRIEF.md`, `INFORMATION_ARCHITECTURE.md` (hash routes,
 "Projects" replaces "Estimates" in the nav, unique UPIDs, Settings as a screen), and `TASKS.md`
 (33 tasks plus B2-1…B2-13). Migrations: v11 (A+B), v12 (B2 `rentals`), **v13 (Stage D)**, **v14 (E)**.
 
@@ -87,28 +87,42 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
 - **D, task 18** (the project folder `#/projects/<id>`: `GET /api/projects/:id`, Mark sent,
   Decline, Reopen with the clash check, Delete; the editor and a read-only view under
   `…/estimate`; D62's doc-type controls gone from the editor and no longer written by the server;
-  calendar tiles and Coming up open the folder). 2026-10-04, **uncommitted, not deployed** (new
-  routes: NAS before Pages, with v13 at task 23). Its decisions are in its Done note in `TASKS.md`.
+  calendar tiles and Coming up open the folder). 2026-10-04, committed `c278225`, **not deployed**
+  (new routes: NAS before Pages, with v13 at task 23). Its decisions are in its Done note in
+  `TASKS.md`.
 
-**Exact next item: TASKS.md task 19, accepting and creating invoices** (money math, Opus/high).
+- **D, task 19** (`POST /api/projects/:id/accept` and `/invoices`: one transaction confirms the
+  days and flags clashes, makes the pair or single invoice from the stored totals, copies the
+  deposit %; the UPID lock; the folder's Mark accepted… / Create invoices… dialog).
+  2026-10-04, committed, **not deployed** (with v13 at task 23). Its decisions are in its Done
+  note in `TASKS.md`. `production_days.rebook` went into v13 (undeployed), so the `api-scratch` DB
+  was rewound to v12 and re-migrated; a backup of it from before is in this session's scratchpad
+  only. Scratch now has AUD-B accepted as a 40% pair with 16 Oct flagged (against a hand-added
+  confirmed day `d_t19_scratch` on B210-PLAN) and TST-001 as a single invoice.
+
+**Exact next item: TASKS.md task 20, the invoice screen and invoice PDFs** (money math, Opus/high).
 Hooks waiting for it:
-- `nextAction()` and `moreActions()` in `web/js/views/project-folder.js` are where "Mark
-  accepted…" (sent, and draft if the owner skips Mark sent) and "Create invoices" (accepted, no
-  invoices: a project v13 mapped from `approved`) go. Each action posts to
-  `/api/projects/:id/<action>?today=` and redraws from the folder it answers with (`post()`), so
-  `accept` and `invoices` should answer with `readFolder` as `sent`/`decline` do.
-- The folder's Documents already list invoices (kind, number, status, `totals_json.totalIncGst`);
-  task 20 gives each row its page and PDF.
-- D18's "clash, rebook" flag has no column yet: when 19 adds one, show it on the folder's
-  Production days rows first (IA).
+- The folder's invoice rows (`documentsMarkup` in `project-folder.js`) have no actions yet: give each
+  its page `#/projects/<id>/invoices/<invoiceId>` and a PDF. The folder answers `amountDue` per
+  invoice (a deposit's total, a final or single's `balanceDue`).
+- `nextAction()` is where "Mark deposit paid" and "Edit final invoice" (IA) go; accepted with
+  invoices currently falls through to View estimate.
+- Each invoice has `estimate_snapshot_json` (the estimate as accepted, `loadEstimate` shape) to
+  print from, never the live estimate. The final's `less_invoice_id` is its deposit: recompute the
+  final as `finalInvoiceTotals(snapshot.totals, extrasTotals(...), <deposit's stored totals_json>)`.
+- **Void and remake (D100, decided):** drafts edit in place; a sent, unpaid invoice is voided with
+  a date and reason and replaced as `-D2` / `-F2` / `INV-<UPID>-2` (next free suffix); a paid one is
+  never voided. `/invoices` answers `already` once any non-legacy invoice exists, so the
+  replacement needs its own action rather than reusing it.
+- Decline is hidden once an invoice exists, even a draft. Delete still works on drafts.
 
 `GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
 cached Pages build still calls it), then delete it.
 
 **Seams left for later tasks:**
-- **Invoices (tasks 19–20):** store the deposit's `depositAmount(...)` result on the deposit invoice
-  and pass that stored object to `finalInvoiceTotals`; don't recompute it from a % later. On the
-  final's tax invoice, the GST for this supply is `balance.gst`, because the deposit's GST was
+- **Invoices (task 20):** the deposit's `depositAmount(...)` result is stored as the deposit
+  invoice's `totals_json` (task 19); pass that stored object to `finalInvoiceTotals`, and don't
+  recompute it from a % later. On the final's tax invoice, the GST for this supply is `balance.gst`, because the deposit's GST was
   already on its own tax invoice. Show `total` as the full job, then "Less deposit paid", then
   `balance`. Extras lines need price snapshots (`mu`) so later card changes don't move them.
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
@@ -129,15 +143,17 @@ cached Pages build still calls it), then delete it.
   `foreign_key_check` refuses the whole migration (and the boot) if the live DB already holds a row
   pointing at nothing. The boot log line `[db] v13: N project(s) … M need a UPID …` gives the fix-up
   count.
-- **Invoices on a waiting project (task 19):** the banner says invoicing waits for a UPID, and
-  invoice numbers carry it, so refuse creating an invoice while `projects.needs_upid = 1`.
-- **UPID lock (D36, task 19):** `planProjectWrite` (`projects.js`) lets the UPID change freely
-  today. Once a project has a non-legacy invoice or a send, refuse a change there.
-- **Accept (task 19)** sets `estimates.status` and `projects.accepted_at` together; estimate saves
-  never touch the status. Decline and Reopen (task 18) already do this for theirs; Reopen clears
-  `accepted_at` too, and Decline is refused once a non-void invoice exists.
-- **Delete (task 18)** is refused while a non-legacy invoice is scheduled, sent or paid. Task 20's
-  void action is the way out of that.
+- **Stage E's accept** (the client page's Sign) should call the same pieces as task 19's route:
+  `confirmDays`, `createInvoices` and the `accepted` activity, inside its signing transaction. D41
+  pauses it while a proposed day is taken, which the in-app accept doesn't check.
+- **The invoice snapshot is owner-only:** `estimate_snapshot_json` is the whole estimate, including
+  its `totals` with internal figures. A public invoice page (E) must print from it through the
+  client PDF's fields, never send it whole.
+- **Task 21:** store the deposit setting at `settings.invoicing.depositPct` (task 19 reads it).
+- **Task 22:** activity kinds `accepted` and `invoices_created` (details in task 19's Done note).
+- **Delete (task 18)** is refused while a non-legacy invoice is scheduled, sent or paid, and so is
+  deleting that project's billed or last estimate in the editor (task 19). Task 20's void action is
+  the way out of that.
 - **Stage E's sends:** Stage D's Mark sent logs `sent` with `{ validUntil, estimateId }` and **no
   version** (nothing is frozen, D34). E's versions should write `version` on the same activity
   kind, which the stage line already reads ("Sent v2").

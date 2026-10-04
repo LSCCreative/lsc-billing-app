@@ -2231,7 +2231,12 @@ const EstimateEditor = (() => {
       '<div class="form-grid">' +
       '<div class="field full"><label for="f-upid" class="label-accent">UPID — Unique Project Identifier *</label>' +
       '<input id="f-upid" type="text" value="' + esc(estimate ? estimate.upid : '') + '"' +
+      (estimate && estimate.upidLocked ? ' readonly aria-describedby="f-upid-lock"' : '') +
       (copiedFrom ? ' aria-describedby="f-upid-copy"' : '') + '>' +
+      // Invoice numbers carry the UPID, so it is fixed from the first invoice (D36).
+      (estimate && estimate.upidLocked
+        ? '<p class="field-copy-note" id="f-upid-lock">Fixed: this project’s invoice numbers carry it.</p>'
+        : '') +
       (copiedFrom
         ? '<p class="field-copy-note" id="f-upid-copy">Copied from ' +
           esc([copiedFrom.upid, copiedFrom.name].filter(Boolean).join(' · ') || 'another estimate') +
@@ -3409,6 +3414,9 @@ const EstimateEditor = (() => {
       // UPIDs are unique (D60): the server names the project that has it.
       if (err.code === 'upid_taken') {
         return fieldError(err.message || 'That UPID is already used by another project.', 'f-upid');
+      }
+      if (err.code === 'upid_locked') {
+        return fieldError(err.message || 'The UPID is fixed: this project’s invoice numbers carry it.', 'f-upid');
       }
       showError(
         err.kind === 'network'

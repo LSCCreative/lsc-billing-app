@@ -64,6 +64,31 @@ function upidTakenReply(db, upid, projectId) {
 }
 
 /**
+ * THE UPID LOCK (D36, task 19). Invoice numbers carry the UPID
+ * (`INV-<UPID>-D` …) and are fixed when the invoice is made, so from the first
+ * invoice the app makes for a project its UPID can't change. A void invoice
+ * still counts: it keeps its printed number. A made-the-old-way invoice
+ * doesn't: it was numbered by hand, before the UPID meant anything to it.
+ */
+function upidLocked(db, projectId) {
+  if (!projectId) return false;
+  return Boolean(db.prepare(`
+    SELECT 1 FROM invoices WHERE project_id = ? AND kind <> 'legacy' LIMIT 1
+  `).get(projectId));
+}
+
+function upidLockedReply(upid) {
+  return {
+    status: 409,
+    body: {
+      error: 'upid_locked',
+      upid,
+      message: `The UPID is fixed at ${upid}: this project’s invoice numbers carry it.`,
+    },
+  };
+}
+
+/**
  * The project an estimate write lands in, and the UPID to store on the
  * estimate; or a refusal. `existing` is the estimate row (null for a new one).
  *
@@ -72,6 +97,8 @@ function upidTakenReply(db, upid, projectId) {
  *   carries stays waiting: saving the editor is not "keep together", and the
  *   UPID is still shared. Any other UPID, if free, settles it.
  * - A UPID another project uses is refused, `upid_taken`.
+ * - Once the project has an invoice the app made, any change is refused,
+ *   `upid_locked` (D36).
  *
  * @returns {{status:number, body:object}|{project:object|null, upid:string}}
  */
@@ -82,6 +109,9 @@ function planProjectWrite(db, body, existing) {
     : null;
   if (project && project.needs_upid === 1 && upid.toLowerCase() === normUpid(existing.upid).toLowerCase()) {
     return { project, upid: existing.upid, unchanged: true };
+  }
+  if (project && upid !== normUpid(project.upid) && upidLocked(db, project.id)) {
+    return upidLockedReply(project.upid);
   }
   const taken = upidTakenBy(db, upid, project && project.id);
   if (taken) return upidTakenReply(db, upid, taken);
@@ -215,6 +245,6 @@ function settledAt(project, invoices, stage) {
 }
 
 module.exports = {
-  normUpid, upidTakenBy, upidTakenReply, planProjectWrite, applyProjectWrite, dropEmptyProject,
+  normUpid, upidTakenBy, upidTakenReply, upidLocked, planProjectWrite, applyProjectWrite, dropEmptyProject,
   STAGES, projectStage, settledAt,
 };

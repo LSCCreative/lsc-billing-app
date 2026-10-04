@@ -11,7 +11,7 @@ const {
 const {
   readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
 } = require('../rentals');
-const { planProjectWrite, applyProjectWrite, dropEmptyProject } = require('../projects');
+const { planProjectWrite, applyProjectWrite, dropEmptyProject, upidLocked } = require('../projects');
 
 /**
  * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
@@ -128,7 +128,11 @@ function prepareWrite(db, body, existing) {
 }
 
 function registerEstimateRoutes(app, db) {
-  const loadJson = (row) => loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
+  // `upidLocked` (D36, task 19): the editor shows the UPID read-only once the
+  // project has an invoice the app made, as planProjectWrite refuses a change.
+  const loadJson = (row) => Object.assign(loadEstimate(row, readDays(db, row.id), readRentals(db, row.id)), {
+    upidLocked: upidLocked(db, row.project_id),
+  });
 
   app.get('/api/estimates', (_req, res) => {
     const rows = db.prepare('SELECT * FROM estimates ORDER BY updated_at DESC').all();
@@ -240,6 +244,21 @@ function registerEstimateRoutes(app, db) {
   app.delete('/api/estimates/:id', (req, res) => {
     const existing = db.prepare('SELECT project_id FROM estimates WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'not_found' });
+    // The project's own Delete refuses once an invoice has gone out (task 18),
+    // and so does this, for the estimate an invoice bills or the project's last
+    // one, whose deletion takes the project and its invoices with it.
+    const gone = db.prepare(`
+      SELECT number FROM invoices
+       WHERE project_id = ? AND kind <> 'legacy' AND status IN ('scheduled', 'sent', 'paid')
+         AND (estimate_id = ? OR (SELECT COUNT(*) FROM estimates WHERE project_id = ?) = 1)
+       LIMIT 1
+    `).get(existing.project_id, req.params.id, existing.project_id);
+    if (gone) {
+      return res.status(409).json({
+        error: 'has_sent_invoices',
+        message: `${gone.number || 'An invoice'} has gone out, so this estimate can’t be deleted.`,
+      });
+    }
     db.transaction(() => {
       db.prepare('DELETE FROM estimates WHERE id = ?').run(req.params.id);
       dropEmptyProject(db, existing.project_id);

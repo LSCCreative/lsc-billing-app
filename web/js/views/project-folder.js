@@ -17,8 +17,9 @@
  * summary the Projects list prints, so the two can't disagree.
  *
  * STAGE D'S STAND-INS. "Mark sent" records a send the owner made by email
- * (Stage E sends from the app). Accepting and invoices are task 19's and 20's:
- * their actions join nextAction() and the Documents rows then.
+ * (Stage E sends from the app), and "Mark accepted" the client's yes (E's
+ * signing replaces it), which confirms the days and makes the invoices
+ * (task 19). Each invoice's own page is task 20's.
  */
 
 const ProjectFolder = (() => {
@@ -56,21 +57,28 @@ const ProjectFolder = (() => {
 
   const hasLiveInvoice = () => folder.invoices.some((i) => i.status !== 'void');
 
-  /* The one next action (IA: it changes with the stage). Accepting (task 19)
-     and invoices (task 20) arrive here. */
+  /* Accepted with no invoices: v13 mapped an old `approved` estimate there,
+     and only "Create invoices" moves it on. */
+  const needsInvoices = (project) => project.stage === 'accepted' && !folder.invoices.length;
+
+  /* The one next action (IA: it changes with the stage). Each invoice's page
+     (task 20) arrives here. */
   function nextAction(project) {
+    if (needsInvoices(project)) return { id: 'invoices', label: 'Create invoices…' };
     switch (project.stage) {
       case 'draft': return { id: 'edit', label: 'Edit estimate' };
-      case 'sent': return { id: 'edit', label: 'Edit estimate' };
+      case 'sent': return { id: 'accept', label: 'Mark accepted…' };
       case 'declined': return { id: 'reopen', label: 'Reopen' };
       default: return { id: 'view', label: 'View estimate' };
     }
   }
 
-  /* Forward actions beside the primary one. */
+  /* Forward actions beside the primary one. A draft can be accepted without
+     being marked sent: the owner may have sent it some other way. */
   function moreActions(project) {
-    if (project.stage === 'draft') return [{ id: 'sent', label: 'Mark sent…' }];
-    if (project.stage === 'sent') return [{ id: 'sent', label: 'Mark sent again…' }];
+    if (project.stage === 'draft') return [{ id: 'sent', label: 'Mark sent…' }, { id: 'accept', label: 'Mark accepted…' }];
+    if (project.stage === 'sent') return [{ id: 'edit', label: 'Edit estimate' }, { id: 'sent', label: 'Mark sent again…' }];
+    if (needsInvoices(project)) return [{ id: 'view', label: 'View estimate' }];
     return [];
   }
 
@@ -172,10 +180,15 @@ const ProjectFolder = (() => {
       '<ol class="pf-days' + (declined ? ' is-declined' : '') + '">' + rows.map(({ estimate, day, i, items }) => {
         const when = day.date ? C.longDate(day.date, today) : 'Day ' + (i + 1) + ' — date TBC';
         const times = day.startTime || day.endTime ? C.timeText(day) : '';
+        // Confirmed by accepting on a date another project had confirmed first (D18).
+        const rebook = day.rebook && !declined
+          ? '<span class="pf-day-rebook">Clash, rebook — also confirmed for ' +
+            esc(day.rebook.upid || day.rebook.name || 'another project') + '</span>'
+          : '';
         return (
           '<li><button type="button" class="pf-day" data-estimate="' + esc(estimate.id) + '" data-day="' + esc(day.id) + '">' +
           '<span class="pf-day-when">' + C.statusChip(day.status) + '<span class="pf-day-date">' + esc(when) + '</span>' +
-          (times ? '<span class="pf-day-time">' + esc(times) + '</span>' : '') + '</span>' +
+          (times ? '<span class="pf-day-time">' + esc(times) + '</span>' : '') + rebook + '</span>' +
           '<span class="pf-day-items">' +
           (items.length ? esc(items.join(', ')) : '<span class="pf-muted">No production items yet</span>') +
           (many ? '<span class="pf-muted"> · ' + esc(estimate.name || 'Untitled') + '</span>' : '') +
@@ -238,7 +251,7 @@ const ProjectFolder = (() => {
           ? (inv.status === 'paid' ? 'Paid · ' : '') + 'Made the old way'
           : esc(INVOICE_STATUS[inv.status] || inv.status) +
             (inv.status === 'paid' && inv.paidAt ? ' ' + esc(ProjectCard.dayMonth(inv.paidAt, today)) : ''),
-        amount: fmt(inv.totalIncGst),
+        amount: fmt(inv.amountDue),
         // An old invoice prints from the estimate row it was made from, as it always did.
         actions: legacy && inv.estimateId
           ? [{ id: 'legacy-pdf', label: '↓ PDF', target: inv.estimateId, label2: 'Download invoice ' + (inv.number || '') + ' PDF' }]
@@ -258,10 +271,18 @@ const ProjectFolder = (() => {
     const d = entry.detail || {};
     switch (entry.kind) {
       case 'sent': return 'Marked sent' + (C.isDate(d.validUntil) ? ', valid until ' + ProjectCard.dayMonth(d.validUntil, today) : '');
+      case 'accepted': return 'Marked accepted' + invoicesText(d);
+      case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';
       default: return entry.kind.charAt(0).toUpperCase() + entry.kind.slice(1).replace(/_/g, ' ');
     }
+  }
+
+  function invoicesText(d) {
+    const numbers = Array.isArray(d.invoices) ? d.invoices : [];
+    return (numbers.length ? ' · ' + numbers.join(', ') : '') +
+      (d.invoicing === 'pair' && d.depositPct ? ' (' + d.depositPct + '% deposit)' : '');
   }
 
   /* When it happened, on this browser's clock: `at` is UTC, and an evening
@@ -276,7 +297,7 @@ const ProjectFolder = (() => {
   function activityMarkup(today) {
     const head = '<div class="pf-section-head"><h2 class="pf-h2" id="pf-activity-h">Activity</h2></div>';
     if (!folder.activity.length) {
-      return head + '<p class="pf-empty">Nothing recorded yet. Marking it sent, declining and reopening show here.</p>';
+      return head + '<p class="pf-empty">Nothing recorded yet. Marking it sent or accepted, declining and reopening show here.</p>';
     }
     return head + '<ol class="pf-activity">' + folder.activity.map((a) =>
       '<li><span class="pf-act-when">' + esc(whenText(a.at, today)) + '</span>' +
@@ -394,6 +415,7 @@ const ProjectFolder = (() => {
     if (id === 'edit' && estimate) return openEstimate(estimate, false);
     if (id === 'view' && estimate) return openEstimate(estimate, true);
     if (id === 'sent') return openMarkSent(button);
+    if (id === 'accept' || id === 'invoices') return openAccept(button, id);
     if (id === 'decline') return openConfirm(button, {
       title: 'Decline this project?',
       body: 'Its production days come off every calendar and stop locking their dates. You can reopen it later; ' +
@@ -514,7 +536,7 @@ const ProjectFolder = (() => {
     }
   }
 
-  // ── The dialog (Mark sent, Decline, Delete) ─────────────────────────────
+  // ── The dialog (Mark sent, Mark accepted, Decline, Delete) ──────────────
 
   const dlg = { overlay: null, opener: null, run: null, working: false };
 
@@ -643,6 +665,94 @@ const ProjectFolder = (() => {
         }
         return post('sent', { validUntil: value }, b, 'Saving…',
           'Marked sent, valid until ' + ProjectCard.dayMonth(value, today) + '.');
+      },
+    });
+  }
+
+  /* Mark accepted (Stage D's stand-in for E's signing, IA flow 4), or Create
+     invoices for a project accepted before they were made here. Both ask pair
+     or single (D32) and, for a pair, the deposit % (D33: the setting, or this
+     project's own), and show what each invoice will ask for, worked out as the
+     server will (calc.js depositAmount on the stored totals). */
+  function openAccept(opener, action) {
+    const project = folder.project;
+    const estimate = lead();
+    const accepting = action === 'accept';
+    const totals = (estimate && estimate.totals) || {};
+    const dated = accepting && estimate
+      ? (estimate.days || []).filter((d) => d.date && d.status !== 'confirmed').length
+      : 0;
+    const single = project.invoicing === 'single';
+    const pct = project.depositPctDefault;
+    const upid = project.upid ? esc(project.upid) : 'its UPID';
+    openDialog(opener, {
+      title: accepting ? 'Mark accepted' : 'Create invoices',
+      body:
+        '<p class="pfd-text" id="pfd-desc">' +
+        (accepting
+          ? 'Record that the client accepted the estimate. ' +
+            (dated ? 'Its ' + (dated === 1 ? 'pencilled or proposed day turns' : dated + ' pencilled and proposed days turn') +
+              ' confirmed, and the' : 'The') + ' invoices are made, ready to send. Nothing goes to the client.'
+          : 'This project was accepted before invoices were made here. Make them now, ready to send.') +
+        ' Invoice numbers carry the UPID, so ' + upid + ' is then fixed.</p>' +
+        '<fieldset class="pfd-choice"><legend>Invoicing</legend>' +
+        '<label><input type="radio" name="pfd-invoicing" value="pair"' + (single ? '' : ' checked') + '>' +
+        '<span>Deposit + final</span></label>' +
+        '<label><input type="radio" name="pfd-invoicing" value="single"' + (single ? ' checked' : '') + '>' +
+        '<span>Single invoice (no deposit)</span></label></fieldset>' +
+        '<div class="field" id="pfd-pct-field"><label for="pfd-pct">Deposit %</label>' +
+        '<input id="pfd-pct" type="number" inputmode="decimal" min="1" max="100" step="any" value="' + esc(String(pct)) + '"' +
+        ' aria-describedby="pfd-split"></div>' +
+        '<p class="pfd-split" id="pfd-split" aria-live="polite"></p>',
+      describe: true,
+      confirm: accepting ? 'Mark accepted' : 'Create invoices',
+      focus: 'pfd-ok',
+      onOpen: (q) => {
+        const field = q('pfd-pct');
+        const split = q('pfd-split');
+        const choice = () => dlg.overlay.querySelector('input[name="pfd-invoicing"]:checked').value;
+        const refresh = () => {
+          const pair = choice() === 'pair';
+          q('pfd-pct-field').hidden = !pair;
+          if (!pair) {
+            split.textContent = 'One invoice, ' + (project.upid ? 'INV-' + project.upid : 'INV-<UPID>') + ', for the whole ' +
+              fmt(totals.totalIncGst) + '.';
+            return;
+          }
+          const value = Number(field.value);
+          if (!(value > 0 && value <= 100)) {
+            split.textContent = 'The deposit must be more than 0% and at most 100%.';
+            return;
+          }
+          const deposit = LSCCalc.depositAmount(totals, value);
+          split.textContent = 'Deposit ' + fmt(deposit.totalIncGst) + ' to secure the booking, then the final invoice for the other ' +
+            fmt(LSCCalc.finalInvoiceTotals(totals, null, deposit).balanceDue) + ' plus any extras.';
+        };
+        dlg.overlay.querySelectorAll('input[name="pfd-invoicing"]').forEach((r) => r.addEventListener('change', refresh));
+        field.addEventListener('input', refresh);
+        refresh();
+      },
+      run: async (b) => {
+        const invoicing = dlg.overlay.querySelector('input[name="pfd-invoicing"]:checked').value;
+        const body = { invoicing };
+        if (invoicing === 'pair') {
+          const field = dlg.overlay.querySelector('#pfd-pct');
+          const value = Number(field.value);
+          if (field.value === '' || !(value > 0 && value <= 100)) {
+            field.focus();
+            throw new Error('The deposit must be more than 0% and at most 100%.');
+          }
+          body.depositPct = value;
+        }
+        return post(action, body, b, accepting ? 'Accepting…' : 'Creating invoices…', (reply) => {
+          const made = invoicing === 'pair' ? 'Deposit and final invoices made.' : 'Invoice made.';
+          if (reply.already) return accepting ? 'Already accepted. Nothing changed.' : 'Its invoices were already made.';
+          const clash = reply.rebook || [];
+          if (!clash.length) return (accepting ? 'Accepted. ' : '') + made;
+          return 'Accepted. ' + made + ' ' + clash.map((c) => C.shortDate(c.date)).join(', ') + ' ' +
+            (clash.length === 1 ? 'is' : 'are') + ' also confirmed for ' + (clash[0].upid || clash[0].name || 'another project') +
+            ': flagged to rebook.';
+        });
       },
     });
   }

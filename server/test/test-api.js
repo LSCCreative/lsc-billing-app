@@ -2199,7 +2199,7 @@ test('project folder: the card the list shows, each estimate whole, invoices, an
     ['invoiced', 'legacy', { date: '2026-10-09', status: 'pencilled' }]);
   assert.deepEqual([f.body.project.declinedAt, f.body.project.acceptedAt], [null, null]);
   assert.deepEqual(f.body.estimates.map((e) => [e.id, e.days.length]), [[est.id, 2]]);
-  assert.deepEqual(f.body.invoices.map((i) => [i.id, i.kind, i.number, i.status, i.estimateId, i.totalIncGst]),
+  assert.deepEqual(f.body.invoices.map((i) => [i.id, i.kind, i.number, i.status, i.estimateId, i.amountDue]),
     [['inv_t18f', 'legacy', 'INV-OLD-7', 'sent', est.id, 1232]]);
   assert.deepEqual(f.body.activity.map((a) => [a.id, a.detail]), [['act_t18b', { x: 1 }], ['act_t18a', {}]]);
 
@@ -2325,4 +2325,274 @@ test('estimates: the retired doc type and invoice number are never written (D62)
     assert.deepEqual([saved.body.estimate.docType, saved.body.estimate.invoiceNumber], ['invoice', 'INV-OLD-3']);
   }
   await dropEstimates(made.body.estimate.id);
+});
+
+/* ── Accepting, and creating invoices (task 19) ────────────────────────── */
+const calc19 = require('../src/calc');
+const invoiceRows = (projectId) => db.prepare(`
+  SELECT * FROM invoices WHERE project_id = ?
+   ORDER BY CASE kind WHEN 'deposit' THEN 0 WHEN 'final' THEN 1 ELSE 2 END
+`).all(projectId);
+const activityCount = (projectId) => db.prepare('SELECT COUNT(*) AS n FROM activity WHERE project_id = ?').get(projectId).n;
+const gstOn = (extra) => api('/api/settings', {
+  method: 'PUT',
+  body: JSON.stringify({ gst: { registered: true, rate: 0.1, pricesIncludeGst: false }, ...(extra || {}) }),
+});
+const gstOff = () => api('/api/settings', { method: 'PUT', body: JSON.stringify({}) });
+
+test('accept: one transaction makes the deposit + final pair from the stored totals, exactly as task 14 does', async () => {
+  await gstOn({ invoicing: { depositPct: 40 } });
+  // An awkward total, so the deposit's cents and its GST share both round.
+  const est = (await saveEstimate({
+    name: 'T19 Pair', upid: 'T19-PAIR',
+    activeRows: { prod: [capture('d_t19_p1', { mu: 1123.37 })], post: [capture(null, { name: 'Edit', mu: 911.11 })] },
+    days: [pbDay('d_t19_p1', '2026-11-02', 'pencilled')],
+  })).body.estimate;
+  const stored = est.totals;
+  assert.ok(stored.gst > 0 && Math.round(stored.totalIncGst * 100) % 3 !== 0, JSON.stringify(stored));
+  assert.equal(est.upidLocked, false);
+  // The folder offers the setting's % before acceptance (D33).
+  assert.equal((await folderOf(est.projectId)).body.project.depositPctDefault, 40);
+
+  const r = await act(est.projectId, 'accept', { invoicing: 'pair', depositPct: 33 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const [dep, fin, ...more] = invoiceRows(est.projectId);
+  assert.equal(more.length, 0);
+  assert.deepEqual([dep.kind, dep.number, dep.status, dep.pct, dep.estimate_id],
+    ['deposit', 'INV-T19-PAIR-D', 'draft', 33, est.id]);
+  assert.deepEqual([fin.kind, fin.number, fin.status, fin.pct, fin.less_invoice_id, fin.estimate_id],
+    ['final', 'INV-T19-PAIR-F', 'draft', null, dep.id, est.id]);
+  // The amounts are task 14's, from the estimate's stored totals, to the cent.
+  const deposit = calc19.depositAmount(stored, 33);
+  assert.deepEqual(JSON.parse(dep.totals_json), deposit);
+  assert.deepEqual(JSON.parse(fin.totals_json), calc19.finalInvoiceTotals(stored, null, deposit));
+  const final = JSON.parse(fin.totals_json);
+  for (const k of ['clientPriceExGst', 'gst', 'totalIncGst']) {
+    assert.equal(Math.round(deposit[k] * 100) + Math.round(final.balance[k] * 100), Math.round(stored[k] * 100), k);
+  }
+  assert.equal(final.total.totalIncGst, stored.totalIncGst);
+  // Each keeps the estimate as accepted, its days confirmed.
+  const snap = JSON.parse(dep.estimate_snapshot_json);
+  assert.deepEqual([snap.id, snap.status, snap.totals, snap.days.map((d) => d.status)], [est.id, 'accepted', stored, ['confirmed']]);
+  assert.equal(fin.estimate_snapshot_json, dep.estimate_snapshot_json);
+
+  const p = projectRow(est.projectId);
+  assert.deepEqual([Boolean(p.accepted_at), p.invoicing, p.deposit_pct], [true, 'pair', 33]);
+  assert.deepEqual([r.body.estimates[0].status, r.body.estimates[0].days[0].status, r.body.project.stage,
+    r.body.project.stageDetail.step], ['accepted', 'confirmed', 'accepted', 'deposit_draft']);
+  assert.deepEqual(r.body.invoices.map((i) => [i.kind, i.number, i.amountDue]),
+    [['deposit', 'INV-T19-PAIR-D', deposit.totalIncGst], ['final', 'INV-T19-PAIR-F', final.balanceDue]]);
+  assert.deepEqual([r.body.activity[0].kind, r.body.activity[0].detail], ['accepted', {
+    estimateId: est.id, invoicing: 'pair', depositPct: 33, invoices: ['INV-T19-PAIR-D', 'INV-T19-PAIR-F'], rebook: [],
+  }]);
+  assert.deepEqual(r.body.rebook, []);
+
+  // Editing the estimate afterwards moves no invoice.
+  const edited = await saveEstimate({
+    name: 'T19 Pair', upid: 'T19-PAIR',
+    activeRows: { prod: [capture('d_t19_p1', { mu: 2000 })] },
+    days: [pbDay('d_t19_p1', '2026-11-02', 'confirmed')],
+  }, est.id);
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  assert.deepEqual(invoiceRows(est.projectId).map((i) => i.totals_json), [dep.totals_json, fin.totals_json]);
+  await dropEstimates(est.id);
+  await gstOff();
+});
+
+test('accept: without a %, the setting’s; a single invoice is INV-<UPID>, the whole job due', async () => {
+  await gstOn({ invoicing: { depositPct: 40 } });
+  const a = (await saveEstimate({ name: 'T19 Setting', upid: 'T19-SET', activeRows: { post: [capture(null, { mu: 777.77 })] } })).body.estimate;
+  assert.equal((await act(a.projectId, 'accept', {})).status, 200);
+  const [dep] = invoiceRows(a.projectId);
+  assert.deepEqual([dep.pct, JSON.parse(dep.totals_json)], [40, calc19.depositAmount(a.totals, 40)]);
+  // A % set on the project before acceptance beats the setting (D33).
+  const own = (await saveEstimate({ name: 'T19 Own', upid: 'T19-OWN', activeRows: { post: [capture(null, { mu: 777.77 })] } })).body.estimate;
+  db.prepare('UPDATE projects SET deposit_pct = 20 WHERE id = ?').run(own.projectId);
+  assert.equal((await folderOf(own.projectId)).body.project.depositPctDefault, 20);
+  assert.equal((await act(own.projectId, 'accept', {})).status, 200);
+  assert.equal(invoiceRows(own.projectId)[0].pct, 20);
+  await dropEstimates(own.id);
+
+  const b = (await saveEstimate({ name: 'T19 Single', upid: 'T19-ONE', activeRows: { post: [capture(null, { mu: 777.77 })] } })).body.estimate;
+  db.prepare('UPDATE projects SET deposit_pct = 25 WHERE id = ?').run(b.projectId);
+  const r = await act(b.projectId, 'accept', { invoicing: 'single' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const rows = invoiceRows(b.projectId);
+  assert.deepEqual(rows.map((i) => [i.kind, i.number, i.pct, i.less_invoice_id]), [['single', 'INV-T19-ONE', null, null]]);
+  assert.deepEqual(JSON.parse(rows[0].totals_json), calc19.singleInvoiceTotals(b.totals, null));
+  assert.equal(r.body.invoices[0].amountDue, b.totals.totalIncGst);
+  // A single invoice leaves the project's own deposit % alone.
+  assert.deepEqual([projectRow(b.projectId).invoicing, projectRow(b.projectId).deposit_pct], ['single', 25]);
+  await dropEstimates(a.id, b.id);
+  await gstOff();
+});
+
+test('accept: a second accept changes nothing, whatever it asks for', async () => {
+  const est = (await saveEstimate({ name: 'T19 Twice', upid: 'T19-TWICE' })).body.estimate;
+  await act(est.projectId, 'sent', { validUntil: '2026-11-03' });
+  const first = await act(est.projectId, 'accept', { invoicing: 'pair', depositPct: 50 });
+  assert.equal(first.status, 200);
+  const before = [JSON.stringify(invoiceRows(est.projectId)), activityCount(est.projectId), JSON.stringify(projectRow(est.projectId))];
+  for (const body of [{ invoicing: 'pair', depositPct: 50 }, { invoicing: 'single' }, { depositPct: 'nonsense' }]) {
+    const again = await act(est.projectId, 'accept', body);
+    assert.deepEqual([again.status, again.body.already], [200, true], JSON.stringify(body));
+  }
+  assert.deepEqual([JSON.stringify(invoiceRows(est.projectId)), activityCount(est.projectId), JSON.stringify(projectRow(est.projectId))], before);
+  await dropEstimates(est.id);
+});
+
+test('accept: confirms every dated day, flagging one another project confirmed first as “clash, rebook” (D18)', async () => {
+  const other = (await saveEstimate({
+    name: 'T19 Holder', upid: 'T19-HOLD',
+    activeRows: { prod: [capture('d_t19_h1'), capture('d_t19_h2')] },
+    days: [pbDay('d_t19_h1', '2026-11-16', 'confirmed'), pbDay('d_t19_h2', '2026-11-18', 'confirmed')],
+  })).body.estimate;
+  const est = (await saveEstimate({
+    name: 'T19 Clash', upid: 'T19-CLASH',
+    activeRows: { prod: [capture('d_t19_c1'), capture('d_t19_c3'), capture('d_t19_c4'), capture('d_t19_c5')] },
+    days: [pbDay('d_t19_c1', '2026-11-15', 'proposed'), pbDay('d_t19_c4', '2026-11-17', 'confirmed'),
+      pbDay('d_t19_c5', null, 'proposed'), pbDay('d_t19_c3', '2026-11-18', 'pencilled', { overrideNote: 'Second shooter' })],
+  })).body.estimate;
+  assert.ok(est && est.id);
+  // Pencilled onto a date the holder confirms after: saved where it is, it stays saveable.
+  db.prepare("INSERT INTO production_days (id, estimate_id, date, status, start_time, end_time, override_note, sort, created_at, updated_at) VALUES ('d_t19_c2', ?, '2026-11-16', 'pencilled', NULL, NULL, '', 9, 'x', 'x')").run(est.id);
+  // A date this project confirmed first that the holder also has: not the one to rebook.
+  db.prepare("INSERT INTO production_days (id, estimate_id, date, status, start_time, end_time, override_note, sort, created_at, updated_at) VALUES ('d_t19_h3', ?, '2026-11-17', 'confirmed', NULL, NULL, '', 9, 'x', 'x')").run(other.id);
+
+  const r = await act(est.projectId, 'accept', { invoicing: 'single' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.rebook, [{ date: '2026-11-16', upid: 'T19-HOLD', name: 'T19 Holder' }]);
+  const days = Object.fromEntries(db.prepare('SELECT id, status, rebook FROM production_days WHERE estimate_id = ?').all(est.id)
+    .map((d) => [d.id, [d.status, d.rebook]]));
+  assert.deepEqual(days, {
+    d_t19_c1: ['confirmed', 0], d_t19_c2: ['confirmed', 1], d_t19_c3: ['confirmed', 0], // its note is the override (D16)
+    d_t19_c4: ['confirmed', 0], d_t19_c5: ['proposed', 0], // Date TBC untouched
+  });
+  assert.deepEqual(r.body.activity[0].detail.rebook, ['2026-11-16']);
+  const shown = (body) => body.estimates[0].days.filter((d) => d.rebook).map((d) => [d.id, d.rebook]);
+  assert.deepEqual(shown(r.body), [['d_t19_c2', { upid: 'T19-HOLD', name: 'T19 Holder' }]]);
+
+  // A save that leaves the day where it is keeps the flag; the browser can't set or clear it.
+  const allDays = (extra) => [pbDay('d_t19_c1', '2026-11-15', 'confirmed'), pbDay('d_t19_c2', '2026-11-16', 'confirmed', extra),
+    pbDay('d_t19_c4', '2026-11-17', 'confirmed'), pbDay('d_t19_c5', null, 'proposed'),
+    pbDay('d_t19_c3', '2026-11-18', 'confirmed', { overrideNote: 'Second shooter' })];
+  const rows = { prod: [capture('d_t19_c1'), capture('d_t19_c2'), capture('d_t19_c3'), capture('d_t19_c4'), capture('d_t19_c5')] };
+  const flag = () => db.prepare("SELECT rebook FROM production_days WHERE id = 'd_t19_c2'").get().rebook;
+  assert.equal((await saveEstimate({ name: 'T19 Clash', upid: 'T19-CLASH', activeRows: rows, days: allDays({ rebook: false }) }, est.id)).status, 200);
+  assert.equal(flag(), 1);
+  // While the holder is declined there's no clash to show; back, it shows again.
+  await act(other.projectId, 'decline');
+  assert.deepEqual(shown((await folderOf(est.projectId)).body), []);
+  db.prepare("UPDATE estimates SET status = 'draft' WHERE id = ?").run(other.id);
+  db.prepare('UPDATE projects SET declined_at = NULL WHERE id = ?').run(other.projectId);
+  assert.equal(shown((await folderOf(est.projectId)).body).length, 1);
+  // A specification note sorts it out, and clears it; so does moving the day.
+  assert.equal((await saveEstimate({ name: 'T19 Clash', upid: 'T19-CLASH', activeRows: rows, days: allDays({ overrideNote: 'Sub shoots it' }) }, est.id)).status, 200);
+  assert.equal(flag(), 0);
+  db.prepare("UPDATE production_days SET rebook = 1, override_note = '' WHERE id = 'd_t19_c2'").run();
+  assert.equal((await saveEstimate({ name: 'T19 Clash', upid: 'T19-CLASH', activeRows: rows, days: allDays({ date: '2026-11-19' }) }, est.id)).status, 200);
+  assert.equal(flag(), 0);
+  await dropEstimates(est.id, other.id);
+});
+
+test('accept: a failure part-way rolls the whole accept back', async () => {
+  const est = (await saveEstimate({
+    name: 'T19 Rollback', upid: 'T19-ROLL',
+    activeRows: { prod: [capture('d_t19_r1')] },
+    days: [pbDay('d_t19_r1', '2026-11-20', 'pencilled')],
+  })).body.estimate;
+  await act(est.projectId, 'sent', { validUntil: '2026-11-03' });
+  const snapshot = () => JSON.stringify([projectRow(est.projectId), db.prepare('SELECT * FROM estimates WHERE id = ?').get(est.id),
+    db.prepare('SELECT * FROM production_days WHERE estimate_id = ?').all(est.id), invoiceRows(est.projectId),
+    activityCount(est.projectId)]);
+  const before = snapshot();
+  // The final invoice is the last write before the project's: refuse it.
+  db.exec("CREATE TRIGGER t19_fail BEFORE INSERT ON invoices WHEN NEW.kind = 'final' BEGIN SELECT RAISE(ABORT, 't19 forced'); END;");
+  try {
+    const r = await api(`/api/projects/${est.projectId}/accept?today=${T18_TODAY}`, { method: 'POST', body: JSON.stringify({}) });
+    await r.text();
+    assert.equal(r.status, 500);
+  } finally {
+    db.exec('DROP TRIGGER t19_fail');
+  }
+  assert.equal(snapshot(), before);
+  assert.equal((await act(est.projectId, 'accept', {})).status, 200);
+  assert.equal(invoiceRows(est.projectId).length, 2);
+  await dropEstimates(est.id);
+});
+
+test('accept: refused when declined, without its own UPID, at a bad %, or onto a number already used', async () => {
+  const est = (await saveEstimate({ name: 'T19 Refuse', upid: 'T19-N' })).body.estimate;
+  for (const [body, code] of [[{ depositPct: 0 }, 'deposit_pct_invalid'], [{ depositPct: 100.01 }, 'deposit_pct_invalid'],
+    [{ depositPct: 'half' }, 'deposit_pct_invalid'], [{ invoicing: 'triple' }, 'invoicing_invalid']]) {
+    const r = await act(est.projectId, 'accept', body);
+    assert.deepEqual([r.status, r.body.error], [400, code], JSON.stringify(body));
+  }
+  // "T19-N-D" as a single invoice is INV-T19-N-D: project T19-N's deposit number.
+  const clash = (await saveEstimate({ name: 'T19 Number', upid: 'T19-N-D' })).body.estimate;
+  assert.equal((await act(clash.projectId, 'accept', { invoicing: 'single' })).status, 200);
+  const taken = await act(est.projectId, 'accept', {});
+  assert.deepEqual([taken.status, taken.body.error, taken.body.number], [409, 'invoice_number_taken', 'INV-T19-N-D']);
+  assert.equal(projectRow(est.projectId).accepted_at, null);
+  assert.equal((await act(est.projectId, 'accept', { invoicing: 'single' })).status, 200); // INV-T19-N is free
+
+  const blank = (await saveEstimate({ name: 'T19 Blank', upid: '' })).body.estimate;
+  assert.deepEqual([(await act(blank.projectId, 'accept', {})).body.error, invoiceRows(blank.projectId).length], ['upid_missing', 0]);
+  const waiting = (await saveEstimate({ name: 'T19 Waiting', upid: 'T19-WAIT' })).body.estimate;
+  db.prepare('UPDATE projects SET upid = NULL, needs_upid = 1 WHERE id = ?').run(waiting.projectId);
+  assert.equal((await act(waiting.projectId, 'accept', {})).body.error, 'needs_upid');
+  const gone = (await saveEstimate({ name: 'T19 Gone', upid: 'T19-GONE' })).body.estimate;
+  await act(gone.projectId, 'decline');
+  assert.deepEqual([(await act(gone.projectId, 'accept', {})).status, (await act(gone.projectId, 'accept', {})).body.error],
+    [409, 'project_declined']);
+  assert.equal((await act('prj_nope', 'accept', {})).status, 404);
+  await dropEstimates(est.id, clash.id, blank.id, waiting.id, gone.id);
+});
+
+test('invoices: a project accepted before task 19 gets its invoices once; not before acceptance, nor beside an old one', async () => {
+  const est = (await saveEstimate({ name: 'T19 Mapped', upid: 'T19-MAP', activeRows: { post: [capture(null, { mu: 640.5 })] } })).body.estimate;
+  assert.equal((await act(est.projectId, 'invoices', {})).body.error, 'not_accepted');
+  // As v13 maps an `approved` estimate.
+  db.prepare("UPDATE estimates SET status = 'accepted' WHERE id = ?").run(est.id);
+  db.prepare("UPDATE projects SET accepted_at = '2026-09-01T00:00:00.000Z' WHERE id = ?").run(est.projectId);
+  const r = await act(est.projectId, 'invoices', { invoicing: 'pair', depositPct: 30 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const [dep, fin] = invoiceRows(est.projectId);
+  assert.deepEqual([dep.number, fin.number, JSON.parse(dep.totals_json)], ['INV-T19-MAP-D', 'INV-T19-MAP-F', calc19.depositAmount(est.totals, 30)]);
+  assert.deepEqual(JSON.parse(fin.totals_json), calc19.finalInvoiceTotals(est.totals, null, calc19.depositAmount(est.totals, 30)));
+  assert.deepEqual([r.body.activity[0].kind, r.body.activity[0].detail.invoices], ['invoices_created', ['INV-T19-MAP-D', 'INV-T19-MAP-F']]);
+  assert.equal(projectRow(est.projectId).accepted_at, '2026-09-01T00:00:00.000Z');
+  const n = activityCount(est.projectId);
+  assert.deepEqual([(await act(est.projectId, 'invoices', { invoicing: 'single' })).body.already, invoiceRows(est.projectId).length,
+    activityCount(est.projectId)], [true, 2, n]);
+
+  const old = (await saveEstimate({ name: 'T19 Old', upid: 'T19-OLD' })).body.estimate;
+  db.prepare("UPDATE projects SET accepted_at = 'x' WHERE id = ?").run(old.projectId);
+  db.prepare("INSERT INTO invoices (id, project_id, estimate_id, kind, number, status, created_at, updated_at) VALUES ('inv_t19old', ?, ?, 'legacy', 'INV-9', 'sent', 'x', 'x')")
+    .run(old.projectId, old.id);
+  assert.equal((await act(old.projectId, 'invoices', {})).body.error, 'has_legacy_invoice');
+  await dropEstimates(est.id, old.id);
+});
+
+test('invoices: the UPID locks with the first invoice (D36), and a sent one keeps its estimate', async () => {
+  const est = (await saveEstimate({ name: 'T19 Lock', upid: 'T19-LOCK' })).body.estimate;
+  // A made-the-old-way invoice doesn't lock it.
+  db.prepare("INSERT INTO invoices (id, project_id, estimate_id, kind, number, status, created_at, updated_at) VALUES ('inv_t19lk', ?, ?, 'legacy', 'INV-L', 'draft', 'x', 'x')")
+    .run(est.projectId, est.id);
+  assert.equal((await saveEstimate({ name: 'T19 Lock', upid: 'T19-LOCK2' }, est.id)).status, 200);
+  db.prepare("DELETE FROM invoices WHERE id = 'inv_t19lk'").run();
+  assert.equal((await act(est.projectId, 'accept', {})).status, 200);
+  const moved = await saveEstimate({ name: 'T19 Lock', upid: 'T19-LOCK3' }, est.id);
+  assert.deepEqual([moved.status, moved.body.error, moved.body.upid], [409, 'upid_locked', 'T19-LOCK2']);
+  const same = await saveEstimate({ name: 'T19 Lock renamed', upid: 'T19-LOCK2' }, est.id);
+  assert.deepEqual([same.status, same.body.estimate.upidLocked], [200, true]);
+  assert.equal((await api(`/api/estimates/${est.id}`).then((r) => r.json())).estimate.upidLocked, true);
+  assert.equal((await folderOf(est.projectId)).body.estimates[0].upidLocked, true);
+
+  db.prepare("UPDATE invoices SET status = 'sent' WHERE project_id = ? AND kind = 'deposit'").run(est.projectId);
+  const del = await api(`/api/estimates/${est.id}`, { method: 'DELETE' }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  assert.deepEqual([del.status, del.body.error], [409, 'has_sent_invoices']);
+  db.prepare('UPDATE invoices SET status = ? WHERE project_id = ?').run('draft', est.projectId);
+  await dropEstimates(est.id);
+  assert.equal(projectRow(est.projectId), undefined);
 });

@@ -492,8 +492,15 @@
 .inv-num-wrap label.label-accent {
   color: var(--accent-text);
 }
+/* A UPID fixed by its invoices (D36, task 19): it reads, it can't be typed
+   in, and the note under it says why. */
+#f-upid[readonly] {
+  background: transparent;
+  border-style: dashed;
+  cursor: default;
+}
 /* Under the blank UPID of a copy Duplicate just made (D60): where it came
-   from, and why it needs its own. */
+   from, and why it needs its own. Also under a fixed UPID. */
 .field-copy-note {
   margin: 2px 0 0;
   font-size: 11px;

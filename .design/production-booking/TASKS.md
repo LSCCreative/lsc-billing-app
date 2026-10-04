@@ -425,7 +425,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     (`#nav-projects`). The client's history is the same cards via `?client=&stage=all`.
 
 - [x] **18. The project folder** (frontend — Opus/high). _Depends on: 17._ **Done 2026-10-04,
-  uncommitted** (see the Done note below).
+  committed `c278225`** (see the Done note below).
   - **`#/projects/<id>`**: Overview (UPID, name, client, stage line, the **one next action**), a
     compact Production days list, Documents, and Activity (IA Content Hierarchy).
   - **Actions:**
@@ -480,7 +480,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - **Found and fixed:** `isYmd` threw (500) on an impossible date like `2026-13-01`; now 400.
   - The editor's doc-type bar keeps `min-height: 61px` from 768px, so nothing below it moves.
 
-- [ ] **19. Accepting, and creating invoices** (money math — Opus/high). _Depends on: 14, 18._
+- [x] **19. Accepting, and creating invoices** (money math — Opus/high). _Depends on: 14, 18._
+  **Done 2026-10-04, committed** (see the Done note below).
   - **`POST /api/projects/:id/accept`**, in one transaction:
     - sets accepted;
     - confirms every dated day and flags any clash "clash, rebook" (D18);
@@ -501,6 +502,39 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - the numbers;
   - the amounts matching task 14 exactly.
 
+  **Done note (2026-10-04).** Server: `routes/projects.js` gains `POST /accept` and `POST
+  /invoices` (`invoicingChoice`, `cannotInvoice`, `confirmDays`, `createInvoices`), the folder's
+  `depositPctDefault`, `upidLocked`, each day's `rebook` and each invoice's `amountDue` (was
+  `totalIncGst`); `projects.js` `upidLocked` + the `upid_locked` refusal in `planProjectWrite`;
+  `days.js` `replaceDays` carries the flag; v13 gains `production_days.rebook` (v13 is undeployed,
+  so it went there, not into a v14); `DELETE /api/estimates/:id` refuses `has_sent_invoices` for
+  the billed or last estimate. Web: the folder's Mark accepted… / Create invoices… dialog (pair or
+  single, deposit %, a live split from `LSCCalc.depositAmount`), the clash line on day rows, the
+  activity wording; the editor's UPID read-only when locked. `npm test` 444/444 (was 436).
+  Mutations caught 22 of 22. Checked against `api-scratch` at 1280 / 656 / 375 with dispatched
+  clicks: accept with a clash (AUD-B, 40%), Create invoices single (TST-001), the locked UPID
+  refused and then saved, the flag kept through a save. Decisions taken in the code:
+  - **What is accepted:** the lead estimate only; a kept-together group's others stay as they are.
+    Only days that were pencilled or proposed are confirmed and can be flagged; an already
+    confirmed day held its date first.
+  - **The flag is stored, shown live:** `rebook = 1` from the accept; the folder shows it only while
+    another live project still has that date confirmed (so it hides while that one is declined).
+    Moving the day or adding a specification note clears it; the browser can't set it.
+  - **Idempotent** means a second accept, or a second Create invoices, answers the folder with
+    `already: true` and writes nothing, whatever the body asks.
+  - **Deposit %:** the body's, else the project's own, else `settings.invoicing.depositPct`, else
+    50. **Task 21 must store the setting at `settings.invoicing.depositPct`.** A pair needs
+    0 < % ≤ 100; a single leaves the project's own % alone.
+  - **Snapshot:** each invoice stores the accepted estimate whole (`loadEstimate`, days confirmed)
+    in `estimate_snapshot_json`; totals are task 14's from its stored totals, no extras yet. All are
+    `draft`, with no issued or due date.
+  - **Refusals:** `needs_upid`, `upid_missing`, `invoice_number_taken` (a UPID like `ABC-D` would
+    make project ABC's deposit number), `project_declined`, `not_accepted` / `has_legacy_invoice`
+    for /invoices, `deposit_pct_invalid`, `invoicing_invalid`.
+  - **UPID lock (D36):** any non-legacy invoice locks it, a void one too (it keeps its number).
+  - **Activity:** `accepted` `{ estimateId, invoicing, depositPct, invoices, rebook }`;
+    `invoices_created` `{ estimateId, invoicing, depositPct, invoices }`. Task 22 words both.
+
 - [ ] **20. The invoice screen and invoice PDFs** (money math — Opus/high). _Depends on: 19._
   - **`#/projects/<id>/invoices/<invoiceId>`:**
     - **The deposit** is a fixed summary (D37).
@@ -511,6 +545,10 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     - **A legacy invoice** is read-only, marked "made the old way".
   - **PDFs** for deposit, final and single invoices (the existing invoice PDF's header and payment
     block), plus a Cost Breakdown per invoice (D8).
+
+  - **Correcting an invoice (D100):** a draft edits in place; a sent, unpaid one is voided (date +
+    reason, kept) and replaced with the next free suffix (`-D2`, `-F2`, `INV-<UPID>-2`); a paid one
+    is never voided.
 
   **Done when** `test-pdf.js` pins each kind's amounts and wording and the final's "Less deposit
   paid (INV-…-D)". In the browser: add $420 of Overtime to a final invoice, save, reload, and the

@@ -1,10 +1,16 @@
 'use strict';
 
 const { newId, nowIso } = require('../db');
-const { STAGES, projectStage, settledAt } = require('../projects');
+const { STAGES, projectStage, settledAt, upidLocked } = require('../projects');
 const { readDays } = require('../days');
 const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
+const { readSettings } = require('../ratecard');
+const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
+
+/* The deposit when nothing else says (D33). Settings makes it a setting at
+   task 21, stored as settings.invoicing.depositPct. */
+const DEFAULT_DEPOSIT_PCT = 50;
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -146,12 +152,23 @@ function readFolder(db, id, today) {
     declinedAt: p.declined_at || null,
     invoicing: p.invoicing || null,
     depositPct: p.deposit_pct === null || p.deposit_pct === undefined ? null : p.deposit_pct,
+    // What Mark accepted's deposit % starts at (D33).
+    depositPctDefault: depositPctFor(db, p),
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   });
+  project.upidLocked = upidLocked(db, id);
   const rows = db.prepare('SELECT * FROM estimates WHERE project_id = ?').all(id);
+  const flags = rebookFlags(db, rows.map((r) => r.id));
   const estimates = rows
-    .map((row) => loadEstimate(row, readDays(db, row.id), readRentals(db, row.id)))
+    .map((row) => {
+      const estimate = loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
+      estimate.upidLocked = project.upidLocked;
+      estimate.days.forEach((d) => {
+        if (flags.has(d.id)) d.rebook = flags.get(d.id);
+      });
+      return estimate;
+    })
     .sort((a, b) => (a.id === project.estimateId ? -1 : b.id === project.estimateId ? 1 : 0) ||
       (b.updatedAt > a.updatedAt) - (b.updatedAt < a.updatedAt));
   return {
@@ -164,7 +181,7 @@ function readFolder(db, id, today) {
       status: i.status,
       estimateId: i.estimate_id || null,
       pct: i.pct === null ? null : i.pct,
-      totalIncGst: Number(parseDetail(i.totals_json).totalIncGst) || 0,
+      amountDue: amountDue(i.kind, parseDetail(i.totals_json)),
       issuedAt: i.issued_at || null,
       dueAt: i.due_at || null,
       paidAt: i.paid_at || null,
@@ -174,6 +191,48 @@ function readFolder(db, id, today) {
     })),
     activity: log.map((a) => ({ id: a.id, at: a.at, kind: a.kind, detail: parseDetail(a.detail_json) })),
   };
+}
+
+/* What an invoice asks the client to pay: a deposit or old-way invoice its
+   total, a final or single invoice its balance (calc.js invoiceTotals). */
+function amountDue(kind, totals) {
+  const due = kind === 'final' || kind === 'single' ? totals.balanceDue : totals.totalIncGst;
+  return Number(due) || 0;
+}
+
+/**
+ * The "clash, rebook" days among these estimates' (D18): flagged when an
+ * accept confirmed them on a date another project had confirmed first, and
+ * shown only while that is still so. If the other project is declined or
+ * moves its day, the clash is over and the flag says nothing, though it stays
+ * stored: should that project come back, so does the clash.
+ *
+ * @returns {Map<string, {upid, name}>} day id → who has the date.
+ */
+function rebookFlags(db, estimateIds) {
+  const out = new Map();
+  if (!estimateIds.length) return out;
+  const ids = JSON.stringify(estimateIds);
+  const flagged = db.prepare(`
+    SELECT id, date FROM production_days
+     WHERE estimate_id IN (SELECT value FROM json_each(?)) AND rebook = 1 AND date IS NOT NULL
+  `).all(ids);
+  const holder = confirmedHolder(db);
+  flagged.forEach((d) => {
+    const hit = holder.get(d.date, ids);
+    if (hit) out.set(d.id, { upid: hit.upid || '', name: hit.name || '' });
+  });
+  return out;
+}
+
+/* Another live project's confirmed day on a date: `.get(date, ownIdsJson)`. */
+function confirmedHolder(db) {
+  return db.prepare(`
+    SELECT e.upid, e.name FROM production_days d JOIN estimates e ON e.id = d.estimate_id
+     WHERE d.date = ? AND d.status = 'confirmed' AND e.status <> 'declined'
+       AND d.estimate_id NOT IN (SELECT value FROM json_each(?))
+     ORDER BY e.upid, e.id LIMIT 1
+  `);
 }
 
 function logActivity(db, projectId, kind, detail, now) {
@@ -219,6 +278,138 @@ function lockedDates(db, estimateIds) {
 
 const whoHas = (c) => c.upid || (c.name ? `“${c.name}”` : 'another project');
 
+/* The deposit % a project would be accepted at (D33): its own, if one was set
+   before acceptance; else the setting; else 50. */
+function depositPctFor(db, p) {
+  const valid = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 100;
+  if (valid(p.deposit_pct)) return p.deposit_pct;
+  const setting = Number(((readSettings(db) || {}).invoicing || {}).depositPct);
+  return valid(setting) ? setting : DEFAULT_DEPOSIT_PCT;
+}
+
+/**
+ * Pair or single, and at what deposit %, from an accept or invoices body:
+ * `{ invoicing: 'pair' | 'single', depositPct }`. Both may be left out: a
+ * pair (D32) at the project's deposit % (depositPctFor). A pair's % must be
+ * above 0 and at most 100 (a 0% deposit is a single invoice); a single
+ * invoice has none.
+ *
+ * @returns {{invoicing:string, pct:number|null}|{error:string, message:string}}
+ */
+function invoicingChoice(db, p, body) {
+  const invoicing = body.invoicing === undefined ? 'pair' : body.invoicing;
+  if (invoicing !== 'pair' && invoicing !== 'single') {
+    return { error: 'invoicing_invalid', message: 'Choose a deposit + final pair or a single invoice.' };
+  }
+  if (invoicing === 'single') return { invoicing, pct: null };
+  const given = body.depositPct;
+  const pct = given === undefined || given === null || given === '' ? depositPctFor(db, p) : Number(given);
+  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0 || pct > 100) {
+    return { error: 'deposit_pct_invalid', message: 'The deposit must be more than 0% and at most 100%.' };
+  }
+  return { invoicing, pct };
+}
+
+/* The numbers a choice makes (D36): INV-<UPID>-D and -F, or INV-<UPID>. */
+function invoiceNumbers(upid, invoicing) {
+  return invoicing === 'single'
+    ? [{ kind: 'single', number: `INV-${upid}` }]
+    : [{ kind: 'deposit', number: `INV-${upid}-D` }, { kind: 'final', number: `INV-${upid}-F` }];
+}
+
+/**
+ * Why this project can't be invoiced yet, as a reply; or null. Invoice
+ * numbers carry the UPID (D36), so a project waiting for the fix-up, or with
+ * no UPID typed, can't have one; nor can a number another invoice already
+ * holds (a UPID like "ABC-D" would make INV-ABC-D, project ABC's deposit).
+ */
+function cannotInvoice(db, p, numbers) {
+  if (p.needs_upid === 1) {
+    return { error: 'needs_upid', message: 'This project needs its own UPID before it can be invoiced. Fix it first.' };
+  }
+  if (!p.upid) {
+    return { error: 'upid_missing', message: 'Give the estimate a UPID first: invoice numbers carry it.' };
+  }
+  const taken = db.prepare(`
+    SELECT number FROM invoices WHERE number = ? COLLATE NOCASE AND kind <> 'legacy' LIMIT 1
+  `);
+  const hit = numbers.find((n) => taken.get(n.number));
+  if (hit) {
+    return { error: 'invoice_number_taken', number: hit.number, message: `${hit.number} is already another invoice’s number.` };
+  }
+  return null;
+}
+
+/**
+ * Makes the invoices for an accepted estimate (D32–D37), inside the caller's
+ * transaction. Returns them as { id, kind, number }.
+ *
+ * Each invoice keeps a SNAPSHOT of the estimate as it was accepted (rows,
+ * labels, client, days and stored totals — owner-only, like the estimate
+ * itself), so editing the estimate later can't move an invoice. The amounts
+ * are task 14's, from the estimate's stored totals, never repriced:
+ *   - deposit: depositAmount(totals, pct), stored as its totals_json;
+ *   - final: finalInvoiceTotals(totals, no extras yet, that stored deposit),
+ *     pointing at the deposit (less_invoice_id) for "Less deposit paid";
+ *   - single: singleInvoiceTotals(totals, no extras yet).
+ * All start as drafts: nothing is issued, due or sent until task 20 / E.
+ */
+function createInvoices(db, p, estimateId, choice, now) {
+  const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(estimateId);
+  const snapshot = loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
+  const json = JSON.stringify(snapshot);
+  const insert = db.prepare(`
+    INSERT INTO invoices
+      (id, project_id, estimate_id, kind, number, status, pct, estimate_snapshot_json, extras_json,
+       totals_json, less_invoice_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, '{}', ?, ?, ?, ?)
+  `);
+  const made = [];
+  const add = (kind, number, pct, totals, lessId) => {
+    const id = newId('inv');
+    insert.run(id, p.id, row.id, kind, number, pct, json, JSON.stringify(totals), lessId, now, now);
+    made.push({ id, kind, number });
+    return id;
+  };
+  const [first, second] = invoiceNumbers(p.upid, choice.invoicing);
+  if (choice.invoicing === 'single') {
+    add('single', first.number, null, singleInvoiceTotals(snapshot.totals, null), null);
+  } else {
+    const deposit = depositAmount(snapshot.totals, choice.pct);
+    const depositId = add('deposit', first.number, choice.pct, deposit, null);
+    add('final', second.number, null, finalInvoiceTotals(snapshot.totals, null, deposit), depositId);
+  }
+  return made;
+}
+
+/**
+ * ACCEPTING (D18), inside the caller's transaction: every dated day of the
+ * accepted estimate that is pencilled or proposed turns confirmed. One on a
+ * date another live project had already confirmed is flagged "clash,
+ * rebook" — the accept still goes through — unless it carries a specification
+ * note (D16), which is the owner having already said why it may share. Date
+ * TBC days and days already confirmed are untouched.
+ *
+ * @returns {Array<{date, upid, name}>} the flagged days.
+ */
+function confirmDays(db, estimateId, ownIds, now) {
+  const days = db.prepare(`
+    SELECT id, date, override_note FROM production_days
+     WHERE estimate_id = ? AND date IS NOT NULL AND status <> 'confirmed'
+     ORDER BY date, id
+  `).all(estimateId);
+  const holder = confirmedHolder(db);
+  const own = JSON.stringify(ownIds);
+  const set = db.prepare("UPDATE production_days SET status = 'confirmed', rebook = ?, updated_at = ? WHERE id = ?");
+  const flagged = [];
+  days.forEach((d) => {
+    const hit = d.override_note ? null : holder.get(d.date, own);
+    if (hit) flagged.push({ date: d.date, upid: hit.upid || '', name: hit.name || '' });
+    set.run(hit ? 1 : 0, now, d.id);
+  });
+  return flagged;
+}
+
 /**
  * Projects (production-booking tasks 17, 18; IA "Projects", "Project folder").
  *
@@ -242,9 +433,9 @@ const whoHas = (c) => c.upid || (c.name ? `“${c.name}”` : 'another project')
  *
  * GET /api/projects/:id?today= — the folder (readFolder).
  *
- * THE FOLDER'S ACTIONS (task 18). Each answers with the folder as it now
- * stands, so the screen redraws from one reply, and each logs an `activity`
- * row. Accepting and invoices are task 19's.
+ * THE FOLDER'S ACTIONS (tasks 18, 19). Each answers with the folder as it
+ * now stands, so the screen redraws from one reply, and each logs an
+ * `activity` row.
  *
  *   POST /sent     { validUntil } — Mark sent, Stage D's stand-in for sending
  *                  (E replaces it). The lead estimate becomes `sent`, and the
@@ -259,6 +450,21 @@ const whoHas = (c) => c.upid || (c.name ? `“${c.name}”` : 'another project')
  *                  confirmed refuses it, `date_locked`, naming every such
  *                  date, unless that day carries a specification note (D16).
  *                  Pencilled ones are only named in the reply (D15).
+ *   POST /accept   { invoicing, depositPct } — "client accepted" (stage D's
+ *                  stand-in for E's signing; IA flow 4). In ONE transaction:
+ *                  the lead estimate becomes accepted, its dated days confirmed
+ *                  with any clash flagged (confirmDays, D18), the deposit +
+ *                  final pair or the single invoice made (createInvoices,
+ *                  D32–D37) at the deposit % chosen, which is copied onto the
+ *                  project (D33), and `accepted` logged. From draft or sent.
+ *                  IDEMPOTENT: accepting an accepted project changes nothing
+ *                  and answers `already: true`. Refused on a declined project,
+ *                  and while invoice numbers can't be made (cannotInvoice).
+ *                  The reply's `rebook` lists the flagged days.
+ *   POST /invoices { invoicing, depositPct } — the invoices alone, for a
+ *                  project accepted without them (v13 mapped every `approved`
+ *                  estimate to accepted). Idempotent the same way; refused
+ *                  before acceptance and on an old-way invoice's project.
  *   DELETE         The project and everything in it: estimates, days,
  *                  rentals, invoices, activity. Refused while an invoice has
  *                  gone out or been paid (a made-the-old-way one excepted, as
@@ -443,6 +649,88 @@ function registerProjectRoutes(app, db) {
       logActivity(db, p.id, 'reopened', {}, now);
     })();
     return folderReply(req, res, { pencilled: clash.pencilled });
+  });
+
+  /* The estimate a project's invoices bill: an accepted one if it has any
+     (the lead among them), else the lead. */
+  function billedEstimateId(p) {
+    const own = db.prepare(`SELECT ${ESTIMATE_COLUMNS} FROM estimates WHERE project_id = ?`).all(p.id);
+    const accepted = own.filter((e) => e.status === 'accepted');
+    return summarize(p, accepted.length ? accepted : own, [], {}).estimateId;
+  }
+
+  app.post('/api/projects/:id/accept', (req, res) => {
+    const p = projectFor(req, res);
+    if (!p) return;
+    const { stage, own } = stageNow(db, p);
+    if (stage === 'declined') {
+      return res.status(409).json({ error: 'project_declined', message: 'This project was declined. Reopen it first.' });
+    }
+    if (stage !== 'draft' && stage !== 'sent') return folderReply(req, res, { already: true });
+    const choice = invoicingChoice(db, p, req.body || {});
+    if (choice.error) return res.status(400).json(choice);
+    const refusal = cannotInvoice(db, p, invoiceNumbers(p.upid, choice.invoicing));
+    if (refusal) return res.status(409).json(refusal);
+    const lead = summarize(p, own, [], {}).estimateId;
+    if (!lead) return res.status(409).json({ error: 'no_estimate' });
+    const now = nowIso();
+    let rebook = [];
+    db.transaction(() => {
+      db.prepare("UPDATE estimates SET status = 'accepted' WHERE id = ?").run(lead);
+      rebook = confirmDays(db, lead, own.map((e) => e.id), now);
+      const made = createInvoices(db, p, lead, choice, now);
+      db.prepare(`
+        UPDATE projects SET accepted_at = ?, invoicing = ?, deposit_pct = COALESCE(?, deposit_pct), updated_at = ?
+         WHERE id = ?
+      `).run(now, choice.invoicing, choice.pct, now, p.id);
+      logActivity(db, p.id, 'accepted', {
+        estimateId: lead,
+        invoicing: choice.invoicing,
+        depositPct: choice.pct,
+        invoices: made.map((i) => i.number),
+        rebook: rebook.map((r) => r.date),
+      }, now);
+    })();
+    return folderReply(req, res, { rebook });
+  });
+
+  app.post('/api/projects/:id/invoices', (req, res) => {
+    const p = projectFor(req, res);
+    if (!p) return;
+    const { stage, bills } = stageNow(db, p);
+    if (stage === 'declined') {
+      return res.status(409).json({ error: 'project_declined', message: 'This project was declined. Reopen it first.' });
+    }
+    if (bills.some((i) => i.kind !== 'legacy')) return folderReply(req, res, { already: true });
+    if (bills.some((i) => i.status !== 'void')) {
+      return res.status(409).json({
+        error: 'has_legacy_invoice',
+        message: 'This project was invoiced the old way, so it has its invoice already.',
+      });
+    }
+    if (stage !== 'accepted') {
+      return res.status(409).json({ error: 'not_accepted', message: 'Mark the project accepted first.' });
+    }
+    const choice = invoicingChoice(db, p, req.body || {});
+    if (choice.error) return res.status(400).json(choice);
+    const refusal = cannotInvoice(db, p, invoiceNumbers(p.upid, choice.invoicing));
+    if (refusal) return res.status(409).json(refusal);
+    const estimateId = billedEstimateId(p);
+    if (!estimateId) return res.status(409).json({ error: 'no_estimate' });
+    const now = nowIso();
+    db.transaction(() => {
+      const made = createInvoices(db, p, estimateId, choice, now);
+      db.prepare(`
+        UPDATE projects SET invoicing = ?, deposit_pct = COALESCE(?, deposit_pct), updated_at = ? WHERE id = ?
+      `).run(choice.invoicing, choice.pct, now, p.id);
+      logActivity(db, p.id, 'invoices_created', {
+        estimateId,
+        invoicing: choice.invoicing,
+        depositPct: choice.pct,
+        invoices: made.map((i) => i.number),
+      }, now);
+    })();
+    return folderReply(req, res);
   });
 
   app.delete('/api/projects/:id', (req, res) => {
