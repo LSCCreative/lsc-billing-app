@@ -194,3 +194,24 @@ h1, h2, h3 {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ── Danger buttons in dialogs (production-booking task 23) ─────────────────
+   app.css's .btn-danger text, #e06060, is 5.0:1 on --bg but 3.84:1 on a
+   dialog's #2c2f35, where Delete, Decline and Void ask to be confirmed. Lifted
+   to #f07a7a (4.97:1 there). Its hover filled #e06060 under white text,
+   3.5:1; #c04040 is 5.2:1. The same red family, just clear of 4.5:1. */
+.btn-danger {
+  color: #f07a7a;
+}
+.btn-danger:hover {
+  background: #c04040;
+  border-color: #c04040;
+  color: #fff;
+}
+
+/* A screen's heading, focused on arrival when the focus went with the screen
+   before it (LSCUtil.landFocus): it is where reading starts, not a control,
+   so it takes no ring. */
+h1[tabindex='-1']:focus {
+  outline: none;
+}

@@ -692,9 +692,9 @@ const InvoiceView = (() => {
         '<p class="pfd-pdf"><button type="button" class="btn btn-ghost btn-sm" id="pfd-pdf">' +
         '<span class="spinner"></span>↓ Invoice PDF</button></p>' +
         '<div class="pfd-dates">' +
-        '<div class="field"><label for="pfd-issued">Issued</label><input id="pfd-issued" type="date" value="' + issued + '"></div>' +
-        '<div class="field"><label for="pfd-due">Due</label><input id="pfd-due" type="date" value="' + due + '" min="' + issued + '"></div>' +
-        '</div><p class="pfd-hint">The PDF prints these dates.</p>',
+        '<div class="field"><label for="pfd-issued">Issued</label><input id="pfd-issued" type="date" value="' + issued + '" aria-describedby="pfd-dates-hint"></div>' +
+        '<div class="field"><label for="pfd-due">Due</label><input id="pfd-due" type="date" value="' + due + '" min="' + issued + '" aria-describedby="pfd-dates-hint"></div>' +
+        '</div><p class="pfd-hint" id="pfd-dates-hint">The PDF prints these dates.</p>',
       describe: true,
       confirm: 'Mark sent',
       focus: 'pfd-issued',
@@ -880,6 +880,7 @@ const InvoiceView = (() => {
     accept(reply);
     busy = false;
     draw();
+    LSCUtil.landFocus(root);
     LSCUnsaved.watch('invoice-extras', {
       label: 'the extras on ' + (reply.invoice.number || 'this invoice'),
       onScreen: () => onScreen() && data && data.invoice.id === reply.invoice.id,

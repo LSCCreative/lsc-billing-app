@@ -266,13 +266,13 @@ const ProjectFolder = (() => {
         actions: [
           { id: 'view', label: 'View', target: e.id, label2: 'View the estimate' + (many ? ' ' + (e.name || '') : '') },
           { id: 'edit', label: 'Edit', target: e.id, label2: 'Edit the estimate' + (many ? ' ' + (e.name || '') : '') },
-          { id: 'pdf', label: '↓ PDF', target: e.id, label2: 'Download the estimate PDF' },
+          { id: 'pdf', label: '↓ PDF', target: e.id, label2: 'Download the estimate PDF' + (many ? ' for ' + (e.name || 'Untitled') : '') },
         ],
       });
       docs.push({
         name: 'Cost Breakdown' + (many ? ' — ' + esc(e.name || 'Untitled') : ''),
         meta: 'For you only: how the price is made up',
-        actions: [{ id: 'breakdown', label: '↓ PDF', target: e.id, label2: 'Download the Cost Breakdown PDF' }],
+        actions: [{ id: 'breakdown', label: '↓ PDF', target: e.id, label2: 'Download the Cost Breakdown PDF' + (many ? ' for ' + (e.name || 'Untitled') : '') }],
       });
     });
     const numberOf = (id) => ((folder.invoices.find((i) => i.id === id) || {}).number || '');
@@ -516,6 +516,7 @@ const ProjectFolder = (() => {
       } else {
         showActionError('Couldn’t reopen: ' + failureText(err));
       }
+      if (button.isConnected) button.focus();
     }
   }
 
@@ -541,6 +542,7 @@ const ProjectFolder = (() => {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
       showActionError('Couldn’t duplicate: ' + failureText(err));
+      if (button.isConnected) button.focus();
     }
     return undefined;
   }
@@ -602,7 +604,10 @@ const ProjectFolder = (() => {
     dlg.working = false;
   }
 
-  /* body: the dialog's own markup between its title and actions. run(button)
+  /* body: the dialog's own markup between its title and actions; with
+     `describe`, its opening sentence is <p id="pfd-desc">, which the dialog is
+     described by (not the whole body: its fields would be read out twice).
+     run(button)
      resolves when done (null: a 401 or 404 already dealt with, which closes
      it too); a rejection's message is shown in the dialog, which stays. */
   function openDialog(opener, opts) {
@@ -612,7 +617,7 @@ const ProjectFolder = (() => {
     dlg.opener = opener || null;
     dlg.overlay.innerHTML =
       '<div class="modal-box pf-dialog" role="dialog" aria-modal="true" aria-labelledby="pfd-title"' +
-      (opts.describe ? ' aria-describedby="pfd-body"' : '') + '>' +
+      (opts.describe ? ' aria-describedby="pfd-desc"' : '') + '>' +
       '<h2 class="modal-title" id="pfd-title">' + esc(opts.title) + '</h2>' +
       '<div id="pfd-body" class="pfd-body">' + opts.body + '</div>' +
       '<div class="pfd-error" id="pfd-error" role="alert"></div>' +
@@ -655,7 +660,7 @@ const ProjectFolder = (() => {
   function openConfirm(opener, opts) {
     openDialog(opener, {
       title: opts.title,
-      body: '<p class="pfd-text">' + esc(opts.body) + '</p>',
+      body: '<p class="pfd-text" id="pfd-desc">' + esc(opts.body) + '</p>',
       describe: true,
       confirm: opts.confirm,
       danger: opts.danger,
@@ -900,6 +905,7 @@ const ProjectFolder = (() => {
       folder = reply;
       busy = false;
       draw();
+      LSCUtil.landFocus(root);
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (!LSCRouter.isCurrent(ticket)) return;

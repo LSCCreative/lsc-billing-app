@@ -332,8 +332,10 @@
   justify-content: center;
 }
 @media (min-width: 768px) {
+  /* 28px, over WCAG 2.2's 24px minimum: the row's buttons sit 6px apart, too
+     close for its spacing exception. */
   .pf-doc-acts .btn {
-    min-height: 0;
+    min-height: 28px;
   }
 }
 

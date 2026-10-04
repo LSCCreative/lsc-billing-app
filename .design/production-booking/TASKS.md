@@ -659,6 +659,25 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     `needs_upid` count), then Pages.
   - **The user** then runs the fix-up if the banner shows.
 
+  **Polish done 2026-10-04** (the deploy is still to do). Swept Projects, the folder, the invoice
+  screen, Settings, the fix-up and their six dialogs at 1280/800/375 in the browser pane against
+  `api-scratch` (overflow, target size, labels, text contrast, focus). Found and fixed:
+  - **Focus fell to `<body>` on every arrival** (the clicked card or Back button goes with the old
+    screen). New `LSCUtil.landFocus(root)` puts it on the new screen's `h1` (`tabindex=-1`, no ring)
+    only when it was lost, so a nav link keeps it. Called by all five screens.
+  - **Dialog danger buttons** (Delete, Decline, Void) were 3.84:1 on the dialog grey: lifted in
+    `a11y.css` (app.css stays frozen) to `#f07a7a`, hover `#c04040`. App-wide.
+  - **Desktop targets under 24px** next to each other: the folder's document buttons and Settings'
+    fill-in fields are 28px from 768px up.
+  - Stage chips read "Active9" (now "Active 9"); dialogs were described by their whole body, fields
+    included (now `#pfd-desc`, the opening sentence); several estimates' PDF buttons had the same
+    name; the invoice dates' hint wasn't tied to its fields; a refused reopen, duplicate or fix-up
+    save left focus nowhere; Projects, Settings and the fix-up had no page title.
+  - Left as they are: `.back-btn` and the extras' `×` are under 24px but alone in their space
+    (WCAG 2.5.8's spacing exception).
+  - A fix-up group was staged in scratch by SQL (`B210-PLAN` back to `needs_upid`), audited, then
+    settled through the screen; scratch is as it was.
+
 ## Stage E — Client pages, signing, sending and payment (migration v14)
 
 **Inputs needed from the user before tasks 27–31 can be finished:**

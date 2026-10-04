@@ -174,5 +174,19 @@ const LSCUtil = (() => {
     );
   }
 
-  return { fmt, money, perKm, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce };
+  /* A screen just drawn after a route change. If the focus went with the
+     screen it was on (a clicked card or Back button, the closed phone menu),
+     it is put on the new screen's heading, so a screen reader says where it
+     landed and Tab carries on from there rather than from the top of the
+     page. Focus still on something on the page (a nav link) is left alone. */
+  function landFocus(root) {
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const heading = root && root.querySelector('h1');
+    if (!heading) return;
+    heading.setAttribute('tabindex', '-1');
+    heading.focus({ preventScroll: true });
+  }
+
+  return { fmt, money, perKm, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce, landFocus };
 })();

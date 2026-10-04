@@ -398,9 +398,11 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .set-link,
-  .set-field-code {
+  .set-link {
     min-height: 0;
+  }
+  .set-field-code {
+    min-height: 28px;
   }
   .set-field-list li {
     padding: 6px 0;

@@ -564,6 +564,7 @@ const SettingsView = (() => {
     baseline = snapshot();
     root.innerHTML = screenMarkup(form, sectionId || SECTIONS[0][0]);
     bind();
+    LSCUtil.landFocus(root);
     LSCUnsaved.watch('settings', { label: 'your settings', onScreen, dirty });
     window.removeEventListener('scroll', onScroll);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -576,6 +577,7 @@ const SettingsView = (() => {
     if (rest.length > 1) return false;
     const sectionId = rest[0];
     if (sectionId !== undefined && !SECTIONS.some(([id]) => id === sectionId)) return false;
+    document.title = 'Settings — LSC Billing';
     if (state && state.jump && onScreen() && form) {
       jumpTo(sectionId || SECTIONS[0][0], true);
       return true;

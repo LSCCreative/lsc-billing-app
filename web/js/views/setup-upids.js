@@ -212,7 +212,12 @@ const SetupView = (() => {
       if (!section.isConnected) return;
       setBusy(section, false);
       if (err.kind === 'auth') return onAuthLost({ keepScreen: true });
-      return explain(section, err);
+      explain(section, err);
+      // A refusal about no one field leaves the focus nowhere: every control
+      // in the group was disabled while it ran.
+      const active = document.activeElement;
+      if (section.isConnected && (!active || active === document.body)) section.querySelector('[data-act="save"]').focus();
+      return;
     }
     if (!section.isConnected) return;
     settled(section, listing, label);
@@ -320,6 +325,7 @@ const SetupView = (() => {
       return;
     }
     if (!LSCRouter.isCurrent(ticket)) return;
+    document.title = 'Fix UPIDs — LSC Billing';
 
     // Nothing left to fix: the route has gone (D61).
     if (!listing.groups.length) {
@@ -328,6 +334,7 @@ const SetupView = (() => {
       return;
     }
     draw(listing);
+    LSCUtil.landFocus(root);
   }
 
   return {

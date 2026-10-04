@@ -120,10 +120,12 @@ const ProjectsView = (() => {
 
   // ── The shell: head, banner, search and chips ────────────────────────────
 
+  /* The space between word and count keeps the chip's name "Sent 3" rather
+     than "Sent3"; on screen the flex gap spaces them. */
   function chipsMarkup() {
     return ProjectCard.CHIPS.map(([key, word]) =>
       '<button type="button" class="stage-chip" data-stage="' + key + '" aria-pressed="' + (key === filter.stage) + '">' +
-      '<span class="stage-chip-word">' + word + '</span><span class="stage-chip-count" data-count="' + key + '"></span>' +
+      '<span class="stage-chip-word">' + word + '</span> <span class="stage-chip-count" data-count="' + key + '"></span>' +
       '</button>'
     ).join('');
   }
@@ -411,6 +413,7 @@ const ProjectsView = (() => {
       clearTimeout(typing);
       typing = null;
       filter = wanted;
+      document.title = 'Projects — LSC Billing';
       if (onScreen()) {
         syncShell();
       } else {
@@ -419,6 +422,7 @@ const ProjectsView = (() => {
         projects = [];
         next = null;
         mountShell();
+        LSCUtil.landFocus(root);
       }
       load();
       return true;

@@ -121,9 +121,16 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   with the folder). 2026-10-04, committed, **not deployed** (a new route: NAS before Pages, with v13
   at task 23). Its decisions are in its Done note in `TASKS.md`.
 
-**Exact next item: TASKS.md task 23, D polish and deploy** (accessibility + responsive pass on the
-folder, Projects, Settings and fix-up screens: frontend, Opus/high; then the deploy:
-Sonnet/medium, ask first).
+- **D, task 23 polish** (a11y + responsive pass on Projects, the folder, invoice, Settings, fix-up
+  and their dialogs). 2026-10-04, committed, frontend only. New `LSCUtil.landFocus(root)` puts
+  focus on the new screen's `h1` when the old screen took it; dialog danger buttons lifted in
+  `a11y.css`. See its note in `TASKS.md`.
+
+**Exact next item: TASKS.md task 23, the deploy** (Sonnet/medium; ask the user first). In order:
+back up the live DB; dry-run v13 on a copy of that backup (its `foreign_key_check` refuses the
+boot on a dangling row); deploy the NAS (v13, the new routes, `server/src/documents.js`); read the
+boot log's `[db] v13: N project(s) … M need a UPID` line; then push `main` for Pages. The user then
+runs the fix-up if the Projects banner shows.
 
 `GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
 cached Pages build still calls it), then delete it.
