@@ -140,10 +140,9 @@ those). The user confirmed the GST sentence (still not registered). Commit `6764
 fields `client_email`, `client_phone`, `signatory_role` (typed at signing, task 27 passes it),
 `deposit_amount`, `balance_amount` (the caller passes calc.js `depositAmount` / `finalInvoiceTotals`
 figures; `documents.js` stays free of money maths) and `due_days`. The draft uses them. A
-single-invoice project prints "Deposit (): ," (no conditional text yet). **Not yet in live
-Settings:** the SSH write to the live DB was refused by the permission check; the user pastes the
-`.txt` into Settings → Service agreement, after this commit is deployed (NAS then Pages) or the
-new fields read as "not a field" in the live preview. The SMTP password is **not**
+single-invoice project prints "Deposit (): ," (no conditional text yet). **In live Settings since 2026-10-04** (written over SSH;
+backup `data/exports/pre-agreement-20261004.db`). Until `6764113` is deployed (NAS then Pages), the
+six new fields read as "not a field" in the live preview. The SMTP password is **not**
 set: the one supplied matched the app login, not a 16-letter Google app password, and the sending
 address isn't known yet.
 
