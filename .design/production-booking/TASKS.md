@@ -688,7 +688,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
 Tasks 24–26 can be built with placeholders.
 
-- [ ] **24. The client page shell, in the light brand** (frontend — Opus/high). _New `web/c/`
+- [x] **24. The client page shell, in the light brand** (frontend — Opus/high). _New `web/c/`
   (`index.html`, `c.css`, `c.js`)._
   - **This task sets the client-facing aesthetic, so the user validates it before anything is wired
     to it.** It's a Swiss/editorial document on warm paper (D54):
@@ -705,7 +705,7 @@ Tasks 24–26 can be built with placeholders.
   **Done when** the user has seen it at 375 and 1280 and said yes, contrast is verified for every
   text pairing, and nothing from the app's CSS is loaded.
 
-  **Built 2026-10-04, waiting for the user's yes** (commit below). `web/c/` renders `fixture.js`
+  **Done 2026-10-04, approved by the user** (`fcf77d3`, revisions `9b518fb`). `web/c/` renders `fixture.js`
   at `c/#e/demo`, and `#e/demo/<state>` previews each notice (open, taken, expired, superseded,
   declined, accepted); both go at task 26. The bold move is the production days as a call sheet
   (the date large in a left gutter); headings are sentence case over a rule, figures mono on the
