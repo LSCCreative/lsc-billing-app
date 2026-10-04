@@ -142,9 +142,8 @@ fields `client_email`, `client_phone`, `signatory_role` (typed at signing, task 
 figures; `documents.js` stays free of money maths) and `due_days`. The draft uses them. A
 single-invoice project prints "Deposit (): ," (no conditional text yet). **In live Settings since 2026-10-04** (written over SSH;
 backup `data/exports/pre-agreement-20261004.db`). Until `6764113` is deployed (NAS then Pages), the
-six new fields read as "not a field" in the live preview. The SMTP password is **not**
-set: the one supplied matched the app login, not a 16-letter Google app password, and the sending
-address isn't known yet.
+six new fields read as "not a field" in the live preview. Email is **Resend over SMTP from `admin@lsccreative.studio`** (D102), not Gmail; the user still
+has to create the account, add its DNS records in Cloudflare and supply the key (needed at task 28).
 
 **Exact next item: stage E (v14), TASKS.md task 24.** Check the "Inputs needed from the user" list first.
 The user should also try the live site once (sign in, open a project).

@@ -460,12 +460,20 @@ The six interpretations in the brief's B2 Key Interactions were confirmed by the
      of task 32. Settings → Card payments stays "Not set up yet". Clients pay by bank transfer as
      the invoices already say. D48/D49 stand for if and when it's picked up again.
 
+102. **Email goes through Resend, not Google Workspace** (2026-10-04; narrows D38). Sent from
+     `admin@lsccreative.studio` (the domain's DNS is on Cloudflare), with Reply-To the user's own
+     address. `mail.js` speaks plain SMTP from `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+     `SMTP_PASS`, `MAIL_FROM`, `MAIL_REPLY_TO`), so a provider change is an `.env` edit. Replies
+     to `admin@` reach the user through Cloudflare Email Routing (free). No Google app password.
+
 ## Left for the user to supply (not decisions, inputs)
 
 - ~~The **service agreement text** (decision 39)~~: supplied 2026-10-04 as
   `LSC-Service-Agreement-Template.pdf` (repo root, gitignored). A Settings-ready draft with fill-in
   fields is `LSC-Service-Agreement.txt` beside it; open points are in HANDOVER.
-- A **Google Workspace app password** for sending email (38).
+- A **Resend** account with `lsccreative.studio` verified (its DNS records added in Cloudflare)
+  and an SMTP API key; Cloudflare Email Routing forwarding `admin@` (D102). Replaces the Google
+  app password (38).
 - ~~A **Stripe account**~~: not needed while card payment is held (D101).
 - ~~The FAQ page URL~~: supplied 2026-10-01 (D55).
 - ~~The CS Felice Mono font files~~: supplied 2026-10-01 (D57).

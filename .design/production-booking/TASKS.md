@@ -683,7 +683,7 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 **Inputs needed from the user before tasks 27–31 can be finished:**
 
 - ~~the service agreement text (D39)~~: supplied 2026-10-04 (see HANDOVER);
-- a Google Workspace app password, set in the NAS `.env`;
+- a Resend SMTP key with `lsccreative.studio` verified, set in the NAS `.env` (D102);
 - ~~a Stripe account and keys~~: card payment is held (D101).
 
 Tasks 24–26 can be built with placeholders.
@@ -763,8 +763,9 @@ Tasks 24–26 can be built with placeholders.
   until the user supplies theirs.
 
 - [ ] **28. Email and the send queue** (backend — Sonnet/high). _Depends on: 25._
-  - **`server/src/mail.js`:** `nodemailer` over smtp.gmail.com with `SMTP_USER` /
-    `SMTP_APP_PASSWORD` from `.env` (D38). Never logged, never in the database.
+  - **`server/src/mail.js`:** `nodemailer` over plain SMTP (Resend, D102) with `SMTP_HOST`,
+    `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` (`admin@lsccreative.studio`) and
+    `MAIL_REPLY_TO` from `.env`. The key is never logged, never in the database.
   - **The `sends` queue and a one-minute scheduler.** A row is claimed (`sending`) in a
     transaction before the SMTP call. On boot, overdue rows go out and are marked `late` (D47).
   - **Templates:**
