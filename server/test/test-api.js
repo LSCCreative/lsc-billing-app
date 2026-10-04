@@ -2596,3 +2596,258 @@ test('invoices: the UPID locks with the first invoice (D36), and a sent one keep
   await dropEstimates(est.id);
   assert.equal(projectRow(est.projectId), undefined);
 });
+
+/* ── The invoice screen's routes (task 20; D35–D37, D100) ──────────────── */
+const inv = (id, action, body, method) => api(`/api/invoices/${id}${action ? '/' + action : ''}?today=${T18_TODAY}`, {
+  method: method || (action ? 'POST' : 'GET'),
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+}).then(async (r) => ({ status: r.status, body: await r.json() }));
+const putInv = (id, body) => inv(id, '', body, 'PUT');
+const invRow = (id) => db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+const EXCL20 = { gst: { registered: true, rate: 0.1, pricesIncludeGst: false } };
+const OT20 = { name: 'Overtime — per hour', qty: 2, mu: 210, rowId: 'row_ot' };
+
+/* Past the API's refusal (an invoice has gone out): estimates, days,
+   invoices and activity cascade from the project. */
+const dropProject = (projectId) => db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+
+/* An accepted pair at `pct`, GST on: the estimate and its two invoice rows. */
+let t20Day = 0;
+async function acceptedPair(upid, pct) {
+  // Each its own date: a project whose invoice went out can't be deleted
+  // through the API, so its confirmed day would lock the next test's.
+  t20Day += 1;
+  const est = (await saveEstimate({
+    name: 'T20 ' + upid, upid,
+    activeRows: { prod: [capture('d_' + upid, { mu: 1123.37 })], post: [capture(null, { name: 'Edit', mu: 911.11 })] },
+    days: [pbDay('d_' + upid, '2027-01-' + String(t20Day).padStart(2, '0'), 'pencilled')],
+  })).body.estimate;
+  assert.ok(est && est.id, upid);
+  const r = await act(est.projectId, 'accept', { invoicing: 'pair', depositPct: pct });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const [dep, fin] = invoiceRows(est.projectId);
+  return { est, dep, fin };
+}
+
+test('invoice: a draft final takes Additional work extras, priced from their own snapshots, to task 14’s cent (D35)', async () => {
+  await gstOn();
+  const { est, dep, fin } = await acceptedPair('T20-FIN', 40);
+  const got = await inv(fin.id);
+  assert.equal(got.status, 200, JSON.stringify(got.body));
+  const i = got.body.invoice;
+  assert.deepEqual([i.kind, i.number, i.status, i.editable, i.estimate.id, i.estimate.status, i.extras, i.less.number, i.less.status],
+    ['final', 'INV-T20-FIN-F', 'draft', true, est.id, 'accepted', [], 'INV-T20-FIN-D', 'draft']);
+  assert.equal(i.amountDue, JSON.parse(fin.totals_json).balanceDue);
+  assert.deepEqual([got.body.project.id, got.body.invoices.map((x) => x.number)], [est.projectId, ['INV-T20-FIN-D', 'INV-T20-FIN-F']]);
+
+  // Two hours of Overtime and a custom-billed line; the browser's extra keys are dropped.
+  const custom = { name: 'Raw Footage Handover [on HDD]', qty: 1, mu: 98, customBill: true, override: 150 };
+  const saved = await putInv(fin.id, { extras: [{ ...OT20, dayId: 'd_x', deliverableId: 'del_x', capture: true }, custom] });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const stored = [OT20, custom];
+  assert.deepEqual(JSON.parse(invRow(fin.id).extras_json), { additional: stored });
+  const extras = calc19.extrasTotals({ additional: stored }, { labourSections: [] }, EXCL20, false);
+  assert.deepEqual([extras.clientPriceExGst, extras.gst, extras.totalIncGst], [570, 57, 627]);
+  const want = calc19.finalInvoiceTotals(est.totals, extras, JSON.parse(dep.totals_json));
+  assert.deepEqual(JSON.parse(invRow(fin.id).totals_json), want);
+  assert.deepEqual([saved.body.invoice.extras, saved.body.invoice.amountDue], [stored, want.balanceDue]);
+  assert.equal(Math.round(want.balanceDue * 100), Math.round((est.totals.totalIncGst + 627) * 100) - Math.round(JSON.parse(dep.totals_json).totalIncGst * 100));
+  assert.equal((await folderOf(est.projectId)).body.invoices[1].amountDue, want.balanceDue);
+  assert.deepEqual([saved.body.project.stage, (await folderOf(est.projectId)).body.activity[0].kind], ['accepted', 'invoice_edited']);
+  // The estimate's own totals never move, and nor does the deposit.
+  assert.equal(invRow(dep.id).totals_json, dep.totals_json);
+
+  // Bad extras are refused whole.
+  for (const [body, code] of [[{}, 'extras_invalid'], [{ extras: [{ name: 'X', qty: 1 }] }, 'extra_price_missing'],
+    [{ extras: [{ ...OT20, qty: -1 }] }, 'extra_qty_invalid'], [{ extras: [{ ...OT20, name: ' ' }] }, 'extra_name_invalid']]) {
+    const r = await putInv(fin.id, body);
+    assert.deepEqual([r.status, r.body.error], [400, code], JSON.stringify(body));
+  }
+  assert.deepEqual(JSON.parse(invRow(fin.id).totals_json), want);
+
+  // The deposit's % edits in place while the final is a draft: the final follows, its extras kept as priced.
+  const pct = await putInv(dep.id, { depositPct: 25 });
+  assert.equal(pct.status, 200, JSON.stringify(pct.body));
+  const deposit = calc19.depositAmount(est.totals, 25);
+  assert.deepEqual([invRow(dep.id).pct, JSON.parse(invRow(dep.id).totals_json), projectRow(est.projectId).deposit_pct], [25, deposit, 25]);
+  assert.deepEqual(JSON.parse(invRow(fin.id).totals_json), calc19.finalInvoiceTotals(est.totals, extras, deposit));
+  assert.equal((await putInv(dep.id, { depositPct: 0 })).body.error, 'deposit_pct_invalid');
+
+  // Once sent, nothing edits in place: neither the final, nor the deposit it takes off.
+  assert.equal((await inv(fin.id, 'sent', { issuedAt: '2026-11-25', dueAt: '2026-12-09' })).status, 200);
+  const late = await putInv(fin.id, { extras: [] });
+  assert.deepEqual([late.status, late.body.error, late.body.status], [409, 'not_draft', 'sent']);
+  assert.deepEqual([(await putInv(dep.id, { depositPct: 30 })).status, (await putInv(dep.id, { depositPct: 30 })).body.error], [409, 'final_sent']);
+  assert.equal((await inv('inv_nope')).status, 404);
+  dropProject(est.projectId);
+
+  // A GST-free job's extras are GST-free too, on a registered business.
+  const free = (await saveEstimate({ name: 'T20 Free', upid: 'T20-FREE', gstFree: true, activeRows: { post: [capture(null, { mu: 500 })] } })).body.estimate;
+  await act(free.projectId, 'accept', { invoicing: 'single' });
+  const [single] = invoiceRows(free.projectId);
+  const r = await putInv(single.id, { extras: [OT20] });
+  assert.deepEqual([r.body.invoice.totals.extras, r.body.invoice.totals.total.gst], [{ clientPriceExGst: 420, gst: 0, totalIncGst: 420 }, 0]);
+  dropProject(free.projectId);
+  await gstOff();
+});
+
+test('invoice: Mark sent dates it, Mark paid closes it, and the stage line moves with them', async () => {
+  const { est, dep, fin } = await acceptedPair('T20-PAY', 50);
+  for (const [body, code] of [[{ issuedAt: '2026-13-01', dueAt: '2026-12-01' }, 'issued_at_invalid'],
+    [{ issuedAt: '2026-11-10', dueAt: '2026-11-09' }, 'due_at_invalid'], [{ issuedAt: '2026-11-10' }, 'due_at_invalid']]) {
+    const r = await inv(dep.id, 'sent', body);
+    assert.deepEqual([r.status, r.body.error], [400, code], JSON.stringify(body));
+  }
+  const sent = await inv(dep.id, 'sent', { issuedAt: '2026-10-04', dueAt: '2026-10-18' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.deepEqual([sent.body.invoice.status, sent.body.invoice.issuedAt, sent.body.invoice.dueAt, sent.body.invoice.editable],
+    ['sent', '2026-10-04', '2026-10-18', false]);
+  assert.deepEqual([sent.body.project.stage, sent.body.project.stageDetail.step, sent.body.project.stageDetail.dueAt],
+    ['invoiced', 'deposit_sent', '2026-10-18']);
+  assert.equal((await inv(dep.id, 'sent', { issuedAt: '2026-10-04', dueAt: '2026-10-18' })).body.error, 'not_draft');
+
+  for (const [body, code] of [[{ paidAt: '2026-10-03', via: 'cash' }, 'paid_via_invalid'], [{ via: 'bank' }, 'paid_at_invalid'],
+    [{ paidAt: '2026-10-05', via: 'bank' }, 'paid_at_future']]) {
+    const r = await inv(dep.id, 'paid', body);
+    assert.deepEqual([r.status, r.body.error], [400, code], JSON.stringify(body));
+  }
+  const paid = await inv(dep.id, 'paid', { paidAt: '2026-10-03', via: 'bank' });
+  assert.equal(paid.status, 200, JSON.stringify(paid.body));
+  assert.deepEqual([paid.body.invoice.status, paid.body.invoice.paidAt, paid.body.invoice.paidVia], ['paid', '2026-10-03', 'bank']);
+  assert.deepEqual([paid.body.project.stage, paid.body.project.stageDetail.step], ['invoiced', 'deposit_paid']);
+  const log = (await folderOf(est.projectId)).body.activity;
+  assert.deepEqual([log[0].kind, log[0].detail], ['invoice_paid', {
+    invoiceId: dep.id, number: 'INV-T20-PAY-D', paidAt: '2026-10-03', via: 'bank', amount: JSON.parse(dep.totals_json).totalIncGst,
+  }]);
+  assert.deepEqual([log[1].kind, log[1].detail], ['invoice_sent', { invoiceId: dep.id, number: 'INV-T20-PAY-D', issuedAt: '2026-10-04', dueAt: '2026-10-18' }]);
+  // Twice is nothing new.
+  const n = activityCount(est.projectId);
+  assert.deepEqual([(await inv(dep.id, 'paid', { paidAt: '2026-10-04', via: 'card' })).body.already, invRow(dep.id).paid_via,
+    activityCount(est.projectId)], [true, 'bank', n]);
+  // The final, paid by card without being marked sent first, settles the project.
+  const all = await inv(fin.id, 'paid', { paidAt: '2026-10-04', via: 'card' });
+  assert.deepEqual([all.body.project.stage, all.body.invoice.paidVia], ['paid', 'card']);
+
+  // An old-way invoice is read-only, but can be marked paid: its stage line waits on it.
+  const old = (await saveEstimate({ name: 'T20 Old', upid: 'T20-OLD' })).body.estimate;
+  db.prepare("UPDATE projects SET accepted_at = 'x' WHERE id = ?").run(old.projectId);
+  db.prepare("INSERT INTO invoices (id, project_id, estimate_id, kind, number, status, totals_json, created_at, updated_at) VALUES ('inv_t20old', ?, ?, 'legacy', 'INV-77', 'sent', '{\"totalIncGst\":500}', 'x', 'x')")
+    .run(old.projectId, old.id);
+  const legacy = await inv('inv_t20old');
+  assert.deepEqual([legacy.body.invoice.kind, legacy.body.invoice.estimate, legacy.body.invoice.editable, legacy.body.invoice.amountDue],
+    ['legacy', null, false, 500]);
+  assert.equal((await putInv('inv_t20old', { extras: [] })).body.error, 'legacy_invoice');
+  assert.equal((await inv('inv_t20old', 'sent', { issuedAt: '2026-10-01', dueAt: '2026-10-02' })).body.error, 'legacy_invoice');
+  assert.equal((await inv('inv_t20old', 'void', { reason: 'x' })).body.error, 'legacy_invoice');
+  assert.equal((await inv('inv_t20old', 'pdf')).body.estimateId, old.id);
+  assert.equal((await inv('inv_t20old', 'paid', { paidAt: '2026-10-01', via: 'bank' })).body.project.stage, 'paid');
+  dropProject(est.projectId);
+  dropProject(old.projectId);
+});
+
+test('invoice: void and remake (D100) — a sent, unpaid invoice is kept as void and replaced with the next free suffix', async () => {
+  await gstOn();
+  const { est, dep, fin } = await acceptedPair('T20-V', 50);
+  await putInv(fin.id, { extras: [OT20] });
+  const finTotals = JSON.parse(invRow(fin.id).totals_json);
+
+  // A draft is edited, not voided; a reason is required.
+  assert.deepEqual([(await inv(dep.id, 'void', { reason: 'x' })).status, (await inv(dep.id, 'void', { reason: 'x' })).body.error], [409, 'not_sent']);
+  await inv(dep.id, 'sent', { issuedAt: '2026-10-01', dueAt: '2026-10-15' });
+  assert.equal((await inv(dep.id, 'void', { reason: '  ' })).body.error, 'void_reason_required');
+
+  const v = await inv(dep.id, 'void', { reason: 'Wrong deposit %' });
+  assert.equal(v.status, 200, JSON.stringify(v.body));
+  const d2 = v.body.invoice;
+  assert.deepEqual([v.body.voided, d2.number, d2.kind, d2.status, d2.pct, d2.replaces.number, d2.issuedAt, d2.editable],
+    [dep.id, 'INV-T20-V-D2', 'deposit', 'draft', 50, 'INV-T20-V-D', null, true]);
+  assert.equal(invRow(d2.id).totals_json, dep.totals_json);
+  assert.equal(invRow(d2.id).estimate_snapshot_json, dep.estimate_snapshot_json);
+  const old = invRow(dep.id);
+  assert.deepEqual([old.status, old.voided_at, old.void_reason, old.number, old.totals_json],
+    ['void', T18_TODAY, 'Wrong deposit %', 'INV-T20-V-D', dep.totals_json]);
+  assert.equal((await inv(dep.id)).body.invoice.replacedBy.number, 'INV-T20-V-D2');
+  // The drafted final now takes off the replacement, at the same amounts.
+  assert.deepEqual([invRow(fin.id).less_invoice_id, JSON.parse(invRow(fin.id).totals_json)], [d2.id, finTotals]);
+  assert.deepEqual([v.body.project.stageDetail.step, v.body.invoices.map((x) => [x.number, x.status, x.voidedAt])],
+    ['deposit_draft', [['INV-T20-V-D', 'void', T18_TODAY], ['INV-T20-V-D2', 'draft', null], ['INV-T20-V-F', 'draft', null]]]);
+  assert.deepEqual((await folderOf(est.projectId)).body.activity[0].detail, {
+    invoiceId: dep.id, number: 'INV-T20-V-D', reason: 'Wrong deposit %', replacementId: d2.id, replacement: 'INV-T20-V-D2',
+  });
+  assert.equal((await inv(dep.id, 'void', { reason: 'again' })).body.error, 'invoice_void');
+  assert.equal((await inv(dep.id, 'paid', { paidAt: '2026-10-01', via: 'bank' })).body.error, 'invoice_void');
+
+  // A final sent with D2 taken off keeps naming D2 when D2 is replaced: its screen says to remake it too.
+  await inv(d2.id, 'sent', { issuedAt: '2026-10-02', dueAt: '2026-10-16' });
+  await inv(fin.id, 'sent', { issuedAt: '2026-10-02', dueAt: '2026-10-30' });
+  const d3 = (await inv(d2.id, 'void', { reason: 'Client name' })).body.invoice;
+  assert.equal(d3.number, 'INV-T20-V-D3');
+  const stale = (await inv(fin.id)).body.invoice;
+  assert.deepEqual([stale.less.number, stale.less.status], ['INV-T20-V-D2', 'void']);
+  // Remaking the final: a number another invoice holds is skipped, and it takes off the deposit standing.
+  const holder = (await saveEstimate({ name: 'T20 Holder', upid: 'T20-HOLD' })).body.estimate;
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, created_at, updated_at) VALUES ('inv_t20f2', ?, 'single', 'inv-t20-v-f2', 'draft', 'x', 'x')")
+    .run(holder.projectId);
+  // D3 is still a draft with no final taking it off, so its % can change: the remade final takes off D3 as it now is.
+  assert.equal((await putInv(d3.id, { depositPct: 30 })).status, 200);
+  const f = (await inv(fin.id, 'void', { reason: 'Took off a void deposit' })).body.invoice;
+  assert.deepEqual([f.number, f.less.number, f.extras, f.replaces.number], ['INV-T20-V-F3', 'INV-T20-V-D3', [OT20], 'INV-T20-V-F']);
+  assert.deepEqual(JSON.parse(invRow(f.id).totals_json),
+    calc19.finalInvoiceTotals(est.totals, finTotals.extras, calc19.depositAmount(est.totals, 30)));
+  assert.notDeepEqual(JSON.parse(invRow(f.id).totals_json), finTotals);
+  // A paid invoice is never voided.
+  await inv(d3.id, 'paid', { paidAt: '2026-10-03', via: 'bank' });
+  assert.deepEqual([(await inv(d3.id, 'void', { reason: 'x' })).status, (await inv(d3.id, 'void', { reason: 'x' })).body.error], [409, 'invoice_paid']);
+  // Void ones keep their numbers, so the UPID stays locked.
+  assert.equal((await saveEstimate({ name: 'T20 T20-V', upid: 'T20-V2' }, est.id)).body.error, 'upid_locked');
+  dropProject(holder.projectId);
+
+  // A single invoice's replacement is INV-<UPID>-2.
+  const one = (await saveEstimate({ name: 'T20 One', upid: 'T20-ONE', activeRows: { post: [capture(null, { mu: 300 })] } })).body.estimate;
+  await act(one.projectId, 'accept', { invoicing: 'single' });
+  const [single] = invoiceRows(one.projectId);
+  await inv(single.id, 'sent', { issuedAt: '2026-10-01', dueAt: '2026-10-15' });
+  assert.equal((await inv(single.id, 'void', { reason: 'Typo' })).body.invoice.number, 'INV-T20-ONE-2');
+  dropProject(one.projectId);
+  await gstOff();
+});
+
+test('invoice: a void that fails part-way changes nothing', async () => {
+  const { est, dep } = await acceptedPair('T20-RB', 50);
+  await inv(dep.id, 'sent', { issuedAt: '2026-10-01', dueAt: '2026-10-15' });
+  const before = JSON.stringify([invoiceRows(est.projectId), activityCount(est.projectId)]);
+  db.exec("CREATE TRIGGER t20_fail BEFORE INSERT ON invoices WHEN NEW.replaces_id IS NOT NULL BEGIN SELECT RAISE(ABORT, 't20 forced'); END;");
+  try {
+    const r = await api(`/api/invoices/${dep.id}/void?today=${T18_TODAY}`, { method: 'POST', body: JSON.stringify({ reason: 'x' }) });
+    await r.text();
+    assert.equal(r.status, 500);
+  } finally {
+    db.exec('DROP TRIGGER t20_fail');
+  }
+  assert.equal(JSON.stringify([invoiceRows(est.projectId), activityCount(est.projectId)]), before);
+  dropProject(est.projectId);
+});
+
+test('invoice PDFs: refused without the ABN on a tax invoice; rendered with the number in the filename', async (t) => {
+  await gstOn();
+  const { est, fin } = await acceptedPair('T20-PDF', 50);
+  await putInv(fin.id, { extras: [OT20] });
+  const noAbn = await inv(fin.id, 'pdf', {});
+  assert.deepEqual([noAbn.status, noAbn.body.error], [422, 'abn_required']);
+  assert.equal((await inv('inv_nope', 'pdf', {})).status, 404);
+  if (!require('../src/pdf').resolveExecutablePath()) {
+    t.skip('no headless Chromium available on this machine');
+  } else {
+    await gstOn({ business: { name: 'LSC Creative', abn: '12345678901' } });
+    const pdf = await api(`/api/invoices/${fin.id}/pdf?today=${T18_TODAY}`, { method: 'POST', body: JSON.stringify({ issuedAt: '2026-11-25', dueAt: '2026-12-09' }) });
+    assert.equal(pdf.status, 200);
+    assert.match(pdf.headers.get('content-disposition'), /INV-T20-PDF-F - Client - T20 T20-PDF\.pdf/);
+    assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString('ascii'), '%PDF-');
+    const cb = await api(`/api/invoices/${fin.id}/cost-breakdown?today=${T18_TODAY}`, { method: 'POST' });
+    assert.equal(cb.status, 200);
+    assert.match(cb.headers.get('content-disposition'), /Cost Breakdown_INV-T20-PDF-F_T20 T20-PDF\.pdf/);
+    await cb.arrayBuffer();
+  }
+  dropProject(est.projectId);
+  await gstOff();
+});

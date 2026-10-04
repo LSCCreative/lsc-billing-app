@@ -263,7 +263,7 @@ function sellerHtml(business) {
    was actually charged. `treatment` comes from calc.js's gstTreatment — the
    stored figures, not today's settings — so a re-export says what the original
    said. */
-function totalsBoxHtml(label, totals, treatment) {
+function totalsBoxHtml(label, totals, treatment, before) {
   const t = totals || {};
   const cell = 'padding:9px 16px;font-size:10.5pt;border-bottom:1px solid #e8e8e8';
   const line = (name, value) =>
@@ -272,6 +272,7 @@ function totalsBoxHtml(label, totals, treatment) {
   const qualifier = treatment === 'taxable' ? 'inc. GST' : treatment === 'free' ? 'GST-free' : 'inc. all services';
 
   return '<div style="border:1px solid #e8e8e8;display:inline-block;min-width:290px"><table style="width:100%;border-collapse:collapse">' +
+    (before || '') +
     (treatment === 'taxable' ? line('Subtotal (ex GST)', t.clientPriceExGst) + line('GST', t.gst) : '') +
     '<tr style="background:#181818">' +
       '<td style="padding:13px 16px;font-size:13pt;font-weight:800;color:#fff">' + label + ' <span style="font-size:9pt;font-weight:400;color:#aaa">' + qualifier + '</span></td>' +
@@ -319,52 +320,246 @@ function buildQuoteHtml(estimate, pricing, business) {
     '</div></body></html>';
 }
 
-function buildInvoiceHtml(estimate, pricing, settings) {
+/* The payment details on every invoice: the bank, then the terms. Nothing
+   when none are set. */
+function paymentBlockHtml(payment) {
+  const p = payment || {};
+  if (!(p.bankName || p.accountName || p.bsb || p.accountNumber || p.terms)) return '';
+  return '<div style="margin-top:28px;padding-top:20px;border-top:2px solid #181818">' +
+    '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700;margin-bottom:14px;padding-bottom:6px;border-bottom:2px solid #181818">Payment Details</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:10.5pt"><tbody>' +
+    (p.bankName ? '<tr><td style="padding:5px 0;color:#888;width:160px">Bank</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(p.bankName) + '</td></tr>' : '') +
+    (p.accountName ? '<tr><td style="padding:5px 0;color:#888">Account Name</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(p.accountName) + '</td></tr>' : '') +
+    (p.bsb ? '<tr><td style="padding:5px 0;color:#888">BSB</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(p.bsb) + '</td></tr>' : '') +
+    (p.accountNumber ? '<tr><td style="padding:5px 0;color:#888">Account Number</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(p.accountNumber) + '</td></tr>' : '') +
+    '</tbody></table>' +
+    (p.terms ? '<div style="margin-top:12px;padding:12px 16px;background:#f7f7f7;border-left:3px solid #B85444"><div style="font-size:8pt;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px;font-weight:700">Payment Terms</div><div style="font-size:10pt;color:#181818;line-height:1.6">' + esc(p.terms) + '</div></div>' : '') +
+  '</div>';
+}
+
+/* The head of every invoice: the seller on the left; the title and number,
+   the date line(s), the job and the client (with their ABN) on the right. */
+function invoiceHeadHtml(business, title, number, dateLines, estimate) {
   const client = estimate.client || {};
+  return '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:16px;border-bottom:3px solid #181818">' +
+      '<div><div style="font-size:22pt;font-weight:900;letter-spacing:.02em">LSC CREATIVE<span style="color:#B85444">.</span></div>' +
+      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-top:4px">Motion Productions</div>' +
+      sellerHtml(business) + '</div>' +
+      '<div style="text-align:right">' +
+      '<div style="font-size:16pt;font-weight:900;color:#181818;letter-spacing:.02em">' + title + ' <span style="color:#B85444">' + esc(number || '—') + '</span></div>' +
+      dateLines.map((d) => '<div style="font-size:9pt;color:#888;margin-top:2px">' + esc(d) + '</div>').join('') +
+      '<div style="font-size:15pt;font-weight:800;color:#181818;margin-top:6px">' + esc(estimate.name) + '</div>' +
+      (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
+      (client.contactName ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">' + esc(client.contactName) + (client.email ? ' &middot; ' + esc(client.email) : '') + '</div>' : '') +
+      (client.abn ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">ABN ' + esc(formatAbn(client.abn)) + '</div>' : '') +
+      '</div></div>';
+}
+
+const INVOICE_BODY = '<body style="padding:40px 32px;max-width:700px;margin:0 auto">';
+
+/* An estimate printed as the invoice it was made as before projects (D62):
+   doc type Invoice. The project folder's "made the old way" invoice. */
+function buildInvoiceHtml(estimate, pricing, settings) {
   const labourSections = (pricing && pricing.labourSections) || [];
   const serviceItems = serviceItemsHtml(estimate.activeRows, labourSections, estimate.sectionLabels, dayIdsOf(estimate));
-  const payment = (settings && settings.payment) || {};
   const business = (settings && settings.business) || {};
   // Only a document that charges GST is a tax invoice. A GST-free job, or one
   // from an unregistered business, is a plain invoice and must not claim to be.
   const treatment = gstTreatment(estimate.totals, estimate);
   const title = treatment === 'taxable' ? 'TAX INVOICE' : 'INVOICE';
 
-  let payBlock = '';
-  if (payment.bankName || payment.accountName || payment.bsb || payment.accountNumber || payment.terms) {
-    payBlock = '<div style="margin-top:28px;padding-top:20px;border-top:2px solid #181818">' +
-      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700;margin-bottom:14px;padding-bottom:6px;border-bottom:2px solid #181818">Payment Details</div>' +
-      '<table style="width:100%;border-collapse:collapse;font-size:10.5pt"><tbody>' +
-      (payment.bankName ? '<tr><td style="padding:5px 0;color:#888;width:160px">Bank</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(payment.bankName) + '</td></tr>' : '') +
-      (payment.accountName ? '<tr><td style="padding:5px 0;color:#888">Account Name</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(payment.accountName) + '</td></tr>' : '') +
-      (payment.bsb ? '<tr><td style="padding:5px 0;color:#888">BSB</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(payment.bsb) + '</td></tr>' : '') +
-      (payment.accountNumber ? '<tr><td style="padding:5px 0;color:#888">Account Number</td><td style="padding:5px 0;font-weight:600;color:#181818">' + esc(payment.accountNumber) + '</td></tr>' : '') +
-      '</tbody></table>' +
-      (payment.terms ? '<div style="margin-top:12px;padding:12px 16px;background:#f7f7f7;border-left:3px solid #B85444"><div style="font-size:8pt;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px;font-weight:700">Payment Terms</div><div style="font-size:10pt;color:#181818;line-height:1.6">' + esc(payment.terms) + '</div></div>' : '') +
-    '</div>';
-  }
-
-  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + PDF_STYLE + '</style></head><body style="padding:40px 32px;max-width:700px;margin:0 auto">' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:16px;border-bottom:3px solid #181818">' +
-      '<div><div style="font-size:22pt;font-weight:900;letter-spacing:.02em">LSC CREATIVE<span style="color:#B85444">.</span></div>' +
-      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-top:4px">Motion Productions</div>' +
-      sellerHtml(business) + '</div>' +
-      '<div style="text-align:right">' +
-      '<div style="font-size:16pt;font-weight:900;color:#181818;letter-spacing:.02em">' + title + ' <span style="color:#B85444">' + esc(estimate.invoiceNumber || '—') + '</span></div>' +
-      '<div style="font-size:9pt;color:#888;margin-top:2px">' + esc(estimate.date || '') + '</div>' +
-      '<div style="font-size:15pt;font-weight:800;color:#181818;margin-top:6px">' + esc(estimate.name) + '</div>' +
-      (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
-      (client.contactName ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">' + esc(client.contactName) + (client.email ? ' &middot; ' + esc(client.email) : '') + '</div>' : '') +
-      (client.abn ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">ABN ' + esc(formatAbn(client.abn)) + '</div>' : '') +
-      '</div></div>' +
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + PDF_STYLE + '</style></head>' + INVOICE_BODY +
+    invoiceHeadHtml(business, title, estimate.invoiceNumber, [estimate.date || ''], estimate) +
     deliverablesTableHtml(estimate.activeRows) +
     productionDaysHtml(estimate, pricing, false) +
     whatGoesInHtml(serviceItems, estimate) +
     '<div style="margin-bottom:0"><div class="sh">Invoice Total</div>' +
       totalsBoxHtml('Total Due', estimate.totals, treatment) +
       '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'invoice') + '</div></div>' +
-    payBlock +
+    paymentBlockHtml((settings && settings.payment) || {}) +
     '</body></html>';
+}
+
+/* ── Invoices made by the app (production-booking task 20; D35–D37, D100) ─────
+   A deposit, a final or a single invoice, printed from the estimate AS
+   ACCEPTED (the invoice's snapshot) and the invoice's STORED totals: nothing
+   here prices anything, so the PDF, the invoice screen and the stored record
+   can't disagree. Surcharges stay folded into each line, as on the estimate
+   (D8, D12).
+
+   `doc` is routes/invoices.js invoiceJson plus the dates to print:
+     { kind, number, status, pct, estimate, extras, totals, less,
+       replacedBy, issuedAt, dueAt, paidAt, voidedAt, voidReason }. */
+
+/** "4 October 2026". Read as text, like dayDate. */
+function longDate(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ''));
+  return m ? Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] + ' ' + m[1] : '';
+}
+
+const pctText = (pct) => String(Math.round((Number(pct) || 0) * 100) / 100);
+const minus = (n) => '&minus;' + fmt(n);
+
+/* The block whose GST decides the title: a deposit's own; a final or single's
+   whole job (estimate plus extras), so a final whose deposit took everything
+   is still a tax invoice for a taxable job. From the stored figures, never
+   from today's settings (calc.js gstTreatment). */
+function invoiceTreatment(doc) {
+  const t = doc.totals || {};
+  return gstTreatment(doc.kind === 'deposit' ? t : t.total, doc.estimate || {});
+}
+
+/* An extra's price as computeTotals bills it: its custom amount, else qty ×
+   its own price snapshot. Never the live card. */
+function extraPrice(line) {
+  const override = parseFloat(line.override) > 0 ? parseFloat(line.override) : 0;
+  return round2(override || (parseFloat(line.qty) || 0) * (parseFloat(line.mu) || 0));
+}
+
+/* Extras (D35): the Additional work added after the shoot, each with its
+   quantity and price, under the estimate's own items. */
+function extrasHtml(lines) {
+  const items = (lines || []).map((line) => ({
+    name: line.name, qty: line.qty, unit: unitOfLine(line, line), price: extraPrice(line),
+  })).filter((it) => (parseFloat(it.qty) || 0) > 0 || it.price > 0);
+  if (!items.length) return '';
+  return '<div style="margin-bottom:28px"><div class="sh">Extras</div>' +
+    '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0">' +
+    items.map((it) =>
+      '<div style="display:flex;justify-content:space-between;gap:16px;font-size:10.5pt;font-weight:600;color:#181818;margin-bottom:3px">' +
+        '<span>' + esc(it.name) + ' <span style="font-weight:400;color:#888">&middot; ' + esc(qtyText(it.qty, it.unit)) + '</span></span>' +
+        '<span style="white-space:nowrap">' + fmt(it.price) + '</span></div>'
+    ).join('') +
+    '</div></div>';
+}
+
+/* "Less deposit paid (INV-ABC-D)" (D35), or, while that deposit is still
+   unpaid, "Less deposit invoiced (…)": a final made before the deposit came
+   in must not say it was paid. */
+function lessDepositLabel(less) {
+  const number = less && less.number ? ' (' + esc(less.number) + ')' : '';
+  return (less && less.status === 'paid' ? 'Less deposit paid' : 'Less deposit invoiced') + number;
+}
+
+/* The rows above a final or single invoice's bar: the estimate, the extras,
+   the whole job, and (a final) the deposit taken off. A single invoice with no
+   extras has none: its bar is the estimate's total, as the old invoice. */
+function invoiceSummaryRows(doc, treatment) {
+  const t = doc.totals || {};
+  const extras = Number((t.extras || {}).totalIncGst) || 0;
+  const final = doc.kind === 'final';
+  if (!extras && !final) return '';
+  const inc = treatment === 'taxable' ? ' <span style="font-size:9pt;color:#888">(inc. GST)</span>' : '';
+  const cell = 'padding:9px 16px;font-size:10.5pt;border-bottom:1px solid #e8e8e8';
+  const row = (label, value, strong) =>
+    '<tr><td style="' + cell + ';color:' + (strong ? '#181818;font-weight:700' : '#555') + '">' + label + '</td>' +
+    '<td style="' + cell + ';text-align:right;font-weight:' + (strong ? 800 : 600) + ';color:#181818">' + value + '</td></tr>';
+  return row('Estimate total' + inc, fmt((t.job || {}).totalIncGst)) +
+    (extras ? row('Extras' + inc, fmt(extras)) + row('Total' + inc, fmt((t.total || {}).totalIncGst), true) : '') +
+    (final ? row(lessDepositLabel(doc.less), minus((t.deposit || {}).totalIncGst)) : '');
+}
+
+/* The production days booked, as the deposit lists them (D37): the date
+   (or "Day N — date TBC", D9), its status and times. No items or prices:
+   the accepted estimate is the itemised document. */
+function bookedDaysHtml(estimate) {
+  const days = (estimate.days || []).filter((d) => d && d.id);
+  if (!days.length) return '';
+  return '<div style="margin-bottom:28px"><div class="sh">Production Days Booked</div>' +
+    days.map((day, i) => {
+      const meta = [STATUS_WORD[day.status] || 'Proposed', dayTimes(day)].filter(Boolean).join(' &middot; ');
+      const when = /^\d{4}-\d{2}-\d{2}$/.test(String(day.date || '')) ? dayDate(day.date) : 'Day ' + (i + 1) + ' — date TBC';
+      return '<div style="display:flex;justify-content:space-between;gap:16px;font-size:10.5pt;padding:6px 0;border-bottom:1px solid #f0f0f0">' +
+        '<span style="font-weight:600;color:#181818">' + esc(when) + '</span>' +
+        '<span style="font-size:9pt;color:#555;white-space:nowrap">' + meta + '</span></div>';
+    }).join('') + '</div>';
+}
+
+/* The deposit (D37): a summary, not an itemised bill. */
+function depositBodyHtml(doc, treatment) {
+  const estimate = doc.estimate || {};
+  const job = ((doc.totals || {}).job) || estimate.totals || {};
+  const inc = treatment === 'taxable' ? ' (inc. GST)' : '';
+  return '<div style="margin-bottom:28px"><div class="sh">Deposit</div>' +
+      '<div style="font-size:14pt;font-weight:800;color:#181818">Deposit &mdash; ' + pctText(doc.pct) + '% to secure your booking</div>' +
+      '<div style="font-size:10pt;color:#555;margin-top:4px">For estimate ' + esc(estimate.upid || '—') +
+        (estimate.name ? ' &middot; ' + esc(estimate.name) : '') + '</div>' +
+      '<div style="display:flex;justify-content:space-between;gap:16px;margin-top:14px;padding:9px 0;border-top:1px solid #e8e8e8;border-bottom:1px solid #e8e8e8;font-size:10.5pt">' +
+        '<span style="color:#555">Estimate total' + inc + '</span>' +
+        '<span style="font-weight:700;color:#181818">' + fmt((estimate.totals || job).totalIncGst) + '</span></div>' +
+    '</div>' +
+    bookedDaysHtml(estimate) +
+    '<div style="margin-bottom:0"><div class="sh">Deposit Due</div>' +
+      totalsBoxHtml('Deposit Due', doc.totals, treatment);
+}
+
+/* A final or single invoice: the accepted estimate's items as the client
+   saw them, the extras, then the sum (D35). */
+function billBodyHtml(doc, pricing, treatment) {
+  const estimate = doc.estimate || {};
+  const labourSections = (pricing && pricing.labourSections) || [];
+  const serviceItems = serviceItemsHtml(estimate.activeRows, labourSections, estimate.sectionLabels, dayIdsOf(estimate));
+  const t = doc.totals || {};
+  const final = doc.kind === 'final';
+  return deliverablesTableHtml(estimate.activeRows) +
+    productionDaysHtml(estimate, pricing, false) +
+    whatGoesInHtml(serviceItems, estimate) +
+    extrasHtml(doc.extras) +
+    '<div style="margin-bottom:0"><div class="sh">Invoice Total</div>' +
+      totalsBoxHtml(final ? 'Balance Due' : 'Total Due', final ? t.balance : t.total, treatment, invoiceSummaryRows(doc, treatment));
+}
+
+/* A void invoice still prints, for the record, marked as such (D100). */
+function voidBannerHtml(doc) {
+  if (doc.status !== 'void') return '';
+  const replaced = doc.replacedBy && doc.replacedBy.number ? ' Replaced by ' + esc(doc.replacedBy.number) + '.' : '';
+  return '<div style="margin-bottom:24px;padding:12px 16px;border:2px solid #B85444">' +
+    '<div style="font-size:14pt;font-weight:900;letter-spacing:.12em;color:#B85444">VOID</div>' +
+    '<div style="font-size:9.5pt;color:#555;margin-top:4px;line-height:1.5">' +
+      (doc.voidedAt ? 'Voided ' + esc(longDate(doc.voidedAt)) + (doc.voidReason ? ': ' + esc(doc.voidReason) : '') + '.' : '') +
+      replaced + ' Nothing is owed on this invoice.</div></div>';
+}
+
+function buildInvoiceDocHtml(doc, pricing, settings) {
+  const estimate = doc.estimate || {};
+  const business = (settings && settings.business) || {};
+  const treatment = invoiceTreatment(doc);
+  const title = treatment === 'taxable' ? 'TAX INVOICE' : 'INVOICE';
+  const dates = [
+    doc.issuedAt ? 'Issued ' + longDate(doc.issuedAt) : '',
+    doc.dueAt ? 'Due ' + longDate(doc.dueAt) : '',
+  ].filter(Boolean);
+  const paid = doc.status === 'paid' && doc.paidAt
+    ? '<div style="margin-top:12px;font-size:10.5pt;font-weight:700;color:#181818">Paid ' + esc(longDate(doc.paidAt)) + '. Thank you.</div>'
+    : '';
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + PDF_STYLE + '</style></head>' + INVOICE_BODY +
+    invoiceHeadHtml(business, title, doc.number, dates.length ? [dates.join(' · ')] : [], estimate) +
+    voidBannerHtml(doc) +
+    (doc.kind === 'deposit' ? depositBodyHtml(doc, treatment) : billBodyHtml(doc, pricing, treatment)) +
+      paid +
+      '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'invoice') + '</div></div>' +
+    (doc.status === 'void' || doc.status === 'paid' ? '' : paymentBlockHtml((settings && settings.payment) || {})) +
+    '</body></html>';
+}
+
+/** `INV-ABC-F - Acme Pty Ltd - Brand film.pdf`, filesystem-safe. */
+function invoiceFilename(doc) {
+  const estimate = doc.estimate || {};
+  const business = (estimate.client && estimate.client.businessName) || 'Client';
+  const base = (doc.number || 'INV') + ' - ' + business + ' - ' + (estimate.name || 'Invoice');
+  return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
+}
+
+/* As exportBlocker: a tax invoice without the seller's ABN isn't one. */
+function invoiceBlocker(doc, settings) {
+  const business = (settings && settings.business) || {};
+  if (invoiceTreatment(doc) === 'taxable' && !String(business.abn || '').trim()) {
+    return {
+      error: 'abn_required',
+      message: 'This invoice charges GST, so it has to show your ABN. Add it in Invoice Settings, then export again.',
+    };
+  }
+  return null;
 }
 
 /* ── The Cost Breakdown (D8, D13) ─────────────────────────────────────────────
@@ -495,7 +690,39 @@ function costBreakdownBlocker(estimate, pricing) {
   };
 }
 
-function buildCostBreakdownHtml(estimate, pricing, settings) {
+/* What an invoice made from the estimate bills (task 20, D8: a Cost
+   Breakdown lives with every invoice). After the estimate's own breakdown,
+   so the client can follow it from the items to the amount due. Its rows are
+   `data-cb="invoice"`: they restate the total above, they don't add to it. */
+function invoiceBreakdownHtml(doc, treatment) {
+  const t = doc.totals || {};
+  const row = (label, detail, amount, opts) => cbRow(label, detail, amount, Object.assign({ kind: 'invoice' }, opts));
+  const gstRow = (figures) => (treatment === 'taxable'
+    ? row('<span style="font-weight:400;color:#888">of which GST</span>', '', (figures || {}).gst, { muted: true })
+    : '');
+  if (doc.kind === 'deposit') {
+    return cbBlock('This Invoice &middot; ' + esc(doc.number || ''),
+      row('Estimate total', '', (t.job || (doc.estimate || {}).totals || {}).totalIncGst) +
+      row('Deposit, ' + pctText(doc.pct) + '%', 'to secure the booking', t.totalIncGst, { strong: true }) + gstRow(t));
+  }
+  const extras = (doc.extras || []).map((line) => ({ line, price: extraPrice(line) }))
+    .filter((x) => (parseFloat(x.line.qty) || 0) > 0 || x.price > 0);
+  const extrasBlock = cbBlock('Extras', extras.map((x) =>
+    cbRow(esc(x.line.name), esc(qtyText(x.line.qty, unitOfLine(x.line, x.line))), x.price, { kind: 'invoice' })).join(''),
+  '<div style="font-size:9pt;color:#555;line-height:1.6;margin-bottom:10px">Added after the estimate was accepted, at the standard rate: no day or time rate applies to extras.</div>');
+  const final = doc.kind === 'final';
+  const due = final ? t.balance : t.total;
+  return extrasBlock + cbBlock('This Invoice &middot; ' + esc(doc.number || ''),
+    row('Estimate total', '', (t.job || {}).totalIncGst) +
+    (extras.length ? row('Extras', '', (t.extras || {}).totalIncGst) + row('Total', '', (t.total || {}).totalIncGst, { strong: true }) : '') +
+    (final ? row(lessDepositLabel(doc.less), '', -((t.deposit || {}).totalIncGst || 0)) : '') +
+    row(final ? 'Balance due' : 'Total due', '', (due || {}).totalIncGst, { strong: true }) + gstRow(due));
+}
+
+/* `invoice` (task 20): the invoice this breakdown goes with, as
+   buildInvoiceDocHtml takes it; its estimate is the snapshot as accepted.
+   Without one, the estimate's own breakdown, as before. */
+function buildCostBreakdownHtml(estimate, pricing, settings, invoice) {
   const client = estimate.client || {};
   const business = (settings && settings.business) || {};
   const labourSections = (pricing && pricing.labourSections) || [];
@@ -567,6 +794,7 @@ function buildCostBreakdownHtml(estimate, pricing, settings) {
       sellerHtml(business) + '</div>' +
       '<div style="text-align:right"><div style="font-size:16pt;font-weight:900;color:#181818;letter-spacing:.02em">COST BREAKDOWN</div>' +
       '<div style="font-size:13pt;font-weight:700;color:#B85444;letter-spacing:.04em;margin-top:2px">' + esc(estimate.upid || '—') + '</div>' +
+      (invoice ? '<div style="font-size:9.5pt;font-weight:700;color:#181818;margin-top:2px">For invoice ' + esc(invoice.number || '—') + '</div>' : '') +
       '<div style="font-size:9pt;color:#888;margin-top:2px">' + esc(estimate.date || '') + '</div>' +
       '<div style="font-size:15pt;font-weight:800;color:#181818;margin-top:6px">' + esc(estimate.name) + '</div>' +
       (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
@@ -583,14 +811,16 @@ function buildCostBreakdownHtml(estimate, pricing, settings) {
       cbRow(itemsLabel, '', b.target, { strong: true, kind: 'total' }) +
     '</tbody></table></div>' +
     '<div style="margin-bottom:28px">' +
-      totalsBoxHtml('Total', estimate.totals, treatment) +
+      totalsBoxHtml(invoice ? 'Estimate total' : 'Total', estimate.totals, treatment) +
       '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'estimate') + '</div></div>' +
+    (invoice ? invoiceBreakdownHtml(invoice, invoiceTreatment(invoice)) : '') +
     '</body></html>';
 }
 
-/** `Cost Breakdown_<UPID>_<ProjectName>.pdf` (D8), filesystem-safe. */
-function costBreakdownFilename(estimate) {
-  const base = 'Cost Breakdown_' + (estimate.upid || 'EST') + '_' + (estimate.name || 'Estimate');
+/** `Cost Breakdown_<UPID>_<ProjectName>.pdf` (D8), filesystem-safe; an
+    invoice's carries its number in place of the UPID. */
+function costBreakdownFilename(estimate, invoice) {
+  const base = 'Cost Breakdown_' + ((invoice && invoice.number) || estimate.upid || 'EST') + '_' + (estimate.name || 'Estimate');
   return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
 }
 
@@ -677,6 +907,9 @@ async function renderPdfBuffer(html) {
 
 module.exports = {
   buildEstimateHtml,
+  buildInvoiceDocHtml,
+  invoiceFilename,
+  invoiceBlocker,
   buildCostBreakdownHtml,
   costBreakdownBlocker,
   exportBlocker,

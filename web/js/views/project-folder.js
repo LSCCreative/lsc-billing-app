@@ -19,7 +19,9 @@
  * STAGE D'S STAND-INS. "Mark sent" records a send the owner made by email
  * (Stage E sends from the app), and "Mark accepted" the client's yes (E's
  * signing replaces it), which confirms the days and makes the invoices
- * (task 19). Each invoice's own page is task 20's.
+ * (task 19). Each invoice has its own page (InvoiceView, task 20), where it
+ * is marked sent and paid, its extras edited, and a sent one voided and
+ * remade; the folder's next action leads there once invoices exist.
  */
 
 const ProjectFolder = (() => {
@@ -61,10 +63,38 @@ const ProjectFolder = (() => {
      and only "Create invoices" moves it on. */
   const needsInvoices = (project) => project.stage === 'accepted' && !folder.invoices.length;
 
-  /* The one next action (IA: it changes with the stage). Each invoice's page
-     (task 20) arrives here. */
+  const INVOICE_ORDER = ['deposit', 'final', 'single', 'legacy'];
+
+  /* The invoice the job is waiting on: the first unpaid one that isn't void,
+     in the order projects.js projectStage reads them; null when all are paid. */
+  function currentInvoice() {
+    return folder.invoices
+      .filter((i) => i.status !== 'void' && i.status !== 'paid')
+      .sort((a, b) => INVOICE_ORDER.indexOf(a.kind) - INVOICE_ORDER.indexOf(b.kind) ||
+        String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
+  }
+
+  /* Its page, and what to do there (IA: "Mark deposit paid", "Edit final
+     invoice"). A draft opens to be checked and sent; one that has gone out
+     opens on Mark paid. */
+  function invoiceAction(inv) {
+    if (inv.kind === 'legacy') return { id: 'invoice', label: 'Mark paid…', target: inv.id, action: 'paid' };
+    const word = { deposit: 'deposit', final: 'final', single: '' }[inv.kind];
+    if (inv.status === 'draft') {
+      return {
+        id: 'invoice',
+        target: inv.id,
+        label: inv.kind === 'final' ? 'Edit final invoice' : inv.kind === 'deposit' ? 'Open deposit invoice' : 'Open invoice',
+      };
+    }
+    return { id: 'invoice', target: inv.id, action: 'paid', label: 'Mark ' + (word ? word + ' ' : '') + 'paid…' };
+  }
+
+  /* The one next action (IA: it changes with the stage). */
   function nextAction(project) {
     if (needsInvoices(project)) return { id: 'invoices', label: 'Create invoices…' };
+    const inv = project.stage === 'accepted' || project.stage === 'invoiced' ? currentInvoice() : null;
+    if (inv) return invoiceAction(inv);
     switch (project.stage) {
       case 'draft': return { id: 'edit', label: 'Edit estimate' };
       case 'sent': return { id: 'accept', label: 'Mark accepted…' };
@@ -79,6 +109,7 @@ const ProjectFolder = (() => {
     if (project.stage === 'draft') return [{ id: 'sent', label: 'Mark sent…' }, { id: 'accept', label: 'Mark accepted…' }];
     if (project.stage === 'sent') return [{ id: 'edit', label: 'Edit estimate' }, { id: 'sent', label: 'Mark sent again…' }];
     if (needsInvoices(project)) return [{ id: 'view', label: 'View estimate' }];
+    if (nextAction(project).id === 'invoice') return [{ id: 'view', label: 'View estimate' }];
     return [];
   }
 
@@ -116,8 +147,9 @@ const ProjectFolder = (() => {
     if (lead()) quiet.push({ id: 'duplicate', label: 'Duplicate as new project' });
     quiet.push({ id: 'delete', label: 'Delete…', danger: true });
     const btn = (a, cls) =>
-      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '" data-write>' +
-      '<span class="spinner"></span>' + esc(a.label) + '</button>';
+      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '"' +
+      (a.target ? ' data-target="' + esc(a.target) + '"' : '') + (a.action ? ' data-then="' + esc(a.action) + '"' : '') +
+      ' data-write><span class="spinner"></span>' + esc(a.label) + '</button>';
     return (
       '<div class="pf-actions">' +
       '<div class="pf-actions-main">' +
@@ -208,7 +240,7 @@ const ProjectFolder = (() => {
 
   function docRow(doc) {
     return (
-      '<li class="pf-doc">' +
+      '<li class="pf-doc' + (doc.void ? ' is-void' : '') + '">' +
       '<div class="pf-doc-main">' +
       '<span class="pf-doc-name">' + doc.name + '</span>' +
       (doc.meta ? '<span class="pf-doc-meta">' + doc.meta + '</span>' : '') +
@@ -243,19 +275,35 @@ const ProjectFolder = (() => {
         actions: [{ id: 'breakdown', label: '↓ PDF', target: e.id, label2: 'Download the Cost Breakdown PDF' }],
       });
     });
+    const numberOf = (id) => ((folder.invoices.find((i) => i.id === id) || {}).number || '');
     folder.invoices.forEach((inv) => {
       const legacy = inv.kind === 'legacy';
+      const label = 'invoice ' + (inv.number || '');
+      const replacedBy = inv.status === 'void' ? folder.invoices.find((i) => i.replacesId === inv.id) : null;
+      const when = (ymd) => esc(ProjectCard.dayMonth(ymd, today));
+      let meta;
+      if (legacy) meta = (inv.status === 'paid' ? 'Paid · ' : '') + 'Made the old way';
+      else if (inv.status === 'void') {
+        meta = 'Void' + (inv.voidedAt ? ' ' + when(inv.voidedAt) : '') + (replacedBy ? ' · replaced by ' + esc(replacedBy.number || '') : '');
+      } else {
+        meta = esc(INVOICE_STATUS[inv.status] || inv.status) +
+          (inv.status === 'paid' && inv.paidAt ? ' ' + when(inv.paidAt) : '') +
+          (inv.status === 'sent' && inv.dueAt ? ' · due ' + when(inv.dueAt) : '') +
+          (inv.replacesId ? ' · replaces ' + esc(numberOf(inv.replacesId)) : '');
+      }
+      const actions = [{ id: 'invoice', label: 'Open', target: inv.id, label2: 'Open ' + label }];
+      // An old invoice prints from the estimate row it was made from, as it always did.
+      if (legacy && inv.estimateId) actions.push({ id: 'legacy-pdf', label: '↓ PDF', target: inv.estimateId, label2: 'Download ' + label + ' PDF' });
+      if (!legacy) actions.push({ id: 'inv-pdf', label: '↓ PDF', target: inv.id, label2: 'Download ' + label + ' PDF' });
+      if (!legacy && inv.status !== 'void') {
+        actions.push({ id: 'inv-breakdown', label: '↓ Breakdown', target: inv.id, label2: 'Download the Cost Breakdown for ' + label });
+      }
       docs.push({
         name: esc(INVOICE_KIND[inv.kind] || 'Invoice') + (inv.number ? ' <span class="pf-doc-num">' + esc(inv.number) + '</span>' : ''),
-        meta: legacy
-          ? (inv.status === 'paid' ? 'Paid · ' : '') + 'Made the old way'
-          : esc(INVOICE_STATUS[inv.status] || inv.status) +
-            (inv.status === 'paid' && inv.paidAt ? ' ' + esc(ProjectCard.dayMonth(inv.paidAt, today)) : ''),
-        amount: fmt(inv.amountDue),
-        // An old invoice prints from the estimate row it was made from, as it always did.
-        actions: legacy && inv.estimateId
-          ? [{ id: 'legacy-pdf', label: '↓ PDF', target: inv.estimateId, label2: 'Download invoice ' + (inv.number || '') + ' PDF' }]
-          : [],
+        meta,
+        amount: inv.status === 'void' ? '<s>' + fmt(inv.amountDue) + '</s>' : fmt(inv.amountDue),
+        actions,
+        void: inv.status === 'void',
       });
     });
     return (
@@ -275,6 +323,14 @@ const ProjectFolder = (() => {
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';
+      case 'invoice_sent': return (d.number || 'Invoice') + ' marked sent' + (C.isDate(d.dueAt) ? ', due ' + ProjectCard.dayMonth(d.dueAt, today) : '');
+      case 'invoice_paid': return (d.number || 'Invoice') + ' paid' + (typeof d.amount === 'number' ? ', ' + fmt(d.amount) : '') +
+        (d.via === 'card' ? ' by card' : d.via === 'bank' ? ' by bank transfer' : '');
+      case 'invoice_voided': return (d.number || 'Invoice') + ' voided' + (d.reason ? ': ' + d.reason : '') +
+        (d.replacement ? '. Replaced by ' + d.replacement : '');
+      case 'invoice_edited': return (d.number || 'Invoice') + ' edited' +
+        (typeof d.depositPct === 'number' ? ', deposit now ' + d.depositPct + '%' : '') +
+        (typeof d.amountDue === 'number' ? ' (' + fmt(d.amountDue) + ' due)' : '');
       default: return entry.kind.charAt(0).toUpperCase() + entry.kind.slice(1).replace(/_/g, ' ');
     }
   }
@@ -335,6 +391,12 @@ const ProjectFolder = (() => {
       const estimate = folder.estimates.find((e) => e.id === b.dataset.estimate);
       if (estimate) openEstimate(estimate, false, { focusDay: b.dataset.day });
     }));
+  }
+
+  /* An invoice's page (task 20); `then` 'paid' opens its Mark paid. */
+  function openInvoice(invoiceId, then) {
+    if (!invoiceId) return;
+    LSCRouter.go(InvoiceView.pathOf(folder.project.id, invoiceId), { state: then ? { action: then } : {} });
   }
 
   function openEstimate(estimate, view, extra) {
@@ -411,6 +473,7 @@ const ProjectFolder = (() => {
 
   async function runAction(id, button) {
     if (busy) return;
+    if (id === 'invoice') return openInvoice(button.dataset.target, button.dataset.then);
     const estimate = lead();
     if (id === 'edit' && estimate) return openEstimate(estimate, false);
     if (id === 'view' && estimate) return openEstimate(estimate, true);
@@ -760,6 +823,7 @@ const ProjectFolder = (() => {
   // ── Downloads ───────────────────────────────────────────────────────────
 
   async function runDoc(kind, id, button) {
+    if (kind === 'invoice') return openInvoice(id);
     const estimate = folder.estimates.find((e) => e.id === id);
     if (kind === 'view' && estimate) return openEstimate(estimate, true);
     if (kind === 'edit' && estimate) return openEstimate(estimate, false);
@@ -794,18 +858,28 @@ const ProjectFolder = (() => {
       box.textContent = '';
       box.classList.remove('show');
     }
-    const breakdown = kind === 'breakdown';
-    const what = breakdown ? 'the Cost Breakdown' : kind === 'legacy-pdf' ? 'the invoice PDF' : 'the PDF';
+    const breakdown = kind === 'breakdown' || kind === 'inv-breakdown';
+    const invoice = kind === 'inv-pdf' || kind === 'inv-breakdown' ? folder.invoices.find((i) => i.id === estimateId) : null;
+    const what = breakdown ? 'the Cost Breakdown' : kind === 'legacy-pdf' || invoice ? 'the invoice PDF' : 'the PDF';
     Toast.working(breakdown ? 'Generating the Cost Breakdown…' : 'Generating PDF…');
     try {
-      const base = '/api/estimates/' + encodeURIComponent(estimateId);
-      const reply = breakdown
-        ? await LSCApi.postPdf(base + '/cost-breakdown')
-        : await LSCApi.postPdf(base + '/pdf', kind === 'pdf' ? { as: 'estimate' } : undefined);
+      let reply;
+      if (invoice) {
+        // An app-made invoice (task 20): its own routes. A draft prints issued today.
+        reply = await LSCApi.postPdf('/api/invoices/' + encodeURIComponent(invoice.id) + '/' +
+          (breakdown ? 'cost-breakdown' : 'pdf') + '?today=' + LSCUtil.today(), breakdown ? undefined : {});
+      } else {
+        const base = '/api/estimates/' + encodeURIComponent(estimateId);
+        reply = breakdown
+          ? await LSCApi.postPdf(base + '/cost-breakdown')
+          : await LSCApi.postPdf(base + '/pdf', kind === 'pdf' ? { as: 'estimate' } : undefined);
+      }
       const estimate = folder.estimates.find((e) => e.id === estimateId) || {};
-      const fallback = breakdown
-        ? 'Cost Breakdown_' + (estimate.upid || 'EST') + '.pdf'
-        : (kind === 'legacy-pdf' ? estimate.invoiceNumber || 'invoice' : estimate.upid || 'estimate') + '.pdf';
+      const fallback = invoice
+        ? (breakdown ? 'Cost Breakdown_' : '') + (invoice.number || 'invoice') + '.pdf'
+        : breakdown
+          ? 'Cost Breakdown_' + (estimate.upid || 'EST') + '.pdf'
+          : (kind === 'legacy-pdf' ? estimate.invoiceNumber || 'invoice' : estimate.upid || 'estimate') + '.pdf';
       LSCUtil.saveFile(reply.blob, reply.filename || fallback);
       Toast.ok(breakdown ? 'Cost Breakdown downloaded.' : 'PDF downloaded.');
     } catch (err) {
@@ -815,7 +889,7 @@ const ProjectFolder = (() => {
       if (err.code === 'abn_required') report(err.message, true);
       else if (err.code === 'breakdown_stale') report(err.message);
       else if (err.code === 'pdf_unavailable') report('Couldn’t make ' + what + ' — the server has no PDF renderer. Check Chromium is installed in the container.');
-      else if (err.status === 404) report('Couldn’t make ' + what + ' — that estimate no longer exists on the server.');
+      else if (err.status === 404) report('Couldn’t make ' + what + ' — that ' + (invoice ? 'invoice' : 'estimate') + ' no longer exists on the server.');
       else report('Couldn’t make ' + what + ': ' + failureText(err));
     } finally {
       if (button.isConnected) {
@@ -880,5 +954,9 @@ const ProjectFolder = (() => {
 
     estimatePath,
     closeDialog,
+    /* The folder's dialog, for the invoice screen's Mark sent, Mark paid and
+       Void (task 20): one overlay, one focus trap, one way of showing a
+       refusal. opts as openDialog. */
+    dialog: openDialog,
   };
 })();

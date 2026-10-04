@@ -376,19 +376,26 @@ const EstimateDetail = (() => {
     return esc(item) + (vendor ? '<span class="est-vendor">' + esc(vendor) + '</span>' : '');
   }
 
-  function markup(estimate, pricing) {
+  /* Every block of lines, without the header or the totals card: the
+     invoice screen (task 20) shows the accepted estimate this way. */
+  function itemsMarkup(estimate, pricing) {
     const activeRows = estimate.activeRows || {};
     const equip = (activeRows.equip || []).filter((e) => costBill(e) > 0 || e.vendor || e.item);
     const crew = (activeRows.crew || []).filter((c) => costBill(c) > 0 || c.role);
-
     return (
-      '<button class="back-btn" id="js-back">← Back</button>' +
-      headerMarkup(estimate) +
       labourBlocks(estimate, pricing) +
       costBlock('Equipment Hire', equip, equipName, ['Item', 'Days', 'Cost/Day']) +
       travelBlock(activeRows, pricing) +
       costBlock('External Crew &amp; Contracts', crew, (c) => esc(c.role || 'Crew'), ['Role / Name', 'Days', 'Day Rate']) +
-      deliverablesBlock(activeRows) +
+      deliverablesBlock(activeRows)
+    );
+  }
+
+  function markup(estimate, pricing) {
+    return (
+      '<button class="back-btn" id="js-back">← Back</button>' +
+      headerMarkup(estimate) +
+      itemsMarkup(estimate, pricing) +
       totalsMarkup(estimate)
     );
   }
@@ -521,5 +528,5 @@ const EstimateDetail = (() => {
     els.costBreakdown.addEventListener('click', () => exportCostBreakdown(estimate, els, handlers));
   }
 
-  return { mount };
+  return { mount, itemsMarkup };
 })();

@@ -56,6 +56,12 @@ const crypto = require('crypto');
  *    specification note clears it (days.js replaceDays). 0 on every existing
  *    day: nothing was accepted through the app before v13.
  *
+ * 6. VOID AND REMAKE (task 20, D100). A sent, unpaid invoice is corrected by
+ *    voiding it — `voided_at` (a date) and `void_reason`, the row kept with
+ *    its number — and making a replacement with the next free suffix, whose
+ *    `replaces_id` names it. Columns on the new `invoices` table: v13 is the
+ *    migration that creates it, and it had not been deployed.
+ *
  * Nothing touches a stored total: every estimate's totals_json, rows,
  * labels, days and rentals are copied across as they are.
  */
@@ -117,6 +123,9 @@ function createTables(db) {
       paid_at                TEXT,
       paid_via               TEXT CHECK (paid_via IN ('bank', 'card')),
       card_fee               REAL,
+      voided_at              TEXT,
+      void_reason            TEXT,
+      replaces_id            TEXT REFERENCES invoices(id) ON DELETE SET NULL,
       created_at             TEXT NOT NULL,
       updated_at             TEXT NOT NULL
     );

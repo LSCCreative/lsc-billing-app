@@ -7,6 +7,7 @@ const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
 const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
+const { amountDue } = require('../invoices');
 
 /* The deposit when nothing else says (D33). Settings makes it a setting at
    task 21, stored as settings.invoicing.depositPct. */
@@ -186,18 +187,17 @@ function readFolder(db, id, today) {
       dueAt: i.due_at || null,
       paidAt: i.paid_at || null,
       paidVia: i.paid_via || null,
+      // Void and remake (task 20, D100): the void date and why, the one it
+      // replaced, and the deposit a final takes off.
+      voidedAt: i.voided_at || null,
+      voidReason: i.void_reason || null,
+      replacesId: i.replaces_id || null,
+      lessInvoiceId: i.less_invoice_id || null,
       createdAt: i.created_at,
       updatedAt: i.updated_at,
     })),
     activity: log.map((a) => ({ id: a.id, at: a.at, kind: a.kind, detail: parseDetail(a.detail_json) })),
   };
-}
-
-/* What an invoice asks the client to pay: a deposit or old-way invoice its
-   total, a final or single invoice its balance (calc.js invoiceTotals). */
-function amountDue(kind, totals) {
-  const due = kind === 'final' || kind === 'single' ? totals.balanceDue : totals.totalIncGst;
-  return Number(due) || 0;
 }
 
 /**
@@ -753,4 +753,4 @@ function registerProjectRoutes(app, db) {
   });
 }
 
-module.exports = { registerProjectRoutes, summarize, readFolder };
+module.exports = { registerProjectRoutes, summarize, readFolder, logActivity, todayOf, isYmd };

@@ -17,9 +17,12 @@ const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const {
   buildEstimateHtml, buildCostBreakdownHtml, costBreakdownBlocker, exportBlocker, exportFilename, costBreakdownFilename,
-  resolveExecutablePath, PROPOSED_DISCLAIMER,
+  resolveExecutablePath, PROPOSED_DISCLAIMER, buildInvoiceDocHtml, invoiceFilename, invoiceBlocker,
 } = require('../src/pdf');
-const { PRICING_SHAPE, computeTotals, surchargeSnapshot, stampSurchargedPrices } = require('../src/calc');
+const {
+  PRICING_SHAPE, computeTotals, surchargeSnapshot, stampSurchargedPrices, depositAmount, extrasTotals,
+  finalInvoiceTotals, singleInvoiceTotals,
+} = require('../src/calc');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const USERNAME = 'lachlan';
@@ -508,4 +511,157 @@ test('client PDF: travel, crew and gear on a day stay in their own blocks; Produ
   assert.doesNotMatch(services, /Video Capture/);
   // Only the production line is surcharged: $1,680 + 90 + 600 + 150.
   assert.equal(est.totals.totalIncGst, 2520);
+});
+
+/* ── Invoices made by the app (production-booking task 20) ────────────────── */
+
+/* A GST-registered (exclusive) job: a full day on a pencilled Friday inside
+   office hours (no rate applies) and ten hours of edit, $2,520 + $252 GST =
+   $2,772; plus a Date TBC day with nothing on it yet. */
+const T20_SETTINGS = {
+  business: { name: 'LSC Creative Pty Ltd', abn: '12345678901' },
+  payment: { bankName: 'Big Bank', accountName: 'LSC Creative', bsb: '123-456', accountNumber: '00001111', terms: 'Net 14' },
+};
+const T20_EST = () => Object.assign(bookedEstimate({
+  rows: { prod: [cap({ dayId: 'd_fri' })], post: [{ name: 'Video Editor — Offline', qty: 10, mu: 140 }] },
+  days: [FRI, TBC],
+  settings: EXCL,
+}), { upid: 'T20', name: 'Brand film', status: 'accepted' });
+const OVERTIME = { name: 'Overtime — per hour', qty: 2, mu: 210, rowId: 'row_ot' };
+const t20Docs = () => {
+  const estimate = T20_EST();
+  const deposit = {
+    kind: 'deposit', number: 'INV-T20-D', status: 'sent', pct: 50, estimate, extras: [],
+    totals: depositAmount(estimate.totals, 50), issuedAt: '2026-10-04', dueAt: '2026-10-18',
+  };
+  const extras = extrasTotals({ additional: [OVERTIME] }, DAY_PRICING, EXCL, false);
+  const final = {
+    kind: 'final', number: 'INV-T20-F', status: 'draft', estimate, extras: [OVERTIME],
+    totals: finalInvoiceTotals(estimate.totals, extras, deposit.totals),
+    less: { number: 'INV-T20-D', status: 'paid' }, issuedAt: '2026-11-02', dueAt: '2026-11-16',
+  };
+  const single = {
+    kind: 'single', number: 'INV-T20', status: 'draft', estimate, extras: [OVERTIME],
+    totals: singleInvoiceTotals(estimate.totals, extras), issuedAt: '2026-11-02', dueAt: '2026-11-16',
+  };
+  return { estimate, deposit, final, single };
+};
+
+test('invoice PDF: the figures the tests below pin are task 14’s', () => {
+  const { estimate, deposit, final } = t20Docs();
+  assert.deepEqual([estimate.totals.clientPriceExGst, estimate.totals.gst, estimate.totals.totalIncGst], [2520, 252, 2772]);
+  assert.deepEqual([deposit.totals.clientPriceExGst, deposit.totals.gst, deposit.totals.totalIncGst], [1260, 126, 1386]);
+  assert.deepEqual([final.totals.extras.totalIncGst, final.totals.total.totalIncGst, final.totals.balanceDue], [462, 3234, 1848]);
+  assert.deepEqual([final.totals.balance.clientPriceExGst, final.totals.balance.gst], [1680, 168]);
+});
+
+test('invoice PDF: the deposit is a summary — the %, the estimate total, the days booked, the deposit due (D37)', () => {
+  const { deposit } = t20Docs();
+  const html = buildInvoiceDocHtml(deposit, DAY_PRICING, T20_SETTINGS);
+  assert.match(html, /TAX INVOICE <span style="color:#B85444">INV-T20-D<\/span>/);
+  assert.match(html, /Issued 4 October 2026 · Due 18 October 2026/);
+  assert.match(html, /Deposit &mdash; 50% to secure your booking/);
+  assert.match(html, /For estimate T20 &middot; Brand film/);
+  assert.match(html, /Estimate total \(inc\. GST\)<\/span><span[^>]*>\$2,772\.00/);
+  assert.match(html, /Production Days Booked.*Friday 2 October 2026.*Pencilled &middot; 9:00am–7:00pm.*Day 2 — date TBC.*Proposed/s);
+  assert.match(html, /Subtotal \(ex GST\).*\$1,260\.00.*GST.*\$126\.00.*Deposit Due.*\$1,386\.00/s);
+  // No itemised lines: the accepted estimate is the itemised document.
+  assert.doesNotMatch(html, /Video Capture|Video Editor|Extras|Less deposit/);
+  assert.match(html, /Payment Details.*Big Bank.*Net 14/s);
+  assert.match(html, /LSC Creative Pty Ltd &middot; ABN 12 345 678 901/);
+  assert.doesNotMatch(html, SURCHARGE_WORDS);
+});
+
+test('invoice PDF: the final is the job, plus extras, less the deposit paid, then the balance (D35)', () => {
+  const { final } = t20Docs();
+  const html = buildInvoiceDocHtml(final, DAY_PRICING, T20_SETTINGS);
+  assert.match(html, /TAX INVOICE <span style="color:#B85444">INV-T20-F<\/span>/);
+  // The accepted estimate's items as the client saw them, then the extras priced.
+  assert.match(html, /Friday 2 October 2026.*Video Capture.*1 full day.*\$1,120\.00/s);
+  assert.match(html, /What Goes Into This Project.*Video Editor — Offline/s);
+  assert.match(html, /<div class="sh">Extras<\/div>.*Overtime — per hour <span[^>]*>&middot; 2 hours<\/span><\/span><span[^>]*>\$420\.00/s);
+  const order = ['Estimate total', '$2,772.00', 'Extras', '$462.00', 'Total', '$3,234.00',
+    'Less deposit paid (INV-T20-D)', '&minus;$1,386.00', 'Subtotal (ex GST)', '$1,680.00', 'GST', '$168.00', 'Balance Due', '$1,848.00'];
+  let at = html.indexOf('Invoice Total');
+  for (const bit of order) {
+    const next = html.indexOf(bit, at);
+    assert.ok(next > at, bit + ' in order');
+    at = next;
+  }
+  assert.match(html, /Payment Details/);
+  assert.doesNotMatch(html, SURCHARGE_WORDS);
+
+  // A final made before the deposit came in doesn't say it was paid.
+  const unpaid = buildInvoiceDocHtml({ ...final, less: { number: 'INV-T20-D', status: 'sent' } }, DAY_PRICING, T20_SETTINGS);
+  assert.match(unpaid, /Less deposit invoiced \(INV-T20-D\)/);
+  assert.doesNotMatch(unpaid, /Less deposit paid/);
+  // A custom-billed extra prints its custom amount, as computeTotals bills it.
+  const hdd = { name: 'Raw Footage Handover [on HDD]', qty: 1, mu: 98, customBill: true, override: 150 };
+  assert.match(buildInvoiceDocHtml({ ...final, extras: [OVERTIME, hdd] }, DAY_PRICING, T20_SETTINGS),
+    /Raw Footage Handover \[on HDD\] <span[^>]*>&middot; 1 hour<\/span><\/span><span[^>]*>\$150\.00/);
+  // A replaced deposit: the final names the one it takes off (D100).
+  assert.match(buildInvoiceDocHtml({ ...final, less: { number: 'INV-T20-D2', status: 'paid' } }, DAY_PRICING, T20_SETTINGS),
+    /Less deposit paid \(INV-T20-D2\)/);
+});
+
+test('invoice PDF: a single invoice is the job plus extras, all due; with no extras it is the estimate total', () => {
+  const { single, estimate } = t20Docs();
+  const html = buildInvoiceDocHtml(single, DAY_PRICING, T20_SETTINGS);
+  assert.match(html, /TAX INVOICE <span style="color:#B85444">INV-T20<\/span>/);
+  assert.match(html, /Estimate total.*\$2,772\.00.*Extras.*\$462\.00.*Subtotal \(ex GST\).*\$2,940\.00.*GST.*\$294\.00.*Total Due.*\$3,234\.00/s);
+  assert.doesNotMatch(html, /Less deposit/);
+  const bare = buildInvoiceDocHtml({ ...single, extras: [], totals: singleInvoiceTotals(estimate.totals, null) }, DAY_PRICING, T20_SETTINGS);
+  assert.doesNotMatch(bare, /Estimate total|<div class="sh">Extras/);
+  assert.match(bare, /Subtotal \(ex GST\).*\$2,520\.00.*GST.*\$252\.00.*Total Due.*\$2,772\.00/s);
+});
+
+test('invoice PDF: unregistered, it is a plain invoice with no GST lines', () => {
+  const estimate = Object.assign(bookedEstimate({ rows: { post: [{ name: 'Edit', qty: 10, mu: 140 }] }, days: [], settings: UNREG }),
+    { upid: 'T20U', name: 'Small job' });
+  const deposit = { kind: 'deposit', number: 'INV-T20U-D', status: 'draft', pct: 30, estimate, extras: [], totals: depositAmount(estimate.totals, 30) };
+  const html = buildInvoiceDocHtml(deposit, DAY_PRICING, {});
+  assert.match(html, /INVOICE <span/);
+  assert.doesNotMatch(html, /TAX INVOICE|Subtotal \(ex GST\)|\(inc\. GST\)/);
+  assert.match(html, /Deposit &mdash; 30% to secure your booking.*Deposit Due.*\$420\.00/s);
+  assert.match(html, /No GST is charged/);
+  assert.equal(invoiceBlocker(deposit, {}), null);
+});
+
+test('invoice PDF: void prints marked VOID with its reason and replacement; paid says so; neither asks for payment', () => {
+  const { deposit, final } = t20Docs();
+  const voided = buildInvoiceDocHtml({
+    ...deposit, status: 'void', voidedAt: '2026-10-06', voidReason: 'Wrong deposit %', replacedBy: { number: 'INV-T20-D2' },
+  }, DAY_PRICING, T20_SETTINGS);
+  assert.match(voided, /VOID<\/div>.*Voided 6 October 2026: Wrong deposit %\. Replaced by INV-T20-D2\. Nothing is owed on this invoice\./s);
+  assert.doesNotMatch(voided, /Payment Details/);
+  const paid = buildInvoiceDocHtml({ ...final, status: 'paid', paidAt: '2026-11-20' }, DAY_PRICING, T20_SETTINGS);
+  assert.match(paid, /Paid 20 November 2026\. Thank you\./);
+  assert.doesNotMatch(paid, /Payment Details|VOID/);
+});
+
+test('invoice PDF: a taxable invoice needs the ABN; the filename carries the number', () => {
+  const { deposit, final } = t20Docs();
+  assert.equal(invoiceBlocker(deposit, { business: {} }).error, 'abn_required');
+  assert.equal(invoiceBlocker(final, T20_SETTINGS), null);
+  assert.equal(invoiceFilename(final), 'INV-T20-F - Acme Pty Ltd - Brand film.pdf');
+  assert.equal(invoiceFilename({ ...final, estimate: { ...final.estimate, name: 'A/B: "cut"' } }), 'INV-T20-F - Acme Pty Ltd - A-B- -cut-.pdf');
+  assert.equal(costBreakdownFilename(final.estimate, final), 'Cost Breakdown_INV-T20-F_Brand film.pdf');
+});
+
+test('invoice Cost Breakdown: the estimate’s breakdown, the extras, then what the invoice bills (D8)', () => {
+  const { final, deposit } = t20Docs();
+  const html = buildCostBreakdownHtml(final.estimate, DAY_PRICING, T20_SETTINGS, final);
+  assert.match(html, /For invoice INV-T20-F/);
+  // The estimate's own rows still add up to its total, as without an invoice.
+  const items = [...html.matchAll(/<tr data-cb="item">.*?<\/tr>/gs)].map((m) => moneyIn(m[0]).pop());
+  const total = moneyIn(html.match(/<tr data-cb="total">.*?<\/tr>/s)[0]).pop();
+  assert.equal(items.reduce((a, b) => a + b, 0), total);
+  assert.match(html, /Estimate total.*\$2,772\.00/s);
+  assert.match(html, /<div class="sh">Extras<\/div>.*Overtime — per hour.*2 hours.*\$420\.00/s);
+  assert.match(html, /This Invoice &middot; INV-T20-F.*Estimate total.*\$2,772\.00.*Extras.*\$462\.00.*Total.*\$3,234\.00.*Less deposit paid \(INV-T20-D\).*-\$1,386\.00.*Balance due.*\$1,848\.00.*of which GST.*\$168\.00/s);
+  assert.doesNotMatch(html, INTERNAL_WORDS);
+
+  const dep = buildCostBreakdownHtml(deposit.estimate, DAY_PRICING, T20_SETTINGS, deposit);
+  assert.match(dep, /This Invoice &middot; INV-T20-D.*Estimate total.*\$2,772\.00.*Deposit, 50%.*to secure the booking.*\$1,386\.00.*of which GST.*\$126\.00/s);
+  assert.doesNotMatch(dep, /<div class="sh">Extras/);
 });

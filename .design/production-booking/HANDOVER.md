@@ -100,31 +100,24 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   only. Scratch now has AUD-B accepted as a 40% pair with 16 Oct flagged (against a hand-added
   confirmed day `d_t19_scratch` on B210-PLAN) and TST-001 as a single invoice.
 
-**Exact next item: TASKS.md task 20, the invoice screen and invoice PDFs** (money math, Opus/high).
-Hooks waiting for it:
-- The folder's invoice rows (`documentsMarkup` in `project-folder.js`) have no actions yet: give each
-  its page `#/projects/<id>/invoices/<invoiceId>` and a PDF. The folder answers `amountDue` per
-  invoice (a deposit's total, a final or single's `balanceDue`).
-- `nextAction()` is where "Mark deposit paid" and "Edit final invoice" (IA) go; accepted with
-  invoices currently falls through to View estimate.
-- Each invoice has `estimate_snapshot_json` (the estimate as accepted, `loadEstimate` shape) to
-  print from, never the live estimate. The final's `less_invoice_id` is its deposit: recompute the
-  final as `finalInvoiceTotals(snapshot.totals, extrasTotals(...), <deposit's stored totals_json>)`.
-- **Void and remake (D100, decided):** drafts edit in place; a sent, unpaid invoice is voided with
-  a date and reason and replaced as `-D2` / `-F2` / `INV-<UPID>-2` (next free suffix); a paid one is
-  never voided. `/invoices` answers `already` once any non-legacy invoice exists, so the
-  replacement needs its own action rather than reusing it.
-- Decline is hidden once an invoice exists, even a draft. Delete still works on drafts.
+- **D, task 20** (the invoice screen `#/projects/<id>/invoices/<invoiceId>`, deposit / final /
+  single PDFs and per-invoice Cost Breakdowns, Mark sent, Mark paid, void and remake). 2026-10-04,
+  committed, **not deployed** (new routes and v13 columns: NAS before Pages, with v13 at task 23).
+  Its decisions are in its Done note in `TASKS.md`. `invoices.voided_at`, `void_reason` and
+  `replaces_id` went into v13 (undeployed); the `api-scratch` DB got them by `ALTER TABLE` (a
+  backup from before is in this session's scratchpad only). Scratch now has AUD-B with D void, D2
+  paid at 50%, and F a draft with 2 hrs of Overtime ($6,233.50 due).
+
+**Exact next item: TASKS.md task 21, the Settings screen** (frontend, Opus/high). Hooks waiting
+for it:
+- Store the deposit % at `settings.invoicing.depositPct` (task 19 reads it).
+- The invoice due-date default is `DUE_DAYS = 14` in `web/js/views/invoice.js`; the estimate's
+  valid-for is `VALID_DAYS = 30` in `project-folder.js`. Both become settings there.
 
 `GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
 cached Pages build still calls it), then delete it.
 
 **Seams left for later tasks:**
-- **Invoices (task 20):** the deposit's `depositAmount(...)` result is stored as the deposit
-  invoice's `totals_json` (task 19); pass that stored object to `finalInvoiceTotals`, and don't
-  recompute it from a % later. On the final's tax invoice, the GST for this supply is `balance.gst`, because the deposit's GST was
-  already on its own tax invoice. Show `total` as the full job, then "Less deposit paid", then
-  `balance`. Extras lines need price snapshots (`mu`) so later card changes don't move them.
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
   two readers of a booked estimate. The client page lists days as the client PDF does, with
   stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.
@@ -149,11 +142,16 @@ cached Pages build still calls it), then delete it.
 - **The invoice snapshot is owner-only:** `estimate_snapshot_json` is the whole estimate, including
   its `totals` with internal figures. A public invoice page (E) must print from it through the
   client PDF's fields, never send it whole.
-- **Task 21:** store the deposit setting at `settings.invoicing.depositPct` (task 19 reads it).
-- **Task 22:** activity kinds `accepted` and `invoices_created` (details in task 19's Done note).
+- **Task 22:** activity kinds `accepted`, `invoices_created` (task 19) and `invoice_sent`,
+  `invoice_paid`, `invoice_voided`, `invoice_edited` (task 20); the folder's `activityText` words
+  them already.
+- **Stage E's send panel** replaces both Mark sents (estimate and invoice). An invoice's public page
+  prints through `pdf.js` `buildInvoiceDocHtml`'s fields, never `invoiceJson` whole (its `estimate`
+  is the owner-only snapshot).
 - **Delete (task 18)** is refused while a non-legacy invoice is scheduled, sent or paid, and so is
-  deleting that project's billed or last estimate in the editor (task 19). Task 20's void action is
-  the way out of that.
+  deleting that project's billed or last estimate in the editor (task 19). Voiding (task 20) leaves
+  a draft replacement, so a project whose only sent invoice is voided can be deleted again.
+- **A paid invoice can't be un-marked** (D100: corrected by a credit note, not built).
 - **Stage E's sends:** Stage D's Mark sent logs `sent` with `{ validUntil, estimateId }` and **no
   version** (nothing is frozen, D34). E's versions should write `version` on the same activity
   kind, which the stage line already reads ("Sent v2").

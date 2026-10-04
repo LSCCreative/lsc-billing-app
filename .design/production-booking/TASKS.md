@@ -535,7 +535,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   - **Activity:** `accepted` `{ estimateId, invoicing, depositPct, invoices, rebook }`;
     `invoices_created` `{ estimateId, invoicing, depositPct, invoices }`. Task 22 words both.
 
-- [ ] **20. The invoice screen and invoice PDFs** (money math — Opus/high). _Depends on: 19._
+- [x] **20. The invoice screen and invoice PDFs** (money math — Opus/high). _Depends on: 19._
+  **Done 2026-10-04, committed** (see the Done note below).
   - **`#/projects/<id>/invoices/<invoiceId>`:**
     - **The deposit** is a fixed summary (D37).
     - **The final** shows the accepted estimate read-only, then an editable **Extras** block
@@ -553,6 +554,41 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
   **Done when** `test-pdf.js` pins each kind's amounts and wording and the final's "Less deposit
   paid (INV-…-D)". In the browser: add $420 of Overtime to a final invoice, save, reload, and the
   PDF matches.
+
+  **Done note (2026-10-04).** New `server/src/invoices.js`, `server/src/routes/invoices.js`,
+  `web/js/views/invoice.js`, `web/css/invoice.css`. Changed `pdf.js` (`buildInvoiceDocHtml`,
+  `invoiceFilename`, `invoiceBlocker`; the Cost Breakdown takes an invoice; the old invoice's head and
+  payment block are helpers, output byte-identical), v13 (`invoices.voided_at`, `void_reason`,
+  `replaces_id`), `routes/projects.js` (folder invoice fields), the folder, `estimate-detail.js`
+  (`itemsMarkup`), `app.js`, `index.html`. `npm test` 457/457 (was 444); `calc.js` untouched.
+  Mutations caught 31 of 32 (the 32nd, the live deposit ordered oldest first, is equivalent: only
+  one deposit is ever unvoided). Checked against `api-scratch` at 1280 / 800 / 375 (dispatched
+  clicks, puppeteer screenshots): $420 of Overtime on AUD-B's final, saved, reloaded, PDF text
+  matches ($7,396.20); Mark sent, void and remake (D → D2 at 50%), Mark paid from the folder's next
+  action, the final then taking off D2. Decisions taken in the code:
+  - **Routes:** `GET/PUT /api/invoices/:id`, `POST …/sent | /paid | /void | /pdf | /cost-breakdown`.
+    Every write answers with the invoice, its project summary and the project's invoices.
+  - **Mark sent (Stage D stand-in)** asks issued + due dates (due defaults to issued + 14 days, a
+    browser constant until task 21). From draft only. Its PDF button prints the dialog's dates.
+  - **Mark paid** takes a date (not after today) and bank / card. Allowed on a draft (a PDF emailed
+    by hand) and on an old-way invoice, so its stage line can reach Paid. Twice is `already`.
+  - **Extras** are `{ additional: [...] }` lines carrying their own `mu` snapshot; the server
+    refuses a line without a price. Priced on save through `extrasTotals` with the estimate's
+    `gstFree`. Re-linking a final to another deposit reuses the stored extras block, never
+    re-prices the lines.
+  - **A draft deposit's %** edits in place while its final is a draft (`final_sent` after); the
+    final and `projects.deposit_pct` follow.
+  - **Void and remake (D100):** the void is dated `today`, kept with its number, and needs a
+    reason. The replacement is a draft with the same snapshot, extras and %, `replaces_id` set. A
+    deposit's replacement is taken off any draft final; a sent final keeps the deposit it printed
+    and its screen says to remake it, and a remade final takes off the deposit standing now.
+  - **PDFs:** "Less deposit paid (N)" once that deposit is paid, else "Less deposit invoiced (N)".
+    A void prints VOID with its reason and replacement, and no payment block; a paid one says so.
+    The final's GST rows are the balance's. Cost Breakdown filename carries the invoice number.
+  - **Folder:** the next action follows the first unpaid invoice ("Open deposit invoice", "Mark
+    deposit paid…" opening the page on its dialog, "Edit final invoice"); each invoice row has
+    Open, ↓ PDF, ↓ Breakdown. New activity kinds: `invoice_sent`, `invoice_paid`,
+    `invoice_voided`, `invoice_edited` (worded in the folder; task 22 words them on Home).
 
 - [ ] **21. The Settings screen** (frontend — Opus/high). _Depends on: 11._
   - **Invoice Settings becomes `#/settings`** (D65), with sections Business, Payment, Estimates &

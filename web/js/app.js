@@ -170,6 +170,7 @@
         LSCRouter.go(ProjectFolder.estimatePath(project, copy, false), { state: { estimate: copy, project, copiedFrom: from } });
       },
     });
+    InvoiceView.init(main, { onAuthLost });
     HomeView.init(main, { onAuthLost });
     SetupView.init(main, { onAuthLost });
     ClientsView.init(main, { onAuthLost, onOpenProject: openProject });
@@ -198,14 +199,16 @@
       shown = HomeView.show(rest, state);
     } else if (area === 'projects') {
       /* The list; `new`, a new project's editor (IA flow 1: the project is
-         made on its first save); a project's folder (task 18); and its
-         estimate's editor and read-only view under it. */
+         made on its first save); a project's folder (task 18); its
+         estimate's editor and read-only view under it; and each of its
+         invoices (task 20). */
       setNav('projects');
       const [id, sub, ...more] = rest;
       if (id === undefined) shown = ProjectsView.show(route);
       else if (id === 'new') shown = sub === undefined && EstimatesView.showNew();
       else if (sub === undefined) shown = ProjectFolder.show(id);
       else if (sub === 'estimate') shown = EstimatesView.showInProject(id, more, state);
+      else if (sub === 'invoices') shown = InvoiceView.show(id, more, state);
     } else if (area === 'estimates') {
       /* The addresses before the folder: #/estimates was the list (D58), and
          #/estimates/<id>[/edit] an estimate. An old bookmark lands where that
