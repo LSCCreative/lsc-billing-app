@@ -16,6 +16,14 @@ const SETTLED_DAYS = 90;
 const PAGE = 50;
 const MAX_PAGE = 200;
 
+/* What Home's Recent activity shows (task 22): a job moving on — sent,
+   accepted, invoiced, paid, or declined. The owner's corrections (reopened,
+   an invoice edited or voided) stay in the folder's log only. Stage E adds
+   its client events (opened, signed) here. */
+const HOME_KINDS = ['sent', 'accepted', 'invoices_created', 'invoice_sent', 'invoice_paid', 'declined'];
+const HOME_LIMIT = 10;
+const HOME_MAX = 50;
+
 /* A real calendar date: '2026-13-01' and '2026-02-30' are not (an invalid
    Date's toISOString throws, so it is checked first). */
 const isYmd = (s) => {
@@ -430,6 +438,11 @@ function confirmDays(db, estimateId, ownIds, now) {
  *
  * GET /api/projects/:id?today= — the folder (readFolder).
  *
+ * GET /api/activity?limit= — Home's "Recent activity" (task 22, D52): the
+ * latest events of HOME_KINDS across every project, newest first, each with
+ * the project it opens ({ id, upid, name, client }, named as its card is).
+ * `limit` is 1–50, default 10. The folder still shows a project's whole log.
+ *
  * THE FOLDER'S ACTIONS (tasks 18, 19). Each answers with the folder as it
  * now stands, so the screen redraws from one reply, and each logs an
  * `activity` row.
@@ -468,6 +481,44 @@ function confirmDays(db, estimateId, ownIds, now) {
  *                  deleting its estimate always took it).
  */
 function registerProjectRoutes(app, db) {
+  app.get('/api/activity', (req, res) => {
+    const limit = req.query.limit === undefined ? HOME_LIMIT : Number(req.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > HOME_MAX) {
+      return res.status(400).json({ error: 'limit_invalid' });
+    }
+    const rows = db.prepare(`
+      SELECT a.*, p.upid, p.client_id FROM activity a JOIN projects p ON p.id = a.project_id
+       WHERE a.kind IN (SELECT value FROM json_each(?))
+       ORDER BY a.at DESC, a.id DESC LIMIT ?
+    `).all(JSON.stringify(HOME_KINDS), limit);
+    // The project's name and client as summarize() picks them: its lead estimate's.
+    const leadOf = db.prepare(`
+      SELECT name, client_json FROM estimates WHERE project_id = ?
+       ORDER BY status = 'declined', updated_at DESC, id LIMIT 1
+    `);
+    const clientOf = db.prepare('SELECT business_name FROM clients WHERE id = ?');
+    const projects = new Map();
+    const projectOf = (row) => {
+      if (!projects.has(row.project_id)) {
+        const lead = leadOf.get(row.project_id);
+        const snapshot = lead ? parseDetail(lead.client_json) : {};
+        const record = row.client_id ? clientOf.get(row.client_id) : null;
+        projects.set(row.project_id, {
+          id: row.project_id,
+          upid: row.upid,
+          name: lead ? lead.name : '',
+          client: snapshot.businessName || (record && record.business_name) || '',
+        });
+      }
+      return projects.get(row.project_id);
+    };
+    res.json({
+      activity: rows.map((a) => ({
+        id: a.id, at: a.at, kind: a.kind, detail: parseDetail(a.detail_json), project: projectOf(a),
+      })),
+    });
+  });
+
   app.get('/api/projects', (req, res) => {
     const stage = String(req.query.stage || 'active');
     if (stage !== 'active' && stage !== 'all' && !STAGES.includes(stage)) {

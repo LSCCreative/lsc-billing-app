@@ -2851,3 +2851,55 @@ test('invoice PDFs: refused without the ABN on a tax invoice; rendered with the 
   dropProject(est.projectId);
   await gstOff();
 });
+
+test('activity: Home\'s recent events across projects, newest first, named as the project card is (task 22)', async () => {
+  const a = (await saveEstimate({ name: 'T22 Alpha', upid: 'T22-A', client: { businessName: 'Alpha Co' } })).body.estimate;
+  const b = (await saveEstimate({ name: 'T22 Beta', upid: 'T22-B' })).body.estimate;
+  assert.equal((await act(a.projectId, 'sent', { validUntil: '2026-10-18' })).status, 200);
+  assert.equal((await act(b.projectId, 'decline')).status, 200);
+  assert.equal((await act(b.projectId, 'reopen')).status, 200); // a correction: the folder's log only
+  const get = (q) => api('/api/activity' + (q || '')).then(async (r) => ({ status: r.status, body: await r.json() }));
+
+  let r = await get();
+  assert.equal(r.status, 200);
+  assert.ok(r.body.activity.length <= 10);
+  const mine = r.body.activity.filter((e) => [a.projectId, b.projectId].includes(e.project.id));
+  assert.deepEqual(mine.map((e) => e.kind).sort(), ['declined', 'sent']);
+  const sent = mine.find((e) => e.kind === 'sent');
+  assert.deepEqual(sent.project, { id: a.projectId, upid: 'T22-A', name: 'T22 Alpha', client: 'Alpha Co' });
+  assert.equal(sent.detail.validUntil, '2026-10-18');
+  assert.ok(!r.body.activity.some((e) => ['reopened', 'invoice_edited', 'invoice_voided'].includes(e.kind)));
+
+  // Newest first, ties by id; the limit counts only the kinds Home shows.
+  const at = (n) => `2099-01-0${n}T00:00:00.000Z`;
+  const log = db.prepare('INSERT INTO activity (id, project_id, at, kind, detail_json) VALUES (?, ?, ?, ?, ?)');
+  log.run('act_t22_1', a.projectId, at(1), 'invoice_paid', '{"number":"INV-T22-A","amount":5}');
+  log.run('act_t22_2', b.projectId, at(2), 'reopened', '{}');
+  log.run('act_t22_3', b.projectId, at(3), 'accepted', 'not json');
+  r = await get('?limit=2');
+  assert.deepEqual(r.body.activity.map((e) => [e.id, e.project.id]), [['act_t22_3', b.projectId], ['act_t22_1', a.projectId]]);
+  assert.deepEqual(r.body.activity[0].detail, {});
+  assert.equal(r.body.activity[0].project.client, '');
+
+  // Named by its lead estimate as it stands now, not as it was when logged.
+  db.prepare("UPDATE estimates SET name = 'T22 Beta renamed' WHERE id = ?").run(b.id);
+  assert.equal((await get('?limit=1')).body.activity[0].project.name, 'T22 Beta renamed');
+  // A newer declined estimate in the same project doesn't name it: the live one does.
+  const row = { ...db.prepare('SELECT * FROM estimates WHERE id = ?').get(b.id),
+    id: 'est_t22_old', upid: 'T22-B-OLD', name: 'T22 Beta declined', status: 'declined', updated_at: at(9) };
+  const cols = Object.keys(row).filter((c) => c !== 'total_inc_gst'); // generated
+  db.prepare(`INSERT INTO estimates (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map((c) => row[c]));
+  assert.equal((await get('?limit=1')).body.activity[0].project.name, 'T22 Beta renamed');
+  db.prepare("DELETE FROM estimates WHERE id = 'est_t22_old'").run();
+
+  for (const bad of ['0', '51', '2.5', 'ten']) {
+    const res = await get('?limit=' + bad);
+    assert.deepEqual([res.status, res.body.error], [400, 'limit_invalid'], bad);
+  }
+
+  // A deleted project's events go with it.
+  await dropEstimates(a.id, b.id);
+  r = await get('?limit=50');
+  assert.ok(!r.body.activity.some((e) => [a.projectId, b.projectId].includes(e.project.id)));
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity WHERE id LIKE 'act_t22_%'").get().n, 0);
+});

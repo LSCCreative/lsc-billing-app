@@ -635,8 +635,22 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     preview filled from AUD-B; Escape and Back close it. 1280/800/375 via headless Chrome: no
     overflow, 44px targets at 375.
 
-- [ ] **22. Recent activity on Home** (frontend — Opus/high). _Depends on: 12, 19._ The last 10
+- [x] **22. Recent activity on Home** (frontend — Opus/high). _Depends on: 12, 19._ The last 10
   events (sent, accepted, declined, invoice created, paid), each linking to its project (D52).
+
+  **Done note (2026-10-04).** New **`GET /api/activity?limit=`** (1–50, default 10) in
+  `routes/projects.js`: the latest rows of `HOME_KINDS` (`sent`, `accepted`, `invoices_created`,
+  `invoice_sent`, `invoice_paid`, `declined`) across projects, newest first, each with
+  `project { id, upid, name, client }` named by the lead estimate as `summarize()` picks it. The
+  owner's corrections (`reopened`, `invoice_edited`, `invoice_voided`) stay in the folder only.
+  **Stage E adds its client kinds (opened, signed) to `HOME_KINDS`.** A new route: NAS before
+  Pages (ships with v13 at task 23). `activityText` moved from the folder into
+  `ProjectCard.activityText`, so Home and the folder word events with one function (pinned in
+  `test-project-card.js`). Home groups by local day (Today / Yesterday / "Fri 2 Oct"), a time
+  column, UPID + name, the words, the client; rows are log lines (hairlines, not boxes) and a
+  payment's words take the accent. Mutations caught 5 of 5 (kinds, order, lead estimate, limit,
+  client snapshot). Browser (api-scratch): 10 events, each to its folder; 1280/800/375 via headless
+  Chrome, no overflow, focus ring visible.
 
 - [ ] **23. D polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium).
   - **Accessibility:** the folder, Projects, Settings and fix-up screens.

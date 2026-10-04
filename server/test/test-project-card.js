@@ -124,3 +124,23 @@ test('the project folder loads after the card it prints', () => {
   assert.ok(at('project-card.js') < at('views/project-folder.js') && at('views/estimates.js') < at('views/project-folder.js'));
   assert.ok(at('views/project-folder.js') < at('app.js'));
 });
+
+test('activity reads the same in the folder and on Home: one function (task 22)', () => {
+  const say22 = (kind, detail) => ProjectCard.activityText({ kind, detail }, TODAY);
+  assert.equal(say22('sent', { validUntil: '2026-10-18' }), 'Marked sent, valid until 18 Oct');
+  assert.equal(say22('sent', {}), 'Marked sent');
+  assert.equal(say22('accepted', { invoicing: 'pair', depositPct: 40, invoices: ['INV-A-D', 'INV-A-F'] }),
+    'Marked accepted · INV-A-D, INV-A-F (40% deposit)');
+  assert.equal(say22('invoices_created', { invoicing: 'single', invoices: ['INV-A'] }), 'Invoices created · INV-A');
+  assert.equal(say22('invoice_sent', { number: 'INV-A-D', dueAt: '2027-01-02' }), 'INV-A-D marked sent, due 2 Jan 2027');
+  assert.equal(say22('invoice_paid', { number: 'INV-A-D', amount: 2000, via: 'bank' }), 'INV-A-D paid, $2,000.00 by bank transfer');
+  assert.equal(say22('invoice_paid', { amount: 12.5, via: 'card' }), 'Invoice paid, $12.50 by card');
+  assert.equal(say22('declined', {}), 'Declined');
+  assert.equal(ProjectCard.activityText({ kind: 'estimate_opened' }, TODAY), 'Estimate opened');
+});
+
+test('Home loads after the card whose words it prints', () => {
+  const html = readFileSync(join(__dirname, '..', '..', 'web', 'index.html'), 'utf8');
+  const at = (f) => html.indexOf('js/' + f);
+  assert.ok(at('project-card.js') > 0 && at('project-card.js') < at('views/home.js'));
+});

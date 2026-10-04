@@ -116,6 +116,35 @@ const ProjectCard = (() => {
     );
   }
 
+  /* One activity row in words ("INV-AUD-B-D paid, $2,000.00 by bank
+     transfer"): the folder's log and Home's Recent activity (task 22) both
+     print this, so the two can't word an event differently. */
+  function activityText(entry, today) {
+    const d = entry.detail || {};
+    switch (entry.kind) {
+      case 'sent': return 'Marked sent' + (C.isDate(d.validUntil) ? ', valid until ' + dayMonth(d.validUntil, today) : '');
+      case 'accepted': return 'Marked accepted' + invoicesText(d);
+      case 'invoices_created': return 'Invoices created' + invoicesText(d);
+      case 'declined': return 'Declined';
+      case 'reopened': return 'Reopened';
+      case 'invoice_sent': return (d.number || 'Invoice') + ' marked sent' + (C.isDate(d.dueAt) ? ', due ' + dayMonth(d.dueAt, today) : '');
+      case 'invoice_paid': return (d.number || 'Invoice') + ' paid' + (typeof d.amount === 'number' ? ', ' + fmt(d.amount) : '') +
+        (d.via === 'card' ? ' by card' : d.via === 'bank' ? ' by bank transfer' : '');
+      case 'invoice_voided': return (d.number || 'Invoice') + ' voided' + (d.reason ? ': ' + d.reason : '') +
+        (d.replacement ? '. Replaced by ' + d.replacement : '');
+      case 'invoice_edited': return (d.number || 'Invoice') + ' edited' +
+        (typeof d.depositPct === 'number' ? ', deposit now ' + d.depositPct + '%' : '') +
+        (typeof d.amountDue === 'number' ? ' (' + fmt(d.amountDue) + ' due)' : '');
+      default: return entry.kind.charAt(0).toUpperCase() + entry.kind.slice(1).replace(/_/g, ' ');
+    }
+  }
+
+  function invoicesText(d) {
+    const numbers = Array.isArray(d.invoices) ? d.invoices : [];
+    return (numbers.length ? ' · ' + numbers.join(', ') : '') +
+      (d.invoicing === 'pair' && d.depositPct ? ' (' + d.depositPct + '% deposit)' : '');
+  }
+
   /* Where opening a project goes: its folder (task 18). The one place a card
      opens from, for the list, the client's projects and app.js. */
   const pathOf = (project) => (project && project.id ? '/projects/' + encodeURIComponent(project.id) : null);
@@ -164,5 +193,5 @@ const ProjectCard = (() => {
     });
   }
 
-  return { CHIPS, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth, localDate };
+  return { CHIPS, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
 })();

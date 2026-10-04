@@ -117,7 +117,13 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   a full business/payment set, GST registered at 7% inclusive, and 40% / 21 days / 7 days (no
   agreement text); the row from before is in this session's scratchpad only.
 
-**Exact next item: TASKS.md task 22, Recent activity on Home** (frontend, Opus/high).
+- **D, task 22** (Recent activity on Home: `GET /api/activity`, `ProjectCard.activityText` shared
+  with the folder). 2026-10-04, committed, **not deployed** (a new route: NAS before Pages, with v13
+  at task 23). Its decisions are in its Done note in `TASKS.md`.
+
+**Exact next item: TASKS.md task 23, D polish and deploy** (accessibility + responsive pass on the
+folder, Projects, Settings and fix-up screens: frontend, Opus/high; then the deploy:
+Sonnet/medium, ask first).
 
 `GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
 cached Pages build still calls it), then delete it.
@@ -153,9 +159,8 @@ cached Pages build still calls it), then delete it.
 - **The invoice snapshot is owner-only:** `estimate_snapshot_json` is the whole estimate, including
   its `totals` with internal figures. A public invoice page (E) must print from it through the
   client PDF's fields, never send it whole.
-- **Task 22:** activity kinds `accepted`, `invoices_created` (task 19) and `invoice_sent`,
-  `invoice_paid`, `invoice_voided`, `invoice_edited` (task 20); the folder's `activityText` words
-  them already.
+- **Stage E's client events** (opened, signed, paid by card) go into `HOME_KINDS`
+  (`routes/projects.js`) to reach Home, and get a case in `ProjectCard.activityText`.
 - **Stage E's send panel** replaces both Mark sents (estimate and invoice). An invoice's public page
   prints through `pdf.js` `buildInvoiceDocHtml`'s fields, never `invoiceJson` whole (its `estimate`
   is the owner-only snapshot).

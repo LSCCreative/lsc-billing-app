@@ -315,32 +315,6 @@ const ProjectFolder = (() => {
 
   // ── Activity ────────────────────────────────────────────────────────────
 
-  function activityText(entry, today) {
-    const d = entry.detail || {};
-    switch (entry.kind) {
-      case 'sent': return 'Marked sent' + (C.isDate(d.validUntil) ? ', valid until ' + ProjectCard.dayMonth(d.validUntil, today) : '');
-      case 'accepted': return 'Marked accepted' + invoicesText(d);
-      case 'invoices_created': return 'Invoices created' + invoicesText(d);
-      case 'declined': return 'Declined';
-      case 'reopened': return 'Reopened';
-      case 'invoice_sent': return (d.number || 'Invoice') + ' marked sent' + (C.isDate(d.dueAt) ? ', due ' + ProjectCard.dayMonth(d.dueAt, today) : '');
-      case 'invoice_paid': return (d.number || 'Invoice') + ' paid' + (typeof d.amount === 'number' ? ', ' + fmt(d.amount) : '') +
-        (d.via === 'card' ? ' by card' : d.via === 'bank' ? ' by bank transfer' : '');
-      case 'invoice_voided': return (d.number || 'Invoice') + ' voided' + (d.reason ? ': ' + d.reason : '') +
-        (d.replacement ? '. Replaced by ' + d.replacement : '');
-      case 'invoice_edited': return (d.number || 'Invoice') + ' edited' +
-        (typeof d.depositPct === 'number' ? ', deposit now ' + d.depositPct + '%' : '') +
-        (typeof d.amountDue === 'number' ? ' (' + fmt(d.amountDue) + ' due)' : '');
-      default: return entry.kind.charAt(0).toUpperCase() + entry.kind.slice(1).replace(/_/g, ' ');
-    }
-  }
-
-  function invoicesText(d) {
-    const numbers = Array.isArray(d.invoices) ? d.invoices : [];
-    return (numbers.length ? ' · ' + numbers.join(', ') : '') +
-      (d.invoicing === 'pair' && d.depositPct ? ' (' + d.depositPct + '% deposit)' : '');
-  }
-
   /* When it happened, on this browser's clock: `at` is UTC, and an evening
      here is the next morning there. */
   function whenText(at, today) {
@@ -357,7 +331,7 @@ const ProjectFolder = (() => {
     }
     return head + '<ol class="pf-activity">' + folder.activity.map((a) =>
       '<li><span class="pf-act-when">' + esc(whenText(a.at, today)) + '</span>' +
-      '<span class="pf-act-what">' + esc(activityText(a, today)) + '</span></li>').join('') + '</ol>';
+      '<span class="pf-act-what">' + esc(ProjectCard.activityText(a, today)) + '</span></li>').join('') + '</ol>';
   }
 
   // ── The screen ──────────────────────────────────────────────────────────

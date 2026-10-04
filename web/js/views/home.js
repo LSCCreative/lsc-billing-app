@@ -6,14 +6,16 @@
  * view (the shared js/calendar.js) or week view (views/home-week.js), with gear
  * rentals as bars (D84). Beside it, "Coming up", the next 14 days in date order
  * with all three statuses labelled, because a proposed date tomorrow still
- * needs a decision. And "Recent activity" (D52), which has nothing to show
- * until stages D and E record client actions. Home stays a dashboard: nothing
- * below those, and no second estimates list (IA, Content Hierarchy).
+ * needs a decision. And "Recent activity" (D52, task 22): the last 10 times a
+ * job moved on (sent, accepted, invoiced, paid, declined) across every
+ * project, from GET /api/activity, worded by the same ProjectCard.activityText
+ * as the folder's log. Home stays a dashboard: nothing below those, and no
+ * second Projects list (IA, Content Hierarchy).
  *
  * A tile opens a pop-up (D28): UPID, project, business, times, the day's
- * production items, and a button to the estimate. Stage D points that at the
- * project folder. Coming up's rows go straight to the estimate, as the IA's
- * contextual links do.
+ * production items, and a button to the project folder. Coming up's and
+ * Recent activity's rows go straight to the folder, as the IA's contextual
+ * links do.
  *
  * Nothing here is cached between visits except where the calendar was looking
  * and which view it was in: each visit and each month or week asks
@@ -28,6 +30,7 @@ const HomeView = (() => {
   const { STATUS_WORD } = C;
 
   const COMING_UP_DAYS = 14;
+  const ACTIVITY_COUNT = 10;
   const VIEW_KEY = 'lsc-home-view';
 
   let root = null;
@@ -319,6 +322,66 @@ const HomeView = (() => {
     showComingUp(reply.days || [], today);
   }
 
+  // ── Recent activity ─────────────────────────────────────────────────────────
+
+  // "Today", "Yesterday", else "Thu 2 Oct" (with the year when it isn't this one).
+  function dayLabel(ymd, today) {
+    if (ymd === today) return 'Today';
+    if (ymd === C.addDays(today, -1)) return 'Yesterday';
+    return C.shortDate(ymd) + (ymd.slice(0, 4) !== today.slice(0, 4) ? ' ' + ymd.slice(0, 4) : '');
+  }
+
+  /* A run of days, newest first, each event under the day it happened on
+     this browser's clock (`at` is UTC: an evening here is the next morning
+     there). The row opens the project's folder. */
+  function activityMarkup(events, today) {
+    const byDay = new Map();
+    events.forEach((a) => {
+      const t = new Date(a.at);
+      if (!a.project || !Number.isFinite(t.getTime())) return;
+      const ymd = ProjectCard.localDate(a.at);
+      if (!byDay.has(ymd)) byDay.set(ymd, []);
+      byDay.get(ymd).push({ a, time: t.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) });
+    });
+    if (!byDay.size) {
+      return '<p class="home-empty">Nothing yet. Marking a project sent or accepted, its invoices and payments show here.</p>';
+    }
+    return '<ol class="act-list">' + Array.from(byDay.keys()).map((ymd) =>
+      '<li class="act-day"><h3 class="act-day-h">' + esc(dayLabel(ymd, today)) + '</h3>' +
+      '<ul class="act-rows">' + byDay.get(ymd).map(({ a, time }) =>
+        '<li><a class="act-row' + (a.kind === 'invoice_paid' ? ' is-paid' : '') + '" href="#' + esc(ProjectCard.pathOf(a.project)) + '">' +
+        '<span class="act-time">' + esc(time) + '</span>' +
+        '<span class="act-main"><span class="act-upid">' + esc(a.project.upid || 'No UPID') + '</span>' +
+        '<span class="act-name">' + esc(a.project.name || 'Untitled') + '</span></span>' +
+        '<span class="act-what">' + esc(ProjectCard.activityText(a, today)) + '</span>' +
+        (a.project.client ? '<span class="act-client">' + esc(a.project.client) + '</span>' : '') +
+        '</a></li>'
+      ).join('') + '</ul></li>'
+    ).join('') + '</ol>';
+  }
+
+  async function loadActivity() {
+    const box = root.querySelector('#home-act');
+    const ticket = LSCRouter.ticket();
+    let reply;
+    try {
+      reply = await LSCApi.get('/api/activity?limit=' + ACTIVITY_COUNT);
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
+      if (err.kind === 'auth') return handlers.onAuthLost();
+      box.innerHTML = '<p class="home-empty">Couldn’t load recent activity: ' + esc(failureText(err)) +
+        '</p><button type="button" class="btn btn-ghost btn-sm" id="home-act-retry">Try Again</button>';
+      box.querySelector('#home-act-retry').addEventListener('click', () => {
+        box.innerHTML = '<p class="home-empty">Loading…</p>';
+        loadActivity();
+      });
+      return;
+    }
+    if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
+    box.innerHTML = activityMarkup(reply.activity || [], LSCUtil.today());
+  }
+
   // ── The screen ─────────────────────────────────────────────────────────────
 
   function render() {
@@ -352,7 +415,7 @@ const HomeView = (() => {
       '</section>' +
       '<section class="home-panel" aria-labelledby="home-act-h">' +
       '<div class="home-panel-head"><h2 class="home-panel-title" id="home-act-h">Recent activity</h2></div>' +
-      '<p class="home-empty">Nothing yet. When a client opens, accepts or pays an estimate, it shows here.</p>' +
+      '<div id="home-act"><p class="home-empty">Loading…</p></div>' +
       '</section>' +
       '</div></div>';
 
@@ -365,6 +428,7 @@ const HomeView = (() => {
       upWanted = null;
       loadComingUp();
     }
+    loadActivity();
   }
 
   return {
