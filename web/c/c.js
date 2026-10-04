@@ -86,7 +86,7 @@
       '<h1 class="title">' + esc(e.name) + '</h1>' +
       (e.state === 'open'
         ? '<p class="lede">Here’s your estimate' + (first ? ', ' + esc(first) : '') +
-          '. If it looks right, accept it below and we’ll lock in your dates.</p>'
+          '. If it looks right, press the Accept estimate button below.</p>'
         : '') +
       '<dl class="meta">' +
         metaRow('For', e.client && e.client.businessName) +
@@ -105,17 +105,30 @@
     return '<h2 class="sec" id="' + id + '">' + esc(text) + '</h2>';
   }
 
+  /* "16:9", "9x16", "4 × 5" → a CSS aspect ratio for the tile's frame. Any
+     other format ("Photo set") gets a square. */
+  function ratioOf(format) {
+    const m = /^\s*(\d+(?:\.\d+)?)\s*[:x×/]\s*(\d+(?:\.\d+)?)\s*$/i.exec(String(format || ''));
+    return m && Number(m[1]) > 0 && Number(m[2]) > 0 ? m[1] + ' / ' + m[2] : '1 / 1';
+  }
+
+  /* Each deliverable is its own tile, drawn in its own frame shape, so the
+     client can find what they're getting at a glance. A quantity over one
+     stacks the frame (up to three deep). */
   function deliverables(e) {
     const rows = (e.deliverables || []).filter((d) => d && d.name);
     if (!rows.length) return '';
-    return '<section class="block" aria-labelledby="h-deliv">' + sectionHead('h-deliv', 'What we’ll deliver') +
+    return '<section class="block" aria-labelledby="h-deliv">' + sectionHead('h-deliv', 'Deliverables') +
       '<ul class="deliv">' + rows.map((d) => {
-        return '<li><span class="deliv-name">' + esc(d.name) + '</span>' +
-          '<span class="deliv-spec">' +
-            (d.format ? '<span>' + esc(d.format) + '</span>' : '') +
-            (d.duration ? '<span>' + esc(d.duration) + '</span>' : '') +
-            '<span>' + (d.qty > 1 ? '×' + esc(d.qty) : '×1') + '</span>' +
-          '</span></li>';
+        const qty = Math.max(1, Math.round(Number(d.qty) || 1));
+        return '<li class="deliv-item">' +
+          '<span class="deliv-frame deliv-stack-' + Math.min(qty, 3) + '" style="aspect-ratio:' + ratioOf(d.format) + '" aria-hidden="true"></span>' +
+          '<h3 class="deliv-name">' + esc(d.name) + '</h3>' +
+          '<dl class="deliv-spec">' +
+            (d.format ? '<div><dt>Format</dt><dd>' + esc(d.format) + '</dd></div>' : '') +
+            (d.duration ? '<div><dt>Length</dt><dd>' + esc(d.duration) + '</dd></div>' : '') +
+            '<div><dt>Quantity</dt><dd>' + qty + '</dd></div>' +
+          '</dl></li>';
       }).join('') + '</ul></section>';
   }
 
@@ -171,7 +184,7 @@
   function investment(e) {
     const t = e.totals || {};
     const taxed = t.treatment === 'taxable' && t.gst > 0;
-    return '<section class="block" aria-labelledby="h-total">' + sectionHead('h-total', 'Your investment') +
+    return '<section class="block" aria-labelledby="h-total">' + sectionHead('h-total', 'Production total') +
       (taxed
         ? '<dl class="sums"><div><dt>Subtotal</dt><dd class="fig">' + money(t.exGst) + '</dd></div>' +
           '<div><dt>GST</dt><dd class="fig">' + money(t.gst) + '</dd></div></dl>'

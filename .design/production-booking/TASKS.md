@@ -713,7 +713,10 @@ Tasks 24–26 can be built with placeholders.
   (3.94), so secondary text is `#625C58` (5.64 / 5.11 on the panel); terra is never text except
   the large wordmark (3.61, large-text floor 3:1); the button is paper on terra-dk (5.82). Only
   `c.css` loads; 375 and 1280 have no overflow in any state; targets ≥44px. The Pages workflow
-  now cache-busts `web/c/index.html` too.
+  now cache-busts `web/c/index.html` too. User revisions the same day: the lede says "press the Accept estimate
+  button below"; "Deliverables" (was "What we'll deliver") are tiles, each with a frame in its own
+  aspect ratio (square when the format isn't a ratio), stacked for a quantity over one; "Production
+  total" (was "Your investment").
 
 - [ ] **25. Sent versions and the public estimate route** (auth/security — Opus/high).
   _Depends on: 19, 24._

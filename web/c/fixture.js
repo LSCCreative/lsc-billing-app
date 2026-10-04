@@ -25,6 +25,7 @@
     deliverables: [
       { name: 'Brand film', format: '16:9', duration: '2–3 min', qty: 1 },
       { name: 'Social cutdowns', format: '9:16', duration: '30 sec', qty: 3 },
+      { name: 'Behind-the-scenes stills', format: 'Photo set', duration: '', qty: 1 },
     ],
     days: [
       {
