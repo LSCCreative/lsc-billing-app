@@ -126,14 +126,16 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   focus on the new screen's `h1` when the old screen took it; dialog danger buttons lifted in
   `a11y.css`. See its note in `TASKS.md`.
 
-**Exact next item: TASKS.md task 23, the deploy** (Sonnet/medium; ask the user first). In order:
-back up the live DB; dry-run v13 on a copy of that backup (its `foreign_key_check` refuses the
-boot on a dangling row); deploy the NAS (v13, the new routes, `server/src/documents.js`); read the
-boot log's `[db] v13: N project(s) … M need a UPID` line; then push `main` for Pages. The user then
-runs the fix-up if the Projects banner shows.
+**Task 23 deployed 2026-10-04** (`main` `2c7131b`). NAS first (backup `pre-v13-20261004-134122.db` in
+`data/exports` and `manual-backup`; dry run clean; code copied by tar over `ssh lsc-nas`, excluding
+`.env`, `data`, `docker-compose.yml`; boot log `v13: 1 project(s), 0 need a UPID`; `/api/projects`
+401 not 404), then Pages. No UPID fix-up is needed. rsync to the NAS is refused; use tar over ssh.
 
-`GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
-cached Pages build still calls it), then delete it.
+**Exact next item: stage E (v14), TASKS.md task 24.** Check the "Inputs needed from the user" list first.
+The user should also try the live site once (sign in, open a project).
+
+`GET /api/clients/:id/estimates` is no longer used by the web; the D deploy is done, so delete it
+(task 24 housekeeping).
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
