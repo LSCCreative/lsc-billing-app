@@ -690,8 +690,8 @@ const OverheadView = (() => {
 
     /* The sub-tab itself registers no watcher — the IA doc is explicit that
        Overhead's edits live in a modal that resolves on its own close — but the
-       modal registers one while it is open, exactly as Invoice Settings does,
-       so Cancel/Escape/backdrop ask before discarding a half-filled form. */
+       modal registers one while it is open, so Cancel/Escape/backdrop ask
+       before discarding a half-filled form. */
     LSCUnsaved.watch('overhead-item', {
       label: editingId ? 'this expense' : 'this new expense',
       onScreen: () => Boolean(overlay && overlay.querySelector('#oh-save')),

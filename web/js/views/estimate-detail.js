@@ -435,8 +435,8 @@ const EstimateDetail = (() => {
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'btn btn-ghost btn-xs';
-      open.textContent = 'Open Invoice Settings';
-      open.addEventListener('click', () => SettingsView.open({ onAuthLost: handlers.onAuthLost }, open));
+      open.textContent = 'Open Settings';
+      open.addEventListener('click', () => LSCRouter.go('/settings/business'));
       els.exportError.append(' ', open);
     }
     els.exportError.classList.add('show');

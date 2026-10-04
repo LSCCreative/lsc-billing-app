@@ -151,7 +151,7 @@ textarea[aria-invalid='true'] {
 }
 
 /* ── Headings ───────────────────────────────────────────────────────────────
-   Page titles are <h1>, block and section heads <h2>, the Invoice Settings
+   Page titles are <h1>, block and section heads <h2>, the Settings
    groups <h3> — for screen-reader navigation only. Every one keeps its old
    class, and every class sets its own size and weight, so these two lines only
    matter where a class sets neither (.set-group-head's weight) and stop the UA

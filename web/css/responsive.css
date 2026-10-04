@@ -1122,21 +1122,6 @@
     display: none;
   }
 
-  /* ── The Invoice Settings modal ──────────────────────────────────────────
-     css/settings.css already scrolls this overlay (the modal is 915px tall
-     here). At 375px the centred 95vw box wastes 19px of a screen that has none
-     to spare, so it goes full-bleed. */
-  #modal-invoice-settings {
-    padding: 0;
-  }
-  #modal-invoice-settings .modal-box {
-    width: 100%;
-    max-width: 100%;
-    padding: 24px 16px;
-    border-left: none;
-    border-right: none;
-  }
-
   /* ── Touch targets ───────────────────────────────────────────────────────
      TASKS.md asks for .btn-xs at >=44px; the same argument applies to every
      control small enough to miss, and .del-btn (15.7 x 14px) was the worst of

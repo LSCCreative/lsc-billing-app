@@ -590,7 +590,8 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
     Open, ↓ PDF, ↓ Breakdown. New activity kinds: `invoice_sent`, `invoice_paid`,
     `invoice_voided`, `invoice_edited` (worded in the folder; task 22 words them on Home).
 
-- [ ] **21. The Settings screen** (frontend — Opus/high). _Depends on: 11._
+- [x] **21. The Settings screen** (frontend — Opus/high). _Depends on: 11._
+  **Done 2026-10-04, committed** (see the Done note below).
   - **Invoice Settings becomes `#/settings`** (D65), with sections Business, Payment, Estimates &
     invoices, Service agreement, Email and Card payments (a rail at ≥1100px, a jump list on
     phones). The existing fields move over unchanged.
@@ -606,6 +607,33 @@ must reach every place it belongs.** B2's new fields (`dayId` on travel/crew/equ
 
   **Done when** every old setting round-trips unchanged, and the preview fills `{client_business}`
   and the others from a real project.
+
+  **Done note (2026-10-04).** `web/js/views/settings.js` rewritten as a routed screen
+  (`#/settings[/<section>]`, sections `business payment documents agreement email cards`),
+  `web/css/settings.css` rewritten mobile-first. New **`server/src/documents.js`**, byte-identical to
+  `web/js/documents.js` (drift test in new `test/test-documents.js`, 10 tests): `DOC_DEFAULTS`,
+  `docSettings(settings)`, `AGREEMENT_FIELDS`, `agreementValues(input)`, `fillAgreement(text, values)`.
+  - **Stored shape:** `invoicing { depositPct, validDays, dueDays }`, `messages { estimate, deposit,
+    final, single }`, `agreement { text, faqUrl }`. Every reader goes through `docSettings`, which
+    fills a missing or unusable value from the defaults; a message or FAQ URL saved as `''` stays
+    `''` (D55). Saving writes everything shown, merged onto a fresh read (unknown keys survive).
+  - **Also a setting now:** invoices' due-after days (default 14; was `DUE_DAYS` in `invoice.js`).
+    `VALID_DAYS` in `project-folder.js` is gone too; both read `docSettings(LSCData.settings())`.
+    The server's `depositPctFor` reads `docSettings` (no route change).
+  - **Fields:** D39's six plus `client_contact`, `project_name`, `business_name`, `business_abn`,
+    `date`. Matched case- and space-insensitively; an unknown one is left as typed and listed, a
+    blank one listed. Days print as the client PDF does, dated first. The preview uses the text,
+    business details and deposit % on screen (saved or not), and the project's own deposit % if set.
+  - **Rail jumps** change the address with `replace` + `skipGuard` + `state.jump`, so edits stay.
+  - **Retired:** the modal, `#modal-invoice-settings`, and the four refresh hooks it called
+    (`EstimateEditor.refreshTotals`, `PricingView.refreshPrices`, `ProjectsView.refreshFirstRun`,
+    `FinanceDashboardView.refreshGst`): with Settings a screen, none could be on screen at its save.
+    The "Open Invoice Settings" buttons now go to `#/settings/business`.
+  - Mutations caught: deposit 0 allowed, valid-for 0 allowed, TBC days sorted first, unknown field
+    blanked. Browser (api-scratch, dispatched events): a full old settings row round-tripped
+    byte-identical; 40% / 21 / 7 reached the server's deposit default and both Mark sent dialogs;
+    preview filled from AUD-B; Escape and Back close it. 1280/800/375 via headless Chrome: no
+    overflow, 44px targets at 375.
 
 - [ ] **22. Recent activity on Home** (frontend — Opus/high). _Depends on: 12, 19._ The last 10
   events (sent, accepted, declined, invoice created, paid), each linking to its project (D52).

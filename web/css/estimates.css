@@ -162,7 +162,7 @@
   line-height: 1.55;
 }
 
-/* Keeps "Open Invoice Settings" on one line beside its paragraph. */
+/* Keeps "Open Settings" on one line beside its paragraph. */
 .first-run-step .btn {
   flex-shrink: 0;
   white-space: nowrap;

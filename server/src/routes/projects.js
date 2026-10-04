@@ -8,10 +8,7 @@ const { loadEstimate } = require('../estimate');
 const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
 const { amountDue } = require('../invoices');
-
-/* The deposit when nothing else says (D33). Settings makes it a setting at
-   task 21, stored as settings.invoicing.depositPct. */
-const DEFAULT_DEPOSIT_PCT = 50;
+const { docSettings } = require('../documents');
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -279,12 +276,12 @@ function lockedDates(db, estimateIds) {
 const whoHas = (c) => c.upid || (c.name ? `“${c.name}”` : 'another project');
 
 /* The deposit % a project would be accepted at (D33): its own, if one was set
-   before acceptance; else the setting; else 50. */
+   before acceptance; else the setting (settings.invoicing.depositPct, task 21);
+   else 50 (documents.js docSettings). */
 function depositPctFor(db, p) {
   const valid = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 100;
   if (valid(p.deposit_pct)) return p.deposit_pct;
-  const setting = Number(((readSettings(db) || {}).invoicing || {}).depositPct);
-  return valid(setting) ? setting : DEFAULT_DEPOSIT_PCT;
+  return docSettings(readSettings(db)).depositPct;
 }
 
 /**

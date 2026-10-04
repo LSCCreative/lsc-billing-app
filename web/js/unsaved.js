@@ -3,7 +3,7 @@
 /* Unsaved-edit warnings.
  *
  * Four screens hold edits that exist only in the page — the estimate editor,
- * the rate card, the Invoice Settings modal and a client record — and any of
+ * the rate card, the Settings screen and a client record — and any of
  * them can be left with one click: a nav item, Cancel, Back, Sign Out, or a
  * reload. Until now every one of those discarded the work silently, which the
  * desktop app also did; a save that fails is careful never to lose a keystroke
@@ -29,8 +29,7 @@
  * HOW A SCREEN STOPS BEING WATCHED
  * It doesn't have to. Screens are replaced by writing over #main's innerHTML
  * and there is no unmount hook to hang a release() on — so a watcher carries an
- * onScreen() sentinel instead, the same idea as the guard on
- * EstimateEditor.refreshTotals, and is dropped as soon as its screen is no
+ * onScreen() sentinel instead, and is dropped as soon as its screen is no
  * longer in the page. It asks what is on screen rather than holding an element
  * reference, because a screen that re-renders itself (the rate card does, on
  * every structural edit) would otherwise invalidate its own watcher.

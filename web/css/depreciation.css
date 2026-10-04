@@ -73,7 +73,7 @@
 
 /* ── The modal ──────────────────────────────────────────────────────────────
    Longer than the expense modal — five groups of fields — so it is wider, and
-   the overlay scrolls it (as #modal-invoice-settings does) rather than letting
+   the overlay scrolls it rather than letting
    the Save button fall off a short screen. */
 #modal-depreciation-asset {
   overflow-y: auto;

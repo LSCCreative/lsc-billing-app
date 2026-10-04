@@ -28,9 +28,9 @@ const ProjectFolder = (() => {
   const { esc, fmt } = LSCUtil;
   const C = LSCCalendar;
 
-  // A sent estimate is valid this long by default (D44); Settings makes it a
-  // setting at task 21.
-  const VALID_DAYS = 30;
+  // A sent estimate is valid this many days by default (D44): Settings →
+  // Estimates & invoices (task 21).
+  const validDays = () => LSCDocuments.docSettings(LSCData.settings()).validDays;
 
   let root = null;
   let handlers = null;
@@ -690,11 +690,11 @@ const ProjectFolder = (() => {
   }
 
   /* Mark sent (Stage D): the owner emailed the PDF themselves, and records
-     it here with the date it's valid until (D44, 30 days by default). */
+     it here with the date it's valid until (D44, Settings' valid-for days). */
   function openMarkSent(opener) {
     const today = LSCUtil.today();
     const stage = folder.project.stage;
-    const until = C.addDays(today, VALID_DAYS);
+    const until = C.addDays(today, validDays());
     openDialog(opener, {
       title: stage === 'sent' ? 'Mark sent again' : 'Mark sent',
       body:
@@ -838,8 +838,8 @@ const ProjectFolder = (() => {
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'btn btn-ghost btn-xs';
-      open.textContent = 'Open Invoice Settings';
-      open.addEventListener('click', () => SettingsView.open({ onAuthLost: handlers.onAuthLost }, open));
+      open.textContent = 'Open Settings';
+      open.addEventListener('click', () => LSCRouter.go('/settings/business'));
       box.append(' ', open);
     }
     box.classList.add('show');

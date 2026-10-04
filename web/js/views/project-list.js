@@ -71,7 +71,7 @@ const ProjectsView = (() => {
         body:
           'Your business name, ABN and bank details. Until they’re saved an invoice prints ' +
           'no payment block at all, and one that charges GST won’t export without an ABN.',
-        action: 'Open Invoice Settings',
+        action: 'Open Settings',
       });
     }
     return steps;
@@ -112,9 +112,8 @@ const ProjectsView = (() => {
   function bindSetup(container) {
     container.querySelectorAll('[data-setup]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        // The button goes to onOpenSettings so the modal can hand focus back.
         if (btn.dataset.setup === 'pricing') handlers.onGoPricing();
-        else handlers.onOpenSettings(btn);
+        else handlers.onOpenSettings();
       });
     });
   }
@@ -386,20 +385,6 @@ const ProjectsView = (() => {
     if (fresh[0]) fresh[0].querySelector('.card-open').focus();
   }
 
-  /* Settings opens over this screen without unmounting it, so a save there
-     would leave the checklist listing the step it had just satisfied. A no-op
-     unless the checklist is on screen. The Pricing step needs none: opening
-     Pricing replaces this screen, and coming back re-mounts it. */
-  function refreshFirstRun() {
-    if (!onScreen()) return;
-    const block = root.querySelector('.empty-state.first-run');
-    if (!block) return;
-    const holder = document.createElement('div');
-    holder.innerHTML = firstRunMarkup();
-    block.replaceWith(holder.firstElementChild);
-    bindSetup($('projects-results'));
-  }
-
   return {
     /* Once per sign-in: where to draw, and the routes out that app.js owns. */
     init(container, options) {
@@ -438,7 +423,5 @@ const ProjectsView = (() => {
       load();
       return true;
     },
-
-    refreshFirstRun,
   };
 })();

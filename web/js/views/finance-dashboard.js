@@ -9,7 +9,7 @@
  *
  * READ-ONLY, BAR ONE MIRROR, AND IT OWNS NO NUMBER
  * Nothing in sections 1–5 is stored or editable (the GST mirror, section 7,
- * edits a number Invoice Settings owns — see below). Every figure is derived
+ * edits a number Settings owns — see below). Every figure is derived
  * on mount from the LSCData cache (and, for jobs needed, the estimates list),
  * through calc.js — the same
  * functions the Rate Card, the estimate editor, Capacity and Profit Goals use —
@@ -42,7 +42,7 @@
  * month reads as a warning in the sentence, never as a validation error.
  *
  * THE GST MIRROR IS AN EDITABLE MIRROR, NOT A COPY
- * Section 7 edits settings.gst — the same stored object the Invoice Settings
+ * Section 7 edits settings.gst — the same stored object the Settings
  * modal edits, through the same PUT /api/settings — exactly as Profit Goals
  * mirrors the rate card's tax set-aside rate, and its copy says so. Three
  * rules carried over from settings.js on purpose, because two screens writing
@@ -56,10 +56,10 @@
  *     while registered (an inert field on an unregistered business isn't
  *     worth blocking a save over, and an unusable one keeps what's stored).
  *   - If the stored GST changed since this block loaded (another device, or
- *     the modal while this block had unsaved edits), nothing is written: the
- *     block shows what is stored and says so, rather than silently reverting
- *     someone's change. SettingsView calls refreshGst() after its own save so
- *     the ordinary same-tab case just updates in place.
+ *     a second window while this block had unsaved edits), nothing is
+ *     written: the block shows what is stored and says so, rather than
+ *     silently reverting someone's change. Settings is a screen of its own
+ *     (task 21), so a change made there reaches this block on its next mount.
  * The block has its own Save and its own LSCUnsaved watcher; nothing else on
  * the page is saved. It changes no figure in sections 1–5 while the card is
  * GST-exclusive: the comparison is the only GST-aware part (priceExGst backs
@@ -122,7 +122,7 @@ const FinanceDashboardView = (() => {
   let mountId = 0; // guards the async estimates fetch against a re-mount
 
   // The GST mirror (section 7): the fields as typed, and as the server last
-  // confirmed them. Same shape as the Invoice Settings modal's GST fields.
+  // confirmed them. Same shape as the Settings screen's GST fields.
   let gstForm = null;
   let gstSaved = null;
   let gstSaving = false;
@@ -651,7 +651,7 @@ const FinanceDashboardView = (() => {
     return (
       '<div class="dash-gst-copy">' +
       '<div class="sum-label" style="margin-bottom:4px">GST registration</div>' +
-      '<p class="dash-gst-note">The same setting as <strong>Invoice Settings</strong> — change it here and it ' +
+      '<p class="dash-gst-note">The same setting as <strong>Settings</strong> — change it here and it ' +
       'changes there. It decides whether quotes and invoices charge GST. ' +
       '<span id="dash-gst-status">' + gstStatus(gstSaved) + '</span></p>' +
       '<p class="dash-gst-note">Every figure on this page stays <strong>ex-GST</strong> either way: GST is ' +
@@ -688,7 +688,7 @@ const FinanceDashboardView = (() => {
   }
 
   /* Rebuild the block's contents from gstForm/gstSaved — after a save, after a
-     conflict, or when Invoice Settings changed the stored value. Only the
+     conflict, or when Settings changed the stored value. Only the
      block: the rest of the page doesn't depend on the form. */
   function redrawGst() {
     const box = document.getElementById('dash-gst');
@@ -717,8 +717,8 @@ const FinanceDashboardView = (() => {
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'btn btn-ghost btn-xs';
-      open.textContent = 'Open Invoice Settings';
-      open.addEventListener('click', () => SettingsView.open({ onAuthLost: handlers.onAuthLost }, open));
+      open.textContent = 'Open Settings';
+      open.addEventListener('click', () => LSCRouter.go('/settings/business'));
       el.append(' ', open);
     }
     el.classList.add('show');
@@ -742,7 +742,7 @@ const FinanceDashboardView = (() => {
     clearGstError();
 
     /* Only while registered — calc.js ignores the rate otherwise, and so does
-       the Invoice Settings modal's check, word for word. */
+       the Settings screen's check, word for word. */
     const percent = parseFloat(gstForm.rateRaw);
     const usable = Number.isFinite(percent) && percent >= 0 && percent <= 100;
     if (gstForm.registered && !usable) {
@@ -771,7 +771,7 @@ const FinanceDashboardView = (() => {
         redrawGst();
         redrawComparison();
         showGstError(
-          'GST was changed somewhere else since this page loaded — Invoice Settings, or another window — so ' +
+          'GST was changed somewhere else since this page loaded — on Settings, or in another window — so ' +
             'nothing was saved. This now shows ' +
             'what’s stored — make your change again if you still want it.'
         );
@@ -783,7 +783,7 @@ const FinanceDashboardView = (() => {
       if (gstForm.registered && !LSCUtil.abnDigits(fresh.business && fresh.business.abn)) {
         setGstSaving(false);
         Toast.hide();
-        showGstError('GST registration needs your ABN — add it in Invoice Settings first.', true);
+        showGstError('GST registration needs your ABN — add it in Settings first.', true);
         return;
       }
 
@@ -842,22 +842,6 @@ const FinanceDashboardView = (() => {
     root.addEventListener('click', (event) => {
       if (event.target.closest('#dash-gst-save')) saveGst();
     });
-  }
-
-  /* Called by SettingsView after the Invoice Settings modal saves, which can
-     happen with this screen open behind it. With no unsaved edits here the
-     block (and the GST-aware comparison) simply follows the new setting. With
-     edits, the block is left exactly as it is — including gstSaved, which is
-     what saveGst()'s conflict check compares against: moving it forward here
-     would let a form built on the old value overwrite the modal's change. */
-  function refreshGst() {
-    if (!gstOnScreen() || gstSaving) return;
-    if (!gstDirty()) {
-      gstSaved = gstFields(LSCData.settings());
-      gstForm = Object.assign({}, gstSaved);
-      redrawGst();
-    }
-    redrawComparison();
   }
 
   // ── Mount ─────────────────────────────────────────────────────────────────
@@ -923,5 +907,5 @@ const FinanceDashboardView = (() => {
     loadJobs(f, mountId);
   }
 
-  return { mount, refreshGst };
+  return { mount };
 })();

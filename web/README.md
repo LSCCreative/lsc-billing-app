@@ -54,7 +54,11 @@ js/views/overhead.js     the Overhead screen (expense CRUD + summary card)
 js/views/overhead-charts.js  the Overhead screen's hand-rolled inline SVG
                          charts. Markup in, markup out — holds no state
 js/views/goals.js        the Goals form (income/margin/capacity + tax reserve)
-js/views/settings.js     the Invoice Settings modal (GST + payment details)
+js/views/settings.js     Settings, #/settings: business, GST, payment, estimates &
+                         invoices, the service agreement (task 21)
+js/documents.js          deposit / validity / due-days / message / agreement
+                         defaults and the agreement's fill-in fields; a
+                         byte-identical copy of server/src/documents.js
 js/app.js                boot + top-level view switching
 ```
 
@@ -167,7 +171,7 @@ cd server && DATA_DIR=/tmp/lsc-billing-scratch ADMIN_USERNAME=dev ADMIN_PASSWORD
 - **A screen that writes only part of `/api/settings` must merge, not replace.**
   `PUT /api/settings` writes the request body over the whole settings row, so a
   screen that PUTs just the keys it shows silently deletes the ones it doesn't.
-  The Invoice Settings modal (`js/views/settings.js`) reads fresh on open and
+  The Settings screen (`js/views/settings.js`) reads fresh on open and
   merges onto that, rather than onto `LSCData.settings()`, because the cache is a
   boot-time snapshot and a merge is only as good as what it merges onto. This
   matters most for `gst`, which `calc.js` reads on every estimate: losing it

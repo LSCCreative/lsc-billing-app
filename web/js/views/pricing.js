@@ -284,9 +284,8 @@ const PricingView = (() => {
   let perHourFloor = null;
 
   /* The income floor with Target Markup and the GST settings, for unitDef.
-     Read once per mount, with perHourFloor, and for the same reason — except
-     the GST settings, which the Invoice Settings modal can change over this
-     screen. Its save calls refreshPrices(), which takes the context again. */
+     Read once per mount, with perHourFloor, and for the same reason. (The GST
+     settings are changed on the Settings screen, which replaces this one.) */
   let priceCtx = null;
 
   /* The screen an auto price with no figure needs set up (LSCData
@@ -2312,7 +2311,7 @@ const PricingView = (() => {
        would show as all-auto, and one save would put that over every typed
        price, where the v9 migration would then leave it. So it isn't opened
        for editing at all. With no #tax-inp, onScreen() is false, and every
-       async path and refreshPrices() stands down. */
+       async path stands down. */
     if (LSCCalc.cardShapeOutdated(pricing)) {
       card = null;
       root.innerHTML = outdatedMarkup();
@@ -2500,20 +2499,5 @@ const PricingView = (() => {
     inp.scrollIntoView({ block: 'center' });
   }
 
-  return {
-    mount,
-    /* Called by SettingsView after the Invoice Settings modal saves, which can
-       happen with this screen open behind it. An auto price on a
-       GST-inclusive card carries GST inside it, so turning "prices include
-       GST" on or off moves every auto figure, its state line and its "↺ use
-       $X". The working copy is untouched: a typed price is the user's and
-       stays as typed, and nothing here makes the card dirty. */
-    refreshPrices() {
-      if (!onScreen() || !card) return;
-      priceCtx = LSCData.priceContext();
-      perHourFloor = priceCtx.floorPerHour;
-      blocker = LSCData.autoPriceBlocker();
-      refreshAllRows();
-    },
-  };
+  return { mount };
 })();

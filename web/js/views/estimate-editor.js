@@ -139,9 +139,9 @@ const EstimateEditor = (() => {
   let profitMarginPct = null; // a MARKUP percent — the stored column predates the rename
   let incomeFloor = null; // LSCData.incomeFloor(), for the job's income line
   /* LSCData.priceContext(), for resolving a service's auto prices at a unit.
-     Resolved at mount for the same reason as the three above — except its GST
-     settings, which the Invoice Settings modal can change over this screen:
-     refreshTotals() takes it again. */
+     Resolved at mount for the same reason as the three above. (Its GST
+     settings are changed on the Settings screen, which replaces this one, so
+     the next mount takes them.) */
   let priceCtx = null;
 
   /* The client's last project, for "Use rates from last project":
@@ -166,7 +166,7 @@ const EstimateEditor = (() => {
      nav doesn't wait for it, so its outcome can land after the user has gone
      somewhere else — at which point neither the form's fields nor its error
      region exist any more, and following through would yank them off the screen
-     they chose. Same sentinel idea as refreshTotals below. */
+     they chose. */
   const onScreen = () => Boolean(root && root.querySelector('#f-upid'));
 
   const gstRegistered = () => ((LSCData.settings().gst || {}).registered === true);
@@ -3681,28 +3681,5 @@ const EstimateEditor = (() => {
     else $('f-upid').focus();
   }
 
-  return {
-    mount,
-    /* Re-run the live totals against whatever LSCData now holds. The Invoice
-       Settings modal opens over this screen without unmounting it, so changing
-       the GST configuration leaves the summary bar showing figures from the old
-       one until the next keystroke happens to recompute them.
-
-       The auto prices move with it: on a GST-inclusive card an auto price
-       carries GST inside it. So the price context is taken again and the unit
-       pickers repainted, or the next line added would be snapshotted at the
-       old configuration's figure and read under the new one. Lines already on
-       the estimate keep their snapshots, as they would for any rate-card
-       change; "Update to current rates" now re-prices them at the new figure.
-
-       The guard is what makes this safe to call blind: `root` stays set after
-       another view has replaced the markup inside it, so the sentinel asks
-       whether the editor is actually on screen rather than whether it ever was. */
-    refreshTotals() {
-      if (!root || !root.querySelector('#s-gst')) return;
-      priceCtx = LSCData.priceContext();
-      paintLineUnits();
-      recalc();
-    },
-  };
+  return { mount };
 })();

@@ -1,14 +1,74 @@
-/* Invoice Settings modal — additive only. app.css already carries the modal
-   shell (.modal-overlay, .modal-box, .modal-title, .modal-actions) and the form
-   fields (.form-grid, .field, .field.full), ported verbatim from the desktop
-   build. Nothing here restyles them. */
+/* Settings, #/settings (task 21, D65) — see js/views/settings.js.
+ *
+ * Mobile first: the base rules are the phone, and min-width queries add the
+ * tablet and the desktop rail. app.css already carries the form fields
+ * (.form-grid, .field, .field.full; .form-grid collapses to one column under
+ * 768px in responsive.css), the buttons, .pricing-save-bar and the modal shell.
+ * Nothing here restyles them.
+ *
+ * THE LOOK
+ * Functional, in the app's own terms: the page is a stack of sections divided
+ * by the same 1px rule as everywhere else, each headed in Delight at the
+ * modal-title size, with the uppercase tracked labels the fields already have.
+ * The rail is the Finance rail's twin (finance.css): .nav-links on a 1px
+ * spine, the current one marked with the accent. No cards, no shadows.
+ */
 
-/* The desktop modal was one flat block of bank fields. This one has two subjects
-   — GST and payment details — and they need telling apart. */
-.set-group + .set-group {
-  margin-top: 22px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
+/* ── The shell: jump list on top, rail beside from 1100px ─────────────────── */
+
+/* Below 1100px the sections are listed above the page as a wrapped row, so
+   all six stay visible and none hides behind a sideways scroll. The global
+   mobile rules give each .nav-link its 44px target under 768px. */
+.set-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: -8px 0 26px;
+}
+.set-rail .nav-link {
+  text-decoration: none;
+  border-radius: 0;
+}
+.set-rail .nav-link[aria-current='true'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.set-body {
+  min-width: 0;
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+/* 70px: the 52px sticky header and some air, so a jump lands the heading
+   under it rather than behind it. */
+.set-section {
+  padding-bottom: 30px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 70px;
+}
+
+.set-section-head {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+/* Focused only by a jump, to put a keyboard user where they asked to go;
+   the heading itself isn't a control and doesn't need the ring. */
+.set-section-head:focus {
+  outline: none;
+}
+
+.set-intro {
+  max-width: 64ch;
+  margin-bottom: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
 }
 
 .set-group-head {
@@ -16,31 +76,38 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--muted);
-  margin-bottom: 12px;
+  margin: 24px 0 12px;
+}
+.set-section-head + .set-group-head,
+.set-intro + .set-group-head {
+  margin-top: 4px;
 }
 
 .set-hint {
   margin: 8px 0 0;
+  max-width: 64ch;
   font-size: 11px;
   line-height: 1.55;
   color: var(--muted);
 }
-.set-group-head + .set-hint {
-  margin-top: -4px;
-  margin-bottom: 14px;
+.set-hint-lead {
+  margin: -4px 0 14px;
+}
+.field .set-hint {
+  margin-top: 2px;
 }
 
 /* app.css sets `.field input { width: 100% }`, which would stretch a checkbox
-   across the whole column. These sit outside .field for that reason. */
+   across the column, so these sit outside .field. */
 .set-check {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-height: 44px;
   font-size: 13px;
   color: var(--text);
   cursor: pointer;
 }
-
 .set-check input[type='checkbox'] {
   width: auto;
   margin: 0;
@@ -49,26 +116,14 @@
   flex-shrink: 0;
 }
 
+/* GST's rate and the inclusive tick, which mean nothing unless registered. */
 .set-row {
   display: flex;
-  align-items: flex-end;
-  gap: 20px;
-  margin-top: 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 10px;
 }
-
-.set-row .field {
-  width: 120px;
-  flex-shrink: 0;
-}
-
-.set-row .set-check {
-  padding-bottom: 9px;
-}
-
-/* GST rate and the inclusive-pricing toggle do nothing unless the business is
-   registered — calc.js ignores both otherwise — so they read as inactive rather
-   than sitting there at full strength looking editable. `disabled` is set in
-   js/views/settings.js; this is only the affordance. */
 .set-row-off {
   opacity: 0.45;
 }
@@ -76,19 +131,147 @@
   cursor: default;
 }
 
-.set-loading {
-  margin: 0;
+/* ── Estimates & invoices ─────────────────────────────────────────────────── */
+
+.set-numbers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+.set-numbering {
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--text);
+}
+.set-numbering code,
+.set-pv-notes code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12px;
-  line-height: 1.6;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  white-space: nowrap;
+}
+
+.set-msgs {
+  margin-bottom: 0;
+}
+.set-msg-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* A quiet text button: secondary to the field it sits over. */
+.set-link {
+  min-height: 44px;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.set-link:hover {
+  color: var(--accent);
+}
+.set-link[hidden] {
+  display: none;
+}
+
+/* ── Service agreement ────────────────────────────────────────────────────── */
+
+.set-agreement {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+.field textarea#set-agreement {
+  min-height: 360px;
+  line-height: 1.65;
+}
+
+.set-preview-row {
+  margin-top: 10px;
+}
+
+.set-fields .set-group-head {
+  margin-top: 0;
+}
+.set-field-list {
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+.set-field-list li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--muted);
 }
 
-/* Same treatment as #pricing-error and #editor-error: inline, next to the work
-   it is refusing, rather than the alert() the desktop app used — which covers
-   the very fields the message is naming. */
+.set-field-code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.set-field-code code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  transition: border-color 0.15s, color 0.15s;
+}
+.set-field-code:hover code {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.set-faq {
+  margin-top: 26px;
+}
+
+/* ── Not set up yet (Email, Card payments until stage E) ──────────────────── */
+
+.set-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.set-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+}
+
+/* ── Errors and the save bar ──────────────────────────────────────────────── */
+
 #settings-error {
   display: none;
-  margin: 18px 0 0;
+  margin: 0 0 14px;
   padding: 10px 14px;
   border: 1px solid var(--err-border);
   background: var(--err-bg);
@@ -100,35 +283,189 @@
   display: block;
 }
 
-/* The actions bar sits directly under the error when one is showing, so it drops
-   the top border it would otherwise double up on. */
-#settings-error.show + .modal-actions {
-  border-top: 0;
-  padding-top: 12px;
-  margin-top: 12px;
+/* Sticky at the foot of the window, so Save is in reach from any section of
+   a long page. The background is the bar's own surface, so fields scrolling
+   under it don't show through. */
+.set-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  gap: 14px;
+  padding: 10px 16px;
+}
+/* One row on a phone too. responsive.css stacks .pricing-save-bar under 768px
+   for the Rate Card's long sentence; this one's status is three words, and a
+   stacked bar pinned to the foot of a 812px screen would take ~95px of it. The
+   doubled class outranks that rule without touching it. */
+.pricing-save-bar.set-save-bar {
+  flex-direction: row;
+  align-items: center;
+}
+.set-save-bar > :last-child {
+  flex-shrink: 0;
+}
+.set-save-bar .btn {
+  white-space: nowrap;
 }
 
-.modal-actions .saved-msg {
-  margin-right: auto;
-}
+/* ── "Preview with a project…" ────────────────────────────────────────────── */
 
-/* The desktop modal was one flat block of bank fields and stood 391px tall, so it
-   fit any window and the shared shell in app.css never needed to think about
-   height. This one carries GST, business and payment — 864px — and the shell
-   centres its box in a fixed overlay with no max-height and no scrolling. Below
-   ~900px of viewport height that centring pushed the title off the top and Save
-   and Cancel off the bottom, with nothing scrollable to reach them: the modal
-   could be opened and read but not saved or cancelled, only escaped. It bites at
-   1440x800, the commonest laptop viewport, so it is not an edge case.
-
-   Scoped to this modal's id rather than .modal-overlay: the shell is base CSS and
-   the Desktop Preservation Law says don't touch it. margin:auto keeps the box
-   centred whenever it does fit, so short content behaves exactly as before. */
-#modal-invoice-settings {
+/* The overlay scrolls, and the box is full-bleed on a phone, where a centred
+   95vw box wastes width there is none of. */
+#modal-agreement-preview {
   align-items: flex-start;
   overflow-y: auto;
-  padding: 24px 0;
 }
-#modal-invoice-settings .modal-box {
-  margin: auto;
+#modal-agreement-preview .modal-box {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 24px 16px;
+  border-left: 0;
+  border-right: 0;
+}
+
+.set-preview select {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.set-preview select:focus {
+  border-color: var(--accent);
+}
+.set-preview select option {
+  background: #1e2228;
+  color: var(--text);
+}
+
+.set-pv-notes {
+  margin: 14px 0 10px;
+}
+.set-pv-notes p + p {
+  margin-top: 6px;
+}
+.set-pv-warn {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+/* The filled text, as the client would read it: their line breaks kept. */
+.set-pv-text {
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 16px 18px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.set-pv-text:empty {
+  display: none;
+}
+
+/* ── Tablet and up ────────────────────────────────────────────────────────── */
+
+@media (min-width: 768px) {
+  .set-row {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 20px;
+  }
+  .set-row .field {
+    width: 120px;
+    flex-shrink: 0;
+  }
+  .set-check {
+    min-height: 0;
+  }
+  .set-row .set-check {
+    padding-bottom: 9px;
+  }
+
+  .set-numbers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .set-link,
+  .set-field-code {
+    min-height: 0;
+  }
+  .set-field-list li {
+    padding: 6px 0;
+  }
+
+  .set-faq {
+    max-width: 520px;
+  }
+
+  .set-save-bar {
+    padding: 12px 22px;
+  }
+
+  #modal-agreement-preview {
+    padding: 24px 0;
+  }
+  #modal-agreement-preview .modal-box {
+    width: 720px;
+    max-width: 95vw;
+    margin: auto;
+    padding: 28px 32px;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+}
+
+/* The fill-in fields go beside the agreement once there's room for the text
+   to keep a comfortable measure next to them. */
+@media (min-width: 900px) {
+  .set-agreement {
+    grid-template-columns: minmax(0, 1fr) 230px;
+    gap: 28px;
+  }
+}
+
+/* ── Desktop: the rail ────────────────────────────────────────────────────── */
+
+@media (min-width: 1100px) {
+  .set-shell {
+    display: grid;
+    grid-template-columns: 172px minmax(0, 1fr);
+    column-gap: 36px;
+    align-items: start;
+  }
+  /* Sticky so the rail stays in reach down the page; 86px is the 52px header
+     plus #main's 34px top padding, where it rests before any scroll. */
+  .set-rail {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 2px;
+    margin: 0;
+    position: sticky;
+    top: 86px;
+    border-left: 1px solid var(--border);
+  }
+  .set-rail .nav-link {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: -1px;
+    padding: 9px 14px;
+    text-align: left;
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+  }
+  .set-rail .nav-link[aria-current='true'] {
+    border-left-color: var(--accent);
+  }
 }

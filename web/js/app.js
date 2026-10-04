@@ -155,7 +155,7 @@
     ProjectsView.init(main, {
       onAuthLost,
       onGoPricing: () => LSCRouter.go('/finance/pricing'),
-      onOpenSettings: openSettings,
+      onOpenSettings: () => LSCRouter.go('/settings/business'),
       onNew: () => LSCRouter.go('/projects/new'),
       onOpen: openProject,
       // The banner, while any project waits for a UPID (D61).
@@ -174,6 +174,7 @@
     HomeView.init(main, { onAuthLost });
     SetupView.init(main, { onAuthLost });
     ClientsView.init(main, { onAuthLost, onOpenProject: openProject });
+    SettingsView.init(main, { onAuthLost });
     // Whatever the address says, even if it is the screen that was there before
     // a lost session: that screen never finished drawing, or it would have
     // been kept.
@@ -226,6 +227,10 @@
       // The UPID fix-up (task 16) is reached from the Projects list.
       setNav('projects');
       shown = SetupView.show(rest, state);
+    } else if (area === 'settings') {
+      // #/settings, or one of its sections (task 21, D65).
+      setNav('settings');
+      shown = SettingsView.show(rest, state);
     } else if (area === 'finance' && rest.length <= 1) {
       setNav('finance');
       shown = FinanceView.show(main, rest[0], state, {
@@ -244,14 +249,7 @@
     document.getElementById('nav-projects').classList.toggle('active', active === 'projects');
     document.getElementById('nav-clients').classList.toggle('active', active === 'clients');
     document.getElementById('nav-finance').classList.toggle('active', active === 'finance');
-  }
-
-  /* The header is no longer the only way to this: the Projects list's
-     first-run setup steps open it too, so it sits here rather than inside
-     bindNav's closure where only the header could reach it. */
-  function openSettings(opener) {
-    if (appView.hidden) return;
-    SettingsView.open({ onAuthLost }, opener);
+    document.getElementById('nav-settings').classList.toggle('active', active === 'settings');
   }
 
   /* ── The compact nav (below 768px) ──────────────────────────────────────
@@ -321,16 +319,11 @@
        left. The router is stopped while the login screen is up, so these do
        nothing then. */
     const to = (path) => () => LSCRouter.go(path);
-    /* Invoice Settings is a modal, not a screen: it opens over whatever is on
-       #main and leaves it mounted, so the nav's active state stays where it is
-       and an estimate being edited is still there afterwards. */
-    const settingsBtn = document.getElementById('nav-invoice-settings');
-    settingsBtn.addEventListener('click', () => openSettings(settingsBtn));
-
     document.getElementById('logo-btn').addEventListener('click', to('/home'));
     document.getElementById('nav-projects').addEventListener('click', to('/projects'));
     document.getElementById('nav-clients').addEventListener('click', to('/clients'));
     document.getElementById('nav-finance').addEventListener('click', to('/finance'));
+    document.getElementById('nav-settings').addEventListener('click', to('/settings'));
     signOutBtn.addEventListener('click', () => {
       if (appView.hidden) return;
       // A sign-out empties #main, so it discards unsaved work exactly as nav
@@ -344,7 +337,6 @@
     ConnectionBanner.init();
     Toast.init();
     LSCUnsaved.init();
-    SettingsView.init();
     LSCRouter.init(renderRoute);
     bindNav();
     bindCompactNav();

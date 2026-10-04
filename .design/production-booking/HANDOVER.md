@@ -108,16 +108,27 @@ Per-task detail (shapes, error codes, mutation lists, verification logs) was rem
   backup from before is in this session's scratchpad only). Scratch now has AUD-B with D void, D2
   paid at 50%, and F a draft with 2 hrs of Overtime ($6,233.50 due).
 
-**Exact next item: TASKS.md task 21, the Settings screen** (frontend, Opus/high). Hooks waiting
-for it:
-- Store the deposit % at `settings.invoicing.depositPct` (task 19 reads it).
-- The invoice due-date default is `DUE_DAYS = 14` in `web/js/views/invoice.js`; the estimate's
-  valid-for is `VALID_DAYS = 30` in `project-folder.js`. Both become settings there.
+- **D, task 21** (Settings as a screen, `#/settings[/<section>]`; deposit %, valid-for days,
+  due-after days, the four messages, the service agreement with fill-in fields and "Preview with a
+  project…", the FAQ URL; Email and Card payments "Not set up yet"). 2026-10-04, committed, **not
+  deployed**. New `server/src/documents.js` (= `web/js/documents.js`, drift-tested), which
+  `routes/projects.js` now requires, so the NAS needs it before Pages (it ships with v13 at task
+  23). Its decisions are in its Done note in `TASKS.md`. The `api-scratch` settings row now holds
+  a full business/payment set, GST registered at 7% inclusive, and 40% / 21 days / 7 days (no
+  agreement text); the row from before is in this session's scratchpad only.
+
+**Exact next item: TASKS.md task 22, Recent activity on Home** (frontend, Opus/high).
 
 `GET /api/clients/:id/estimates` is no longer used by the web; keep it until the D deploy (an old
 cached Pages build still calls it), then delete it.
 
 **Seams left for later tasks:**
+- **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
+  messages (send panel), `validDays` (send), `faqUrl` ('' hides the button) and the agreement
+  text; signing fills the text with `agreementValues` + `fillAgreement` from the frozen version
+  (its client snapshot, stored `totalIncGst`, days) and stores the result (D39). That is the same
+  call the Settings preview makes, so the two can't differ. Card payments' surcharge % (D49) and
+  Email's status/test button go into the two "Not set up yet" sections.
 - **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
   two readers of a booked estimate. The client page lists days as the client PDF does, with
   stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.

@@ -49,7 +49,7 @@
       <button class="nav-link" id="nav-projects">Projects</button>
       <button class="nav-link" id="nav-clients">Clients</button>
       <button class="nav-link" id="nav-finance">Finance &amp; Price</button>
-      <button class="nav-link" id="nav-invoice-settings">Invoice Settings</button>
+      <button class="nav-link" id="nav-settings">Settings</button>
       <!-- Not in the Electron header, which had no sessions. No data-write:
            it changes no data, and offline it explains itself instead.
            aria-label so the "Signed in as …" tooltip can't become its name. -->
@@ -76,9 +76,9 @@
        only other one and it is hidden by then. Every screen mounts here. -->
   <main id="main"></main>
 
-  <!-- Invoice Settings. Filled by js/views/settings.js when it opens; inside
-       #app-view so it can never surface over the login screen. -->
-  <div class="modal-overlay" id="modal-invoice-settings"></div>
+  <!-- Dialogs, inside #app-view so they can never surface over the login
+       screen. The first is Settings' "Preview with a project…". -->
+  <div class="modal-overlay" id="modal-agreement-preview"></div>
   <div class="modal-overlay" id="modal-overhead-item"></div>
   <div class="modal-overlay" id="modal-depreciation-asset"></div>
   <div class="modal-overlay" id="modal-cost-breakdown"></div>
@@ -98,6 +98,7 @@
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
 <script src="js/util.js"></script>
+<script src="js/documents.js"></script>
 <script src="js/calc.js"></script>
 <script src="js/depreciation.js"></script>
 <script src="js/rows.js"></script>

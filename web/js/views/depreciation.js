@@ -1353,15 +1353,15 @@ const DepreciationView = (() => {
     );
   }
 
-  /* What the GST block says depends on Invoice Settings' current registration
+  /* What the GST block says depends on Settings' current registration
      — stated, not enforced: an asset bought while registered keeps its credit
      after deregistering, which is exactly why the flag is per asset. */
   function gstNote() {
     const registered = (LSCData.settings().gst || {}).registered === true;
     return registered
-      ? 'You’re registered for GST (Invoice Settings). If you claimed the GST on this purchase back, tick the ' +
+      ? 'You’re registered for GST (Settings). If you claimed the GST on this purchase back, tick the ' +
           'box and the cost base is the price less the GST.'
-      : 'You’re not registered for GST (Invoice Settings), so you normally can’t claim it back — leave the box ' +
+      : 'You’re not registered for GST (Settings), so you normally can’t claim it back — leave the box ' +
           'unticked and the full GST-inclusive price is the cost base. Tick it only if you were registered when ' +
           'you bought it and claimed the credit.';
   }

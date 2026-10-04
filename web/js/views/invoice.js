@@ -36,9 +36,9 @@ const InvoiceView = (() => {
   const { esc, fmt, num } = LSCUtil;
   const C = LSCCalendar;
 
-  // A due date this long after the issue date by default. Settings may make
-  // it a setting (task 21); the owner changes it per invoice meanwhile.
-  const DUE_DAYS = 14;
+  // A due date this many days after the issue date by default: Settings →
+  // Estimates & invoices (task 21). The owner can change it per invoice.
+  const dueDays = () => LSCDocuments.docSettings(LSCData.settings()).dueDays;
   const EXTRAS_SECTION = 'additional';
 
   const KIND_TITLE = { deposit: 'Deposit invoice', final: 'Final invoice', single: 'Invoice', legacy: 'Invoice' };
@@ -683,7 +683,7 @@ const InvoiceView = (() => {
   function openMarkSent(opener) {
     const inv = data.invoice;
     const issued = today();
-    const due = C.addDays(issued, DUE_DAYS);
+    const due = C.addDays(issued, dueDays());
     ProjectFolder.dialog(opener, {
       title: 'Mark ' + (inv.number || 'invoice') + ' sent',
       body:
@@ -706,7 +706,7 @@ const InvoiceView = (() => {
         issuedField.addEventListener('input', () => {
           if (!C.isDate(issuedField.value)) return;
           dueField.min = issuedField.value;
-          if (!dueTouched) dueField.value = C.addDays(issuedField.value, DUE_DAYS);
+          if (!dueTouched) dueField.value = C.addDays(issuedField.value, dueDays());
         });
         const pdf = q('pfd-pdf');
         pdf.addEventListener('click', () => download('pdf', pdf, { issuedAt: issuedField.value, dueAt: dueField.value },
