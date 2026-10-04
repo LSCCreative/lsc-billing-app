@@ -66,6 +66,9 @@ jobs:
           # Only rewrite same-origin local references (css/ or js/, not an
           # absolute URL), and only inside web/index.html.
           sed -i -E "s#(src=\"js/[^\"]+\.js)\"#\1?v=${SHA}\"#g; s#(href=\"css/[^\"]+\.css)\"#\1?v=${SHA}\"#g" web/index.html
+          # The client page (web/c/, production-booking stage E) keeps its own
+          # files beside it: c.js, c.css and friends, bare names, no folder.
+          sed -i -E "s#(src=\"[a-z-]+\.js)\"#\1?v=${SHA}\"#g; s#(href=\"[a-z-]+\.css)\"#\1?v=${SHA}\"#g" web/c/index.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

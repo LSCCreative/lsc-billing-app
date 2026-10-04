@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The link's token is in the fragment, which browsers never send. These keep
+     the page itself out of search and its address out of Referer headers. -->
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F0EDE8">
+<title>Estimate — LSC Creative</title>
+<link rel="icon" href="../favicon.png">
+<link rel="preload" href="../fonts/Delight-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/CSFeliceMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="c.css">
+</head>
+<body>
+<a class="skip" href="#doc">Skip to the estimate</a>
+<main id="doc" tabindex="-1" aria-busy="true">
+  <p class="loading">Loading your estimate…</p>
+  <noscript><p class="loading">This page needs JavaScript to show your estimate. You can also ask us for a PDF copy.</p></noscript>
+</main>
+<p id="c-status" class="visually-hidden" role="status" aria-live="polite"></p>
+<!-- Task 24: rendered from a static fixture. Task 26 replaces fixture.js with
+     the public API. -->
+<script src="fixture.js"></script>
+<script src="c.js"></script>
+</body>
+</html>

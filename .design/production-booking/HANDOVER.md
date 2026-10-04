@@ -145,7 +145,8 @@ backup `data/exports/pre-agreement-20261004.db`). Until `6764113` is deployed (N
 six new fields read as "not a field" in the live preview. Email is **Resend over SMTP from `admin@lsccreative.studio`** (D102), not Gmail; the user still
 has to create the account, add its DNS records in Cloudflare and supply the key (needed at task 28).
 
-**Exact next item: stage E (v14), TASKS.md task 24.** Check the "Inputs needed from the user" list first.
+**Exact next item: task 24 is built and waits for the user's approval of the look** (see its note in
+TASKS.md); then task 25. Check the "Inputs needed from the user" list first.
 The user should also try the live site once (sign in, open a project).
 
 `GET /api/clients/:id/estimates` is no longer used by the web; the D deploy is done, so delete it

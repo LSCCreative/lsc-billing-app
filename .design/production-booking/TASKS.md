@@ -705,6 +705,16 @@ Tasks 24–26 can be built with placeholders.
   **Done when** the user has seen it at 375 and 1280 and said yes, contrast is verified for every
   text pairing, and nothing from the app's CSS is loaded.
 
+  **Built 2026-10-04, waiting for the user's yes** (commit below). `web/c/` renders `fixture.js`
+  at `c/#e/demo`, and `#e/demo/<state>` previews each notice (open, taken, expired, superseded,
+  declined, accepted); both go at task 26. The bold move is the production days as a call sheet
+  (the date large in a left gutter); headings are sentence case over a rule, figures mono on the
+  right, terra only on the masthead rule and the button. Contrast: `--lsc-mid` fails on paper
+  (3.94), so secondary text is `#625C58` (5.64 / 5.11 on the panel); terra is never text except
+  the large wordmark (3.61, large-text floor 3:1); the button is paper on terra-dk (5.82). Only
+  `c.css` loads; 375 and 1280 have no overflow in any state; targets ≥44px. The Pages workflow
+  now cache-busts `web/c/index.html` too.
+
 - [ ] **25. Sent versions and the public estimate route** (auth/security — Opus/high).
   _Depends on: 19, 24._
   - **Migration v14:**
