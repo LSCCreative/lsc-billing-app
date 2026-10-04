@@ -15,6 +15,8 @@ const {
   invoiceJson, parseJson,
 } = require('../invoices');
 const { readFolder, logActivity, todayOf, isYmd } = require('./projects');
+const { sendRequest, addSend, cancelPending, sydneyDate } = require('../sends');
+const { newToken } = require('../public');
 
 const PAID_VIA = ['bank', 'card'];
 
@@ -29,8 +31,17 @@ const PAID_VIA = ['bank', 'card'];
  *                                       (D35); { depositPct } on a deposit,
  *                                       until its final has gone out.
  *   POST /api/invoices/:id/sent         { issuedAt, dueAt } — Mark sent, Stage
- *                                       D's stand-in for sending (E's send
- *                                       panel replaces it). From draft.
+ *                                       D's stand-in for sending, with any
+ *                                       issue date. From draft. The app now
+ *                                       sends through /send.
+ *   POST /api/invoices/:id/send         the send panel (task 29, D43), from
+ *                                       draft: { by: 'email', to, message?,
+ *                                       scheduledFor?, dueAt } becomes
+ *                                       `scheduled` with its dates and link,
+ *                                       and `sent` when the email goes
+ *                                       (sends.js); { by: 'link', dueAt } is
+ *                                       "Copy link": `sent` now, no email.
+ *                                       Issued the day it goes.
  *   POST /api/invoices/:id/paid         { paidAt, via: bank|card } — from any
  *                                       unpaid, unvoided invoice, an old-way
  *                                       one included (its stage line reads
@@ -60,7 +71,10 @@ function registerInvoiceRoutes(app, db) {
     const row = rowOf(id);
     if (!row) return res.status(404).json({ error: 'not_found' });
     const folder = readFolder(db, row.project_id, today);
-    return res.json({ ok: true, invoice: invoiceJson(db, row), project: folder.project, invoices: folder.invoices, ...(extra || {}) });
+    // Its link and newest email (task 29) as the folder's row has them.
+    const listed = folder.invoices.find((i) => i.id === row.id) || {};
+    const invoice = { ...invoiceJson(db, row), publicToken: listed.publicToken || null, send: listed.send || null };
+    return res.json({ ok: true, invoice, project: folder.project, invoices: folder.invoices, ...(extra || {}) });
   }
 
   /* The invoice behind an action, or null once a 404 has been sent. A bad
@@ -165,6 +179,42 @@ function registerInvoiceRoutes(app, db) {
     return reply(req, res, row.id);
   });
 
+  app.post('/api/invoices/:id/send', (req, res) => {
+    const row = invoiceFor(req, res);
+    if (!row) return undefined;
+    const refusal = cannotEdit(row);
+    if (refusal) return res.status(409).json(refusal);
+    const now = nowIso();
+    const ask = sendRequest(req.body, now);
+    if (ask.error) return res.status(400).json(ask);
+    if (ask.by === 'email' && !(app.locals.mailer && app.locals.mailer.configured)) {
+      return res.status(409).json({ error: 'not_configured', message: 'Email isn’t set up yet. Copy the link and send it yourself.' });
+    }
+    const issuedAt = ask.later ? sydneyDate(ask.scheduledFor) : todayOf(req);
+    const { dueAt } = req.body || {};
+    if (!isYmd(dueAt) || dueAt < issuedAt) {
+      return res.status(400).json({ error: 'due_at_invalid', message: 'The due date can’t be before the day it’s sent.' });
+    }
+    db.transaction(() => {
+      // Its link is made now, not when the email goes, so Copy link works
+      // while it waits (IA: made the first time it's sent, and kept).
+      db.prepare(`
+        UPDATE invoices SET status = ?, issued_at = ?, due_at = ?, public_token = COALESCE(public_token, ?), updated_at = ?
+         WHERE id = ?
+      `).run(ask.by === 'email' ? 'scheduled' : 'sent', issuedAt, dueAt, newToken(), now, row.id);
+      touch(row, now);
+      if (ask.by === 'email') {
+        addSend(db, {
+          docKind: 'invoice', docId: row.id, toEmail: ask.to, message: ask.message, scheduledFor: ask.scheduledFor,
+        }, now);
+      } else {
+        logActivity(db, row.project_id, 'invoice_sent', { invoiceId: row.id, number: row.number, issuedAt, dueAt, by: 'link' }, now);
+      }
+    })();
+    if (ask.by === 'email' && !ask.later && app.locals.outbox) app.locals.outbox.kick();
+    return reply(req, res, row.id);
+  });
+
   app.post('/api/invoices/:id/paid', (req, res) => {
     const row = invoiceFor(req, res);
     if (!row) return undefined;
@@ -180,6 +230,8 @@ function registerInvoiceRoutes(app, db) {
     db.transaction(() => {
       db.prepare("UPDATE invoices SET status = 'paid', paid_at = ?, paid_via = ?, updated_at = ? WHERE id = ?")
         .run(paidAt, via, now, row.id);
+      // Paid before its scheduled email went: the email would ask for money already in.
+      cancelPending(db, 'invoice', [row.id], now);
       touch(row, now);
       logActivity(db, row.project_id, 'invoice_paid', {
         invoiceId: row.id, number: row.number, paidAt, via, amount: invoiceJson(db, row).amountDue,
@@ -213,6 +265,8 @@ function registerInvoiceRoutes(app, db) {
     db.transaction(() => {
       db.prepare("UPDATE invoices SET status = 'void', voided_at = ?, void_reason = ?, updated_at = ? WHERE id = ?")
         .run(today, why.reason, now, row.id);
+      // An email of it still waiting would send a void invoice.
+      cancelPending(db, 'invoice', [row.id], now);
       // The replacement: the same estimate as accepted, the same extras and %,
       // a draft again with no dates. A final takes off the deposit standing now.
       let totals = parseJson(row.totals_json, {});

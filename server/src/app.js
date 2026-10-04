@@ -79,6 +79,7 @@ function createApp(db, opts = {}) {
     render: opts.renderPdf,
   });
   app.locals.outbox = outbox;
+  app.locals.mailer = mailer;
 
   // ── /health — the only route besides /login that never requires a session.
   // Deliberately says nothing about the data; it is a liveness probe for

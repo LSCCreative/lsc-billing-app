@@ -25,14 +25,29 @@
  * counts: the scheduler's own one-minute grain is well inside that.
  *
  * FAILURES are stored in `error` (text safe to show; mail.js scrubs the key)
- * and the row stays `failed` until it's retried or left. Nothing is swallowed.
+ * and the row stays `failed` until it's retried or cancelled. Nothing is
+ * swallowed.
+ *
+ * THE DOCUMENT FOLLOWS ITS EMAIL (task 29). An invoice queued to email is
+ * `scheduled` (its dates already set, its link made), turns `sent` when the
+ * email goes, and goes back to `draft` if the send is cancelled. An estimate
+ * is frozen and `sent` when the owner confirms (D34: the version is what's
+ * sent), so cancelling its email leaves the version standing. One document has
+ * at most one send waiting (pendingFor), and a document that moves on (declined,
+ * accepted, voided) has its waiting send cancelled (cancelPending).
  */
 
 const { newId, nowIso } = require('./db');
 const { newToken, signatureRow, signaturePdf } = require('./public');
 const { readSettings } = require('./ratecard');
-const { documentEmail, ownerSignedEmail, signedCopyEmail } = require('./mail');
+const { documentEmail, ownerSignedEmail, signedCopyEmail, isEmail } = require('./mail');
 const { agreementFilename } = require('./pdf');
+
+/* The business's date for an instant, as routes/projects.js localToday (not
+   required from there: that file requires this one). */
+const sydneyDate = (iso) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date(iso));
 
 const LATE_AFTER_MS = 5 * 60 * 1000;
 const TICK_MS = 60 * 1000;
@@ -40,6 +55,38 @@ const TICK_MS = 60 * 1000;
 const fail = (code, message) => Object.assign(new Error(message), { code, status: 409, expose: true });
 
 const INVOICE_KINDS = ['deposit', 'final', 'single'];
+
+const MAX_AHEAD_MS = 366 * 86400000;
+const isIsoTime = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v));
+
+/**
+ * What the send panel asks a document's send route for (task 29, D43):
+ *
+ *   { by: 'email', to, message?, scheduledFor? }  email the client's link,
+ *       now or at `scheduledFor` (absent, or already past: now);
+ *   { by: 'link' }  "Copy link": the document goes live with no email, for
+ *       the owner to send another way.
+ *
+ * @param {string} now  ISO
+ * @returns {{by, to, message, scheduledFor, later:boolean}|{error, message}}
+ */
+function sendRequest(body, now) {
+  const b = body || {};
+  if (b.by === 'link') return { by: 'link', to: '', message: '', scheduledFor: now, later: false };
+  if (b.by !== 'email') return { error: 'by_invalid', message: 'Choose to email it or copy its link.' };
+  if (!isEmail(b.to)) return { error: 'bad_recipient', message: 'Type the client’s email address.' };
+  if (b.message !== undefined && (typeof b.message !== 'string' || b.message.length > 5000)) {
+    return { error: 'message_invalid', message: 'Keep the message under 5,000 characters.' };
+  }
+  let scheduledFor = now;
+  if (b.scheduledFor !== undefined && b.scheduledFor !== null) {
+    if (!isIsoTime(b.scheduledFor)) return { error: 'scheduled_for_invalid', message: 'Choose a date and time to send it.' };
+    const t = Date.parse(b.scheduledFor);
+    if (t - Date.parse(now) > MAX_AHEAD_MS) return { error: 'scheduled_for_invalid', message: 'Schedule it within a year.' };
+    if (t > Date.parse(now)) scheduledFor = new Date(t).toISOString();
+  }
+  return { by: 'email', to: b.to.trim(), message: b.message || '', scheduledFor, later: scheduledFor !== now };
+}
 
 /**
  * Puts a send in the queue.
@@ -72,7 +119,77 @@ function sendsFor(db, docKind, docId) {
   `).all(docKind, String(docId));
 }
 
-/** Changes a scheduled send's time, message or recipient. Only while it's `scheduled`. */
+/** The send waiting or going for any of these documents, or null (one at a time per document). */
+function pendingFor(db, docKind, docIds) {
+  if (!docIds.length) return null;
+  return db.prepare(`
+    SELECT * FROM sends WHERE doc_kind = ? AND purpose = 'document' AND status IN ('scheduled', 'sending')
+       AND doc_id IN (SELECT value FROM json_each(?))
+     ORDER BY scheduled_for LIMIT 1
+  `).get(docKind, JSON.stringify(docIds.map(String))) || null;
+}
+
+/** Each document's newest send, by doc id: what the folder's rows show. */
+function latestFor(db, docKind, docIds) {
+  const out = new Map();
+  if (!docIds.length) return out;
+  db.prepare(`
+    SELECT s.*, v.n AS version_n FROM sends s LEFT JOIN estimate_versions v ON v.id = s.version_id
+     WHERE s.doc_kind = ? AND s.purpose = 'document' AND s.doc_id IN (SELECT value FROM json_each(?))
+     ORDER BY s.created_at DESC, s.id DESC
+  `).all(docKind, JSON.stringify(docIds.map(String))).forEach((r) => {
+    if (!out.has(r.doc_id)) out.set(r.doc_id, sendJson(r));
+  });
+  return out;
+}
+
+/** A send as the owner's screens read it. */
+function sendJson(s) {
+  return {
+    id: s.id, docKind: s.doc_kind, docId: s.doc_id, purpose: s.purpose, to: s.to_email, message: s.message,
+    scheduledFor: s.scheduled_for, status: s.status, sentAt: s.sent_at, late: Boolean(s.late), error: s.error,
+    createdAt: s.created_at,
+    // The estimate version it sends (latestFor reads it), so a row can say
+    // "v2 emailed" while v3 has since gone by link.
+    ...(s.version_n ? { version: s.version_n } : {}),
+  };
+}
+
+/**
+ * Cancels whatever is still scheduled for these documents: a decline, an
+ * accept or a void means an email about the document as it was would be
+ * wrong. A send already going can't be called back. Inside the caller's
+ * transaction.
+ *
+ * @returns {number} how many were cancelled
+ */
+function cancelPending(db, docKind, docIds, now) {
+  if (!docIds.length) return 0;
+  return db.prepare(`
+    UPDATE sends SET status = 'cancelled', updated_at = ?
+     WHERE doc_kind = ? AND purpose = 'document' AND status = 'scheduled'
+       AND doc_id IN (SELECT value FROM json_each(?))
+  `).run(now, docKind, JSON.stringify(docIds.map(String))).changes;
+}
+
+/* An invoice queued to email whose send was cancelled is a draft again, with
+   no dates, unless another send for it is still waiting. */
+function unscheduleInvoice(db, invoiceId, now) {
+  if (pendingFor(db, 'invoice', [invoiceId])) return;
+  db.prepare(`
+    UPDATE invoices SET status = 'draft', issued_at = NULL, due_at = NULL, updated_at = ?
+     WHERE id = ? AND status = 'scheduled'
+  `).run(now, invoiceId);
+}
+
+const dayMonth = (ymd) => new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const isYmd = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+/**
+ * Changes a scheduled send's time, message or recipient. Only while it's
+ * `scheduled`. An invoice's issue date follows the new time and `dueAt` may
+ * move with it; an estimate's version can't be sent after it expires.
+ */
 function editSend(db, id, patch, now = nowIso()) {
   return db.transaction(() => {
     const row = getSend(db, id);
@@ -80,11 +197,30 @@ function editSend(db, id, patch, now = nowIso()) {
     if (row.status !== 'scheduled') {
       throw fail('not_scheduled', 'This send has already gone out or been cancelled, so it can’t be changed.');
     }
+    const scheduledFor = patch.scheduledFor !== undefined ? patch.scheduledFor : row.scheduled_for;
+    const sendDay = sydneyDate(scheduledFor);
+    if (row.purpose === 'document' && row.doc_kind === 'estimate' && row.version_id) {
+      const v = db.prepare('SELECT n, valid_until FROM estimate_versions WHERE id = ?').get(row.version_id);
+      if (v && v.valid_until && sendDay > v.valid_until) {
+        throw Object.assign(fail('after_valid_until',
+          `v${v.n} is valid until ${dayMonth(v.valid_until)}, so it can’t be sent after that. Cancel this send and send the estimate again.`),
+        { status: 400 });
+      }
+    }
+    if (row.purpose === 'document' && row.doc_kind === 'invoice') {
+      const inv = db.prepare('SELECT due_at FROM invoices WHERE id = ?').get(row.doc_id);
+      const dueAt = patch.dueAt !== undefined ? patch.dueAt : inv && inv.due_at;
+      if (!isYmd(dueAt) || dueAt < sendDay) {
+        throw Object.assign(fail('due_at_invalid', 'The due date can’t be before the day it’s sent.'), { status: 400 });
+      }
+      db.prepare("UPDATE invoices SET issued_at = ?, due_at = ?, updated_at = ? WHERE id = ? AND status = 'scheduled'")
+        .run(sendDay, dueAt, now, row.doc_id);
+    }
     db.prepare(`
       UPDATE sends SET scheduled_for = ?, message = ?, to_email = ?, updated_at = ?
        WHERE id = ? AND status = 'scheduled'
     `).run(
-      patch.scheduledFor !== undefined ? patch.scheduledFor : row.scheduled_for,
+      scheduledFor,
       patch.message !== undefined ? String(patch.message) : row.message,
       patch.toEmail !== undefined ? String(patch.toEmail).trim() : row.to_email,
       now, row.id,
@@ -93,16 +229,21 @@ function editSend(db, id, patch, now = nowIso()) {
   })();
 }
 
-/** Cancels a scheduled send. A send that's already gone, or is going, can't be called back. */
+/**
+ * Cancels a scheduled send, or gives up on a failed one. A send that's gone,
+ * or is going, can't be called back. An invoice that was waiting on it is a
+ * draft again.
+ */
 function cancelSend(db, id, now = nowIso()) {
   return db.transaction(() => {
     const row = getSend(db, id);
     if (!row) throw Object.assign(new Error('not found'), { code: 'not_found', status: 404 });
     if (row.status === 'cancelled') return row;
     const { changes } = db.prepare(`
-      UPDATE sends SET status = 'cancelled', updated_at = ? WHERE id = ? AND status = 'scheduled'
+      UPDATE sends SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('scheduled', 'failed')
     `).run(now, row.id);
     if (!changes) throw fail('not_scheduled', 'This send has already gone out, so it can’t be cancelled.');
+    if (row.purpose === 'document' && row.doc_kind === 'invoice') unscheduleInvoice(db, row.doc_id, now);
     return getSend(db, row.id);
   })();
 }
@@ -287,6 +428,20 @@ function createOutbox(db, mailer, opts = {}) {
   let timer = null;
   let running = Promise.resolve();
 
+  /* The email went, so the invoice has gone out: `sent`, and Home's
+     "INV-… emailed" (the activity row routes/projects.js logActivity writes). */
+  function invoiceWent(row, at, late) {
+    const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(row.doc_id);
+    if (!inv || inv.status !== 'scheduled') return;
+    db.prepare("UPDATE invoices SET status = 'sent', updated_at = ? WHERE id = ?").run(at, inv.id);
+    db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(at, inv.project_id);
+    db.prepare('INSERT INTO activity (id, project_id, at, kind, detail_json) VALUES (?, ?, ?, ?, ?)').run(
+      newId('act'), inv.project_id, at, 'invoice_sent', JSON.stringify({
+        invoiceId: inv.id, number: inv.number, issuedAt: inv.issued_at, dueAt: inv.due_at, by: 'email', late: Boolean(late),
+      }),
+    );
+  }
+
   async function deliver(row) {
     let outcome;
     try {
@@ -300,8 +455,11 @@ function createOutbox(db, mailer, opts = {}) {
     const at = now();
     if (outcome.status === 'sent') {
       const late = Date.parse(at) - Date.parse(row.scheduled_for) > LATE_AFTER_MS ? 1 : 0;
-      db.prepare("UPDATE sends SET status = 'sent', sent_at = ?, late = ?, error = NULL, updated_at = ? WHERE id = ?")
-        .run(at, late, at, row.id);
+      db.transaction(() => {
+        db.prepare("UPDATE sends SET status = 'sent', sent_at = ?, late = ?, error = NULL, updated_at = ? WHERE id = ?")
+          .run(at, late, at, row.id);
+        if (row.purpose === 'document' && row.doc_kind === 'invoice') invoiceWent(row, at, late);
+      })();
     } else {
       db.prepare("UPDATE sends SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").run(outcome.error, at, row.id);
     }
@@ -373,6 +531,6 @@ function queueSigningEmails(db, p, now) {
 }
 
 module.exports = {
-  addSend, getSend, sendsFor, editSend, cancelSend, retrySend, claimDue, recoverInterrupted,
-  createOutbox, queueSigningEmails, LATE_AFTER_MS, TICK_MS,
+  sendRequest, addSend, getSend, sendsFor, pendingFor, latestFor, sendJson, cancelPending, editSend, cancelSend, retrySend,
+  claimDue, recoverInterrupted, createOutbox, queueSigningEmails, sydneyDate, LATE_AFTER_MS, TICK_MS,
 };

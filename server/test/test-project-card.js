@@ -144,6 +144,49 @@ test('activity reads the same in the folder and on Home: one function (task 22)'
   assert.equal(ProjectCard.activityText({ kind: 'estimate_opened' }, TODAY), 'Estimate opened');
 });
 
+test('a send reads by how it went: emailed now or later, or by link (task 29)', () => {
+  const say29 = (kind, detail) => ProjectCard.activityText({ kind, detail }, TODAY);
+  assert.equal(say29('sent', { version: 2, validUntil: '2026-11-03', by: 'email', to: 'priya@salt.example' }),
+    'Sent v2 by email to priya@salt.example, valid until 3 Nov');
+  assert.match(say29('sent', { version: 1, validUntil: '2026-11-03', by: 'email', scheduledFor: '2026-10-07T22:00:00.000Z' }),
+    /^Scheduled v1 to email \d+ Oct, \d+:00\s?[ap]m, valid until 3 Nov$/);
+  assert.equal(say29('sent', { version: 3, by: 'link' }), 'Sent v3 by link');
+  assert.equal(say29('invoice_sent', { number: 'INV-A-D', dueAt: '2026-10-18', by: 'email' }), 'INV-A-D emailed, due 18 Oct');
+  assert.equal(say29('invoice_sent', { number: 'INV-A-D', by: 'email', late: true }), 'INV-A-D emailed late');
+  assert.equal(say29('invoice_sent', { number: 'INV-A-F', dueAt: '2026-10-18', by: 'link' }), 'INV-A-F sent by link, due 18 Oct');
+});
+
+test('a document’s email line: scheduled, going, sent, sent late, failed, cancelled (D47)', () => {
+  vm.runInContext(readFileSync(join(webDir, 'send-panel.js'), 'utf8'), ctx, { filename: 'send-panel.js' });
+  const SendPanel = vm.runInContext('SendPanel', ctx);
+  const local = (h, m, dayOffset = 0) => { const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const base = { id: 'snd_1', to: 'priya@salt.example' };
+  const s = (extra) => SendPanel.statusOf({ ...base, ...extra });
+  const tomorrow9 = s({ status: 'scheduled', scheduledFor: local(9, 0, 1) });
+  assert.match(tomorrow9.text, /^Email scheduled tomorrow, 9:00\s?am to priya@salt\.example$/);
+  assert.deepEqual([...tomorrow9.acts], ['edit', 'cancel']);
+  assert.match(s({ status: 'scheduled', scheduledFor: local(9, 0, 9) }).text, /^Email scheduled (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+ \w{3}( \d{4})?, 9:00/);
+  assert.equal(s({ status: 'sending' }).acts.length, 0);
+  assert.match(s({ status: 'sent', sentAt: local(11, 42), scheduledFor: local(11, 41), late: false }).text, /^Emailed today, 11:42\s?am to priya/);
+  // D47's own example: the same day reads as times only.
+  assert.match(s({ status: 'sent', sentAt: local(11, 42), scheduledFor: local(9, 0), late: true }).text,
+    /^Sent late at 11:42\s?am \(scheduled 9:00\s?am\)$/);
+  assert.match(s({ status: 'sent', sentAt: local(8, 5), scheduledFor: local(9, 0, -1), late: true }).text,
+    /^Sent late at today, 8:05\s?am \(scheduled yesterday|^Sent late at today, 8:05\s?am \(scheduled \w{3} \d+ \w{3}, 9:00/);
+  const failed = s({ status: 'failed', error: 'Email isn’t set up yet.' });
+  assert.deepEqual([failed.text, failed.tone, [...failed.acts]], ['Email failed: Email isn’t set up yet.', 'err', ['retry', 'cancel']]);
+  assert.equal(s({ status: 'cancelled' }).text, 'Email cancelled');
+  assert.equal(SendPanel.statusOf(null), null);
+  // An estimate's line names the version it sent.
+  assert.match(s({ status: 'sent', version: 2, sentAt: local(11, 42), scheduledFor: local(11, 42) }).text, /^v2 emailed today, 11:42/);
+  assert.match(s({ status: 'scheduled', version: 3, scheduledFor: local(9, 0, 1) }).text, /^Email of v3 scheduled tomorrow/);
+  assert.equal(s({ status: 'scheduled', scheduledFor: local(0, 0, -1) }).text, 'Sending the email now…');
+  // The buttons name their document, and nothing in the line is markup.
+  const html = SendPanel.statusMarkup({ ...base, status: 'failed', error: '<b>boom</b>' }, 'INV-A-D');
+  assert.match(html, /aria-label="Retry — the email of INV-A-D"/);
+  assert.doesNotMatch(html, /<b>/);
+});
+
 test('Home loads after the card whose words it prints', () => {
   const html = readFileSync(join(__dirname, '..', '..', 'web', 'index.html'), 'utf8');
   const at = (f) => html.indexOf('js/' + f);

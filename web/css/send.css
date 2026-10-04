@@ -1,0 +1,361 @@
+/* The send panel and a document's email line (production-booking task 29;
+   js/send-panel.js). The panel is the app's modal (.modal-box) laid out as a
+   form with its labels in a left column, the way the folder's facts read;
+   on a phone it fills the screen, with the actions in reach at the bottom.
+   The email line sits under a document's status and is quiet unless
+   something needs the owner (a failure). */
+
+/* ── The panel ───────────────────────────────────────────────────────────── */
+
+.send-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 20px 16px 16px;
+  border: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.send-panel .modal-title {
+  margin-bottom: 8px;
+}
+.sp-intro {
+  margin-bottom: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.sp-fields {
+  display: grid;
+  gap: 18px;
+}
+.sp-row {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sp-label,
+.send-panel .field > label,
+.sp-when legend {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.sp-when legend {
+  float: left; /* lets the legend sit in the grid's first column */
+  padding: 0;
+}
+.send-panel .field input,
+.send-panel .field textarea {
+  width: 100%;
+}
+.send-panel textarea {
+  min-height: 7.5em;
+  line-height: 1.55;
+  resize: vertical;
+}
+.sp-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.sp-hint:empty {
+  display: none;
+}
+.sp-fixed {
+  padding: 9px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.sp-fixed .sp-hint {
+  display: inline;
+  margin: 0;
+}
+
+/* Now / Later: two halves of one control, the chosen one filled. */
+.sp-seg {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  border: 1px solid var(--border);
+}
+.sp-seg label {
+  position: relative;
+  display: flex;
+  cursor: pointer;
+}
+.sp-seg input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.sp-seg span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+}
+.sp-seg label + label span {
+  border-left: 1px solid var(--border);
+}
+.sp-seg input:checked + span {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.sp-seg label:hover input:not(:checked) + span {
+  color: var(--text);
+}
+.sp-seg input:focus-visible + span {
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+}
+
+.sp-at {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+.sp-at[hidden] {
+  display: none;
+}
+.sp-at .field label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+/* Email isn't connected: said before the button that would fail. */
+.sp-email-off {
+  margin-top: 18px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: rgba(184, 84, 68, 0.08);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.sp-email-off[hidden] {
+  display: none;
+}
+.sp-inline-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent-text, var(--accent));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.sp-inline-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* What Confirm will do, in one line, before it's pressed. */
+.sp-summary {
+  margin-top: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.sp-summary:empty {
+  display: none;
+}
+
+/* Copy link to the side (D43); Cancel and Confirm on the right. On a phone
+   the actions sit at the bottom of the screen, Confirm first in reach, and
+   Copy link below them with what it does. */
+.sp-actions {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-top: auto;
+}
+@media (max-width: 599px) {
+  /* Pinned to the bottom of the screen while the form scrolls above them,
+     so Confirm is always in reach. */
+  .sp-actions {
+    position: sticky;
+    bottom: -16px; /* over the panel's bottom padding */
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 14px 16px 16px;
+    background: var(--surface);
+    box-shadow: 0 -10px 18px -12px rgba(0, 0, 0, 0.6);
+  }
+}
+.sp-actions > .btn {
+  flex: 1 1 0;
+  justify-content: center;
+  min-height: 44px;
+}
+.sp-aside {
+  order: 3;
+  flex: 1 1 100%;
+  padding-top: 12px;
+  border-top: 1px solid var(--cal-rule, var(--border));
+}
+.sp-aside .btn {
+  width: 100%;
+  justify-content: center;
+  min-height: 44px;
+}
+.send-panel .spinner {
+  display: none;
+}
+
+@media (min-width: 600px) {
+  .send-panel {
+    width: 600px;
+    max-width: 95vw;
+    height: auto;
+    max-height: calc(100dvh - 48px);
+    padding: 28px 32px;
+    border: 1px solid var(--border);
+  }
+  .sp-row {
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .sp-row > .sp-label,
+  .sp-when legend {
+    padding-top: 12px;
+  }
+  .sp-seg {
+    width: auto;
+    min-width: 13rem;
+  }
+  .sp-seg span {
+    min-height: 38px;
+    padding: 0 18px;
+  }
+  .sp-at {
+    max-width: 22rem;
+  }
+  .sp-actions {
+    flex-wrap: nowrap;
+    margin-top: 18px;
+  }
+  .sp-actions > .btn {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .sp-aside {
+    order: 0;
+    flex: 0 1 15rem;
+    margin-right: auto;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .sp-aside .btn {
+    width: auto;
+    min-height: 0;
+  }
+}
+
+/* ── A document's email line ─────────────────────────────────────────────── */
+
+.send-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.send-status-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* The mark before the words says the same thing they do. */
+.send-status-text::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--muted);
+  transform: translateY(-1px);
+}
+.send-status.is-wait .send-status-text {
+  color: var(--text);
+}
+.send-status.is-wait .send-status-text::before {
+  border-color: var(--accent);
+}
+.send-status.is-ok .send-status-text::before {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.send-status.is-late .send-status-text::before {
+  background: var(--cal-pencilled, #c9a443);
+  border-color: var(--cal-pencilled, #c9a443);
+}
+.send-status.is-err .send-status-text {
+  color: var(--err-text);
+}
+.send-status.is-err .send-status-text::before {
+  background: var(--err-text);
+  border-color: var(--err-text);
+}
+.send-status-act {
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--accent-text, var(--accent));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.send-status-act:hover {
+  color: var(--text);
+}
+.send-status-act:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.send-status-act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (min-width: 768px) {
+  .send-status-act {
+    min-height: 24px;
+  }
+}
+/* On the invoice screen it sits under the status pill. */
+.inv-status + .send-status {
+  margin-top: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-seg span {
+    transition: none;
+  }
+}

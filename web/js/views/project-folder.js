@@ -17,12 +17,15 @@
  * patching itself. The stage line is ProjectCard.stageMarkup over the same
  * summary the Projects list prints, so the two can't disagree.
  *
- * STAGE D'S STAND-INS. "Mark sent" records a send the owner made by email
- * (Stage E sends from the app), and "Mark accepted" the client's yes (E's
- * signing replaces it), which confirms the days and makes the invoices
- * (task 19). Each invoice has its own page (InvoiceView, task 20), where it
- * is marked sent and paid, its extras edited, and a sent one voided and
- * remade; the folder's next action leads there once invoices exist.
+ * SENDING (task 29). "Send v1…" opens the send panel (SendPanel, D43): it
+ * emails the client's link now or later, or makes the version live for Copy
+ * link. Each document row says where its email is ("Email scheduled Tue 8
+ * Oct, 9:00 am · Change · Cancel email", D47) and has its own Send… and Copy
+ * link. "Mark accepted" records a yes given outside the client's page (the
+ * page's signing is the other way in), which confirms the days and makes the
+ * invoices (task 19). Each invoice has its own page (InvoiceView, task 20),
+ * where it is sent and marked paid, its extras edited, and a sent one voided
+ * and remade; the folder's next action leads there once invoices exist.
  */
 
 const ProjectFolder = (() => {
@@ -37,11 +40,22 @@ const ProjectFolder = (() => {
   let handlers = null;
   let folder = null; // the reply on screen
   let busy = false; // an action in flight: every action button waits on it
+  let following = null; // the follow-up look while an email goes (SendPanel.follow)
+  let tries = 0;
 
   const $ = (id) => root.querySelector('#' + id);
   const onScreen = () => Boolean(root && root.querySelector('#project-folder'));
   const pathOf = (id) => '/projects/' + encodeURIComponent(id);
   const lead = () => (folder && folder.estimates[0]) || null;
+
+  /* An email still waiting to go, or going: one at a time per document. */
+  const waiting = (send) => Boolean(send && (send.status === 'scheduled' || send.status === 'sending'));
+  const estimateWaiting = () => folder.estimates.some((e) => waiting(e.send));
+  /* The version the next send makes ("Send v2…"). */
+  const nextVersion = (e) => ((e && e.versions) || []).length + 1;
+  /* A version of it is live: its link shows something a client can read. */
+  const liveLink = (e) => Boolean(e.publicToken && (e.status === 'sent' || e.status === 'accepted') &&
+    (e.versions || []).some((v) => !v.supersededAt));
 
   /* Where one estimate's editor or read-only view is. The lead (the one the
      project is named by) is plain `estimate`; another estimate of a group
@@ -97,7 +111,9 @@ const ProjectFolder = (() => {
     const inv = project.stage === 'accepted' || project.stage === 'invoiced' ? currentInvoice() : null;
     if (inv) return invoiceAction(inv);
     switch (project.stage) {
-      case 'draft': return { id: 'edit', label: 'Edit estimate' };
+      case 'draft': return estimateWaiting() || !lead()
+        ? { id: 'edit', label: 'Edit estimate' }
+        : { id: 'send', label: 'Send v' + nextVersion(lead()) + '…' };
       case 'sent': return { id: 'accept', label: 'Mark accepted…' };
       case 'declined': return { id: 'reopen', label: 'Reopen' };
       default: return { id: 'view', label: 'View estimate' };
@@ -105,10 +121,15 @@ const ProjectFolder = (() => {
   }
 
   /* Forward actions beside the primary one. A draft can be accepted without
-     being marked sent: the owner may have sent it some other way. */
+     being sent from here: the client may have said yes to a PDF. A second
+     send waits until the first one's email has gone or been cancelled. */
   function moreActions(project) {
-    if (project.stage === 'draft') return [{ id: 'sent', label: 'Mark sent…' }, { id: 'accept', label: 'Mark accepted…' }];
-    if (project.stage === 'sent') return [{ id: 'edit', label: 'Edit estimate' }, { id: 'sent', label: 'Mark sent again…' }];
+    const again = estimateWaiting() || !lead() ? [] : [{ id: 'send', label: 'Send v' + nextVersion(lead()) + '…' }];
+    if (project.stage === 'draft') {
+      return (nextAction(project).id === 'send' ? [{ id: 'edit', label: 'Edit estimate' }] : [])
+        .concat([{ id: 'accept', label: 'Mark accepted…' }]);
+    }
+    if (project.stage === 'sent') return [{ id: 'edit', label: 'Edit estimate' }].concat(again);
     if (needsInvoices(project)) return [{ id: 'view', label: 'View estimate' }];
     if (nextAction(project).id === 'invoice') return [{ id: 'view', label: 'View estimate' }];
     return [];
@@ -245,6 +266,7 @@ const ProjectFolder = (() => {
       '<div class="pf-doc-main">' +
       '<span class="pf-doc-name">' + doc.name + '</span>' +
       (doc.meta ? '<span class="pf-doc-meta">' + doc.meta + '</span>' : '') +
+      (doc.status || '') +
       '</div>' +
       (doc.amount !== undefined ? '<span class="pf-doc-amount">' + doc.amount + '</span>' : '') +
       '<div class="pf-doc-acts">' + doc.actions.map((a) =>
@@ -258,17 +280,29 @@ const ProjectFolder = (() => {
   function documentsMarkup(project, today) {
     const many = folder.estimates.length > 1;
     const docs = [];
+    const sendable = project.stage === 'draft' || project.stage === 'sent';
     folder.estimates.forEach((e) => {
       const title = 'Estimate' + (many ? ' — ' + esc(e.name || 'Untitled') : '');
+      const named = many ? ' ' + (e.name || 'Untitled') : '';
+      const live = (e.versions || []).filter((v) => !v.supersededAt).pop();
+      const actions = [
+        { id: 'view', label: 'View', target: e.id, label2: 'View the estimate' + named },
+        { id: 'edit', label: 'Edit', target: e.id, label2: 'Edit the estimate' + named },
+        { id: 'pdf', label: '↓ PDF', target: e.id, label2: 'Download the estimate PDF' + (many ? ' for' + named : '') },
+      ];
+      // Only the lead is sent (the server sends the project's lead estimate).
+      if (sendable && e.id === project.estimateId && !estimateWaiting()) {
+        actions.push({ id: 'send', label: 'Send v' + nextVersion(e) + '…', target: e.id, label2: 'Send v' + nextVersion(e) + ' of the estimate' + named });
+      }
+      if (liveLink(e)) actions.push({ id: 'copy', label: 'Copy link', target: e.id, label2: 'Copy the client link to the estimate' + named });
       docs.push({
-        name: title,
-        meta: esc(ESTIMATE_STATUS[e.status] || e.status) + ' · changed ' + esc(ProjectCard.dayMonth(e.updatedAt, today)),
+        name: title + (live ? ' <span class="pf-doc-num">v' + esc(String(live.n)) + '</span>' : ''),
+        meta: esc(ESTIMATE_STATUS[e.status] || e.status) +
+          (live && live.validUntil && e.status === 'sent' ? ' · valid until ' + esc(ProjectCard.dayMonth(live.validUntil, today)) : '') +
+          ' · changed ' + esc(ProjectCard.dayMonth(e.updatedAt, today)),
+        status: SendPanel.statusMarkup(e.send, 'the estimate' + named),
         amount: fmt((e.totals || {}).totalIncGst),
-        actions: [
-          { id: 'view', label: 'View', target: e.id, label2: 'View the estimate' + (many ? ' ' + (e.name || '') : '') },
-          { id: 'edit', label: 'Edit', target: e.id, label2: 'Edit the estimate' + (many ? ' ' + (e.name || '') : '') },
-          { id: 'pdf', label: '↓ PDF', target: e.id, label2: 'Download the estimate PDF' + (many ? ' for ' + (e.name || 'Untitled') : '') },
-        ],
+        actions,
       });
       docs.push({
         name: 'Cost Breakdown' + (many ? ' — ' + esc(e.name || 'Untitled') : ''),
@@ -299,10 +333,14 @@ const ProjectFolder = (() => {
       } else {
         meta = esc(INVOICE_STATUS[inv.status] || inv.status) +
           (inv.status === 'paid' && inv.paidAt ? ' ' + when(inv.paidAt) : '') +
-          (inv.status === 'sent' && inv.dueAt ? ' · due ' + when(inv.dueAt) : '') +
+          ((inv.status === 'sent' || inv.status === 'scheduled') && inv.dueAt ? ' · due ' + when(inv.dueAt) : '') +
           (inv.replacesId ? ' · replaces ' + esc(numberOf(inv.replacesId)) : '');
       }
       const actions = [{ id: 'invoice', label: 'Open', target: inv.id, label2: 'Open ' + label }];
+      if (!legacy && inv.status === 'draft') actions.push({ id: 'send-invoice', label: 'Send…', target: inv.id, label2: 'Send ' + label });
+      if (!legacy && inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status)) {
+        actions.push({ id: 'copy-invoice', label: 'Copy link', target: inv.id, label2: 'Copy the client link to ' + label });
+      }
       // An old invoice prints from the estimate row it was made from, as it always did.
       if (legacy && inv.estimateId) actions.push({ id: 'legacy-pdf', label: '↓ PDF', target: inv.estimateId, label2: 'Download ' + label + ' PDF' });
       if (!legacy) actions.push({ id: 'inv-pdf', label: '↓ PDF', target: inv.id, label2: 'Download ' + label + ' PDF' });
@@ -313,6 +351,7 @@ const ProjectFolder = (() => {
         name: esc(INVOICE_KIND[inv.kind] || 'Invoice') + (inv.number ? ' <span class="pf-doc-num">' + esc(inv.number) + '</span>' : ''),
         meta,
         amount: inv.status === 'void' ? '<s>' + fmt(inv.amountDue) + '</s>' : fmt(inv.amountDue),
+        status: legacy ? '' : SendPanel.statusMarkup(inv.send, label),
         actions,
         void: inv.status === 'void',
       });
@@ -338,7 +377,7 @@ const ProjectFolder = (() => {
   function activityMarkup(today) {
     const head = '<div class="pf-section-head"><h2 class="pf-h2" id="pf-activity-h">Activity</h2></div>';
     if (!folder.activity.length) {
-      return head + '<p class="pf-empty">Nothing recorded yet. Marking it sent or accepted, declining and reopening show here.</p>';
+      return head + '<p class="pf-empty">Nothing recorded yet. Sending, the client opening and accepting, and your own changes show here.</p>';
     }
     return head + '<ol class="pf-activity">' + folder.activity.map((a) =>
       '<li><span class="pf-act-when">' + esc(whenText(a.at, today)) + '</span>' +
@@ -364,6 +403,10 @@ const ProjectFolder = (() => {
       '</div></div>';
     document.title = (project.upid ? project.upid + ' · ' : '') + (project.name || 'Project') + ' — LSC Billing';
     bind();
+    clearTimeout(following);
+    following = SendPanel.follow(folder.estimates.map((e) => e.send).concat(folder.invoices.map((i) => i.send)),
+      (n) => { tries = n; refresh(true); }, tries);
+    tries = 0;
   }
 
   function bind() {
@@ -372,6 +415,12 @@ const ProjectFolder = (() => {
     if (fix) fix.addEventListener('click', () => LSCRouter.go('/setup/upids'));
     root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
     root.querySelectorAll('[data-doc]').forEach((b) => b.addEventListener('click', () => runDoc(b.dataset.doc, b.dataset.id, b)));
+    SendPanel.bindStatus(root, {
+      edit: (sendId, b) => openEditSend(sendId, b),
+      changed: () => refresh(),
+      authLost: () => handlers.onAuthLost({ keepScreen: true }),
+      error: (message) => showDocError(message),
+    });
     root.querySelectorAll('.pf-day').forEach((b) => b.addEventListener('click', () => {
       const estimate = folder.estimates.find((e) => e.id === b.dataset.estimate);
       if (estimate) openEstimate(estimate, false, { focusDay: b.dataset.day });
@@ -462,7 +511,7 @@ const ProjectFolder = (() => {
     const estimate = lead();
     if (id === 'edit' && estimate) return openEstimate(estimate, false);
     if (id === 'view' && estimate) return openEstimate(estimate, true);
-    if (id === 'sent') return openMarkSent(button);
+    if (id === 'send') return openSendEstimate(button);
     if (id === 'accept' || id === 'invoices') return openAccept(button, id);
     if (id === 'decline') return openConfirm(button, {
       title: 'Decline this project?',
@@ -679,47 +728,115 @@ const ProjectFolder = (() => {
     });
   }
 
-  /* Mark sent (Stage D): the owner emailed the PDF themselves, and records
-     it here with the date it's valid until (D44, Settings' valid-for days). */
-  function openMarkSent(opener) {
-    const today = LSCUtil.today();
-    const stage = folder.project.stage;
-    const until = C.addDays(today, validDays());
-    openDialog(opener, {
-      title: stage === 'sent' ? 'Mark sent again' : 'Mark sent',
-      body:
-        '<p class="pfd-text" id="pfd-desc">Download the estimate’s PDF and email it to the client, then record it ' +
-        'here. Sending from the app comes later.</p>' +
-        '<p class="pfd-pdf"><button type="button" class="btn btn-ghost btn-sm" id="pfd-pdf">' +
-        '<span class="spinner"></span>↓ Estimate PDF</button></p>' +
-        '<div class="field"><label for="pfd-until">Valid until</label>' +
-        '<input id="pfd-until" type="date" value="' + esc(until) + '" min="' + esc(today) + '" aria-describedby="pfd-until-hint">' +
-        '<p class="pfd-hint" id="pfd-until-hint">After this date the estimate reads as expired.</p></div>',
-      describe: true,
-      confirm: 'Mark sent',
-      focus: 'pfd-until',
-      onOpen: (q) => {
-        const pdf = q('pfd-pdf');
-        pdf.addEventListener('click', () => {
-          const estimate = lead();
-          if (estimate) download('pdf', estimate.id, pdf, (msg) => { q('pfd-error').textContent = msg; });
-        });
+  // ── Sending (task 29) ───────────────────────────────────────────────────
+
+  const contactOf = () => {
+    const c = (lead() && lead().client) || {};
+    return { email: String(c.email || '').trim(), name: c.contactName || c.businessName || 'the client' };
+  };
+
+  /* The estimate's panel: v(N+1) of the lead, valid from the day it goes
+     (D44, Settings' valid-for days). */
+  function openSendEstimate(opener) {
+    const estimate = lead();
+    if (!estimate || busy) return;
+    const project = folder.project;
+    const v = nextVersion(estimate);
+    const who = contactOf();
+    SendPanel.open(opener, {
+      docKind: 'estimate',
+      title: 'Send v' + v,
+      intro: 'Emails ' + who.name + ' a link to v' + v + ' of the estimate, where they can read it and accept. ' +
+        (v > 1 ? 'The link stays the same and now shows v' + v + '; v' + (v - 1) + ' is kept here, marked superseded. ' : '') +
+        'Edits after this need another send.',
+      to: who.email,
+      message: LSCDocuments.docSettings(LSCData.settings()).messages.estimate,
+      date: {
+        key: 'validUntil',
+        label: 'Valid until',
+        days: validDays(),
+        hint: (day, value) => (C.isDate(value) ? 'Reads as expired after ' + C.shortDate(value) + '.' : ''),
       },
-      run: async (b) => {
-        const field = dlg.overlay.querySelector('#pfd-until');
-        const value = field.value;
-        if (!C.isDate(value)) {
-          field.focus();
-          throw new Error('Choose the date it’s valid until.');
-        }
-        if (value < today) {
-          field.focus();
-          throw new Error('Valid until can’t be before today.');
-        }
-        return post('sent', { validUntil: value }, b, 'Saving…',
-          'Marked sent, valid until ' + ProjectCard.dayMonth(value, today) + '.');
+      linkHint: 'Makes v' + v + ' live without an email, to send your own way.',
+      send: (body) => LSCApi.post('/api/projects/' + encodeURIComponent(project.id) + '/send?today=' + LSCUtil.today(), body),
+      tokenOf: (reply) => reply.sent.token,
+      done: (reply, how) => {
+        landReply(project.id, reply);
+        const send = reply.estimates.find((e) => e.id === reply.sent.estimateId);
+        const queued = send && send.send;
+        if (how === 'link') return 'v' + reply.sent.version + ' is live.';
+        return queued && queued.status === 'scheduled' && Date.parse(queued.scheduledFor) > Date.now() + 60000
+          ? 'v' + reply.sent.version + ' made. The email goes ' + SendPanel.whenText(queued.scheduledFor) + '.'
+          : 'v' + reply.sent.version + ' made. Sending the email now.';
       },
     });
+  }
+
+  /* An invoice's panel, from its row: due a number of days after it goes. */
+  function openSendInvoice(inv, opener) {
+    if (!inv || busy) return;
+    InvoiceView.openSend(opener, inv, {
+      to: contactOf().email,
+      name: contactOf().name,
+      done: () => refresh(),
+    });
+  }
+
+  /* A row's "Change": the scheduled email of an estimate or an invoice. */
+  function openEditSend(sendId, opener) {
+    const e = folder.estimates.find((x) => x.send && x.send.id === sendId);
+    const inv = folder.invoices.find((x) => x.send && x.send.id === sendId);
+    const send = (e || inv || {}).send;
+    if (!send) return;
+    const live = e ? (e.versions || []).filter((v) => !v.supersededAt).pop() : null;
+    SendPanel.open(opener, {
+      docKind: e ? 'estimate' : 'invoice',
+      edit: send,
+      date: e
+        ? { key: 'validUntil', label: 'Valid until', fixed: true, value: live && live.validUntil, fixedNote: '(set when v' + (live ? live.n : '') + ' was made)' }
+        : { key: 'dueAt', label: 'Due', days: 0, value: inv.dueAt, hint: (day, value) => (C.isDate(value) ? 'Issued ' + C.shortDate(day) + ', due ' + C.shortDate(value) + '.' : '') },
+      save: (patch) => LSCApi.put('/api/sends/' + encodeURIComponent(sendId), patch),
+      done: () => refresh(),
+    });
+  }
+
+  /* A reply that is the folder, on screen if it's still this project. */
+  function landReply(id, reply) {
+    if (!onScreen() || !folder || folder.project.id !== id) return;
+    folder = reply;
+    draw();
+    const again = root.querySelector('[data-act]');
+    if (again) again.focus();
+  }
+
+  /* The folder again, without the Loading screen: after a send changed
+     somewhere the reply didn't cover (an invoice, the queue). Focus goes back
+     to the first action, as after any action. */
+  async function refresh(quiet) {
+    if (!folder) return;
+    const id = folder.project.id;
+    try {
+      const reply = await LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today());
+      if (quiet) {
+        // A follow-up look: redraw without moving focus, and only when
+        // nothing is open over the screen.
+        if (!onScreen() || !folder || folder.project.id !== id || busy) return;
+        const keep = document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-act],[data-doc]');
+        const key = keep ? (keep.dataset.act ? '[data-act="' + keep.dataset.act + '"]' : '[data-doc="' + keep.dataset.doc + '"][data-id="' + keep.dataset.id + '"]') : null;
+        folder = reply;
+        draw();
+        const back = key && root.querySelector(key);
+        if (back) back.focus();
+        return;
+      }
+      landReply(id, reply);
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      if (err.status === 404) return showMissing();
+      showDocError('Couldn’t refresh the folder: ' + failureText(err));
+    }
+    return undefined;
   }
 
   /* Mark accepted (Stage D's stand-in for E's signing, IA flow 4), or Create
@@ -814,6 +931,16 @@ const ProjectFolder = (() => {
 
   async function runDoc(kind, id, button) {
     if (kind === 'invoice') return openInvoice(id);
+    if (kind === 'send') return openSendEstimate(button);
+    if (kind === 'send-invoice') return openSendInvoice(folder.invoices.find((i) => i.id === id), button);
+    if (kind === 'copy') {
+      const e = folder.estimates.find((x) => x.id === id);
+      return e && e.publicToken ? SendPanel.copyLink('estimate', e.publicToken, button) : undefined;
+    }
+    if (kind === 'copy-invoice') {
+      const inv = folder.invoices.find((x) => x.id === id);
+      return inv && inv.publicToken ? SendPanel.copyLink('invoice', inv.publicToken, button) : undefined;
+    }
     const estimate = folder.estimates.find((e) => e.id === id);
     if (kind === 'view' && estimate) return openEstimate(estimate, true);
     if (kind === 'edit' && estimate) return openEstimate(estimate, false);
@@ -947,6 +1074,7 @@ const ProjectFolder = (() => {
     /* The router's way in, with the project id. */
     show(id) {
       closeDialog(false);
+      SendPanel.close(false);
       load(id);
       return true;
     },

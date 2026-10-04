@@ -119,10 +119,26 @@ const ProjectCard = (() => {
   /* One activity row in words ("INV-AUD-B-D paid, $2,000.00 by bank
      transfer"): the folder's log and Home's Recent activity (task 22) both
      print this, so the two can't word an event differently. */
+  /* "8 Oct, 9:00 am": when a scheduled email goes, on this browser's clock. */
+  function dayTime(value, today) {
+    const t = new Date(value);
+    if (!Number.isFinite(t.getTime())) return '';
+    return dayMonth(value, today) + ', ' + t.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+  }
+
   function activityText(entry, today) {
     const d = entry.detail || {};
     switch (entry.kind) {
-      case 'sent': return 'Marked sent' + (C.isDate(d.validUntil) ? ', valid until ' + dayMonth(d.validUntil, today) : '');
+      case 'sent': {
+        // How it went (task 29): emailed now or later, or its link copied.
+        // A row from before (Mark sent) has no `by`.
+        const v = d.version ? 'v' + d.version : 'the estimate';
+        const until = C.isDate(d.validUntil) ? ', valid until ' + dayMonth(d.validUntil, today) : '';
+        if (d.by === 'email' && d.scheduledFor) return 'Scheduled ' + v + ' to email ' + dayTime(d.scheduledFor, today) + until;
+        if (d.by === 'email') return 'Sent ' + v + ' by email' + (d.to ? ' to ' + d.to : '') + until;
+        if (d.by === 'link') return 'Sent ' + v + ' by link' + until;
+        return 'Marked sent' + until;
+      }
       case 'opened': return 'Client opened the estimate' + (d.version > 1 ? ' (v' + d.version + ')' : '');
       case 'accepted': return 'Marked accepted' + invoicesText(d);
       case 'signed': return 'Client signed and accepted' + (d.version > 1 ? ' v' + d.version : '') +
@@ -131,7 +147,9 @@ const ProjectCard = (() => {
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';
-      case 'invoice_sent': return (d.number || 'Invoice') + ' marked sent' + (C.isDate(d.dueAt) ? ', due ' + dayMonth(d.dueAt, today) : '');
+      case 'invoice_sent': return (d.number || 'Invoice') +
+        (d.by === 'email' ? ' emailed' + (d.late ? ' late' : '') : d.by === 'link' ? ' sent by link' : ' marked sent') +
+        (C.isDate(d.dueAt) ? ', due ' + dayMonth(d.dueAt, today) : '');
       case 'invoice_paid': return (d.number || 'Invoice') + ' paid' + (typeof d.amount === 'number' ? ', ' + fmt(d.amount) : '') +
         (d.via === 'card' ? ' by card' : d.via === 'bank' ? ' by bank transfer' : '');
       case 'invoice_voided': return (d.number || 'Invoice') + ' voided' + (d.reason ? ': ' + d.reason : '') +

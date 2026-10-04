@@ -3,7 +3,13 @@
 /**
  * Email's owner routes (production-booking task 28): Settings → Email's status
  * and test, and the send queue's edit / cancel / retry that task 29's panel
- * calls. Creating a send belongs to that panel (it freezes the version).
+ * calls. Creating a send is the document's own route (POST
+ * /api/projects/:id/send, /api/invoices/:id/send), because it changes the
+ * document in the same transaction.
+ *
+ *   PUT  /api/sends/:id         { scheduledFor?, message?, to?, dueAt? } while scheduled
+ *   POST /api/sends/:id/cancel  a scheduled or failed send; an invoice waiting on it is a draft again
+ *   POST /api/sends/:id/retry   a failed send, now
  *
  * Never returns the SMTP key, or anything it could be read from.
  */
@@ -11,7 +17,7 @@
 const { config } = require('../config');
 const { readSettings } = require('../ratecard');
 const { isEmail, testEmail } = require('../mail');
-const { editSend, cancelSend, retrySend, getSend, sendsFor } = require('../sends');
+const { editSend, cancelSend, retrySend, getSend, sendsFor, sendJson } = require('../sends');
 const { nowIso } = require('../db');
 
 const isIso = (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) && /^\d{4}-\d{2}-\d{2}T/.test(v);
@@ -69,10 +75,7 @@ function registerSendRoutes(app, db, { outbox }) {
     }
     return found;
   };
-  const shown = (s) => ({
-    id: s.id, docKind: s.doc_kind, docId: s.doc_id, purpose: s.purpose, to: s.to_email, message: s.message,
-    scheduledFor: s.scheduled_for, status: s.status, sentAt: s.sent_at, late: Boolean(s.late), error: s.error,
-  });
+  const shown = sendJson;
   const refuse = (res, err) => {
     if (err.status) return res.status(err.status).json({ error: err.code || 'refused', message: err.message });
     throw err;
@@ -100,6 +103,8 @@ function registerSendRoutes(app, db, { outbox }) {
       if (!isEmail(b.to)) return res.status(400).json({ error: 'bad_recipient', message: 'That email address isn’t valid.' });
       patch.toEmail = b.to;
     }
+    // An invoice's due date (its issue date follows the send's time).
+    if (b.dueAt !== undefined) patch.dueAt = b.dueAt;
     try {
       const out = editSend(db, req.params.id, patch, nowIso());
       outbox.kick();

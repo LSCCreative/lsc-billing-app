@@ -11,6 +11,7 @@ const { amountDue } = require('../invoices');
 const { docSettings } = require('../documents');
 const { freezeVersion, versionsOf, signatureRow, signaturePdf } = require('../public');
 const { agreementFilename } = require('../pdf');
+const { sendRequest, pendingFor, latestFor, cancelPending, addSend, sydneyDate } = require('../sends');
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -171,6 +172,9 @@ function readFolder(db, id, today) {
   const rows = db.prepare('SELECT * FROM estimates WHERE project_id = ?').all(id);
   const flags = rebookFlags(db, rows.map((r) => r.id));
   const sent = versionsOf(db, rows.map((r) => r.id));
+  // Each document's newest email (task 29): the rows' "Scheduled Tue 9:00".
+  const estimateSends = latestFor(db, 'estimate', rows.map((r) => r.id));
+  const invoiceSends = latestFor(db, 'invoice', bills.map((i) => i.id));
   const estimates = rows
     .map((row) => {
       const estimate = loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
@@ -178,6 +182,7 @@ function readFolder(db, id, today) {
       // Owner-only: the client's link (stage E) and what was sent of this one.
       estimate.publicToken = row.public_token || null;
       estimate.versions = sent.get(row.id) || [];
+      estimate.send = estimateSends.get(row.id) || null;
       estimate.days.forEach((d) => {
         if (flags.has(d.id)) d.rebook = flags.get(d.id);
       });
@@ -206,6 +211,9 @@ function readFolder(db, id, today) {
       voidReason: i.void_reason || null,
       replacesId: i.replaces_id || null,
       lessInvoiceId: i.less_invoice_id || null,
+      // Its client page (task 30), made the first time it's sent, and its newest email.
+      publicToken: i.public_token || null,
+      send: invoiceSends.get(i.id) || null,
       createdAt: i.created_at,
       updatedAt: i.updated_at,
     })),
@@ -457,6 +465,8 @@ function confirmDays(db, estimateId, ownIds, now) {
  */
 function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
   db.prepare("UPDATE estimates SET status = 'accepted' WHERE id = ?").run(lead);
+  // An estimate email still waiting would ask the client to accept again.
+  cancelPending(db, 'estimate', ownIds, now);
   const rebook = confirmDays(db, lead, ownIds, now);
   const made = choice ? createInvoices(db, p, lead, choice, now, opts.frozen) : [];
   db.prepare(`
@@ -507,11 +517,21 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
  * now stands, so the screen redraws from one reply, and each logs an
  * `activity` row.
  *
- *   POST /sent     { validUntil } — Mark sent, Stage D's stand-in for sending
- *                  (E replaces it). The lead estimate becomes `sent`, and the
+ *   POST /sent     { validUntil } — Mark sent, Stage D's stand-in for sending.
+ *                  The app now sends through /send; this stays for the tests
+ *                  that freeze a version directly. The lead estimate becomes `sent`, and the
  *                  `sent` row's detail carries validUntil, which the stage line
  *                  reads ("valid until", "expired", D44). No version: nothing
  *                  is frozen until E (D34). Refused once declined or accepted.
+ *   POST /send     { by: 'email', to, message?, scheduledFor?, validUntil }
+ *                  or { by: 'link', validUntil } — the send panel (task 29,
+ *                  D43). The lead estimate becomes `sent` and is frozen as its
+ *                  next version (D34), valid from the day it goes; `email`
+ *                  queues the link to the client (sends.js), now or at
+ *                  scheduledFor; `link` is "Copy link", for sending another
+ *                  way. Refused while an email of it is still waiting, and
+ *                  with `not_configured` when email isn't set up. The reply's
+ *                  `sent` names the version and its link's token.
  *   POST /decline  The owner's no-go (D22): every estimate becomes declined,
  *                  so its days leave the calendars and lock nothing. Refused
  *                  once an invoice exists; a second decline changes nothing.
@@ -713,6 +733,62 @@ function registerProjectRoutes(app, db) {
     return folderReply(req, res);
   });
 
+  app.post('/api/projects/:id/send', (req, res) => {
+    const p = projectFor(req, res);
+    if (!p) return undefined;
+    const today = todayOf(req);
+    if (!today) return res.status(400).json({ error: 'today_invalid' });
+    const now = nowIso();
+    const ask = sendRequest(req.body, now);
+    if (ask.error) return res.status(400).json(ask);
+    if (ask.by === 'email' && !(app.locals.mailer && app.locals.mailer.configured)) {
+      return res.status(409).json({ error: 'not_configured', message: 'Email isn’t set up yet. Copy the link and send it yourself.' });
+    }
+    // Issued, and valid from, the day it goes: today, or the scheduled day (Sydney's).
+    const sendDay = ask.later ? sydneyDate(ask.scheduledFor) : today;
+    const validUntil = (req.body || {}).validUntil;
+    if (!isYmd(validUntil) || validUntil < sendDay) {
+      return res.status(400).json({ error: 'valid_until_invalid', message: 'Valid until can’t be before the day it’s sent.' });
+    }
+    const { stage, own } = stageNow(db, p);
+    if (stage === 'declined') {
+      return res.status(409).json({ error: 'project_declined', message: 'This project was declined. Reopen it first.' });
+    }
+    if (stage !== 'draft' && stage !== 'sent') {
+      return res.status(409).json({ error: 'project_accepted', message: 'This project has been accepted, so there is nothing to send.' });
+    }
+    const lead = summarize(p, own, [], {}).estimateId;
+    if (!lead) return res.status(409).json({ error: 'no_estimate' });
+    const waiting = pendingFor(db, 'estimate', own.map((e) => e.id));
+    if (waiting) {
+      return res.status(409).json({
+        error: 'send_pending', sendId: waiting.id,
+        message: 'An email of this estimate is already waiting to go. Change or cancel it first.',
+      });
+    }
+    let made;
+    db.transaction(() => {
+      db.prepare("UPDATE estimates SET status = 'sent' WHERE id = ?").run(lead);
+      // Confirming freezes the version (D34), whenever the email goes: the
+      // email links to exactly this, and so does the link the owner copies.
+      made = freezeVersion(db, lead, { issuedOn: sendDay, validUntil, now });
+      db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(now, p.id);
+      logActivity(db, p.id, 'sent', {
+        validUntil, estimateId: lead, version: made.n, by: ask.by,
+        ...(ask.by === 'email' ? { to: ask.to } : {}),
+        ...(ask.later ? { scheduledFor: ask.scheduledFor } : {}),
+      }, now);
+      if (ask.by === 'email') {
+        addSend(db, {
+          docKind: 'estimate', docId: lead, versionId: made.versionId, toEmail: ask.to, message: ask.message,
+          scheduledFor: ask.scheduledFor,
+        }, now);
+      }
+    })();
+    if (ask.by === 'email' && !ask.later && app.locals.outbox) app.locals.outbox.kick();
+    return folderReply(req, res, { sent: { estimateId: lead, version: made.n, token: made.token } });
+  });
+
   app.post('/api/projects/:id/decline', (req, res) => {
     const p = projectFor(req, res);
     if (!p) return;
@@ -727,6 +803,7 @@ function registerProjectRoutes(app, db) {
     const now = nowIso();
     db.transaction(() => {
       db.prepare("UPDATE estimates SET status = 'declined' WHERE project_id = ?").run(p.id);
+      cancelPending(db, 'estimate', db.prepare('SELECT id FROM estimates WHERE project_id = ?').all(p.id).map((r) => r.id), now);
       db.prepare('UPDATE projects SET declined_at = ?, updated_at = ? WHERE id = ?').run(now, now, p.id);
       logActivity(db, p.id, 'declined', {}, now);
     })();
@@ -861,8 +938,15 @@ function registerProjectRoutes(app, db) {
       });
     }
     // Estimates (and through them days and rentals), invoices and activity
-    // all hang off the project, ON DELETE CASCADE.
-    db.prepare('DELETE FROM projects WHERE id = ?').run(p.id);
+    // all hang off the project, ON DELETE CASCADE. Sends name their document
+    // by id only, so they go first: a waiting one would email a deleted job.
+    db.transaction(() => {
+      db.prepare(`
+        DELETE FROM sends WHERE (doc_kind = 'estimate' AND doc_id IN (SELECT id FROM estimates WHERE project_id = ?))
+                             OR (doc_kind = 'invoice' AND doc_id IN (SELECT id FROM invoices WHERE project_id = ?))
+      `).run(p.id, p.id);
+      db.prepare('DELETE FROM projects WHERE id = ?').run(p.id);
+    })();
     return res.json({ ok: true });
   });
 }

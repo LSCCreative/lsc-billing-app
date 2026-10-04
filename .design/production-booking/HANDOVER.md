@@ -177,10 +177,20 @@ key must be placed in `server/.env` as `SMTP_PASS`** (with `MAIL_FROM=admin@lscc
 `MAIL_REPLY_TO=<the user's address>`, `APP_URL`; see `.env.example`), then Settings → Email → Send a test
 email, then tick task 28. If the dialog is gone, delete that key in Resend and make another.
 
-**Exact next item:** finish task 28 (above), then **task 29, the send panel** (Opus/high). It
-creates the sends (`sends.js addSend`, after `freezeVersion` for an estimate) and shows
-Scheduled / Sent late / Failed — retry on the document rows. Task 30 (the client invoice page)
-needs nothing from the user and can go first. The user should also try the live site once (sign
+- **E, task 29** (the send panel: `POST /api/projects/:id/send` and `/api/invoices/:id/send`,
+  `web/js/send-panel.js`, each document row's email line, Copy link). 2026-10-05, committed, **not
+  deployed** (with stage E at task 32). Its decisions are in its note in `TASKS.md`. Checked
+  against the new launch.json **`api-scratch-mail`** (the scratch API with a mailer that prints
+  each email). The scratch DB was empty apart from `dev`; it now holds SEND-A (estimate sent up to
+  v4) and SEND-B (accepted 40%, both invoices emailed). A backup from before is in this session's
+  scratchpad only.
+
+**Exact next item:** **task 30, the client invoice page** (Opus/high): `GET
+/public/invoices/:token[/pdf]` and `c/#i/<token>`. Invoice links already exist (task 29 makes
+the token when an invoice is first sent, and Copy link / the email point at `c/#i/<token>`, which
+reads "couldn't find" until 30 lands). Its serializer must refuse a `draft` invoice (a cancelled
+send leaves its token on a draft) and never send `invoiceJson` whole. Task 28 still needs the
+Resend key (above) before it can be ticked. The user should also try the live site once (sign
 in, open a project).
 
 **Seams left for later tasks:**
@@ -214,15 +224,17 @@ in, open a project).
   client PDF's fields, never send it whole.
 - **Stage E's client events** (opened since task 26, signed since 27) are in `HOME_KINDS`
   (`routes/projects.js`) and `ProjectCard.activityText`; a new one needs both.
-- **Stage E's send panel** replaces both Mark sents (estimate and invoice). An invoice's public page
-  prints through `pdf.js` `buildInvoiceDocHtml`'s fields, never `invoiceJson` whole (its `estimate`
-  is the owner-only snapshot).
+- **An invoice's public page** prints through `pdf.js` `buildInvoiceDocHtml`'s fields, never
+  `invoiceJson` whole (its `estimate` is the owner-only snapshot).
+- **Activity says what the owner confirmed, not what the queue did** (task 29): `sent` is logged on
+  Confirm ("Scheduled v1 to email …"), and a later change or cancel of that email isn't logged; the
+  row's email line is the truth. An invoice's `invoice_sent` is logged when its email actually goes.
 - **Delete (task 18)** is refused while a non-legacy invoice is scheduled, sent or paid, and so is
   deleting that project's billed or last estimate in the editor (task 19). Voiding (task 20) leaves
   a draft replacement, so a project whose only sent invoice is voided can be deleted again.
 - **A paid invoice can't be un-marked** (D100: corrected by a credit note, not built).
-- **Sends:** Mark sent now freezes a version (task 25) and logs `sent` with `version`. Task 29's send
-  panel should call the same `freezeVersion` inside its transaction.
+- **Sends:** `freezeVersion` is called by Confirm / Copy link (`POST /send`) inside its transaction.
+  Stage D's `POST …/sent` routes still exist for tests; nothing in the app calls them.
 
 **For review at task 8 (Cost Breakdown); settled 2026-10-02, the user approved the sample:** how attribution splits money between surcharges is an
 implementation choice, not a user decision. For example, under "multiply", after hours is charged

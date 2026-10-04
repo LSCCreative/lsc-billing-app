@@ -23,9 +23,12 @@
  * live card (LSCCalc.lineSnapshot), as an estimate line is, so a later Rate
  * Card change can't move them.
  *
- * STAGE D'S STAND-INS, as on the folder: "Mark sent" records an invoice the
- * owner emailed themselves (E's send panel replaces it), and "Mark paid" a
- * payment that came in (E's card payments mark their own).
+ * SENDING (task 29): "Send…" opens the send panel (SendPanel, D43), which
+ * emails the client a link now or later, or marks it sent for Copy link.
+ * While its email waits it is `scheduled` (dates set, nothing editable), and
+ * the line under its status says when it goes, with Change and Cancel email
+ * (D47); cancelling makes it a draft again. "Mark paid" records a payment
+ * that came in (card payments, held at D101, would mark their own).
  *
  * CORRECTING ONE (D100): a draft edits in place; a sent, unpaid one is voided
  * with a reason and a draft replacement made, which this screen then opens;
@@ -52,6 +55,8 @@ const InvoiceView = (() => {
   let lines = []; // the Extras as on screen (a final or single draft)
   let savedLines = '[]'; // what the server last stored, to tell unsaved edits
   let busy = false;
+  let following = null; // the follow-up look while its email goes (SendPanel.follow)
+  let tries = 0;
 
   const $ = (id) => root.querySelector('#' + id);
   const onScreen = () => Boolean(root && root.querySelector('#invoice-screen'));
@@ -118,11 +123,13 @@ const InvoiceView = (() => {
     if (s === 'paid') note = inv.paidAt ? when(inv.paidAt) + (inv.paidVia ? ', by ' + VIA_WORD[inv.paidVia] : '') : '';
     else if (s === 'void') note = inv.voidedAt ? 'since ' + when(inv.voidedAt) : '';
     else if (s === 'sent' && inv.dueAt) note = (inv.dueAt < today() ? 'overdue, was due ' : 'due ') + when(inv.dueAt);
-    else if (s === 'draft' && inv.kind === 'final') note = 'add any extras, then mark it sent';
+    else if (s === 'scheduled' && inv.dueAt) note = 'due ' + when(inv.dueAt);
+    else if (s === 'draft' && inv.kind === 'final') note = 'add any extras, then send it';
     const overdue = s === 'sent' && inv.dueAt && inv.dueAt < today();
     const word = inv.kind === 'legacy' ? (s === 'paid' ? 'Paid' : 'Made the old way') : STATUS_WORD[s] || s;
     return '<p class="inv-status"><span class="inv-pill is-' + esc(overdue ? 'overdue' : s) + '">' + esc(word) + '</span>' +
-      (note ? '<span class="inv-status-note">' + esc(note) + '</span>' : '') + '</p>';
+      (note ? '<span class="inv-status-note">' + esc(note) + '</span>' : '') + '</p>' +
+      (inv.kind === 'legacy' ? '' : SendPanel.statusMarkup(inv.send, inv.number || 'this invoice'));
   }
 
   function headMarkup(inv, project, totals) {
@@ -160,8 +167,9 @@ const InvoiceView = (() => {
       if (inv.estimateId) main.push({ id: 'legacy-pdf', label: '↓ PDF' });
       return { main, quiet };
     }
-    if (inv.status === 'draft') main.push({ id: 'sent', label: 'Mark sent…', primary: true });
+    if (inv.status === 'draft') main.push({ id: 'send', label: 'Send…', primary: true });
     if (inv.status === 'sent' || inv.status === 'scheduled') main.push({ id: 'paid', label: 'Mark paid…', primary: true });
+    if (inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status)) main.push({ id: 'copy', label: 'Copy link' });
     main.push({ id: 'pdf', label: '↓ PDF' });
     if (inv.status !== 'void') main.push({ id: 'breakdown', label: '↓ Cost Breakdown' });
     if (inv.status === 'draft') quiet.push({ id: 'paid', label: 'Mark paid…' });
@@ -172,7 +180,7 @@ const InvoiceView = (() => {
   function actionsMarkup(inv) {
     const { main, quiet } = actionsFor(inv);
     const btn = (a, cls) =>
-      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '"' + (a.id === 'pdf' || a.id === 'breakdown' || a.id === 'legacy-pdf' ? '' : ' data-write') + '>' +
+      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '"' + (a.id === 'pdf' || a.id === 'breakdown' || a.id === 'legacy-pdf' || a.id === 'copy' ? '' : ' data-write') + '>' +
       '<span class="spinner"></span>' + esc(a.label) + '</button>';
     return (
       '<div class="pf-actions">' +
@@ -423,6 +431,9 @@ const InvoiceView = (() => {
     document.title = (inv.number || 'Invoice') + ' · ' + (project.name || 'Project') + ' — LSC Billing';
     bind();
     paintSave();
+    clearTimeout(following);
+    following = SendPanel.follow([data.invoice.send], (n) => { tries = n; refresh(); }, tries);
+    tries = 0;
   }
 
   function bind() {
@@ -438,6 +449,13 @@ const InvoiceView = (() => {
       $('inv-pct').addEventListener('input', (e) => { $('inv-pct-hint').innerHTML = pctHint(data.invoice, e.target.value); });
     }
     if (data.invoice.editable && data.invoice.kind !== 'deposit') bindExtras();
+    SendPanel.bindStatus(root, {
+      edit: (sendId, b) => openEditSend(b),
+      changed: () => refresh(),
+      cancelled: data.invoice.status === 'scheduled' ? 'It’s a draft again.' : '',
+      authLost: () => handlers.onAuthLost({ keepScreen: true }),
+      error: (message) => showError(message),
+    });
   }
 
   /* ── Editing the extras ───────────────────────────────────────────────── */
@@ -666,60 +684,112 @@ const InvoiceView = (() => {
   function runAction(id, button) {
     if (busy) return undefined;
     if (id === 'pdf' || id === 'breakdown' || id === 'legacy-pdf') return download(id, button);
-    if (dirty() && (id === 'sent' || id === 'paid' || id === 'void')) {
+    if (id === 'copy') return SendPanel.copyLink('invoice', data.invoice.publicToken, button);
+    if (dirty() && (id === 'send' || id === 'paid' || id === 'void')) {
       showError('Save or undo the extras first: the invoice goes out as it is saved.');
       const save = $('inv-save');
       if (save) save.focus();
       return undefined;
     }
-    if (id === 'sent') return openMarkSent(button);
+    if (id === 'send') return openSendHere(button);
     if (id === 'paid') return openMarkPaid(button);
     if (id === 'void') return openVoid(button);
     return undefined;
   }
 
-  /* Mark sent (Stage D): the owner emails the PDF, then records it here with
-     its issue and due dates. The PDF button prints the dates in the dialog. */
-  function openMarkSent(opener) {
-    const inv = data.invoice;
-    const issued = today();
-    const due = C.addDays(issued, dueDays());
-    ProjectFolder.dialog(opener, {
-      title: 'Mark ' + (inv.number || 'invoice') + ' sent',
-      body:
-        '<p class="pfd-text" id="pfd-desc">Download the PDF and email it to the client, then record it here. ' +
-        'Once sent it can’t be edited: to correct it, void it and make a replacement.</p>' +
-        '<p class="pfd-pdf"><button type="button" class="btn btn-ghost btn-sm" id="pfd-pdf">' +
-        '<span class="spinner"></span>↓ Invoice PDF</button></p>' +
-        '<div class="pfd-dates">' +
-        '<div class="field"><label for="pfd-issued">Issued</label><input id="pfd-issued" type="date" value="' + issued + '" aria-describedby="pfd-dates-hint"></div>' +
-        '<div class="field"><label for="pfd-due">Due</label><input id="pfd-due" type="date" value="' + due + '" min="' + issued + '" aria-describedby="pfd-dates-hint"></div>' +
-        '</div><p class="pfd-hint" id="pfd-dates-hint">The PDF prints these dates.</p>',
-      describe: true,
-      confirm: 'Mark sent',
-      focus: 'pfd-issued',
-      onOpen: (q) => {
-        const issuedField = q('pfd-issued');
-        const dueField = q('pfd-due');
-        let dueTouched = false;
-        dueField.addEventListener('input', () => { dueTouched = true; });
-        issuedField.addEventListener('input', () => {
-          if (!C.isDate(issuedField.value)) return;
-          dueField.min = issuedField.value;
-          if (!dueTouched) dueField.value = C.addDays(issuedField.value, dueDays());
-        });
-        const pdf = q('pfd-pdf');
-        pdf.addEventListener('click', () => download('pdf', pdf, { issuedAt: issuedField.value, dueAt: dueField.value },
-          (msg) => { q('pfd-error').textContent = msg; }));
+  // ── Sending (task 29) ───────────────────────────────────────────────────
+
+  const KIND_WORD = { deposit: 'deposit invoice', final: 'final invoice', single: 'invoice' };
+
+  /**
+   * The send panel for an invoice: this screen's Send…, and a folder row's.
+   * `o`: { to, name } the client's email and name, done(reply, how) redraws.
+   */
+  function openSend(opener, inv, o) {
+    const word = KIND_WORD[inv.kind] || 'invoice';
+    const messages = LSCDocuments.docSettings(LSCData.settings()).messages;
+    SendPanel.open(opener, {
+      docKind: 'invoice',
+      title: 'Send ' + (inv.number || 'the ' + word),
+      intro: 'Emails ' + o.name + ' a link to the ' + word + ', with the amount due and how to pay. ' +
+        'Once it has gone it can’t be edited: to correct it, void it and make a replacement.',
+      to: o.to,
+      message: messages[inv.kind] || messages.single,
+      date: {
+        key: 'dueAt',
+        label: 'Due',
+        days: dueDays(),
+        hint: (day, value) => (C.isDate(value) ? 'Issued ' + C.shortDate(day) + ', due ' + C.shortDate(value) + '.' : ''),
       },
-      run: async (b) => {
-        const issuedAt = dlgValue('pfd-issued');
-        const dueAt = dlgValue('pfd-due');
-        if (!C.isDate(issuedAt)) throw fieldError('pfd-issued', 'Choose the date it was issued.');
-        if (!C.isDate(dueAt) || dueAt < issuedAt) throw fieldError('pfd-due', 'The due date can’t be before the issue date.');
-        return write('sent', { issuedAt, dueAt }, b, 'Saving…', 'Marked sent, due ' + when(dueAt) + '.');
+      linkHint: 'Marks it sent now without an email, to send your own way.',
+      send: (body) => LSCApi.post('/api/invoices/' + encodeURIComponent(inv.id) + '/send?today=' + today(), body),
+      tokenOf: (reply) => reply.invoice.publicToken,
+      done: (reply, how) => {
+        o.done(reply, how);
+        const send = reply.invoice.send;
+        if (how === 'link') return (inv.number || 'The invoice') + ' is marked sent.';
+        return send && send.status === 'scheduled' && Date.parse(send.scheduledFor) > Date.now() + 60000
+          ? 'Scheduled. The email goes ' + SendPanel.whenText(send.scheduledFor) + '.'
+          : 'Sending the email now.';
       },
     });
+  }
+
+  const clientOf = () => {
+    const c = (data.invoice.estimate && data.invoice.estimate.client) || (data.project && data.project.client) || {};
+    return { to: String(c.email || '').trim(), name: c.contactName || c.businessName || 'the client' };
+  };
+
+  function openSendHere(opener) {
+    const id = data.invoice.id;
+    openSend(opener, data.invoice, Object.assign(clientOf(), {
+      done: (reply) => {
+        if (!onScreen() || data.invoice.id !== id) return;
+        accept(reply);
+        draw();
+        const again = root.querySelector('[data-act]');
+        if (again) again.focus();
+      },
+    }));
+  }
+
+  /* The status line's Change: the scheduled email's time, recipient, due date
+     and message. */
+  function openEditSend(opener) {
+    const inv = data.invoice;
+    if (!inv.send) return;
+    SendPanel.open(opener, {
+      docKind: 'invoice',
+      edit: inv.send,
+      date: {
+        key: 'dueAt', label: 'Due', days: 0, value: inv.dueAt,
+        hint: (day, value) => (C.isDate(value) ? 'Issued ' + C.shortDate(day) + ', due ' + C.shortDate(value) + '.' : ''),
+      },
+      save: (patch) => LSCApi.put('/api/sends/' + encodeURIComponent(inv.send.id), patch),
+      done: () => refresh(),
+    });
+  }
+
+  /* The invoice again, without the Loading screen (after the queue moved). */
+  async function refresh() {
+    if (!data) return;
+    const id = data.invoice.id;
+    try {
+      const reply = await LSCApi.get('/api/invoices/' + encodeURIComponent(id) + '?today=' + today());
+      if (!onScreen() || data.invoice.id !== id) return;
+      if (dirty()) {
+        // Unsaved extras stay as typed; only the head and status move.
+        const keep = lines;
+        accept(reply);
+        lines = keep;
+      } else {
+        accept(reply);
+      }
+      draw();
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (!handled(err)) showError('Couldn’t refresh the invoice: ' + failureText(err));
+    }
   }
 
   function openMarkPaid(opener) {
@@ -936,10 +1006,12 @@ const InvoiceView = (() => {
       const [invoiceId, extra] = rest;
       if (invoiceId === undefined || extra !== undefined) return false;
       ProjectFolder.closeDialog(false);
+      SendPanel.close(false);
       load(projectId, invoiceId, state);
       return true;
     },
 
     pathOf,
+    openSend,
   };
 })();

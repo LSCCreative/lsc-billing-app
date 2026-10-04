@@ -919,7 +919,7 @@ Tasks 24–26 can be built with placeholders.
   - **Tests never reach a real mailer:** `createApp` uses an unconfigured one under `NODE_ENV=test`
     whatever `.env` holds.
 
-- [ ] **29. The send panel** (frontend — Opus/high). _Depends on: 18, 28._
+- [x] **29. The send panel** (frontend — Opus/high). _Depends on: 18, 28._
   - **The panel** (`Modal`), for an estimate or any invoice: send date and time (default now), the
     pre-filled message per kind, **Confirm to send**, and **Copy link** off to the side (D43).
   - **On the folder's document rows:** "Scheduled Tue 9:00 · Edit · Cancel", "Sent late at 11:42
@@ -929,6 +929,53 @@ Tasks 24–26 can be built with placeholders.
 
   **Done when** the panel schedules, edits, cancels and sends against the scratch API with a stub
   transport, and Copy link toasts.
+
+  **Done 2026-10-05** (commit below, not deployed: new routes, NAS before Pages with stage E at
+  task 32). `npm test` 519/519 (new `test-send.js`, 8; two in `test-project-card.js`). Mutations
+  caught 18 of 18 (cancel leaving the invoice scheduled, delivery not flipping it, a failed send
+  not cancellable, an edit past valid-until or a due date before the send day, no one-year cap,
+  two waiting sends, decline / accept / void / paid / delete keeping a send, issued today instead
+  of the send's day, valid-until before it, email queued with no mailer, an emailed invoice `sent`
+  at once, no link while scheduled, no version on the row).
+  - **Routes:** `POST /api/projects/:id/send` and `POST /api/invoices/:id/send`, body
+    `{ by: 'email', to, message?, scheduledFor?, validUntil | dueAt }` or `{ by: 'link', … }`
+    (`sends.js sendRequest`). The document changes and the send is queued in one transaction.
+    `PUT /api/sends/:id` also takes `dueAt`; cancel works on a failed send too. Stage D's
+    `POST …/sent` routes stay for the tests that freeze a version directly; the app no longer
+    calls them (task 33 may delete them).
+  - **An estimate is frozen and `sent` on Confirm** (IA flow 2), whenever the email goes, and is
+    issued and valid from the send's day (Sydney's). Cancelling its email leaves the version
+    standing (it may have been shared). **An invoice queued to email is `scheduled`** with its
+    dates and link; the outbox turns it `sent` and logs `invoice_sent {by:'email', late}` when the
+    email goes; cancelling makes it a draft with no dates (the link kept). A failed one stays
+    `scheduled` until retried or cancelled.
+  - **One waiting send per document** (`send_pending`, 409). Decline, accept (both ways in), void
+    and Mark paid cancel a waiting send; deleting a project deletes its sends. A scheduled
+    estimate email can't be moved past its version's valid-until; an invoice's issue date follows
+    the send's time on edit.
+  - **"Copy link"** (D43) is the same route with `by: 'link'`: the version goes live (an invoice is
+    `sent` now), and the client link (`c/#e/…`, `c/#i/…`, built beside the app) is copied. The
+    clipboard write starts inside the click with a promise of the text (`ClipboardItem`, for
+    Safari), then `writeText`; if both are refused, the panel shows the link selected. Rows of a
+    live document have their own Copy link.
+  - **Email not set up:** the server refuses `by:'email'` (`not_configured`); the panel says so up
+    front from `/api/email/status`, disables Confirm and leaves Copy link.
+  - **Web:** new `web/js/send-panel.js` (`SendPanel`: the panel, the status line, the clipboard)
+    and `web/css/send.css`, its own overlay `#modal-send`. The folder's "Send vN…" (primary on a
+    draft), each row's Send… / Copy link and status line ("Email of v2 scheduled Tue 8 Oct,
+    9:00 am · Change · Cancel email", "v2 emailed …", "Sent late at 11:42 am (scheduled 9:00 am)",
+    "Email failed: … · Retry · Cancel email"); the invoice screen's Send… replaces Mark sent….
+    While an email is due or going the screen looks again every 2s, five times at most.
+    `activityText` words `sent` / `invoice_sent` by how they went; old rows still read "Marked
+    sent".
+  - **Dev:** `server/scripts/dev-stub-mail.js` and launch.json `api-scratch-mail` run the scratch
+    API with a mailer that prints each email (`STUB_MAIL_FAIL=1` fails them).
+  - Checked in the browser against `api-scratch-mail` at 800 / 1024 / 375: schedule, change
+    (to Now), send now, v2 and v3 (by link), an invoice scheduled, changed (time and due date),
+    cancelled to draft, sent now, a failed send retried (failure set in the DB), Copy link by a row
+    and by the panel (stubbed clipboard, and the fallback with the real one refused), email not
+    set up (stubbed status), Escape returning focus. 375: full-screen, actions pinned, no overflow,
+    no target under 44px, 16px inputs. Dispatched clicks, plus real clicks on Copy link and Retry.
 
 - [ ] **30. The client invoice page** (frontend — Opus/high). _Depends on: 20, 24, 25._
   - **`GET /public/invoices/:token[/pdf]`**, through the serializer.
