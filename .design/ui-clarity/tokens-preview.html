@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI Clarity · Token specimen</title>
+<link rel="stylesheet" href="../../web/css/tokens.css">
+<style>
+/* Local-only: fonts straight from the masters until Metro Sans is cleared for web/fonts. */
+@font-face{font-family:'LSC Metro Sans';src:url('../../Visual%20Design/Metro-Sans---Full-Family/Metrosans%20Regular%20Webfont/metrosans-regular-webfont.woff2') format('woff2');font-weight:400}
+@font-face{font-family:'LSC Metro Sans';src:url('../../Visual%20Design/Metro-Sans---Full-Family/Metrosans%20Medium%20Webfont/metrosans-medium-webfont.woff2') format('woff2');font-weight:500}
+@font-face{font-family:'LSC Metro Sans';src:url('../../Visual%20Design/Metro-Sans---Full-Family/Metrosans%20Semi%20Bold%20Webfont/metrosans-semi-bold-webfont.woff2') format('woff2');font-weight:600}
+@font-face{font-family:'CS Felice Mono';src:url('../../web/fonts/CSFeliceMono-Regular.woff2') format('woff2')}
+@font-face{font-family:'Delight';src:url('../../web/fonts/Delight-700.woff2') format('woff2');font-weight:700}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--color-bg-page);color:var(--color-text-primary);font-family:var(--font-family-body);font-size:var(--font-size-base);line-height:var(--line-height-normal);-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--max-width-wide);margin:0 auto;padding:var(--space-8) var(--space-6) var(--space-11)}
+h1,h2,h3{font-family:var(--font-family-display);font-weight:700;letter-spacing:var(--letter-spacing-tight);line-height:var(--line-height-tight)}
+.spec-h{font-size:var(--font-size-xl);margin:var(--space-9) 0 var(--space-5)}
+.note{color:var(--color-text-secondary);max-width:var(--max-width-content)}
+
+/* primitives ------------------------------------------------------------ */
+.eyebrow{font:var(--eyebrow-font);letter-spacing:var(--letter-spacing-wide);text-transform:uppercase;color:var(--eyebrow-color)}
+.ref{font-family:var(--font-family-mono);font-size:var(--font-size-sm);color:var(--color-text-secondary);letter-spacing:.02em}
+.fig{font-family:var(--font-figures);font-variant-numeric:tabular-nums}
+.chip{display:inline-flex;align-items:center;gap:var(--space-2);font:var(--chip-font);letter-spacing:var(--letter-spacing-wide);text-transform:uppercase;padding:var(--chip-pad);border-radius:var(--chip-radius);color:var(--color-on-status);height:20px}
+.chip.ok{background:var(--color-status-success)}.chip.warn{background:var(--color-status-warning)}.chip.info{background:var(--color-status-info)}.chip.neutral{background:var(--color-status-neutral)}.chip.err{background:var(--color-status-error)}
+.chip.ghost{background:none;color:var(--color-text-secondary);box-shadow:inset 0 0 0 1px var(--color-border-subtle)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-3);height:var(--control-h);padding:0 var(--btn-pad-x);border-radius:var(--btn-radius);border:0;font:var(--btn-font);cursor:pointer;transition:background var(--duration-fast) var(--easing-default),color var(--duration-fast)}
+.btn:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+.btn-primary{background:var(--color-accent-primary);color:var(--color-text-on-accent);text-transform:uppercase;letter-spacing:var(--letter-spacing-wide);font-size:var(--font-size-sm);font-weight:600}
+.btn-primary:hover{background:var(--color-accent-primary-hover)}
+.btn-secondary{background:var(--color-bg-inset);color:var(--color-text-primary)}
+.btn-secondary:hover{background:var(--color-bg-float)}
+.btn-quiet{background:none;color:var(--color-text-secondary);padding:0 var(--space-4)}
+.btn-quiet:hover{color:var(--color-text-primary);background:var(--color-bg-hover)}
+.btn-danger{background:none;color:var(--color-status-error-text);box-shadow:inset 0 0 0 1px rgba(210,88,74,.45)}
+.btn-sm{height:var(--control-h-sm);padding:0 var(--space-5);font-size:var(--font-size-sm)}
+.caret{font-size:9px;opacity:.7}
+
+.panel{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--panel-radius)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:var(--panel-head-gap);padding:var(--space-5) var(--panel-pad-x);border-bottom:1px solid var(--color-border-hairline)}
+.panel-title{font-family:var(--font-family-display);font-size:var(--font-size-lg);font-weight:700}
+.count{font-family:var(--font-family-mono);font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-left:var(--space-3)}
+.panel-body{padding:0 var(--panel-pad-x)}
+
+/* swatches -------------------------------------------------------------- */
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--space-4)}
+.sw{border-radius:var(--radius-md);padding:var(--space-6);min-height:110px;display:flex;flex-direction:column;justify-content:space-between;border:1px solid var(--color-border-hairline)}
+.sw b{font-weight:600}.sw span{font-family:var(--font-family-mono);font-size:var(--font-size-xs);color:var(--color-text-secondary)}
+.sw .t2{color:var(--color-text-secondary)}.sw .t3{color:var(--color-text-tertiary)}.sw .ta{color:var(--color-accent-text)}
+
+/* type ------------------------------------------------------------------ */
+.type-row{display:grid;grid-template-columns:120px 1fr;gap:var(--space-6);align-items:baseline;padding:var(--space-4) 0;border-bottom:1px solid var(--color-border-hairline)}
+.type-row .k{font-family:var(--font-family-mono);font-size:var(--font-size-xs);color:var(--color-text-tertiary)}
+
+/* mock project page ----------------------------------------------------- */
+.mock-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:var(--space-6);margin-bottom:var(--space-7)}
+.mock-title{font-size:var(--font-size-3xl);margin:var(--space-2) 0}
+.sub{color:var(--color-text-secondary)}
+.stage{display:flex;align-items:center;gap:var(--space-4);margin-top:var(--space-4);color:var(--color-text-secondary)}
+.stage b{color:var(--color-text-primary);font-weight:600}
+.actions{display:flex;gap:var(--space-4);align-items:center;position:relative}
+.grid{display:grid;gap:var(--panel-gap)}
+@media (min-width:1100px){.grid{grid-template-columns:1fr 340px;align-items:start}}
+.side{display:grid;gap:var(--panel-gap)}
+
+.doc{display:grid;grid-template-columns:1fr auto;gap:var(--space-2) var(--space-6);padding:var(--space-6) 0;border-bottom:1px solid var(--color-border-hairline)}
+.doc:last-child{border-bottom:0}
+.doc-name{font-weight:600}
+.doc-meta{color:var(--color-text-secondary);font-size:var(--font-size-sm);display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center}
+.doc-amt{font-family:var(--font-figures);font-size:var(--font-size-base);text-align:right}
+.doc-acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--space-3);margin-top:var(--space-4);position:relative}
+.doc.is-void{opacity:.6}.doc.is-void .doc-amt{text-decoration:line-through}
+
+.menu{position:absolute;top:calc(100% + var(--space-2));min-width:220px;background:var(--menu-bg);border-radius:var(--menu-radius);box-shadow:var(--menu-shadow);padding:var(--space-2);z-index:5}
+.menu button{display:flex;width:100%;align-items:center;justify-content:space-between;height:var(--menu-item-h);padding:0 var(--space-5);background:none;border:0;border-radius:var(--radius-sm);color:var(--color-text-primary);font:400 var(--font-size-base)/1 var(--font-family-body);cursor:pointer;text-align:left}
+.menu button:hover,.menu button.is-active{background:var(--color-bg-selected)}
+.menu button .k{font-family:var(--font-family-mono);font-size:var(--font-size-xs);color:var(--color-text-tertiary)}
+.menu hr{border:0;border-top:1px solid var(--color-border-hairline);margin:var(--space-2) 0}
+.menu .danger{color:var(--color-status-error-text)}
+
+.day{display:flex;gap:var(--space-4);align-items:center;padding:var(--space-5) 0;border-bottom:1px solid var(--color-border-hairline)}
+.day:last-child{border-bottom:0}
+.act{display:grid;grid-template-columns:84px 1fr;gap:var(--space-4);padding:var(--space-4) 0;font-size:var(--font-size-sm);border-bottom:1px solid var(--color-border-hairline)}
+.act:last-child{border-bottom:0}.act .when{font-family:var(--font-family-mono);font-size:var(--font-size-xs);color:var(--color-text-tertiary);padding-top:2px}
+
+/* clause cards ---------------------------------------------------------- */
+.clauses{display:grid;gap:var(--space-3);padding:var(--space-6) 0}
+.clause{background:var(--color-bg-inset);border-radius:var(--radius-md);border:1px solid transparent}
+.clause.is-open{border-color:var(--color-border-subtle);background:var(--color-bg-panel);box-shadow:var(--shadow-sm)}
+.clause.is-drag{box-shadow:var(--shadow-lg);background:var(--color-bg-float);transform:rotate(-.4deg)}
+.clause-row{display:grid;grid-template-columns:28px 40px 1fr auto auto;align-items:center;min-height:48px;padding-right:var(--space-3)}
+.handle{color:var(--color-text-tertiary);text-align:center;cursor:grab;letter-spacing:-2px;font-size:14px}
+.num{font:var(--clause-num-font);color:var(--color-accent-text)}
+.ctitle{font-weight:500}
+.chev{color:var(--color-text-tertiary);padding:0 var(--space-4)}
+.drop-line{height:2px;background:var(--color-accent-mark);border-radius:2px;margin:-1px var(--space-4)}
+.clause-body{padding:0 var(--space-6) var(--space-6) 68px;display:grid;gap:var(--space-5)}
+.field label{display:block;font-size:var(--font-size-sm);color:var(--color-text-secondary);margin-bottom:var(--space-2)}
+.input{width:100%;background:var(--input-bg);border:1px solid var(--input-border);border-radius:var(--input-radius);color:var(--color-text-primary);font:400 var(--font-size-base)/var(--line-height-normal) var(--font-family-body);padding:var(--space-3) var(--space-5);min-height:var(--control-h)}
+.input:focus{outline:none;border-color:var(--color-border-focus);box-shadow:0 0 0 1px var(--color-border-focus)}
+textarea.input{min-height:72px;resize:vertical}
+.sub-row{display:grid;grid-template-columns:20px 36px 180px 1fr 28px;gap:var(--space-3);align-items:start}
+.sub-row.indent{padding-left:36px}
+.sub-row .letter{font-family:var(--font-family-mono);font-size:var(--font-size-sm);color:var(--color-text-secondary);padding-top:9px}
+@media (max-width:767px){.sub-row{grid-template-columns:20px 36px 1fr}.sub-row .input:last-of-type{grid-column:3}.clause-body{padding-left:var(--space-6)}}
+
+/* sticky bar ------------------------------------------------------------ */
+.bar{position:sticky;bottom:0;margin-top:var(--space-9);background:var(--color-bg-float);box-shadow:var(--shadow-bar);border-top:1px solid var(--color-border-subtle);display:flex;align-items:center;justify-content:space-between;gap:var(--space-6);padding:var(--space-5) var(--space-6);border-radius:var(--radius-md) var(--radius-md) 0 0}
+.bar .total{font-family:var(--font-family-display);font-size:var(--font-size-2xl);font-weight:700}
+.money{display:grid;grid-template-columns:1fr auto auto;gap:var(--space-2) var(--space-7);font-size:var(--font-size-base)}
+.money .fig{text-align:right}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <p class="eyebrow">ui-clarity · phase 4</p>
+  <h1 style="font-size:var(--font-size-4xl);margin:var(--space-3) 0 var(--space-4)">Token specimen</h1>
+  <p class="note">Functionalist, LSC-warm. Three layers instead of lines, one terracotta action per view, mono for the precise bits. Everything on this page reads <code class="ref">web/css/tokens.css</code>.</p>
+
+  <h2 class="spec-h">Surfaces</h2>
+  <div class="layers">
+    <div class="sw" style="background:var(--color-bg-page)"><b>Page</b><span>#121110 · level 0</span></div>
+    <div class="sw" style="background:var(--color-bg-panel)"><b>Panel</b><span>#1B1917 · level 1</span></div>
+    <div class="sw" style="background:var(--color-bg-inset)"><b>Inset</b><span>#24211E · level 2</span></div>
+    <div class="sw" style="background:var(--color-bg-float);box-shadow:var(--shadow-md)"><b>Float</b><span>#2B2724 · menus, bar</span></div>
+    <div class="sw" style="background:var(--color-bg-panel)"><b>Text</b><div><div>Primary 15.0:1</div><div class="t2">Secondary 8.2:1</div><div class="t3">Tertiary 5.4:1</div><div class="ta">Accent text 6.7:1</div></div></div>
+  </div>
+
+  <h2 class="spec-h">Type</h2>
+  <div>
+    <div class="type-row"><span class="k">display 32</span><span style="font-family:var(--font-family-display);font-weight:700;font-size:var(--font-size-3xl)">Lantern Festival coverage</span></div>
+    <div class="type-row"><span class="k">panel 18</span><span style="font-family:var(--font-family-display);font-weight:700;font-size:var(--font-size-lg)">Documents</span></div>
+    <div class="type-row"><span class="k">body 14</span><span>Metro Sans reads the paragraphs, form fields and buttons. Accepted · changed 5 Oct.</span></div>
+    <div class="type-row"><span class="k">meta 12</span><span style="font-size:var(--font-size-sm);color:var(--color-text-secondary)">Sent by link, valid until 1 Nov · opened twice</span></div>
+    <div class="type-row"><span class="k">mono 11 caps</span><span><span class="eyebrow">HCC-031</span> &nbsp; <span class="ref">INV-HCC-031-F</span> &nbsp; <span class="chip ok">Confirmed</span> <span class="chip warn">Pencilled</span> <span class="chip neutral">Proposed</span> <span class="chip info">Sent</span> <span class="chip err">Overdue</span></span></div>
+    <div class="type-row"><span class="k">money</span><div class="money"><span>Video Capture</span><span class="ref">1 day</span><span class="fig">$1,120.00</span><span>Drone Aerial Capture</span><span class="ref">2 hrs</span><span class="fig">$168.00</span><span>Crew Meals</span><span class="ref">× 3</span><span class="fig">$90.00</span><span class="sub">Client total</span><span></span><span style="font-family:var(--font-family-display);font-weight:700;font-size:var(--font-size-2xl)">$6,722.00</span></div></div>
+  </div>
+
+  <h2 class="spec-h">Buttons</h2>
+  <div class="actions" style="flex-wrap:wrap">
+    <button class="btn btn-primary">Send v2…</button>
+    <button class="btn btn-secondary">Open</button>
+    <button class="btn btn-secondary">Actions <span class="caret">▼</span></button>
+    <button class="btn btn-quiet">Documents <span class="caret">▼</span></button>
+    <button class="btn btn-danger">Delete…</button>
+    <button class="btn btn-secondary btn-sm">Small</button>
+  </div>
+
+  <h2 class="spec-h">In use: the Project page</h2>
+  <div class="mock-head">
+    <div>
+      <p class="eyebrow">HCC-031</p>
+      <h3 class="mock-title">Lantern Festival coverage</h3>
+      <p class="sub">Harbour City Council · Jo Park</p>
+      <p class="stage"><span class="chip ok">Deposit paid</span><span>final not sent</span></p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary">Send final invoice…</button>
+      <button class="btn btn-secondary">Actions <span class="caret">▼</span></button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="panel-head"><h4 class="panel-title">Documents<span class="count">3</span></h4></div>
+      <div class="panel-body">
+        <div class="doc">
+          <div><div class="doc-name">Estimate <span class="ref">v1</span></div><div class="doc-meta"><span class="chip ok">Accepted</span>signed by Jo Park, 5 Oct</div></div>
+          <div class="doc-amt">$5,268.00</div>
+          <div class="doc-acts">
+            <button class="btn btn-secondary btn-sm">Open</button>
+            <button class="btn btn-quiet btn-sm">Actions <span class="caret">▼</span></button>
+            <button class="btn btn-quiet btn-sm" aria-expanded="true">Documents <span class="caret">▲</span></button>
+            <div class="menu" role="menu" style="left:168px">
+              <button class="is-active">Estimate PDF <span class="k">PDF</span></button>
+              <button>Cost Breakdown <span class="k">YOU ONLY</span></button>
+              <button>Signed agreement <span class="k">PDF</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="doc">
+          <div><div class="doc-name">Deposit invoice <span class="ref">INV-HCC-031-D</span></div><div class="doc-meta"><span class="chip ok">Paid</span>5 Oct, bank transfer</div></div>
+          <div class="doc-amt">$2,634.00</div>
+          <div class="doc-acts"><button class="btn btn-secondary btn-sm">Open</button><button class="btn btn-quiet btn-sm">Actions <span class="caret">▼</span></button><button class="btn btn-quiet btn-sm">Documents <span class="caret">▼</span></button></div>
+        </div>
+        <div class="doc">
+          <div><div class="doc-name">Final invoice <span class="ref">INV-HCC-031-F</span></div><div class="doc-meta"><span class="chip neutral">Draft</span>not sent</div></div>
+          <div class="doc-amt">$2,634.00</div>
+          <div class="doc-acts"><button class="btn btn-primary btn-sm">Send…</button><button class="btn btn-quiet btn-sm">Actions <span class="caret">▼</span></button><button class="btn btn-quiet btn-sm">Documents <span class="caret">▼</span></button></div>
+        </div>
+      </div>
+    </section>
+    <div class="side">
+      <section class="panel">
+        <div class="panel-head"><h4 class="panel-title">Production days<span class="count">2</span></h4></div>
+        <div class="panel-body">
+          <div class="day"><span class="chip ok">Conf</span><div><div>Thu 8 October</div><div class="ref">16:00–22:00 · Video Capture</div></div></div>
+          <div class="day"><span class="chip ok">Conf</span><div><div>Sun 11 October</div><div class="ref">17:00–23:00 · Video Capture</div></div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h4 class="panel-title">Activity</h4></div>
+        <div class="panel-body">
+          <div class="act"><span class="when">5 OCT 4:30</span><span>INV-HCC-031-D paid, $2,634.00 by bank transfer</span></div>
+          <div class="act"><span class="when">5 OCT 4:30</span><span>Marked accepted · 50% deposit</span></div>
+          <div class="act"><span class="when">5 OCT 4:30</span><span>Sent v1 by link, valid until 1 Nov</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <h2 class="spec-h">In use: the agreement builder</h2>
+  <section class="panel">
+    <div class="panel-head"><h4 class="panel-title">Clauses<span class="count">12</span></h4><button class="btn btn-quiet btn-sm">⋯</button></div>
+    <div class="panel-body">
+      <div class="clauses">
+        <div class="clause"><div class="clause-row"><span class="handle">⠿</span><span class="num">1</span><span class="ctitle">Services and Deliverables</span><span></span><span class="chev">›</span></div></div>
+        <div class="drop-line" aria-hidden="true"></div>
+        <div class="clause is-drag"><div class="clause-row"><span class="handle">⠿</span><span class="num">2</span><span class="ctitle">Cancellation and Postponement</span><span></span><span class="chev">›</span></div></div>
+        <div class="clause"><div class="clause-row"><span class="handle">⠿</span><span class="num">3</span><span class="ctitle">Payment</span><span></span><span class="chev">›</span></div></div>
+        <div class="clause is-open">
+          <div class="clause-row"><span class="handle">⠿</span><span class="num">4</span><span class="ctitle">Intellectual Property and Usage Rights</span><button class="btn btn-quiet btn-sm">⋯</button><span class="chev">⌄</span></div>
+          <div class="clause-body">
+            <div class="field"><label>Title</label><input class="input" value="Intellectual Property and Usage Rights"></div>
+            <div class="field"><label>Intro <span class="t3" style="color:var(--color-text-tertiary)">(optional)</span></label><textarea class="input" placeholder="Text before the sub-clauses"></textarea></div>
+            <div class="field"><label>Sub-clauses</label>
+              <div style="display:grid;gap:var(--space-3)">
+                <div class="sub-row"><span class="handle">⠿</span><span class="letter">(a)</span><input class="input" value="Raw materials"><textarea class="input" rows="2">All raw footage, project files and other original creative work remain the exclusive property of the Business…</textarea><span class="handle">⋯</span></div>
+                <div class="sub-row"><span class="handle">⠿</span><span class="letter">(b)</span><input class="input" value="Client licence"><textarea class="input" rows="2">From the date of delivery the Client may use the final deliverables for its promotional…</textarea><span class="handle">⋯</span></div>
+                <div class="sub-row indent"><span class="handle">⠿</span><span class="letter">(i)</span><input class="input" placeholder="Heading (optional)"><textarea class="input" rows="2">If the balance is not paid in full within 30 days of delivery, this licence automatically expires…</textarea><span class="handle">⋯</span></div>
+                <div class="sub-row"><span class="handle">⠿</span><span class="letter">(c)</span><input class="input" value="Portfolio use"><textarea class="input" rows="2">The Business may use the final video(s), excerpts and behind-the-scenes material…</textarea><span class="handle">⋯</span></div>
+              </div>
+              <button class="btn btn-quiet btn-sm" style="margin-top:var(--space-4)">+ Add sub-clause</button>
+            </div>
+          </div>
+        </div>
+        <div class="clause"><div class="clause-row"><span class="handle">⠿</span><span class="num">5</span><span class="ctitle">Client Materials, Releases and Music</span><span></span><span class="chev">›</span></div></div>
+      </div>
+      <div style="padding-bottom:var(--space-6)"><button class="btn btn-secondary">+ Add clause</button></div>
+    </div>
+  </section>
+
+  <div class="bar">
+    <div><p class="eyebrow" style="color:var(--color-text-secondary)">Client total</p><span class="total">$6,722.00</span></div>
+    <div class="actions"><button class="btn btn-quiet">⋯</button><button class="btn btn-quiet">Cancel</button><button class="btn btn-primary">Save</button></div>
+  </div>
+</main>
+</body>
+</html>

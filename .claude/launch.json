@@ -51,6 +51,17 @@
         "web"
       ],
       "port": 5173
+    },
+    {
+      "_comment": "Static server at the repo root, for .design/ specimens that load web/css and the Visual Design font masters (local only).",
+      "name": "design",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5180"
+      ],
+      "port": 5180
     }
   ]
 }
