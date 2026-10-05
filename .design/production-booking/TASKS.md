@@ -1037,7 +1037,7 @@ Tasks 24–26 can be built with placeholders.
   (no double pay), and amount plus fee correct to the cent. A test-mode payment completes against
   the scratch NAS through a tunnel or the Stripe CLI.
 
-- [ ] **32. E polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium).
+- [x] **32. E polish and deploy** (frontend — Opus/high, then deploy — Sonnet/medium). **Done 2026-10-05.**
   - **Client pages, phone-first:** 16px body, 44px targets, Sign & submit reachable, reduced
     motion.
   - **Accessibility:** the signing dialog's focus and scroll box.
@@ -1076,8 +1076,13 @@ Tasks 24–26 can be built with placeholders.
   `/api/projects` and `/api/email/status` 401, `/public/*` the app's JSON 404 with CORS. Then
   Pages (run 37251420070, success; live `c/c.js` carries the Accept bar). Live settings: no
   deposit % saved (so 50%), bank details all set, **business email blank**.
-  **Still open:** `SMTP_PASS` (the user adds it; the old key's value was never kept), then the
-  Settings test email (ticks task 28) and the end-to-end run.
+  `SMTP_PASS` set the same day (boot log `[mail] connected`); the Settings test email arrived.
+  **End-to-end run, live, 2026-10-05 (PVLSC01):** estimate emailed (sent, not late), opened,
+  signed (role and typed name in the stored text, no gap left, 47 KB signed PDF stored), owner
+  notice and client signed copy both sent, accepted with a 50% pair (`INV-PVLSC01-D` emailed and
+  `sent`, due in 14 days; `-F` draft), the day Confirmed, activity sent → opened → signed →
+  invoice_sent. Live public replies checked: the estimate carries `client.businessName` only, the
+  invoice adds the ABN and the bank details; no owner-only field in either.
 
 ## Review
 
