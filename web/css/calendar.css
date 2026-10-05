@@ -190,8 +190,10 @@
 .cal-cell + .cal-cell {
   border-left: 1px solid var(--cal-rule);
 }
-/* Saturday and Sunday carry the weekend surcharge, so they're marked: barely. */
+/* Saturday and Sunday carry the weekend surcharge, so they're marked: barely.
+   A public holiday prices the same way, so it is shaded the same (task 33 DR4). */
 .cal-cell.is-weekend,
+.cal-cell.is-holiday,
 .cal-colhead.is-weekend {
   background: rgba(240, 237, 232, 0.025);
 }
@@ -218,6 +220,26 @@
 }
 .cal-cell.is-out .cal-num {
   color: var(--muted);
+}
+/* A holiday's date and, in the wide layout, its name beside it. */
+.cal-numrow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cal-hol {
+  display: none;
+  min-width: 0;
+  font-size: 9px;
+  line-height: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* Today: the app's accent underline, under the date. */
 .cal-cell.is-today .cal-num {
@@ -368,6 +390,12 @@
     padding: 3px 6px;
   }
   .cal-tile-name {
+    display: block;
+  }
+  .cal-numrow {
+    align-self: stretch;
+  }
+  .cal-hol {
     display: block;
   }
   /* Sized to its code, never under half the cell (task 33 DR2): a fixed half

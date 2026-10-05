@@ -13,7 +13,7 @@
  *     onRangeChange({ from, to }),  // the seven days on show: fetch them
  *     onTileActivate(day, { trigger }),
  *   });
- *   wk.setData(days, rentals); wk.goTo(date); wk.anchor;
+ *   wk.setData(days, rentals); wk.setHolidays(holidays); wk.goTo(date); wk.anchor;
  *
  * Days and rentals are GET /api/calendar's shapes, as the month view takes.
  *
@@ -120,6 +120,7 @@ const HomeWeek = (() => {
       anchor: C.isDate(o.anchor) ? o.anchor : today,
       days: [],
       rentals: [],
+      holidays: new Map(), // date → name (task 33 DR4), as the month view has them
     };
 
     root.classList.add('cal', 'wk');
@@ -220,15 +221,20 @@ const HomeWeek = (() => {
 
       const columns = cols.map((c, i) => {
         const cls = ['wk-day'];
+        const holiday = st.holidays.get(c.date);
         if (c.date === today) cls.push('is-today');
         if (i > 4) cls.push('is-weekend');
+        if (holiday) cls.push('is-holiday');
         const [, , d] = c.date.split('-').map(Number);
         const headId = id + '-d' + i;
         return '<section class="' + cls.join(' ') + '" aria-labelledby="' + esc(headId) + '">' +
           '<div class="wk-dhead" id="' + esc(headId) + '">' +
-          '<span class="sr-only">' + (c.date === today ? 'Today, ' : '') + esc(C.longDate(c.date, today)) + '</span>' +
+          '<span class="sr-only">' + (c.date === today ? 'Today, ' : '') + esc(C.longDate(c.date, today)) +
+          (holiday ? ', ' + esc(holiday) + ', public holiday' : '') + '</span>' +
           '<span class="wk-dow" aria-hidden="true">' + DAY_SHORT[i] + '</span>' +
-          '<span class="wk-dnum" aria-hidden="true">' + d + '</span></div>' +
+          '<span class="wk-dnum" aria-hidden="true">' + d + '</span>' +
+          (holiday ? '<span class="wk-dhol" aria-hidden="true" title="' + esc(holiday) + '">' + esc(holiday) + '</span>' : '') +
+          '</div>' +
           '<div class="wk-gearspace"></div>' +
           '<div class="wk-untimed">' + c.untimed.map((day) => tileButton(day, '', '', day.endTime ? C.timeText(day) : 'No time')).join('') + '</div>' +
           '<div class="wk-timed">' + c.timed.map((it) => {
@@ -252,8 +258,10 @@ const HomeWeek = (() => {
       return '<ol class="wk-list">' + dates().map((date) => {
         const days = daysOn(date);
         const gear = rentalsOn(date);
+        const holiday = st.holidays.get(date);
         return '<li class="wk-lday' + (date === today ? ' is-today' : '') + '">' +
           '<h3 class="wk-lhead">' + esc(C.shortDate(date)) +
+          (holiday ? ' <span class="wk-lhol">· ' + esc(holiday) + '</span>' : '') +
           (date === today ? ' <span class="wk-ltoday">Today</span>' : '') + '</h3>' +
           (days.length
             ? '<ul class="cal-entries">' + days.map((day) =>
@@ -328,6 +336,11 @@ const HomeWeek = (() => {
         st.rentals = (Array.isArray(rentals) ? rentals : []).map(C.normRental).filter(Boolean)
           .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0) || (a.to < b.to ? 1 : a.to > b.to ? -1 : 0) ||
             a.vendor.localeCompare(b.vendor));
+        render();
+      },
+      /** Shade and name the public holidays (task 33 DR4); GET /api/holidays' list. */
+      setHolidays(list) {
+        st.holidays = C.holidayMap(list);
         render();
       },
       goTo(date) {

@@ -17,6 +17,10 @@
  * Recent activity's rows go straight to the folder, as the IA's contextual
  * links do.
  *
+ * Public holidays (task 33 DR4) are shaded and named on both views, from
+ * GET /api/holidays, asked once per visit. If that fails the calendar simply
+ * has no holidays marked: the bookings fetch reports any real trouble.
+ *
  * Nothing here is cached between visits except where the calendar was looking
  * and which view it was in: each visit and each month or week asks
  * GET /api/calendar for just its range (IA, Content Growth Plan), so a day
@@ -45,6 +49,7 @@ const HomeView = (() => {
      reply that covers it: the month on show usually does, so a visit is one
      fetch rather than two. */
   let upWanted = null;
+  let holidays = null; // this visit's GET /api/holidays list, once it's in
 
   function readView() {
     try {
@@ -227,6 +232,21 @@ const HomeView = (() => {
     /* The first onRangeChange fired inside mount(), before `cal` was set; its
        fetch only checks the target once the reply is in, by which time it is. */
     target.component = cal;
+    if (holidays) cal.setHolidays(holidays);
+  }
+
+  async function loadHolidays() {
+    const ticket = LSCRouter.ticket();
+    let reply;
+    try {
+      reply = await LSCApi.get('/api/holidays');
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      return; // unmarked, not an error worth a message of its own
+    }
+    if (!LSCRouter.isCurrent(ticket)) return;
+    holidays = reply.holidays || [];
+    if (cal) cal.setHolidays(holidays);
   }
 
   function currentAnchor() {
@@ -423,6 +443,8 @@ const HomeView = (() => {
       b.addEventListener('click', () => setView(b.dataset.view, b)));
 
     upWanted = { from: today, to: C.addDays(today, COMING_UP_DAYS - 1), asked: false };
+    holidays = null;
+    loadHolidays();
     mountCalendar(); // asks for its first range inside, which may cover Coming up's
     if (!upWanted.asked) {
       upWanted = null;

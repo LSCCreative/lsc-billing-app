@@ -2453,8 +2453,8 @@ const EstimateEditor = (() => {
     return LSCCalc.surchargeSnapshot(days, pricing, holidays || [], prior);
   }
 
-  /* Fetched the first time a day has a date: a new or moved day's
-     weekend/holiday kind needs it, and nothing else does. Until it arrives (or
+  /* Fetched when the editor opens: a new or moved day's weekend/holiday kind
+     needs it, and the booking calendar shades them (task 33 DR4). Until it arrives (or
      if it can't), dates price against no holidays; the server prices on save
      with the real list either way. */
   function loadHolidays() {
@@ -2466,6 +2466,7 @@ const EstimateEditor = (() => {
         try {
           const reply = await LSCApi.get('/api/holidays');
           holidays = reply.holidays || [];
+          if (booking) booking.setHolidays(holidays);
         } catch (err) {
           if (err instanceof LSCApi.ApiError && err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
           return; // asked again at the next change
@@ -3723,6 +3724,7 @@ const EstimateEditor = (() => {
     bind(pricing);
     paintLink();
     recalc();
+    loadHolidays(); // recalc asked already if a day has a date; the calendar wants them either way
     lookUpLastProject();
 
     baseline = snapshot();

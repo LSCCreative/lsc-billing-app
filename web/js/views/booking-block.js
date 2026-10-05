@@ -20,6 +20,7 @@
  *   booking.refreshIdentity()  // the UPID / name / business changed: redraw this estimate's tiles
  *   booking.showDay(id)        // open the block and scroll that day's card into view
  *   booking.addTbc()           // add a Date TBC day; returns its id
+ *   booking.setHolidays(list)  // GET /api/holidays' list, shaded on the calendar (task 33 DR4)
  * Duplicate day (B2-5) is the card's own action: it adds the copy, then calls
  * opts.onDuplicate(sourceId, newId) for the editor to copy the lines.
  *
@@ -253,6 +254,7 @@ const BookingBlock = (() => {
     let days = sortDays(((estimate && estimate.days) || []).map(norm));
     let open = days.length > 0 || Boolean(opts.hasItems);
     let cal = null;
+    let holidayList = null; // kept for a calendar mounted after it arrives
     let loadFailed = false;
     const others = new Map(); // date → other estimates' days, as /api/calendar returns them
     const otherRentals = new Map(); // id → other estimates' rentals, as /api/calendar returns them
@@ -583,6 +585,7 @@ const BookingBlock = (() => {
           else if (ctx.entry) ctx.entry.focus();
         },
       });
+      if (holidayList) cal.setHolidays(holidayList);
       // This estimate's own days now; other projects' when the fetch the mount set off returns.
       cal.setRentals(calendarRentals());
       cal.setDays(calendarDays());
@@ -740,6 +743,11 @@ const BookingBlock = (() => {
     if (open) ensureCalendar();
 
     return {
+      setHolidays(list) {
+        holidayList = list;
+        if (cal) cal.setHolidays(list);
+      },
+
       payloadDays: () =>
         days.map((d) => ({
           id: d.id,

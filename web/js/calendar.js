@@ -17,6 +17,7 @@
  *     onTileActivate(day, { trigger }),
  *   });
  *   cal.setDays(days); cal.setRentals(rentals); cal.setEmphasis(id); cal.goTo('2026-10-04');
+ *   cal.setHolidays(holidays);    // GET /api/holidays' list: { date, name, hidden }
  *
  * A day is { id, estimateId, date, status, startTime, endTime, upid,
  * projectName, client, overrideNote }. Date TBC days (date null) are on no
@@ -62,6 +63,12 @@
  * rentalActionable(rental) says so (default: whenever onRentalActivate is
  * given); otherwise it is text that can take focus. In dots mode a bar is a
  * thin line under each covered date, too thin to aim at: a tap is the date's.
+ *
+ * PUBLIC HOLIDAYS (task 33 DR4)
+ * A holiday prices like a weekend, so it is shaded like one, and its name is
+ * in the date's accessible name and the list's title ("Monday 5 October ·
+ * Labour Day"); the wide layout prints it small beside the date. Hidden
+ * (removed) holidays are skipped, as calc.js dayKind skips them.
  *
  * Dates are 'YYYY-MM-DD' strings throughout, with arithmetic done on UTC
  * epoch days so a daylight-saving change can never skip or repeat a date.
@@ -145,6 +152,16 @@ const LSCCalendar = (() => {
 
   const upidOf = (day) => (day.upid ? String(day.upid) : 'No UPID');
 
+  /* GET /api/holidays' rows as date → name, the hidden ones left out. A
+     holiday with no name is still one. */
+  function holidayMap(list) {
+    const map = new Map();
+    (Array.isArray(list) ? list : []).forEach((h) => {
+      if (h && isDate(h.date) && !h.hidden) map.set(h.date, String(h.name || '').trim() || 'Public holiday');
+    });
+    return map;
+  }
+
   /* A booking's times in words. An end before the start runs past midnight
      (calc.js afterHoursShare, D21), and the brief wants that said, not
      implied. Equal times book no hours, so they read as the times alone. */
@@ -163,8 +180,8 @@ const LSCCalendar = (() => {
    * "Saturday 4 October: 1 confirmed, UPID-042". Statuses in a fixed order,
    * and only the ones present.
    */
-  function describeDate(ymd, days, today, rentals) {
-    const head = (ymd === today ? 'Today, ' : '') + longDate(ymd, today);
+  function describeDate(ymd, days, today, rentals, holiday) {
+    const head = (ymd === today ? 'Today, ' : '') + longDate(ymd, today) + (holiday ? ', ' + holiday + ', public holiday' : '');
     const gear = (rentals || []).map((r) => r.vendor + ' for ' + upidOf(r) + ' ' + rentalRole(r, ymd));
     if ((!days || !days.length) && !gear.length) return head + ': nothing booked';
     const parts = STATUS_ORDER.map((s) => {
@@ -268,6 +285,7 @@ const LSCCalendar = (() => {
       byId: new Map(),
       rentals: [], // normalised, own first (see sortRentals)
       rentalSig: '[]',
+      holidays: new Map(), // date → name
     };
     st.view = monthOf(st.active);
 
@@ -392,6 +410,8 @@ const LSCCalendar = (() => {
       const cls = ['cal-cell'];
       if (monthOf(date) !== st.view) cls.push('is-out');
       if (weekday(date) > 4) cls.push('is-weekend');
+      const holiday = st.holidays.get(date);
+      if (holiday) cls.push('is-holiday');
       if (date === today) cls.push('is-today');
       if (date === st.target) cls.push('is-target');
       if (date === st.active) cls.push('is-selected');
@@ -401,8 +421,11 @@ const LSCCalendar = (() => {
         ' tabindex="' + (date === st.active ? '0' : '-1') + '"' +
         ' aria-selected="' + (date === st.active) + '"' +
         (date === today ? ' aria-current="date"' : '') +
-        ' aria-label="' + esc(describeDate(date, days, today, rentalsOn(date))) + '">' +
-        '<span class="cal-num" aria-hidden="true">' + d + '</span>' +
+        ' aria-label="' + esc(describeDate(date, days, today, rentalsOn(date), holiday)) + '">' +
+        (holiday
+          ? '<span class="cal-numrow" aria-hidden="true"><span class="cal-num">' + d + '</span>' +
+            '<span class="cal-hol" title="' + esc(holiday) + '">' + esc(holiday) + '</span></span>'
+          : '<span class="cal-num" aria-hidden="true">' + d + '</span>') +
         '<span class="cal-tiles" aria-hidden="true">' +
         days.slice(0, extra > 0 ? MAX_TILES - 1 : MAX_TILES).map(tileMarkup).join('') +
         (extra > 0 ? '<span class="cal-more">+' + (extra + 1) + ' more</span>' : '') +
@@ -465,7 +488,9 @@ const LSCCalendar = (() => {
       if (!o.showList) return;
       const days = daysOn(st.active);
       const gear = rentalsOn(st.active);
-      els.listTitle.textContent = (st.active === today ? 'Today, ' : '') + longDate(st.active, today);
+      const holiday = st.holidays.get(st.active);
+      els.listTitle.textContent = (st.active === today ? 'Today, ' : '') + longDate(st.active, today) +
+        (holiday ? ' · ' + holiday : '');
       els.list.innerHTML = (days.length
         ? '<ul class="cal-entries">' +
           days.map((day) =>
@@ -616,6 +641,13 @@ const LSCCalendar = (() => {
     // ── The controller ────────────────────────────────────────────────────────
 
     const api = {
+      /** Shade and name the public holidays (task 33 DR4). Hidden ones are skipped. */
+      setHolidays(list) {
+        const map = holidayMap(list);
+        if (JSON.stringify([...map]) === JSON.stringify([...st.holidays])) return;
+        st.holidays = map;
+        render(0);
+      },
       /** Replace every day on the calendar. Days for dates not on show are kept, harmlessly. */
       setDays(days) {
         st.byDate = new Map();
@@ -677,6 +709,6 @@ const LSCCalendar = (() => {
      booking or a rental reads the same in every view. */
   return {
     mount, statusChip, describeDate, timeText, gridRange, longDate, shortDate, addDays, addMonths, isDate,
-    weekday, normRental, rentalRole, rentalDates, upidOf, STATUS_WORD, MONTHS, DAY_SHORT,
+    weekday, normRental, rentalRole, rentalDates, upidOf, holidayMap, STATUS_WORD, MONTHS, DAY_SHORT,
   };
 })();
