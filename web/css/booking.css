@@ -1012,48 +1012,7 @@
   }
 }
 
-/* The Move to list. */
-.move-pop {
-  position: absolute;
-  z-index: 9500;
-  min-width: 170px;
-  padding: 4px 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-}
-.move-pop [role='menuitem'] {
-  display: block;
-  width: 100%;
-  padding: 7px 12px;
-  background: none;
-  border: none;
-  color: var(--text);
-  font-family: var(--font-family-body);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.move-pop [role='menuitem']:hover,
-.move-pop [role='menuitem']:focus {
-  background: color-mix(in srgb, var(--color-accent-primary) 18%, transparent);
-  outline: none;
-}
-.move-pop [role='menuitem']:focus-visible {
-  outline: 2px solid transparent;
-  outline-offset: -2px;
-  box-shadow: inset 0 0 0 2px var(--color-border-focus);
-}
-.move-pop-none {
-  padding: 8px 12px;
-  font-size: 11px;
-  color: var(--muted);
-}
-@media (max-width: 767px) {
-  .move-pop [role='menuitem'] {
-    min-height: 44px;
-  }
-}
+/* The Move to list is a menu (menu.css). */
 
 /* While dragging: the line dims, every card's group of that kind outlines as
    a drop zone (the drag code unhides empty ones), and a rule marks the

@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="../../web/css/tokens.css">
 <!-- The real buttons and panels (task 2): the specimen shows app.css, not a copy of it. -->
 <link rel="stylesheet" href="../../web/css/app.css">
+<link rel="stylesheet" href="../../web/css/menu.css">
 <style>
 /* Local-only: fonts straight from the masters until Metro Sans is cleared for web/fonts. */
 @font-face{font-family:'LSC Metro Sans';src:url('../../Visual%20Design/Metro-Sans---Full-Family/Metrosans%20Regular%20Webfont/metrosans-regular-webfont.woff2') format('woff2');font-weight:400}
@@ -62,12 +63,6 @@ h1,h2,h3{font-family:var(--font-family-display);font-weight:700;letter-spacing:v
 .doc-acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--space-3);margin-top:var(--space-4);position:relative}
 .doc.is-void{opacity:.6}.doc.is-void .doc-amt{text-decoration:line-through}
 
-.menu{position:absolute;top:calc(100% + var(--space-2));min-width:220px;background:var(--menu-bg);border-radius:var(--menu-radius);box-shadow:var(--menu-shadow);padding:var(--space-2);z-index:5}
-.menu button{display:flex;width:100%;align-items:center;justify-content:space-between;height:var(--menu-item-h);padding:0 var(--space-5);background:none;border:0;border-radius:var(--radius-sm);color:var(--color-text-primary);font:400 var(--font-size-base)/1 var(--font-family-body);cursor:pointer;text-align:left}
-.menu button:hover,.menu button.is-active{background:var(--color-bg-selected)}
-.menu button .k{font-family:var(--font-family-mono);font-size:var(--font-size-xs);color:var(--color-text-tertiary)}
-.menu hr{border:0;border-top:1px solid var(--color-border-hairline);margin:var(--space-2) 0}
-.menu .danger{color:var(--color-status-error-text)}
 
 .day{display:flex;gap:var(--space-4);align-items:center;padding:var(--space-5) 0;border-bottom:1px solid var(--color-border-hairline)}
 .day:last-child{border-bottom:0}
@@ -98,7 +93,7 @@ textarea.input{min-height:72px;resize:vertical}
 /* sticky bar ------------------------------------------------------------ */
 .bar{position:sticky;bottom:0;margin-top:var(--space-9);background:var(--color-bg-float);box-shadow:var(--shadow-bar);border-top:1px solid var(--color-border-subtle);display:flex;align-items:center;justify-content:space-between;gap:var(--space-6);padding:var(--space-5) var(--space-6);border-radius:var(--radius-md) var(--radius-md) 0 0}
 .bar .total{font-family:var(--font-family-display);font-size:var(--font-size-2xl);font-weight:700}
-.money{display:grid;grid-template-columns:1fr auto auto;gap:var(--space-2) var(--space-7);font-size:var(--font-size-base)}
+.money{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--space-2) var(--space-5);min-width:0;font-size:var(--font-size-base)}
 .money .fig{text-align:right}
 </style>
 </head>
@@ -177,28 +172,20 @@ textarea.input{min-height:72px;resize:vertical}
         <div class="doc">
           <div><div class="doc-name">Estimate <span class="ref">v1</span></div><div class="doc-meta"><span class="chip ok">Accepted</span>signed by Jo Park, 5 Oct</div></div>
           <div class="doc-amt">$5,268.00</div>
-          <div class="doc-acts">
-            <button class="btn btn-secondary btn-sm">Open</button>
-            <button class="btn btn-quiet btn-sm">Actions <span class="caret">▼</span></button>
-            <button class="btn btn-quiet btn-sm" aria-expanded="true">Documents <span class="caret">▲</span></button>
-            <div class="menu" role="menu" style="left:168px">
-              <button class="is-active">Estimate PDF <span class="k">PDF</span></button>
-              <button>Cost Breakdown <span class="k">YOU ONLY</span></button>
-              <button>Signed agreement <span class="k">PDF</span></button>
-            </div>
-          </div>
+          <div class="doc-acts"><button class="btn btn-secondary btn-sm" data-act="open">Open</button><span data-menus="accepted"></span></div>
         </div>
         <div class="doc">
           <div><div class="doc-name">Deposit invoice <span class="ref">INV-HCC-031-D</span></div><div class="doc-meta"><span class="chip ok">Paid</span>5 Oct, bank transfer</div></div>
           <div class="doc-amt">$2,634.00</div>
-          <div class="doc-acts"><button class="btn btn-secondary btn-sm">Open</button><button class="btn btn-quiet btn-sm">Actions <span class="caret">▼</span></button><button class="btn btn-quiet btn-sm">Documents <span class="caret">▼</span></button></div>
+          <div class="doc-acts"><button class="btn btn-secondary btn-sm" data-act="open">Open</button><span data-menus="paid"></span></div>
         </div>
         <div class="doc">
           <div><div class="doc-name">Final invoice <span class="ref">INV-HCC-031-F</span></div><div class="doc-meta"><span class="chip neutral">Draft</span>not sent</div></div>
           <div class="doc-amt">$2,634.00</div>
-          <div class="doc-acts"><button class="btn btn-primary btn-sm">Send…</button><button class="btn btn-quiet btn-sm">Actions <span class="caret">▼</span></button><button class="btn btn-quiet btn-sm">Documents <span class="caret">▼</span></button></div>
+          <div class="doc-acts"><button class="btn btn-primary btn-sm" data-act="send">Send…</button><span data-menus="draft"></span></div>
         </div>
       </div>
+      <div class="panel-foot"><p class="ref" id="menu-log" aria-live="polite">Choose a menu item</p></div>
     </section>
     <div class="side">
       <section class="panel">
@@ -255,6 +242,37 @@ textarea.input{min-height:72px;resize:vertical}
     <div class="actions"><button class="btn btn-quiet">⋯</button><button class="btn btn-quiet">Cancel</button><button class="btn btn-primary">Save</button></div>
   </div>
 </main>
+<script src="../../web/js/util.js"></script>
 <script src="../../web/js/panel.js"></script>
+<script src="../../web/js/menu.js"></script>
+<script>
+/* The real menus (task 3), built the way the Project page will build them:
+   LSCMenu.markup with data-act items, run by one delegated handler. */
+const ROWS = {
+  accepted: {
+    actions: [{ text: 'View estimate', attrs: { 'data-act': 'view' } }, { text: 'Copy link', attrs: { 'data-act': 'copy' } },
+      { text: 'Duplicate as new project…', attrs: { 'data-act': 'dup' } }, { text: 'Delete…', danger: true, attrs: { 'data-act': 'delete' } }],
+    docs: [{ text: 'Estimate PDF', hint: 'PDF', attrs: { 'data-act': 'pdf' } }, { text: 'Cost Breakdown', hint: 'You only', attrs: { 'data-act': 'cost' } },
+      { text: 'Signed agreement', hint: 'PDF', attrs: { 'data-act': 'signed' } }],
+  },
+  paid: {
+    actions: [{ text: 'Copy link', attrs: { 'data-act': 'copy' } }, { text: 'Void…', danger: true, attrs: { 'data-act': 'void' } }],
+    docs: [{ text: 'Invoice PDF', hint: 'PDF', attrs: { 'data-act': 'pdf' } }],
+  },
+  draft: {
+    actions: [{ text: 'Edit', attrs: { 'data-act': 'edit' } }, { text: 'Void…', danger: true, attrs: { 'data-act': 'void' } }],
+    docs: [], // nothing to download yet: no Documents button at all
+  },
+};
+document.querySelectorAll('[data-menus]').forEach((el) => {
+  const row = ROWS[el.dataset.menus];
+  el.outerHTML = LSCMenu.markup({ label: 'Actions', items: row.actions }) + LSCMenu.markup({ label: 'Documents', items: row.docs });
+});
+document.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]');
+  const log = document.getElementById('menu-log');
+  if (act && log) log.textContent = 'Ran ' + act.dataset.act + ' (' + act.textContent.trim() + ')';
+});
+</script>
 </body>
 </html>

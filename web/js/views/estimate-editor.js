@@ -1380,89 +1380,23 @@ const EstimateEditor = (() => {
   }
 
   // ── The card lists: Move to, and the summaries' Add to a day (B2-6) ──
-  /* One small menu of cards under the button that opened it. `owner` is what
-     it's for (a line, or the summary's button): the same owner again closes
-     it. Picking an item closes it, then calls onPick(key). */
-  const pop = { el: null, owner: null, opener: null };
-
-  function closeMovePop(returnFocus) {
-    if (!pop.el) return;
-    pop.el.remove();
-    document.removeEventListener('pointerdown', onPopOutside, true);
-    if (pop.opener) pop.opener.setAttribute('aria-expanded', 'false');
-    if (returnFocus && pop.opener && pop.opener.isConnected) pop.opener.focus();
-    pop.el = null;
-    pop.owner = null;
-    pop.opener = null;
-  }
-
-  function onPopOutside(event) {
-    if (pop.el && !pop.el.contains(event.target) && !pop.opener.contains(event.target)) closeMovePop(false);
-  }
-
+  /* Each is a menu of cards (LSCMenu, menu.js) under the button that opened
+     it; the same button again closes it, and below 768px it's a bottom
+     sheet. Picking a card closes it, then acts. */
   function openMovePop(tr, opener) {
     const here = keyOf(tr);
     const cards = (booking ? booking.list() : []).map((d) => d.id).concat([OFF_DAY]).filter((k) => k !== here);
-    openCardPop(opener, tr, 'Move ' + lineLabel(tr) + ' to',
-      cards.map((k) => ({ key: k, text: cardName(k) })),
-      (key) => {
-        moveLine(tr, groupBody(panelFor(key), kindOf(tr)), null);
+    LSCMenu.open(opener, {
+      label: 'Move ' + lineLabel(tr) + ' to',
+      items: cards.map((k) => ({ key: k, text: cardName(k) })),
+      empty: 'No other day yet. Book one in Production Booking.',
+      onSelect: (it) => {
+        moveLine(tr, groupBody(panelFor(it.key), kindOf(tr)), null);
         // Focus follows the line (the brief's B2 Key Interactions 2).
         const again = tr.querySelector('.line-move');
         if (again) again.focus();
       },
-      'No other day yet. Book one in Production Booking.');
-  }
-
-  function openCardPop(opener, owner, label, items, onPick, emptyText) {
-    const reopen = pop.el && pop.owner === owner;
-    closeMovePop(false);
-    if (reopen) return; // the same button again closes it
-    const el = document.createElement('div');
-    el.className = 'move-pop';
-    el.setAttribute('role', 'menu');
-    el.setAttribute('aria-label', label);
-    el.innerHTML = items.length
-      ? items.map((it) => '<button type="button" role="menuitem" tabindex="-1" data-key="' + esc(it.key) + '">' + esc(it.text) + '</button>').join('')
-      : '<p class="move-pop-none">' + esc(emptyText) + '</p>';
-    document.body.appendChild(el);
-    const r = opener.getBoundingClientRect();
-    const w = el.offsetWidth;
-    el.style.top = Math.round(r.bottom + window.scrollY + 4) + 'px';
-    el.style.left = Math.round(Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8)) + window.scrollX) + 'px';
-    pop.el = el;
-    pop.owner = owner;
-    pop.opener = opener;
-    opener.setAttribute('aria-expanded', 'true');
-    document.addEventListener('pointerdown', onPopOutside, true);
-
-    const buttons = Array.from(el.querySelectorAll('[role="menuitem"]'));
-    el.addEventListener('keydown', (e) => {
-      const i = buttons.indexOf(document.activeElement);
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeMovePop(true);
-      } else if (e.key === 'Tab') {
-        closeMovePop(false);
-      } else if (buttons.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End')) {
-        e.preventDefault();
-        const n = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1
-          : (i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
-        buttons[n].focus();
-      }
     });
-    el.addEventListener('click', (e) => {
-      const item = e.target.closest('[data-key]');
-      if (!item) return;
-      closeMovePop(false);
-      onPick(item.dataset.key);
-    });
-    if (buttons.length) {
-      buttons[0].focus();
-    } else {
-      el.setAttribute('tabindex', '-1');
-      el.focus();
-    }
   }
 
   // ── Dragging ──
@@ -1545,7 +1479,7 @@ const EstimateEditor = (() => {
       if (!drag.on) {
         if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < DRAG_START_PX) return;
         drag.on = true;
-        closeMovePop(false);
+        LSCMenu.close(false);
         drag.rule = document.createElement('div');
         drag.rule.className = 'drop-rule';
         drag.rule.setAttribute('aria-hidden', 'true');
@@ -2029,9 +1963,11 @@ const EstimateEditor = (() => {
 
   function openAddPop(opener, kind) {
     const keys = (booking ? booking.list() : []).map((d) => d.id).concat([OFF_DAY]);
-    openCardPop(opener, opener, 'Add ' + ON_SET_MENU[kind] + ' to',
-      keys.map((k) => ({ key: k, text: cardName(k) })).concat([{ key: NEW_TBC, text: 'A new Date TBC day' }]),
-      (key) => openDayMenuAt(key, kind), '');
+    LSCMenu.open(opener, {
+      label: 'Add ' + ON_SET_MENU[kind] + ' to',
+      items: keys.map((k) => ({ key: k, text: cardName(k) })).concat([{ key: NEW_TBC, text: 'A new Date TBC day' }]),
+      onSelect: (it) => openDayMenuAt(it.key, kind),
+    });
   }
 
   /* The headline block (D86): what the client is buying, above when it's shot
@@ -3669,7 +3605,7 @@ const EstimateEditor = (() => {
 
     booking = null;
     closeMenu(false);
-    closeMovePop(false);
+    LSCMenu.close(false);
     endDrag(false);
     dayPanels.clear();
     // A fresh estimate: its first recalc is the baseline, announced as nothing.

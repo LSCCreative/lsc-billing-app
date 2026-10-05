@@ -1,0 +1,177 @@
+/* ── Menus (ui-clarity task 3) ────────────────────────────────────────────────
+   The menu button and its list, driven by js/menu.js. A closed list sits
+   [hidden] beside its button; an open one is moved into <body> and gets
+   .menu-pop: a floating popover under the button from 768px, and a bottom
+   sheet (.is-sheet) below it, with 48px rows (--menu-item-h), a title, a
+   Cancel row and a backdrop.
+
+     <span class="menu">
+       <button class="btn btn-quiet btn-sm menu-btn" aria-haspopup="menu"
+               aria-expanded="false" aria-controls="m1">Actions<span class="menu-caret"></span></button>
+       <span class="menu-list" role="menu" id="m1" hidden>
+         <button class="menu-item" role="menuitem" tabindex="-1">
+           <span class="menu-text">Estimate PDF</span><span class="menu-hint">PDF</span></button>
+         <span class="menu-sep" role="separator"></span>
+         <button class="menu-item is-danger" role="menuitem" tabindex="-1">…</button>
+       </span>
+     </span>
+   ─────────────────────────────────────────────────────────────────────────── */
+.menu {
+  display: inline-flex;
+}
+.menu-list[hidden] {
+  display: none;
+}
+
+/* The caret: the panel chevron's shape, pointing down; up while open. */
+.menu-caret {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin: 0 var(--space-1) 0 var(--space-1);
+  border-right: 1.5px solid;
+  border-bottom: 1.5px solid;
+  color: var(--color-text-tertiary);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--duration-normal) var(--easing-default);
+}
+.menu-btn:hover .menu-caret,
+.menu-btn[aria-expanded='true'] .menu-caret {
+  color: currentColor;
+}
+.menu-btn[aria-expanded='true'] {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.menu-btn[aria-expanded='true'] .menu-caret {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+/* ── The open list: the phone's bottom sheet first ── */
+.menu-pop {
+  display: flex;
+  flex-direction: column;
+  z-index: 9500;
+  padding: var(--space-2);
+  background: var(--menu-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+}
+.menu-pop.is-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 80vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
+  animation: menu-sheet-in var(--duration-slow) var(--easing-out);
+}
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9400;
+  background: var(--color-surface-overlay);
+  touch-action: none;
+  animation: menu-fade-in var(--duration-slow) var(--easing-out);
+}
+.menu-sheet-title {
+  display: block;
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+/* ── Rows ── */
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  width: 100%;
+  min-height: var(--menu-item-h);
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-primary);
+  font: var(--font-weight-normal) var(--font-size-md)/var(--line-height-snug) var(--font-family-body);
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu-item:focus {
+  outline: none;
+  background: var(--color-bg-selected);
+}
+.menu-item:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 1px var(--color-border-focus);
+}
+.menu-item.is-danger {
+  color: var(--color-status-error-text);
+}
+.menu-hint {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.menu-sep {
+  display: block;
+  height: 1px;
+  margin: var(--space-2) var(--space-3);
+  background: var(--color-border-hairline);
+}
+/* Cancel: its own block under the list, quieter, centred. */
+.menu-cancel {
+  justify-content: center;
+  margin-top: var(--space-4);
+  background: var(--color-bg-inset);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+.menu-note {
+  max-width: 34ch;
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  white-space: normal;
+}
+.menu-pop:focus {
+  outline: none;
+}
+
+/* ── From 768px: a popover under its button ── */
+@media (min-width: 768px) {
+  .menu-pop:not(.is-sheet) {
+    position: absolute;
+    min-width: 200px;
+    max-width: min(360px, calc(100vw - 16px));
+    border-radius: var(--menu-radius);
+    box-shadow: var(--menu-shadow);
+    animation: menu-fade-in var(--duration-normal) var(--easing-out);
+  }
+  .menu-item {
+    font-size: var(--font-size-base);
+  }
+  .menu-item:hover {
+    background: var(--color-bg-selected);
+  }
+}
+
+@keyframes menu-fade-in {
+  from { opacity: 0; }
+}
+@keyframes menu-sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+}

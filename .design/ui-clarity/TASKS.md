@@ -65,7 +65,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
     `tokens.css`._
 
 - [x] **2. Button hierarchy and the panel component** (frontend — Opus/high) **Frontend**
-  - **Done** (commit below): four button kinds and the panel live; one terracotta per view on every screen at 1280/800/375 (scan), focus ring `--shadow-focus` everywhere, no overflow; screenshots `screenshots/task2-*`.
+  - **Done** `4f01c5f`: four button kinds and the panel live; one terracotta per view on every screen at 1280/800/375 (scan), focus ring `--shadow-focus` everywhere, no overflow; screenshots `screenshots/task2-*`.
   - Rebuild `.btn` as primary (terracotta, the only caps button), secondary, quiet and danger, in
     sentence case (U4), in two sizes (`--control-h`, `--control-h-sm`). `.btn-accent`, `.btn-ghost`
     and `.btn-xs` map onto them so existing markup keeps working.
@@ -80,7 +80,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
     `--shadow-focus` everywhere.
   - _Depends on: 1. Modifies: `app.css`, `a11y.css`, `responsive.css`. New: panel classes._
 
-- [ ] **3. The menu button (`menu.js`)** (frontend — Opus/high) **Frontend**
+- [x] **3. The menu button (`menu.js`)** (frontend — Opus/high) **Frontend**
+  - **Done** (commit below): `LSCMenu.markup` / `LSCMenu.open` live; every key, outside click, AX "Actions, menu button, collapsed", the 375 sheet (48px rows, Cancel, Esc, backdrop, Tab trap) checked in the specimen and the editor's Move to / Add to a day at 1280, 800, 375; screenshots `screenshots/task3-*`.
   - A shared `LSCMenu`: a button opens a `role="menu"` list of items. Items can be links,
     dividers or danger. A menu with no available items isn't rendered.
   - **Keyboard** (APG menu button): arrows, Home/End, typeahead, Enter/Space, and Esc returning
