@@ -688,6 +688,15 @@ a:hover { color: var(--ink); }
 .sign-form .btn-primary[aria-busy="true"] { cursor: progress; background: var(--terra-dk); }
 .sign-hint { margin-top: 8px; font-size: 14px; color: var(--muted); min-height: 1.4em; }
 
+/* A short screen (a small phone, or any phone in landscape) has no room for
+   the agreement as a box of its own: it would shrink to a few lines that
+   scroll inside a form that scrolls too. There it runs at full length, and
+   the one scroll takes the client through it to the fields and Sign. */
+@media (max-height: 699px) {
+  .sign-form { height: auto; min-height: 100%; }
+  .sign-text { flex: none; min-height: 0; overflow: visible; }
+}
+
 @media (min-width: 560px) {
   .sign {
     width: min(720px, calc(100% - 48px));
@@ -699,6 +708,46 @@ a:hover { color: var(--ink); }
   .sign-form { padding: 22px 28px 24px; }
   .sign-title { font-size: 26px; }
   .sign-fields { grid-template-columns: 1fr 1fr; gap: 16px; }
+}
+
+/* ── The phone's Accept bar (an open estimate only) ─────────────────────── */
+
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--paper);
+  border-top: 1px solid var(--ink);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.22s ease, visibility 0s linear 0.22s;
+}
+.dock.is-shown {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.22s ease, visibility 0s;
+}
+.dock-total { display: flex; flex-direction: column; line-height: 1.2; }
+.dock-label { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.dock-fig { font-family: var(--mono); font-size: 19px; }
+.dock .dock-btn { width: auto; flex: none; padding: 0 22px; }
+@media (max-width: 359px) {
+  .dock { padding-left: 16px; padding-right: 16px; }
+  .dock-fig { font-size: 17px; }
+  .dock .dock-btn { padding: 0 16px; }
+}
+/* Room at the end of the page, so the bar never sits on the footer. */
+.has-dock #doc { padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 768px) {
+  .dock { display: none; }
+  .has-dock #doc { padding-bottom: 88px; }
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */
@@ -758,6 +807,6 @@ a:hover { color: var(--ink); }
 }
 
 @media print {
-  .panel, .skip, .foot .btn, .sign, .copy { display: none; }
-  #doc { padding: 0; }
+  .panel, .skip, .foot .btn, .sign, .copy, .dock { display: none; }
+  #doc, .has-dock #doc { padding: 0; }
 }

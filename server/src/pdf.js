@@ -323,7 +323,6 @@ function buildQuoteHtml(estimate, pricing, business) {
       '<div style="font-size:9pt;color:#888;margin-top:2px">' + esc(estimate.date || '') + '</div>' +
       '<div style="font-size:15pt;font-weight:800;color:#181818;margin-top:6px">' + esc(estimate.name) + '</div>' +
       (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
-      (client.contactName ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">' + esc(client.contactName) + (client.email ? ' &middot; ' + esc(client.email) : '') + '</div>' : '') +
       '</div></div>' +
     deliverablesTableHtml(estimate.activeRows) +
     productionDaysHtml(estimate, pricing, true) +
@@ -367,7 +366,6 @@ function invoiceHeadHtml(business, title, number, dateLines, estimate) {
       dateLines.map((d) => '<div style="font-size:9pt;color:#888;margin-top:2px">' + esc(d) + '</div>').join('') +
       '<div style="font-size:15pt;font-weight:800;color:#181818;margin-top:6px">' + esc(estimate.name) + '</div>' +
       (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
-      (client.contactName ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">' + esc(client.contactName) + (client.email ? ' &middot; ' + esc(client.email) : '') + '</div>' : '') +
       (client.abn ? '<div style="font-size:9.5pt;color:#888;margin-top:2px">ABN ' + esc(formatAbn(client.abn)) + '</div>' : '') +
       '</div></div>';
 }

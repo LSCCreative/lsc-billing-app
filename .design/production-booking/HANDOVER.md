@@ -190,10 +190,14 @@ email, then tick task 28. If the dialog is gone, delete that key in Resend and m
   task 32). Its decisions are in its note in `TASKS.md`. Invoices (page and PDF) now read dated
   days as Confirmed. `api-scratch` is as it was (restored from a backup).
 
-**Exact next item:** **task 32, E polish and deploy** (Opus/high, **frontend task**, for the
-polish; then Sonnet/medium for the deploy). Task 31 (Stripe) is held (D101). Task 28 still needs
-the Resend key (above) before it can be ticked, and the deploy needs it in the NAS `.env`. The
-user should also try the live site once (sign in, open a project).
+- **E, task 32 polish** (2026-10-05, committed; see its note in `TASKS.md`): the user's
+  revisions R1–R4 (no contact person's name on client documents, the signatory's name typed at
+  signing, the info block above the title) and the phone Accept bar. The user approved.
+
+**Exact next item:** **task 32's deploy** (Sonnet/medium): NAS v14, then Pages, then the end-to-end
+run. Task 31 (Stripe) is held (D101). Task 28 still needs the Resend key (above) before it can be
+ticked; without it in the NAS `.env` the app deploys fine but says "Email isn't set up" and only
+Copy link sends. The user should also try the live site once (sign in, open a project).
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the

@@ -89,7 +89,7 @@ function clientView(estimate, pricing, business, sent) {
     version: sent.n,
     upid: str(estimate.upid),
     name: str(estimate.name),
-    client: { businessName: str(client.businessName), contactName: str(client.contactName) },
+    client: { businessName: str(client.businessName) },
     issuedOn: str(sent.issuedOn),
     validUntil: str(sent.validUntil),
     business: clientBusiness(business),
@@ -207,6 +207,8 @@ function publicEstimate(db, token, today) {
   if (!version) return null;
   const project = row.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(row.project_id) : null;
   const view = JSON.parse(version.client_view_json);
+  // Versions frozen before contact names left the client view still hold one.
+  if (view.client) delete view.client.contactName;
 
   let state = stateOf(db, row, version, project, today);
   if (state === 'open' || state === 'expired') {
@@ -401,7 +403,7 @@ function invoiceView(db, row, today) {
     state,
     upid: str(estimate.upid),
     name: str(estimate.name),
-    client: { businessName: str(client.businessName), contactName: str(client.contactName), abn: str(client.abn) },
+    client: { businessName: str(client.businessName), abn: str(client.abn) },
     issuedOn: str(doc.issuedAt),
     dueOn: str(doc.dueAt),
     paidOn: state === 'paid' ? str(doc.paidAt) : '',

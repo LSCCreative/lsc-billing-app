@@ -12,10 +12,12 @@
  * WHAT IS SIGNED IS WHAT WAS SHOWN. The agreement is the Settings text filled
  * (documents.js, the same call the Settings preview makes) from the FROZEN
  * version the client is looking at, never the estimate as edited since. The
- * one field the client fills while reading, {signatory_role}, is left as a
- * gap: the reply carries the text as `parts`, the page joins them with the
- * role as it is typed, and signing joins the same parts with the same role.
- * `key` is a hash of the version and the parts; if anything that fills the
+ * two fields the client fills while reading, {client_contact} (the name they
+ * sign with: the client is a business, and the contact on file may not be
+ * who signs) and {signatory_role}, are left as gaps: the reply carries the
+ * text as `parts` with `slots` naming each gap ('name' or 'role'), the page
+ * fills them as they're typed, and signing fills the same gaps the same way.
+ * `key` is a hash of the version, the parts and the slots; if anything that fills the
  * text changed while the client read it (the owner edited the agreement,
  * the deposit %, or midnight passed), the key no longer matches and the
  * client is shown the new text instead of signing the old one.
@@ -37,6 +39,14 @@ const { queueSigningEmails } = require('./sends');
 /* Where the role goes until it's typed. NUL can't come from a typed role or a
    Settings text (both are stripped of it), so it can't be confused with one. */
 const ROLE_SLOT = '\u0000signatory_role\u0000';
+const NAME_SLOT = '\u0000client_contact\u0000';
+const SLOT_OF = { [ROLE_SLOT]: 'role', [NAME_SLOT]: 'name' };
+
+/* The text with each gap filled from `fill` ({ name, role }). */
+function joinAgreement(agreement, fill) {
+  return agreement.parts.reduce((text, part, i) =>
+    text + (i > 0 ? fill[agreement.slots[i - 1]] : '') + part, '');
+}
 
 /* What a client agrees to when the owner hasn't written an agreement yet
    (Settings → Service agreement left empty): only the estimate itself. */
@@ -77,7 +87,7 @@ function choiceFor(db, project) {
 /**
  * The agreement for a link's newest version, as the client is to see it.
  *
- * @returns {{parts:string[], key:string, choice:object, frozen:object}}
+ * @returns {{parts:string[], slots:string[], key:string, choice:object, frozen:object}}
  */
 function agreementOf(db, link, today) {
   const snap = JSON.parse(link.version.snapshot_json);
@@ -101,17 +111,20 @@ function agreementOf(db, link, today) {
     today,
   });
   values.signatory_role = ROLE_SLOT;
+  values.client_contact = NAME_SLOT;
   const template = (settings.agreementText.trim() ? settings.agreementText : FALLBACK_TEXT).replace(/\u0000/g, '');
-  const parts = fillAgreement(template, values).text.split(ROLE_SLOT);
-  return { parts, key: sha256(JSON.stringify([link.version.n, parts])), choice, frozen: estimate };
+  const pieces = fillAgreement(template, values).text.split(/(\u0000(?:signatory_role|client_contact)\u0000)/);
+  const parts = pieces.filter((_, i) => i % 2 === 0);
+  const slots = pieces.filter((_, i) => i % 2 === 1).map((slot) => SLOT_OF[slot]);
+  return { parts, slots, key: sha256(JSON.stringify([link.version.n, parts, slots])), choice, frozen: estimate };
 }
 
 /** The agreement on offer for a link (the GET adds it while `open`), or null. */
 function agreementOffer(db, token, today) {
   const link = linkOf(db, token);
   if (!link) return null;
-  const { parts, key } = agreementOf(db, link, today);
-  return { parts, key };
+  const { parts, slots, key } = agreementOf(db, link, today);
+  return { parts, slots, key };
 }
 
 const reply = (status, body) => ({ status, body });
@@ -152,7 +165,7 @@ function gate(db, token, body, today) {
       reply: reply(409, {
         error: 'agreement_changed',
         message: 'The agreement has just been updated. Read it through again before you sign.',
-        agreement: { parts: agreement.parts, key: agreement.key },
+        agreement: { parts: agreement.parts, slots: agreement.slots, key: agreement.key },
       }),
     };
   }
@@ -182,7 +195,7 @@ async function signEstimate(db, token, body, ctx) {
   if (first.reply) return first.reply;
 
   // The record: decided once, printed into the PDF, stored as printed.
-  const text = first.agreement.parts.join(role);
+  const text = joinAgreement(first.agreement, { name: fullName, role });
   const sig = {
     id: newId('sig'),
     version_id: first.link.version.id,
@@ -258,4 +271,4 @@ async function signEstimate(db, token, body, ctx) {
   return out;
 }
 
-module.exports = { signEstimate, agreementOffer, FALLBACK_TEXT, ROLE_SLOT, NAME_MAX };
+module.exports = { signEstimate, agreementOffer, joinAgreement, FALLBACK_TEXT, ROLE_SLOT, NAME_SLOT, NAME_MAX };

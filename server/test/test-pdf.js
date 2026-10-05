@@ -51,6 +51,7 @@ test('buildEstimateHtml: quote shows the total and escapes client fields', () =>
   assert.match(html, /\$280\.00/);
   assert.match(html, /Acme Pty Ltd/);
   assert.doesNotMatch(html, /INVOICE/);
+  assert.doesNotMatch(html, /Jo Bloggs|jo@acme/, 'the business, not its contact (B2B)');
 });
 
 test('buildEstimateHtml: invoice shows the invoice number and payment details when set', () => {
@@ -557,8 +558,9 @@ test('invoice PDF: the figures the tests below pin are task 14’s', () => {
 
 test('invoice PDF: the deposit is a summary — the %, the estimate total, the days booked, the deposit due (D37)', () => {
   const { deposit } = t20Docs();
-  const html = buildInvoiceDocHtml(deposit, DAY_PRICING, T20_SETTINGS);
+  const html = buildInvoiceDocHtml({ ...deposit, estimate: { ...deposit.estimate, client: { ...deposit.estimate.client, contactName: 'Jo Bloggs' } } }, DAY_PRICING, T20_SETTINGS);
   assert.match(html, /TAX INVOICE <span style="color:#B85444">INV-T20-D<\/span>/);
+  assert.doesNotMatch(html, /Jo Bloggs/, 'the business, not its contact (B2B)');
   assert.match(html, /Issued 4 October 2026 · Due 18 October 2026/);
   assert.match(html, /Deposit &mdash; 50% to secure your booking/);
   assert.match(html, /For estimate T20 &middot; Brand film/);

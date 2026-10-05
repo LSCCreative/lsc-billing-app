@@ -89,7 +89,7 @@
    */
   const AGREEMENT_FIELDS = Object.freeze([
     { key: 'client_business', says: 'The client’s business name' },
-    { key: 'client_contact', says: 'The client contact’s name' },
+    { key: 'client_contact', says: 'The name of the person who signs (typed when they sign)' },
     { key: 'client_abn', says: 'The client’s ABN' },
     { key: 'client_email', says: 'The client contact’s email' },
     { key: 'client_phone', says: 'The client contact’s phone' },

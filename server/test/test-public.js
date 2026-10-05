@@ -141,7 +141,8 @@ test('sending freezes v1: a 43-character link, and the client view the page read
   const { localToday } = require('../src/routes/projects');
   assert.deepEqual([e.kind, e.state, e.version, e.upid, e.name, e.issuedOn, e.validUntil],
     ['estimate', 'open', 1, est.upid, est.name, localToday(), '2026-11-03']);
-  assert.deepEqual(e.client, { businessName: 'Saltwater Co.', contactName: 'Priya Nair' }, 'no email, phone or ABN of the client');
+  assert.deepEqual(e.client, { businessName: 'Saltwater Co.' }, 'the business only: no contact name, email, phone or ABN');
+  assert.doesNotMatch(JSON.stringify(r.body), /Priya/, 'the contact on file is never on a client page (B2B)');
   assert.deepEqual(e.deliverables, [{ name: 'Brand film', format: '16:9', duration: '2–3 min', qty: 1 }]);
   assert.deepEqual(e.days.map((d) => [d.date, d.status, d.startTime, d.endTime, d.items.map((i) => i.name)]), [
     [est.days[0].date, 'pencilled', '16:00', '22:00', ['Video Capture']],
@@ -400,6 +401,8 @@ async function offer(token) {
   const e = (await pub(token, await signer())).body.estimate;
   return { e, body: { fullName: 'Priya Nair', role: 'Marketing lead', agree: true, version: e.version, key: e.agreement && e.agreement.key } };
 }
+/* The agreement as the page shows it: each gap filled with what's typed. */
+const fill = (a, name, role) => a.parts.reduce((t, part, i) => t + (i ? (a.slots[i - 1] === 'name' ? name : role) : '') + part, '');
 const AGREEMENT = 'SERVICE AGREEMENT\nClient: {client_business} (ABN {client_abn})\nSignatory: {client_contact}, {signatory_role}\n' +
   'Total {total}. Deposit ({deposit_pct}): {deposit_amount}. Balance {balance_amount}, due {due_days} days.\nDays:\n{production_days}\n' +
   'Signed as {signatory_role} on {date}.';
@@ -417,9 +420,10 @@ test('signing: the agreement is offered while open, signed as shown, and accepts
   const { e, body } = await offer(token);
   assert.equal(e.state, 'open');
   assert.equal(e.signed, false);
-  const { parts, key } = e.agreement;
-  assert.equal(parts.length, 3, 'two gaps for the role');
-  const shown = parts.join(body.role);
+  const { parts, slots, key } = e.agreement;
+  assert.deepEqual(slots, ['name', 'role', 'role'], 'a gap for the signer\'s name, two for the role');
+  assert.doesNotMatch(parts.join(''), /Priya/, 'the contact on file isn\'t assumed to be who signs');
+  const shown = fill(e.agreement, body.fullName, body.role);
   assert.match(shown, /Signatory: Priya Nair, Marketing lead\n/);
   assert.match(shown, /Client: Saltwater Co\. \(ABN 51 824 753 556\)/);
   assert.match(shown, /Deposit \(40%\): \$[\d,]+\.\d\d\. Balance \$[\d,]+\.\d\d, due 14 days/);
@@ -564,7 +568,7 @@ test('signing: what must be typed, and a changed version or agreement asks for a
   await setAgreement('New terms for {client_business}, signed by {signatory_role}.');
   const r = await sign(token, body);
   assert.deepEqual([r.status, r.body.error], [409, 'agreement_changed']);
-  assert.deepEqual(r.body.agreement.parts, ['New terms for Saltwater Co., signed by ', '.']);
+  assert.deepEqual([r.body.agreement.parts, r.body.agreement.slots], [['New terms for Saltwater Co., signed by ', '.'], ['role']]);
   assert.notEqual(r.body.agreement.key, e.agreement.key);
   // A re-send while they read: a new version to look at first.
   await sent(est, '2026-11-21');
@@ -586,7 +590,7 @@ test('signing: with no agreement written, the client accepts the estimate itself
   const raw = await (await fetch(`${await signer()}/public/estimates/${token}`)).text();
   assert.doesNotMatch(raw, FORBIDDEN);
   const { e, body } = await offer(token);
-  assert.match(e.agreement.parts.join('Director'), new RegExp(`Saltwater Co\\. accepts estimate ${est.upid}, Harbour \\d+, for \\$[\\d,.]+, as set out in the estimate\\.[\\s\\S]*Priya Nair, Director, on 4 October 2026\\.`));
+  assert.match(fill(e.agreement, 'Priya Nair', 'Director'), new RegExp(`Saltwater Co\\. accepts estimate ${est.upid}, Harbour \\d+, for \\$[\\d,.]+, as set out in the estimate\\.[\\s\\S]*Priya Nair, Director, on 4 October 2026\\.`));
   const r = await fetch(`${await signer()}/public/estimates/${token}/accept`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: PAGES }, body: JSON.stringify(body),
   });
@@ -844,7 +848,7 @@ test('invoice page: each kind, from the stored figures, and nothing owner-only i
   assert.equal(dep.amountDue, dt.totalIncGst);
   assert.deepEqual([dep.issuedOn, dep.dueOn, dep.paidOn], [realDay(0), realDay(14), '']);
   assert.deepEqual(dep.payment, INV_SETTINGS.payment);
-  assert.deepEqual([dep.client.businessName, dep.client.abn], ['Saltwater Co.', '51824753556']);
+  assert.deepEqual(dep.client, { businessName: 'Saltwater Co.', abn: '51824753556' }, 'the business, no contact name (B2B)');
   // A summary: the days booked with no items, no deliverables, no extras.
   assert.equal(dep.days.length, 2);
   assert.ok(dep.days.every((d) => d.items.length === 0));
@@ -965,6 +969,7 @@ test('invoice page: the PDF is the owner’s, by link; refused while a tax invoi
   const html = (await res.text()).replace('%PDF-fake\n', '');
   assert.match(html, /TAX INVOICE/);
   assert.match(html, /Payment Details.*Big Bank/s);
+  assert.doesNotMatch(html, /Priya/, 'no contact name on an invoice (B2B)');
   assert.doesNotMatch(html, /Pencilled|Proposed &middot;/, 'its dated days read Confirmed');
 
   await api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...INV_SETTINGS, business: { name: 'LSC Creative' } }) });

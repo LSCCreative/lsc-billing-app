@@ -1047,6 +1047,26 @@ Tasks 24–26 can be built with placeholders.
     confirm the email, the invoices, the calendar and the signed PDF. (The card payment step is
     held, D101.)
 
+  **Polish done 2026-10-05** (commit below; the deploy and the end-to-end run still to do).
+  - **The user's revisions (approved):** R1, no contact person's name on any estimate or invoice
+    (client pages, both PDFs, `public.js` no longer serves `client.contactName`, and older frozen
+    views have it stripped on read); the agreement's `{client_contact}` is now a **gap filled by
+    the name typed at signing**, like the role (`signing.js` `parts` + `slots`, `joinAgreement`;
+    the key hashes both). R2, the For / number / Issued / Due-or-Valid block sits above the title
+    and message on both pages. R3, 50% was already the default (the 40% was scratch-only test
+    data). R4, bank details were already built (Settings → Payment); scratch simply had none.
+  - **Phone Accept bar** (`dock` in `c.js`/`c.css`): below 768px, while the Accept panel is still
+    below the screen, a pinned bar with the total and Accept estimate; hidden (and `inert`) once
+    the panel is in view or passed. **Short screens (<700px tall):** the agreement runs full
+    length in one scroll, not a box inside a scrolling form.
+  - `npm test` 523/523; mutations caught 3 of 3 (contact name in the PDF, in the public reply, the
+    name gap left as the CRM name). Checked in headless Chrome (the pane was hidden, so its
+    IntersectionObserver never fired) at 320×568, 375×667 and 1280: bar shows, hides at the
+    panel, returns on scroll up; tapping it opens the dialog with focus on the agreement; Escape
+    returns focus to it; no overflow.
+  - **Left as is (the user may ask):** emails still greet the contact by name ("Hi Priya,"); the
+    owner's own screens still show the contact.
+
 ## Review
 
 - [ ] **33. Money-math and security review, then design review** (review).

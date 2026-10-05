@@ -15,9 +15,9 @@
  * Accept opens the signing dialog (task 27, D40): the agreement the GET
  * carried while the estimate is open, a full name, a role and the "I agree"
  * tick. The agreement arrives as `parts`, the text with a gap wherever the
- * signatory's role goes; the dialog joins them with the role as it's typed,
- * and the server joins the same parts with the same role to store, so what is
- * signed is exactly what was on screen.
+ * signatory's name or role goes (`slots` says which); the dialog fills them as
+ * they're typed, and the server fills the same gaps the same way to store, so
+ * what is signed is exactly what was on screen.
  */
 (function () {
   'use strict';
@@ -101,23 +101,23 @@
     return '<span class="chip chip-' + esc(status) + '">' + esc(STATUS_WORD[status] || 'Proposed') + '</span>';
   }
 
+  /* Letterhead, then who it's for and its dates, then the job and the note.
+     The client is a business (B2B): no contact person's name is printed. */
   function masthead(e) {
-    const first = String((e.client && e.client.contactName) || '').trim().split(/\s+/)[0];
     return '<header class="mast">' +
         '<p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p>' +
         '<p class="kicker">Estimate' + (e.version > 1 ? ', version ' + esc(e.version) : '') + '</p>' +
       '</header>' +
-      '<h1 class="title">' + esc(e.name) + '</h1>' +
-      (e.state === 'open'
-        ? '<p class="lede">Here’s your estimate' + (first ? ', ' + esc(first) : '') +
-          '. If it looks right, press the Accept estimate button below.</p>'
-        : '') +
       '<dl class="meta">' +
         metaRow('For', e.client && e.client.businessName) +
         metaRow('Reference', e.upid) +
         metaRow('Issued', longDate(e.issuedOn)) +
         metaRow('Valid until', longDate(e.validUntil)) +
-      '</dl>';
+      '</dl>' +
+      '<h1 class="title">' + esc(e.name) + '</h1>' +
+      (e.state === 'open'
+        ? '<p class="lede">Here’s your estimate. If it looks right, press the Accept estimate button below.</p>'
+        : '');
   }
 
   function metaRow(term, value) {
@@ -231,7 +231,7 @@
           '<h2 class="panel-title" id="h-accept">Ready to go ahead?</h2>' +
           '<p>Accepting opens our service agreement. Read it through, add your name and role, and sign. ' +
           'It takes a couple of minutes.</p>' +
-          '<button type="button" class="btn btn-primary" data-act="accept">Accept estimate</button>' +
+          '<button type="button" class="btn btn-primary" data-act="accept" id="accept-main">Accept estimate</button>' +
           (e.faqUrl ? '<p class="panel-aside"><a href="' + esc(e.faqUrl) + '" target="_blank" rel="noopener">Questions about the agreement? Read our FAQ<span class="visually-hidden"> (opens in a new tab)</span></a></p>' : '') +
         '</section>';
       case 'taken':
@@ -288,11 +288,43 @@
 
   let current = null; // the estimate on screen
 
+  /* On a phone the Accept panel is a long scroll away, so while it's still
+     below the screen a bar pinned to the bottom carries the total and the
+     same button. It steps aside once the panel itself is in view (or has been
+     passed), so there's never two on screen. Hidden from 768px by the CSS. */
+  function dock(e) {
+    if (e.state !== 'open') return '';
+    const t = e.totals || {};
+    return '<div class="dock" id="dock" inert>' +
+        '<p class="dock-total"><span class="dock-label">Total</span><span class="dock-fig">' + money(t.total) + '</span></p>' +
+        '<button type="button" class="btn btn-primary dock-btn" data-act="accept">Accept estimate</button>' +
+      '</div>';
+  }
+
+  let dockWatch = null;
+  function watchDock() {
+    if (dockWatch) { dockWatch.disconnect(); dockWatch = null; }
+    document.body.classList.remove('has-dock');
+    const bar = document.getElementById('dock');
+    const target = document.getElementById('accept-main');
+    if (!bar || !target || !('IntersectionObserver' in window)) return;
+    document.body.classList.add('has-dock');
+    dockWatch = new IntersectionObserver(([entry]) => {
+      const below = !entry.isIntersecting && entry.boundingClientRect.top > 0;
+      bar.classList.toggle('is-shown', below);
+      bar.inert = !below;
+      // Focus never stays on a bar that's leaving.
+      if (!below && bar.contains(document.activeElement) && !(dlg && dlg.open)) target.focus({ preventScroll: true });
+    });
+    dockWatch.observe(target);
+  }
+
   function render(e) {
     current = e;
-    doc.innerHTML = masthead(e) + deliverables(e) + days(e) + included(e) + investment(e) + action(e) + footer(e);
+    doc.innerHTML = masthead(e) + deliverables(e) + days(e) + included(e) + investment(e) + action(e) + footer(e) + dock(e);
     doc.removeAttribute('aria-busy');
     document.title = (e.name ? e.name + ' — ' : '') + 'Estimate — LSC Creative';
+    watchDock();
   }
 
   // ── The invoice (task 30, D35–D37, D46) ───────────────────────────────────
@@ -300,12 +332,10 @@
   const KIND_WORD = { deposit: 'deposit invoice', final: 'final invoice', single: 'invoice' };
   const DUE_LABEL = { deposit: 'Deposit due', final: 'Balance due', single: 'Total due' };
   const PAID_LABEL = { deposit: 'Deposit paid', final: 'Balance paid', single: 'Total paid' };
-  const firstName = (v) => String((v.client && v.client.contactName) || '').trim().split(/\s+/)[0];
 
   /* What the invoice is and where it stands, in one or two plain sentences. */
   function invoiceLede(v) {
     if (v.state === 'void') return '';
-    const first = firstName(v);
     const what = v.invoiceKind === 'deposit'
       ? 'Here’s the deposit invoice to secure your booking'
       : 'Here’s the ' + (v.invoiceKind === 'final' ? 'final invoice' : 'invoice') + ' for the job';
@@ -315,7 +345,7 @@
     else if (v.state === 'overdue') then = 'Payment of ' + amount + ' was due on ' + dayDate(v.dueOn) + '. If you’ve already paid, thank you.';
     else if (v.dueOn) then = 'Please pay ' + amount + ' by ' + dayDate(v.dueOn) + '.';
     else then = 'The amount due is ' + amount + '.';
-    return '<p class="lede">' + esc(what + (first ? ', ' + first : '') + '. ' + then) + '</p>';
+    return '<p class="lede">' + esc(what + '. ' + then) + '</p>';
   }
 
   function invoiceHead(v) {
@@ -324,8 +354,6 @@
         '<p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p>' +
         '<p class="kicker">' + (v.taxInvoice ? 'Tax invoice' : 'Invoice') + '</p>' +
       '</header>' +
-      '<h1 class="title">' + esc(v.name || 'Invoice') + '</h1>' +
-      invoiceLede(v) +
       '<dl class="meta">' +
         (c.businessName
           ? '<div><dt>For</dt><dd>' + esc(c.businessName) +
@@ -334,7 +362,9 @@
         metaRow('Invoice number', v.number) +
         metaRow('Issued', longDate(v.issuedOn)) +
         (v.state === 'paid' ? metaRow('Paid', longDate(v.paidOn)) : metaRow('Due', longDate(v.dueOn))) +
-      '</dl>';
+      '</dl>' +
+      '<h1 class="title">' + esc(v.name || 'Invoice') + '</h1>' +
+      invoiceLede(v);
   }
 
   /* A void invoice stays readable as a record, with the notice first (D100). */
@@ -460,6 +490,7 @@
       invoiceTotal(v) + slip(v) + footer(v);
     doc.removeAttribute('aria-busy');
     document.title = (v.number ? v.number + ' — ' : '') + (v.taxInvoice ? 'Tax invoice' : 'Invoice') + ' — LSC Creative';
+    watchDock();
   }
 
   /* A page with no estimate on it: a bad link, or the server out of reach. */
@@ -470,6 +501,7 @@
       (retry ? '<button type="button" class="btn btn-quiet lede-btn" data-act="retry">Try again</button>' : '');
     doc.removeAttribute('aria-busy');
     document.title = title + ' — LSC Creative';
+    watchDock();
   }
 
   const renderMissing = () => renderNotice('We couldn’t find this ' + WORD[kind],
@@ -587,7 +619,7 @@
      showModal makes the page behind it inert, holds focus inside, and closes
      on Escape. */
   let dlg = null;
-  let agreement = null; // { parts, key } as last given by the server
+  let agreement = null; // { parts, slots, key } as last given by the server
   let signing = false;
   let opener = null;
 
@@ -625,7 +657,7 @@
 
     field('sg-form').addEventListener('input', () => {
       if (field('sg-msg').dataset.kind === 'input') showMsg('');
-      fillRole();
+      fillSlots();
       readiness();
     });
     field('sg-form').addEventListener('submit', (ev) => {
@@ -643,8 +675,8 @@
     });
   }
 
-  /* The agreement, with the role (or a marked gap until there is one) in
-     each place it goes. Text nodes throughout: nothing in it is markup. */
+  /* The agreement, with the typed name and role (or a marked gap until there
+     is one) in each place they go. Text nodes throughout: nothing in it is markup. */
   function showAgreement() {
     const box = field('sg-text');
     box.textContent = '';
@@ -653,17 +685,19 @@
       if (i < agreement.parts.length - 1) {
         const slot = document.createElement('span');
         slot.className = 'sign-slot';
+        slot.dataset.slot = agreement.slots[i];
         box.appendChild(slot);
       }
     });
-    fillRole();
+    fillSlots();
   }
 
-  function fillRole() {
-    const role = cleanRole();
+  function fillSlots() {
+    const typed = { name: field('sg-name').value.replace(/\s+/g, ' ').trim(), role: cleanRole() };
     dlg.querySelectorAll('.sign-slot').forEach((slot) => {
-      slot.textContent = role || 'your role';
-      slot.classList.toggle('is-empty', !role);
+      const kind = slot.dataset.slot === 'name' ? 'name' : 'role';
+      slot.textContent = typed[kind] || (kind === 'name' ? 'your name' : 'your role');
+      slot.classList.toggle('is-empty', !typed[kind]);
     });
   }
 
