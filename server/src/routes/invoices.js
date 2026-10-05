@@ -33,7 +33,8 @@ const PAID_VIA = ['bank', 'card'];
  *   POST /api/invoices/:id/sent         { issuedAt, dueAt } — Mark sent, Stage
  *                                       D's stand-in for sending, with any
  *                                       issue date. From draft. The app now
- *                                       sends through /send.
+ *                                       sends through /send; registered for
+ *                                       the tests only (`markSent`, C13).
  *   POST /api/invoices/:id/send         the send panel (task 29, D43), from
  *                                       draft: { by: 'email', to, message?,
  *                                       scheduledFor?, dueAt } becomes
@@ -62,7 +63,7 @@ const PAID_VIA = ['bank', 'card'];
  * Every write answers as GET does, logs an `activity` row and touches the
  * project, so the folder's list and its Activity move with it.
  */
-function registerInvoiceRoutes(app, db) {
+function registerInvoiceRoutes(app, db, opts = {}) {
   const rowOf = (id) => db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
 
   function reply(req, res, id, extra) {
@@ -159,7 +160,7 @@ function registerInvoiceRoutes(app, db) {
     return reply(req, res, row.id);
   });
 
-  app.post('/api/invoices/:id/sent', (req, res) => {
+  if (opts.markSent) app.post('/api/invoices/:id/sent', (req, res) => {
     const row = invoiceFor(req, res);
     if (!row) return undefined;
     const refusal = cannotEdit(row);

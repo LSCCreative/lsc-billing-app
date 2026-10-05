@@ -613,7 +613,9 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
  *
  *   POST /sent     { validUntil } — Mark sent, Stage D's stand-in for sending.
  *                  The app now sends through /send; this stays for the tests
- *                  that freeze a version directly. The lead estimate becomes `sent`, and the
+ *                  that freeze a version directly, and is registered only
+ *                  for them (`markSent`, C13): production answers 404.
+ *                  The lead estimate becomes `sent`, and the
  *                  `sent` row's detail carries validUntil, which the stage line
  *                  reads ("valid until", "expired", D44). No version: nothing
  *                  is frozen until E (D34). Refused once declined or accepted.
@@ -654,7 +656,7 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
  *                  gone out or been paid (a made-the-old-way one excepted, as
  *                  deleting its estimate always took it).
  */
-function registerProjectRoutes(app, db) {
+function registerProjectRoutes(app, db, opts = {}) {
   app.get('/api/activity', (req, res) => {
     const limit = req.query.limit === undefined ? HOME_LIMIT : Number(req.query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > HOME_MAX) {
@@ -803,7 +805,7 @@ function registerProjectRoutes(app, db) {
 
   app.get('/api/projects/:id', (req, res) => folderReply(req, res));
 
-  app.post('/api/projects/:id/sent', (req, res) => {
+  if (opts.markSent) app.post('/api/projects/:id/sent', (req, res) => {
     const p = projectFor(req, res);
     if (!p) return;
     const validUntil = (req.body || {}).validUntil;

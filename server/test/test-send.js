@@ -462,3 +462,16 @@ test('a failed email is cancelled when its document moves on, and can’t be ret
   await post(`/api/invoices/${dep.id}/paid?today=${today}`, { paidAt: today, via: 'bank' });
   assert.equal(rowsOf(dep.id)[0].status, 'cancelled');
 });
+
+test('Stage D’s Mark sent routes exist for the tests only: a server not in test mode answers 404 (C13)', async () => {
+  const url = await start({ markSentRoutes: false });
+  const est = await estimate();
+  const r1 = await post(`/api/projects/${est.projectId}/sent`, { validUntil: dayIn(30) }, url);
+  const dep = await deposit();
+  const r2 = await post(`/api/invoices/${dep.id}/sent`, { issuedAt: today, dueAt: today }, url);
+  assert.deepEqual([r1.status, r2.status], [404, 404]);
+  assert.equal(invRow(dep.id).status, 'draft');
+  assert.equal(db.prepare('SELECT status FROM estimates WHERE id = ?').get(est.id).status, 'draft');
+  // The app's own send still works there.
+  assert.equal((await send(est, { by: 'link', validUntil: dayIn(30) }, url)).status, 200);
+});

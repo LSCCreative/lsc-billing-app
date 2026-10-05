@@ -124,8 +124,11 @@ function createApp(db, opts = {}) {
   registerCalendarRoutes(app, db);
   registerHolidayRoutes(app, db, opts);
   registerSetupRoutes(app, db);
-  registerProjectRoutes(app, db);
-  registerInvoiceRoutes(app, db);
+  // Stage D's Mark sent routes (POST …/sent) are for the tests alone (C13):
+  // the app sends through …/send, whose checks they don't share.
+  const stageD = { markSent: opts.markSentRoutes !== undefined ? opts.markSentRoutes : config.isTest };
+  registerProjectRoutes(app, db, stageD);
+  registerInvoiceRoutes(app, db, stageD);
   registerSendRoutes(app, db, { outbox });
 
   // ── Static app shell. Empty until the UI is ported off the Electron build.

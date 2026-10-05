@@ -1171,7 +1171,10 @@ Tasks 24–26 can be built with placeholders.
     It greets the signer by the name they typed. It still goes to the quote's client email, the
     only address there is (signing asks for none; the user may want an email field there).
     Mutation: greeting the contact again (1 fail).
-  - [ ] **C13. Unused Stage D `/sent` routes keep weaker guards** (backend, Sonnet/high).
+  - [x] **C13. Unused Stage D `/sent` routes keep weaker guards** (backend, Sonnet/high).
+    Both Mark sent routes (`POST /api/projects/:id/sent`, `/api/invoices/:id/sent`) are registered
+    only in test mode (`createApp` `markSentRoutes`, default `config.isTest`); the live server
+    answers 404, and the app's own `/send` is untouched. Mutation: invoice route left on (1 fail).
   - [ ] **C14. `sends.js` own `isYmd` accepts impossible due dates** (backend, Sonnet/high).
   - [ ] **C15. Owner previewing a copied link logs "client opened"** (backend, Sonnet/high).
 
