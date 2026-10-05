@@ -870,7 +870,7 @@ Tasks 24–26 can be built with placeholders.
     signature, `signed` never true, the PDF never kept, agreement offered in every state, `signed`
     off Home, owner PDF under any project, today in UTC, no hash on the PDF).
 
-- [ ] **28. Email and the send queue** (backend — Sonnet/high). _Depends on: 25._
+- [x] **28. Email and the send queue** (backend — Sonnet/high). _Depends on: 25._ **Done 2026-10-05:** live Settings test email received (Resend key "LSC Billing App (NAS)" on the NAS).
   - **`server/src/mail.js`:** `nodemailer` over plain SMTP (Resend, D102) with `SMTP_HOST`,
     `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` (`admin@lsccreative.studio`) and
     `MAIL_REPLY_TO` from `.env`. The key is never logged, never in the database.

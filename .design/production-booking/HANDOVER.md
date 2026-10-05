@@ -199,7 +199,7 @@ email, then tick task 28. If the dialog is gone, delete that key in Resend and m
   `lsccreative.studio` only), set 2026-10-05; boot log `[mail] connected as admin@lsccreative.studio`.
   The older "LSC Billing App SMTP" key is unused (its value was never kept): the user may delete it.
 
-**Exact next item:** live Settings → Email → Send a test email (then tick task 28), then **task 32's end-to-end run with the user** (a real estimate to
+**Task 28 ticked 2026-10-05** (the live test email arrived). **Exact next item:** **task 32's end-to-end run with the user** (a real estimate to
 their own address, signed, the emails, the invoices, the calendar, the signed PDF), then tick 32.
 Then task 33 (review). Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
 the client pages' "contact us" needs it.
