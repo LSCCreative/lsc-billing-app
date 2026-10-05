@@ -144,6 +144,49 @@ function freezeVersion(db, estimateId, { issuedOn, validUntil, now }) {
 }
 
 /**
+ * The version a client is looking at for this estimate, while the owner can
+ * still change it under them: the newest, on an estimate that is `sent`, with
+ * nothing newer sent in the project and the project neither accepted nor
+ * declined. Null otherwise (a draft, or a project that has moved on).
+ */
+function liveVersion(db, estimateId) {
+  const row = db.prepare('SELECT id, status, project_id FROM estimates WHERE id = ?').get(estimateId);
+  if (!row || row.status !== 'sent') return null;
+  const version = db.prepare('SELECT * FROM estimate_versions WHERE estimate_id = ? ORDER BY n DESC LIMIT 1').get(row.id);
+  if (!version || version.superseded_at) return null;
+  const project = row.project_id
+    ? db.prepare('SELECT accepted_at, declined_at FROM projects WHERE id = ?').get(row.project_id)
+    : null;
+  return project && (project.accepted_at || project.declined_at) ? null : version;
+}
+
+/* What a client reads of an estimate: the client view, and the client details
+   the quote PDF, the agreement and the invoices print (the contact's name is on
+   none of them). */
+function clientFacing(estimate, pricing, business, n) {
+  const client = { ...(estimate.client || {}) };
+  delete client.contactName;
+  return JSON.stringify([clientView(estimate, pricing, business, { n, issuedOn: '', validUntil: '' }), client]);
+}
+
+/**
+ * Whether the estimate as stored now reads differently to the client from
+ * `version` (C2, C3; the user's rule of 2026-10-05: a sent quote can't be
+ * changed without the client being sent the change). Both sides are read by
+ * today's code with the version's own rate card and business details, so only
+ * a change to the estimate counts: a renamed rate-card section or new Settings
+ * details don't, and neither does anything owner-only (rentals, the surcharge
+ * reasons, the contact's name).
+ */
+function changedSince(db, estimateId, version) {
+  const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(estimateId);
+  const snap = JSON.parse(version.snapshot_json);
+  const live = loadEstimate(row, readDays(db, row.id), readRentals(db, row.id));
+  return clientFacing(live, snap.pricing, snap.business, version.n) !==
+    clientFacing(snap.estimate || {}, snap.pricing, snap.business, version.n);
+}
+
+/**
  * Each estimate's sent versions, oldest first, for the owner's screens (the
  * folder lists them, D34; the editor warns when editing after a send). No
  * client view and no snapshot: just when, how long for, and whether newer
@@ -322,7 +365,7 @@ const plusDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400
 /**
  * The dates the owner's own download of a quote prints (routes/pdf.js). While
  * the newest version sent is still the live one and the estimate hasn't been
- * edited since, it is that version, so a PDF attached by hand agrees with the
+ * changed since in anything the client reads, it is that version, so a PDF attached by hand agrees with the
  * client's link. Otherwise it's a quote not yet sent: issued today, valid for
  * the Settings' number of days (D44), with no version number.
  *
@@ -330,14 +373,14 @@ const plusDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400
  * @param {number} validDays  documents.js docSettings(...).validDays
  */
 function quoteDates(db, estimateId, today, validDays) {
-  const row = db.prepare('SELECT updated_at FROM estimates WHERE id = ?').get(estimateId);
+  const row = db.prepare('SELECT id FROM estimates WHERE id = ?').get(estimateId);
   const version = row
-    ? db.prepare(`
-        SELECT n, client_view_json, valid_until, sent_at, superseded_at FROM estimate_versions
-         WHERE estimate_id = ? ORDER BY n DESC LIMIT 1
-      `).get(estimateId)
+    ? db.prepare('SELECT * FROM estimate_versions WHERE estimate_id = ? ORDER BY n DESC LIMIT 1').get(estimateId)
     : null;
-  if (version && !version.superseded_at && !(row.updated_at > version.sent_at)) return versionDates(version);
+  // Edited only where the client would see it (changedSince): a sent quote's
+  // own save sends such a change (C2), so this is a draft after a decline or a
+  // reopen, or an accepted estimate edited since.
+  if (version && !version.superseded_at && !changedSince(db, estimateId, version)) return versionDates(version);
   return { issuedOn: today, validUntil: plusDays(today, validDays), version: null };
 }
 
@@ -495,6 +538,6 @@ function publicInvoicePdfSource(db, token) {
 
 module.exports = {
   publicInvoice, publicInvoicePdfSource, invoiceOfLink,
-  newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource, quoteDates, logOpened, OPENED_EVERY_MS,
+  newToken, clientView, freezeVersion, liveVersion, changedSince, versionsOf, publicEstimate, publicPdfSource, quoteDates, logOpened, OPENED_EVERY_MS,
   signatureRow, signatureOfLink, signaturePdf,
 };

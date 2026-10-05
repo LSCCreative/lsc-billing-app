@@ -476,6 +476,18 @@ The six interpretations in the brief's B2 Key Interactions were confirmed by the
      "estimate". The quote PDF prints the version's own issue and valid-until dates (no more "valid
      for 30 days") and the business's contact details from Settings (no hard-coded name).
 
+104. **A sent quote can't be changed without the client being sent the change** (2026-10-05, task 33
+     C2/C3; narrows D34's "later edits are a draft until Send"). Saving an edit to a quote the
+     client has, when the edit changes anything they read, opens "Save and send the update": the
+     save freezes the next version and emails a **"Quote update: <project> (<UPID>)"** saying the
+     quote was updated, with an optional note and a button to it. The quote's link is kept, so the
+     earlier email's button opens the new version too. An edit the client can't see (the contact's
+     name, gear rentals) saves as before. So the live estimate is always the version the client
+     has, and a signature or Mark accepted bills and confirms the same thing. A sent invoice is
+     still corrected by void and remake (D100); the replacement's email is an **"Invoice update"**
+     naming the one it replaces. (The user wrote "Estimate/Invoice update"; the client's word is
+     "quote", D103.)
+
 ## Left for the user to supply (not decisions, inputs)
 
 - ~~The **service agreement text** (decision 39)~~: supplied 2026-10-04 as

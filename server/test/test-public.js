@@ -213,19 +213,24 @@ test('a wrong, short or malformed link is the same 404, with nothing to tell the
 test('a re-send keeps the link: v2 replaces v1, which is kept and marked superseded (D34)', async () => {
   const est = await shoot();
   const one = await sent(est);
-  // An edit after sending changes nothing the client sees until it's sent.
-  const edited = await api(`/api/estimates/${est.id}`, { method: 'PUT', body: JSON.stringify({ ...est, name: 'Harbour, revised' }) }).then(json);
-  assert.equal(edited.status, 200, JSON.stringify(edited.body));
-  assert.deepEqual(edited.body.estimate.versions.map((v) => v.n), [1], 'the editor knows v1 went out');
+  const revise = (resend) => api(`/api/estimates/${est.id}`, {
+    method: 'PUT', body: JSON.stringify({ ...est, name: 'Harbour, revised', ...(resend ? { resend } : {}) }),
+  }).then(json);
+  // An edit the client would see can't be saved without sending it (task 33 C2).
+  const refused = await revise();
+  assert.equal(refused.body.error, 'resend_required');
   assert.equal((await pub(one.token)).body.estimate.name, est.name);
 
-  const two = await sent(est, '2026-11-20');
-  assert.equal(two.token, one.token, 'the same link');
-  assert.deepEqual(two.versions.map((v) => [v.n, v.validUntil, Boolean(v.supersededAt)]), [[1, '2026-11-03', true], [2, '2026-11-20', false]]);
-  const e = (await pub(two.token)).body.estimate;
+  const edited = await revise({ by: 'link', validUntil: '2026-11-20' });
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  assert.equal(edited.body.resent.token, one.token, 'the same link');
+  assert.deepEqual(edited.body.estimate.versions.map((v) => [v.n, v.validUntil, Boolean(v.supersededAt)]),
+    [[1, '2026-11-03', true], [2, '2026-11-20', false]]);
+  const e = (await pub(one.token)).body.estimate;
   assert.deepEqual([e.version, e.name, e.validUntil, e.state], [2, 'Harbour, revised', '2026-11-20', 'open']);
-  assert.equal(two.folder.activity[0].detail.version, 2);
-  assert.equal(two.folder.project.stageDetail.version, 2);
+  const folder = await api(`/api/projects/${est.projectId}`).then(json);
+  assert.equal(folder.body.activity[0].detail.version, 2);
+  assert.equal(folder.body.project.stageDetail.version, 2);
 });
 
 test('each state: open, taken, expired, superseded, declined, accepted', async () => {
@@ -375,8 +380,12 @@ test('the owner\'s quote PDF is dated as the client\'s link while that version s
   supersede.run(nowIso(), est.id);
   assert.equal(quoteDates(db, est.id, '2026-10-04', 30).version, null);
   supersede.run(null, est.id);
-  // Edited since it went: a PDF now is of the next quote, not the one the client has.
-  await api(`/api/estimates/${est.id}`, { method: 'PUT', body: JSON.stringify({ ...est, name: 'Edited after' }) });
+  // Saved since, but nothing the client reads changed: still that version.
+  await api(`/api/estimates/${est.id}`, { method: 'PUT', body: JSON.stringify({ ...est, client: { ...est.client, contactName: 'Someone else' } }) });
+  assert.equal(quoteDates(db, est.id, '2026-10-04', 7).version, 1);
+  // Changed since it went (a sent quote's save would send it, so this is an
+  // accepted one edited): a PDF now is of the next quote, not the one the client has.
+  db.prepare("UPDATE estimates SET status = 'accepted', name = 'Edited after' WHERE id = ?").run(est.id);
   assert.deepEqual(quoteDates(db, est.id, '2026-10-04', 7), { issuedOn: '2026-10-04', validUntil: '2026-10-11', version: null });
 });
 

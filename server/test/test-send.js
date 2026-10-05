@@ -300,3 +300,113 @@ test('invoice, Copy link: sent now with no email; voiding or paying cancels a wa
   assert.equal((await post(`/api/invoices/${d.id}/send?today=${today}`, { by: 'email', to: 'p@s.co', dueAt: dayIn(7) }, offline)).body.error, 'not_configured');
   assert.equal(invRow(d.id).status, 'draft');
 });
+
+/* ── Saving a changed sent quote (task 33 C2, C3) ─────────────────────── */
+
+const edit = (est, change, resend, url = base) => api(`/api/estimates/${est.id}`, {
+  method: 'PUT',
+  body: JSON.stringify({
+    pricingShape: PRICING_SHAPE, name: est.name, upid: est.upid, client: est.client, activeRows: est.activeRows,
+    days: est.days, rentals: est.rentals, ...(change || {}), ...(resend ? { resend } : {}),
+  }),
+}, url).then(json);
+const versionsOf = (id) => db.prepare('SELECT n, valid_until FROM estimate_versions WHERE estimate_id = ? ORDER BY n').all(id);
+const dearer = (est) => ({ activeRows: { post: [{ ...est.activeRows.post[0], qty: 2 }] } });
+
+test('a sent quote: a change the client would see can’t be saved without sending it; nothing is stored until it is', async () => {
+  const est = await estimate();
+  await send(est, email());
+  // Nothing the client reads changed (the contact's name is on no client
+  // document): saved as before, no new version.
+  const quiet = await edit(est, { client: { ...est.client, contactName: 'Priya N.' } });
+  assert.equal(quiet.status, 200, JSON.stringify(quiet.body));
+  assert.equal(quiet.body.resent, undefined);
+  assert.equal(versionsOf(est.id).length, 1);
+
+  const before = db.prepare('SELECT totals_json FROM estimates WHERE id = ?').get(est.id).totals_json;
+  const refused = await edit(est, dearer(est));
+  assert.equal(refused.status, 409);
+  assert.deepEqual(
+    [refused.body.error, refused.body.version, refused.body.to, refused.body.emailReady, refused.body.waiting, refused.body.validUntil],
+    ['resend_required', 1, 'priya@salt.example', true, null, dayIn(30)],
+  );
+  assert.equal(db.prepare('SELECT totals_json FROM estimates WHERE id = ?').get(est.id).totals_json, before, 'rolled back');
+  assert.equal(versionsOf(est.id).length, 1);
+  assert.equal((await edit(est, dearer(est), { by: 'email', to: 'nope', validUntil: dayIn(30) })).body.error, 'bad_recipient');
+  assert.equal((await edit(est, dearer(est), { by: 'email', to: 'priya@salt.example', validUntil: dayIn(-1) })).body.error, 'valid_until_invalid');
+  assert.equal(versionsOf(est.id).length, 1);
+});
+
+test('a sent quote: Save and send makes the next version and emails a “Quote update” to the same link', async () => {
+  const est = await estimate();
+  const first = await send(est, email());
+  await settle(() => mail.length && rowsOf(est.id)[0].status === 'sent');
+  mail.length = 0;
+  const r = await edit(est, dearer(est), { by: 'email', to: 'priya@salt.example', message: 'Two days now.', validUntil: dayIn(40) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.resent, { version: 2, by: 'email', token: first.body.sent.token });
+  assert.deepEqual(versionsOf(est.id), [{ n: 1, valid_until: dayIn(30) }, { n: 2, valid_until: dayIn(40) }]);
+  await settle(() => mail.length === 1);
+  assert.equal(mail[0].subject, `Quote update: ${est.name} (${est.upid})`);
+  assert.match(mail[0].text, /has updated your quote for Harbour/);
+  assert.match(mail[0].text, /Two days now\./);
+  assert.match(mail[0].text, new RegExp(`c/#e/${first.body.sent.token}`));
+
+  // The client's page is the new version, and the live estimate is exactly
+  // it: what a signature or Mark accepted bills is what they were sent.
+  const page = (await fetch(`${base}/public/estimates/${first.body.sent.token}`).then((x) => x.json())).estimate;
+  assert.deepEqual([page.version, page.state, page.totals.total], [2, 'open', r.body.estimate.totals.totalIncGst]);
+  const { liveVersion, changedSince } = require('../src/public');
+  assert.equal(changedSince(db, est.id, liveVersion(db, est.id)), false);
+  const folder = await api(`/api/projects/${est.projectId}?today=${today}`).then(json);
+  const logged = folder.body.activity.find((a) => a.kind === 'sent');
+  assert.deepEqual([logged.detail.update, logged.detail.version, logged.detail.by], [true, 2, 'email']);
+});
+
+test('a sent quote: an email still waiting carries the new version; without email, the link updates alone', async () => {
+  const est = await estimate();
+  await send(est, email({ scheduledFor: at(2), validUntil: dayIn(32) }));
+  const asked = await edit(est, dearer(est));
+  assert.deepEqual([asked.body.waiting.to, asked.body.validUntil], ['priya@salt.example', dayIn(32)]);
+  const r = await edit(est, dearer(est), { by: 'link', validUntil: dayIn(32) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.resent.by, 'waiting');
+  const rows = rowsOf(est.id);
+  assert.equal(rows.length, 1, 'no second email');
+  assert.equal(db.prepare('SELECT n FROM estimate_versions WHERE id = ?').get(rows[0].version_id).n, 2);
+
+  const off = await estimate();
+  await send(off, { by: 'link', validUntil: dayIn(30) });
+  const no = await edit(off, dearer(off), { by: 'email', to: 'priya@salt.example', validUntil: dayIn(30) }, offline);
+  assert.equal(no.body.error, 'not_configured');
+  assert.equal((await edit(off, dearer(off), null, offline)).body.emailReady, false);
+  const linked = await edit(off, dearer(off), { by: 'link', validUntil: dayIn(30) }, offline);
+  assert.equal(linked.status, 200, JSON.stringify(linked.body));
+  assert.deepEqual([linked.body.resent.by, versionsOf(off.id).length, rowsOf(off.id).length], ['link', 2, 0]);
+});
+
+test('a quote not live with the client saves as before: a draft, and an accepted project', async () => {
+  const draft = await estimate();
+  assert.equal((await edit(draft, dearer(draft))).status, 200);
+  const est = await estimate();
+  await send(est, { by: 'link', validUntil: dayIn(30) });
+  await post(`/api/projects/${est.projectId}/accept?today=${today}`, { invoicing: 'single' });
+  const r = await edit(est, dearer(est));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(versionsOf(est.id).length, 1);
+});
+
+test('an invoice that replaces a voided one is emailed as an “Invoice update” naming the one it replaces', async () => {
+  const dep = await deposit();
+  await sendInvoice(dep, { by: 'link', dueAt: dayIn(7) });
+  const voided = await post(`/api/invoices/${dep.id}/void?today=${today}`, { reason: 'Wrong amount' });
+  assert.equal(voided.status, 200, JSON.stringify(voided.body));
+  const remade = db.prepare('SELECT id, number FROM invoices WHERE replaces_id = ?').get(dep.id);
+  mail.length = 0;
+  const r = await sendInvoice({ id: remade.id }, { by: 'email', to: 'priya@salt.example', dueAt: dayIn(7) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await settle(() => mail.length === 1);
+  const number = db.prepare('SELECT number FROM invoices WHERE id = ?').get(dep.id).number;
+  assert.match(mail[0].subject, new RegExp(`^Invoice update: .* \\(${remade.number}\\)$`));
+  assert.match(mail[0].text, new RegExp(`It replaces ${number}, which no longer needs paying`));
+});

@@ -12,7 +12,12 @@ const {
   readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
 } = require('../rentals');
 const { planProjectWrite, applyProjectWrite, dropEmptyProject, upidLocked } = require('../projects');
-const { versionsOf } = require('../public');
+const { versionsOf, liveVersion, changedSince } = require('../public');
+const { resendNeeded, updateRequest, sendUpdate, todayOf, localToday } = require('./projects');
+
+/* Thrown inside the save's transaction to roll it back when it would change a
+   sent quote without saying how to send the change (resend_required). */
+const NEEDS_RESEND = Symbol('needs_resend');
 
 /**
  * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
@@ -211,35 +216,65 @@ function registerEstimateRoutes(app, db) {
     const plan = planProjectWrite(db, body, existing);
     if (plan.status) return res.status(plan.status).json(plan.body);
 
-    db.transaction(() => {
-      // The status is kept as it is (v13): `status` in the body is ignored,
-      // because only the project's actions move it. The UPID is the project's
-      // (projects.js), copied here. So are the retired doc type and invoice
-      // number (D62, task 18): the editor no longer has them, and an old
-      // invoice-typed row keeps both, so its project's legacy invoice still
-      // prints as it was made.
-      const projectId = applyProjectWrite(db, plan, body.clientId, now);
-      db.prepare(`
-        UPDATE estimates SET
-          upid = ?, name = ?, date = ?,
-          client_id = ?, client_json = ?, notes = ?, active_rows_json = ?,
-          section_labels_json = ?, gst_free = ?, short_notice = ?, surcharges_json = ?,
-          totals_json = ?, updated_at = ?, project_id = ?
-        WHERE id = ?
-      `).run(
-        plan.upid, body.name || '', body.date || '', body.clientId || null,
-        JSON.stringify(body.client || {}), body.notes || '',
-        JSON.stringify(activeRows), JSON.stringify(sectionLabels),
-        gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges),
-        JSON.stringify(totals), now, projectId,
-        req.params.id
-      );
-      replaceDays(db, req.params.id, days, now);
-      replaceRentals(db, req.params.id, rentals, now);
-    })();
+    // A quote the client has (task 33 C2, C3): a save that changes what they
+    // read must also send them the change, as `resend` says (routes/projects.js).
+    const today = todayOf(req) || localToday();
+    const emailReady = Boolean(app.locals.mailer && app.locals.mailer.configured);
+    const live = liveVersion(db, req.params.id);
+    let ask = null;
+    if (live && body.resend !== undefined && body.resend !== null) {
+      ask = updateRequest(body.resend, today, emailReady, now);
+      if (ask.status) return res.status(ask.status).json(ask.body);
+    }
+    let needed = null;
+    let resent = null;
+
+    try {
+      db.transaction(() => {
+        // The status is kept as it is (v13): `status` in the body is ignored,
+        // because only the project's actions move it. The UPID is the project's
+        // (projects.js), copied here. So are the retired doc type and invoice
+        // number (D62, task 18): the editor no longer has them, and an old
+        // invoice-typed row keeps both, so its project's legacy invoice still
+        // prints as it was made.
+        const projectId = applyProjectWrite(db, plan, body.clientId, now);
+        db.prepare(`
+          UPDATE estimates SET
+            upid = ?, name = ?, date = ?,
+            client_id = ?, client_json = ?, notes = ?, active_rows_json = ?,
+            section_labels_json = ?, gst_free = ?, short_notice = ?, surcharges_json = ?,
+            totals_json = ?, updated_at = ?, project_id = ?
+          WHERE id = ?
+        `).run(
+          plan.upid, body.name || '', body.date || '', body.clientId || null,
+          JSON.stringify(body.client || {}), body.notes || '',
+          JSON.stringify(activeRows), JSON.stringify(sectionLabels),
+          gstFree ? 1 : 0, shortNotice ? 1 : 0, JSON.stringify(surcharges),
+          JSON.stringify(totals), now, projectId,
+          req.params.id
+        );
+        replaceDays(db, req.params.id, days, now);
+        replaceRentals(db, req.params.id, rentals, now);
+        if (live && changedSince(db, req.params.id, live)) {
+          if (!ask) {
+            needed = resendNeeded(db, req.params.id, live, today, emailReady);
+            throw NEEDS_RESEND;
+          }
+          resent = sendUpdate(db, req.params.id, ask, today, now);
+        }
+      })();
+    } catch (err) {
+      if (err !== NEEDS_RESEND) throw err;
+      return res.status(409).json(needed);
+    }
+    if (resent && ask.by === 'email' && !resent.carried && app.locals.outbox) app.locals.outbox.kick();
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
-    res.json({ ok: true, estimate: loadJson(row) });
+    res.json({
+      ok: true,
+      estimate: loadJson(row),
+      ...(resent ? { resent: { version: resent.n, by: resent.carried ? 'waiting' : ask.by, token: resent.token } } : {}),
+    });
   });
 
   // A project left with no estimate goes with it (v13), invoices and

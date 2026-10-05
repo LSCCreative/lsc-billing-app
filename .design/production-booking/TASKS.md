@@ -1111,8 +1111,17 @@ Tasks 24–26 can be built with placeholders.
     Cost Breakdown keep "Estimate". 527 tests; mutations: valid-until dropped (2 fail), edited-since
     ignored (1), superseded ignored (1, after adding its case), old disclaimer kept (1). Browser:
     `c/#e` and `c/#i` on `api-scratch`, quote PDF read back. Not committed, not deployed.
-  - [ ] **C2. Signing confirms the live days, but bills the signed version** (money, Opus/high).
-  - [ ] **C3. Mark accepted bills an estimate edited after the version sent, unwarned** (money, Opus/high, **F**).
+  - [x] **C2. Signing confirms the live days, but bills the signed version** (money, Opus/high) and
+    **C3. Mark accepted bills an estimate edited after the version sent, unwarned** (money, Opus/high, **F**).
+    Fixed together by D104: the estimate PUT refuses a change the client would read
+    (`public.js changedSince`: today's client view + client details, both sides with the
+    version's own rate card) with 409 `resend_required` unless it carries `resend`; with it, the
+    same transaction freezes the next version and queues a "Quote update" (`routes/projects.js
+    sendUpdate`; a waiting email carries the new version instead). Editor: `SendPanel.openUpdate`.
+    `quoteDates` uses `changedSince` too. Replacement invoices email as "Invoice update". 533
+    tests; mutations: check skipped (4 fail), update wording off (1), contact name counted (1).
+    Browser (`api-scratch-mail`): SEND-A edited → dialog → v5 emailed, activity "Edited and sent v5".
+    Data saved before this deploy could already differ from its version; live has none sent.
   - [ ] **C4. Mark paid on a draft leaves no issue date: undated tax invoice** (money, Opus/high).
   - [ ] **C5. Owner's "signed" email says days confirmed even when a clash was flagged** (backend, Sonnet/high).
   - [ ] **C6. Owner never told a sent quote's proposed date was taken** (Opus/high, **F**).

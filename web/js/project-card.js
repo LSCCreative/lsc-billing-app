@@ -134,9 +134,12 @@ const ProjectCard = (() => {
         // A row from before (Mark sent) has no `by`.
         const v = d.version ? 'v' + d.version : 'the estimate';
         const until = C.isDate(d.validUntil) ? ', valid until ' + dayMonth(d.validUntil, today) : '';
+        // An edit saved to a quote the client has (task 33 C2) is sent as it's saved.
+        if (d.carried) return 'Edited: ' + v + ' goes with the email scheduled ' + dayTime(d.scheduledFor, today) + until;
+        const sent = d.update ? 'Edited and sent ' : 'Sent ';
         if (d.by === 'email' && d.scheduledFor) return 'Scheduled ' + v + ' to email ' + dayTime(d.scheduledFor, today) + until;
-        if (d.by === 'email') return 'Sent ' + v + ' by email' + (d.to ? ' to ' + d.to : '') + until;
-        if (d.by === 'link') return 'Sent ' + v + ' by link' + until;
+        if (d.by === 'email') return sent + v + ' by email' + (d.to ? ' to ' + d.to : '') + until;
+        if (d.by === 'link') return (d.update ? 'Edited: ' + v + ' is on the client’s link' : 'Sent ' + v + ' by link') + until;
         return 'Marked sent' + until;
       }
       case 'opened': return 'Client opened the estimate' + (d.version > 1 ? ' (v' + d.version + ')' : '');

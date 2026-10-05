@@ -136,6 +136,7 @@ const KIND_WORDS = {
  *          link:string}} v
  */
 function documentEmail(v) {
+  if (v.update) return updateEmail(v);
   const words = KIND_WORDS[v.kind] || KIND_WORDS.single;
   const label = v.kind === 'estimate' ? (v.upid || '') : (v.number || v.upid || '');
   const business = v.businessName || 'LSC Creative';
@@ -149,6 +150,42 @@ function documentEmail(v) {
     heading: `${words.noun}${label ? ` ${label}` : ''}`,
     bodyHtml: (v.projectName ? `<p style="margin:0 0 14px;color:#666">${esc(v.projectName)}</p>` : '') + paragraphs(v.message),
     button: { label: words.button, url: v.link },
+    footer: business,
+  });
+  return { subject, text, html };
+}
+
+/**
+ * A document the client already had, changed (task 33 C2; the user's rule of
+ * 2026-10-05): a quote's second or later version, or an invoice made to
+ * replace a voided one. "Quote update: <project> (<UPID>)". It says what
+ * happened before the owner's message, and that the earlier link leads to the
+ * new one too: a quote's link always opens its newest version, and a voided
+ * invoice's page points to its replacement.
+ *
+ * @param {object} v  documentEmail's, plus `update: true` and, for an
+ *                    invoice, `replaces` (the voided invoice's number)
+ */
+function updateEmail(v) {
+  const quote = v.kind === 'estimate';
+  const noun = quote ? 'quote' : 'invoice';
+  const business = v.businessName || 'LSC Creative';
+  const ref = quote ? v.upid : (v.number || v.upid);
+  const title = `${quote ? 'Quote' : 'Invoice'} update`;
+  const subject = `${title}${v.projectName ? `: ${v.projectName}` : ''}${ref ? ` (${ref})` : ''}`;
+  const said = [
+    `${business} has updated your ${noun}${v.projectName ? ` for ${v.projectName}` : ''}.`,
+    quote
+      ? 'The button below opens the updated quote, and so does the link in any earlier email about it.'
+      : `It replaces ${v.replaces || 'the earlier invoice'}, which no longer needs paying. The button below opens it, and the earlier invoice’s page links to it too.`,
+  ].join(' ');
+  const button = `View the updated ${noun}`;
+  const text = [said, String(v.message || '').trim(), `${button}: ${v.link}`, business].filter(Boolean).join('\n\n');
+  const html = shell({
+    heading: title,
+    bodyHtml: (v.projectName ? `<p style="margin:0 0 14px;color:#666">${esc(v.projectName)}${ref ? ` · ${esc(ref)}` : ''}</p>` : '') +
+      paragraphs(said) + paragraphs(v.message),
+    button: { label: button, url: v.link },
     footer: business,
   });
   return { subject, text, html };

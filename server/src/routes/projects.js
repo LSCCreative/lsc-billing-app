@@ -271,6 +271,95 @@ function logActivity(db, projectId, kind, detail, now) {
     .run(newId('act'), projectId, now, kind, JSON.stringify(detail || {}));
 }
 
+/* ── Saving a changed sent quote (task 33 C2, C3) ──────────────────────────
+   The user's rule (2026-10-05): a quote the client has can't be changed
+   without the client being sent the change. So the estimate's save
+   (routes/estimates.js PUT) that changes what the client reads (public.js
+   changedSince) also freezes it as the next version and emails a "Quote
+   update", in the save's own transaction. The live estimate then never
+   differs from the version the client is looking at, so a signature and Mark
+   accepted bill, and confirm the days of, the same thing. */
+
+/* The scheduled email of this estimate not yet gone, or null. */
+const waitingEmail = (db, estimateId) => db.prepare(`
+  SELECT * FROM sends WHERE doc_kind = 'estimate' AND purpose = 'document' AND status = 'scheduled' AND doc_id = ?
+   ORDER BY scheduled_for LIMIT 1
+`).get(estimateId) || null;
+
+/**
+ * What the editor's "Save and send" dialog needs, answered with 409
+ * `resend_required` when a save would change a sent quote and didn't say how
+ * to send the change.
+ */
+function resendNeeded(db, estimateId, version, today, emailReady) {
+  const row = db.prepare('SELECT client_json FROM estimates WHERE id = ?').get(estimateId);
+  const lastEmail = db.prepare(`
+    SELECT to_email FROM sends WHERE doc_kind = 'estimate' AND purpose = 'document' AND doc_id = ? AND to_email <> ''
+     ORDER BY created_at DESC, id DESC LIMIT 1
+  `).get(estimateId);
+  const waiting = waitingEmail(db, estimateId);
+  const validDays = docSettings(readSettings(db)).validDays;
+  return {
+    error: 'resend_required',
+    message: `Your client has v${version.n} of this quote. Saving a change sends them the update.`,
+    version: version.n,
+    to: (lastEmail && lastEmail.to_email) || String((parseDetail(row.client_json).email) || '').trim(),
+    emailReady: Boolean(emailReady),
+    waiting: waiting ? { scheduledFor: waiting.scheduled_for, to: waiting.to_email } : null,
+    // The version's own date while it hasn't passed; else a fresh term from today.
+    validUntil: version.valid_until && version.valid_until >= today ? version.valid_until : addDays(today, validDays),
+  };
+}
+
+/**
+ * Reads the save's `resend` ({ by: 'email', to, message?, validUntil } or
+ * { by: 'link', validUntil }). Sent now: an update isn't scheduled.
+ *
+ * @returns {{by, to, message, validUntil}|{status, body}}
+ */
+function updateRequest(resend, today, emailReady, now) {
+  const ask = sendRequest({ ...(resend || {}), scheduledFor: undefined }, now);
+  if (ask.error) return { status: 400, body: ask };
+  if (ask.by === 'email' && !emailReady) {
+    return { status: 409, body: { error: 'not_configured', message: 'Email isn’t set up yet. Update the page only, and send the link yourself.' } };
+  }
+  const validUntil = resend.validUntil;
+  if (!isYmd(validUntil) || validUntil < today) {
+    return { status: 400, body: { error: 'valid_until_invalid', message: 'Valid until can’t be before today.' } };
+  }
+  return { by: ask.by, to: ask.to, message: ask.message, validUntil };
+}
+
+/**
+ * Inside the save's transaction, after the estimate is written: the next
+ * version, and the email. An email of the quote still waiting to go carries
+ * the new version instead (its link opens the newest anyway), so a second one
+ * isn't queued.
+ *
+ * @returns {{versionId, n, token, carried:boolean}}
+ */
+function sendUpdate(db, estimateId, ask, today, now) {
+  const row = db.prepare('SELECT project_id FROM estimates WHERE id = ?').get(estimateId);
+  const waiting = waitingEmail(db, estimateId);
+  const made = freezeVersion(db, estimateId, { issuedOn: today, validUntil: ask.validUntil, now });
+  if (waiting) {
+    db.prepare('UPDATE sends SET version_id = ?, updated_at = ? WHERE id = ?').run(made.versionId, now, waiting.id);
+  } else if (ask.by === 'email') {
+    addSend(db, {
+      docKind: 'estimate', docId: estimateId, versionId: made.versionId, toEmail: ask.to, message: ask.message,
+      scheduledFor: now,
+    }, now);
+  }
+  db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(now, row.project_id);
+  logActivity(db, row.project_id, 'sent', {
+    validUntil: ask.validUntil, estimateId, version: made.n, update: true,
+    ...(waiting
+      ? { by: 'email', to: waiting.to_email, scheduledFor: waiting.scheduled_for, carried: true }
+      : { by: ask.by, ...(ask.by === 'email' ? { to: ask.to } : {}) }),
+  }, now);
+  return { ...made, carried: Boolean(waiting) };
+}
+
 /* Where a project is, for the actions' own checks: the same projectStage. */
 function stageNow(db, p) {
   const own = db.prepare(`SELECT ${ESTIMATE_COLUMNS} FROM estimates WHERE project_id = ?`).all(p.id);
@@ -955,4 +1044,6 @@ module.exports = {
   registerProjectRoutes, summarize, readFolder, logActivity, todayOf, localToday, isYmd,
   // The client's signature (signing.js) accepts through the same pieces.
   acceptEstimate, depositPctFor, invoiceNumbers, cannotInvoice, stageNow,
+  // The estimate save that changes a sent quote sends the change (C2, C3).
+  resendNeeded, updateRequest, sendUpdate,
 };

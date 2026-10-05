@@ -367,6 +367,11 @@ async function buildMail(db, row, ctx) {
         number: doc.number,
         message: row.message,
         link: `${appUrl}c/#${doc.kind === 'estimate' ? 'e' : 'i'}/${token}`,
+        // The client already had it (C2): a quote's later version, or an
+        // invoice that replaces a voided one, goes as an update.
+        update: doc.kind === 'estimate' ? Boolean(doc.version && doc.version.n > 1) : Boolean(doc.inv.replaces_id),
+        replaces: doc.kind === 'estimate' || !doc.inv.replaces_id ? ''
+          : ((db.prepare('SELECT number FROM invoices WHERE id = ?').get(doc.inv.replaces_id) || {}).number || ''),
       }),
     };
   }

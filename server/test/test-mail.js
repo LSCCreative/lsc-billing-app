@@ -120,6 +120,24 @@ test('templates: the estimate email carries the message, the client link and not
   assert.equal(inv.subject, 'Deposit invoice INV-AUD-B-D: Harbour · LSC Creative');
 });
 
+test('templates: an update says what changed and that the earlier link leads to it (task 33 C2)', () => {
+  const q = documentEmail({
+    kind: 'estimate', update: true, businessName: 'LSC Creative', upid: 'AUD-B', projectName: 'Harbour <script>',
+    message: 'Moved to Friday.', link: 'https://x/c/#e/abc',
+  });
+  assert.equal(q.subject, 'Quote update: Harbour <script> (AUD-B)');
+  assert.match(q.text, /^LSC Creative has updated your quote for Harbour <script>\. The button below opens the updated quote, and so does the link in any earlier email about it\.\n\nMoved to Friday\.\n\nView the updated quote: https:\/\/x\/c\/#e\/abc/);
+  assert.doesNotMatch(q.subject + q.text + q.html, /estimate/i);
+  assert.doesNotMatch(q.html, /<script>/);
+  const inv = documentEmail({
+    kind: 'final', update: true, replaces: 'INV-AUD-B-F', businessName: '', number: 'INV-AUD-B-F2', projectName: 'Harbour',
+    message: '', link: 'https://x/c/#i/t',
+  });
+  assert.equal(inv.subject, 'Invoice update: Harbour (INV-AUD-B-F2)');
+  assert.match(inv.text, /It replaces INV-AUD-B-F, which no longer needs paying\./);
+  assert.match(inv.html, /View the updated invoice/);
+});
+
 test('templates: the owner’s notice links to the project, and says when the invoices weren’t made', () => {
   const ok = ownerSignedEmail({ clientName: 'Saltwater Co.', signedBy: 'Priya Nair', role: 'Director', upid: 'AUD-B', projectName: 'Harbour', link: 'https://p/app/#/projects/prj_1' });
   assert.equal(ok.subject, 'Saltwater Co. signed AUD-B: Harbour');

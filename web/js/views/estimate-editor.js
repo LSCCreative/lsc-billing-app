@@ -2220,8 +2220,8 @@ const EstimateEditor = (() => {
     );
   }
 
-  /* Editing an estimate the client already has (D34, task 25): the link keeps
-     showing the version that went out until the next send. Only while that
+  /* Editing an estimate the client already has (D34, task 25): a save that
+     changes what they read sends them the change (task 33 C2). Only while that
      version is the live one; once something newer went out, or the project
      moved on, there's nothing for an edit here to differ from. */
   function sentNoteMarkup(estimate) {
@@ -2229,7 +2229,7 @@ const EstimateEditor = (() => {
     const last = versions[versions.length - 1];
     if (!last || last.supersededAt || estimate.status !== 'sent') return '';
     return '<div class="upid-banner" role="note"><p><strong>Editing after v' + last.n + ' was sent.</strong> ' +
-      'Your client still sees v' + last.n + '. These changes reach them when you send it again, as v' + (last.n + 1) + '.</p></div>';
+      'Your client has v' + last.n + '. Saving a change they would see sends it to them as v' + (last.n + 1) + '.</p></div>';
   }
 
   function formMarkup(estimate, pricing) {
@@ -3400,43 +3400,72 @@ const EstimateEditor = (() => {
       const reply = existing
         ? await LSCApi.put('/api/estimates/' + encodeURIComponent(existing.id), body)
         : await LSCApi.post('/api/estimates', body);
-      Toast.ok(added ? 'Estimate saved — ' + body.client.businessName + ' added to your client list.' : 'Estimate saved.');
-      // Nothing more to do to a screen the user has already left — and
-      // snapshot() reads the form, which is no longer there to read.
-      if (!onScreen()) return;
-      // What is on screen is now what is stored. onSaved may go Back to the
-      // detail, and until that lands the editor is still in the page —
-      // without this a reload in the gap would warn about an estimate that
-      // had just been saved.
-      baseline = snapshot();
-      handlers.onSaved(reply.estimate);
+      saved(reply, added ? 'Estimate saved — ' + body.client.businessName + ' added to your client list.' : 'Estimate saved.');
     } catch (err) {
-      // The form is left exactly as it was: a failed save must never be the
-      // reason someone retypes an estimate.
-      setSaving(false);
-      Toast.hide();
-      if (!(err instanceof LSCApi.ApiError)) throw err;
-      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
-      // Confirmed by another project since this editor last looked: point at that day's note.
-      if (err.code === 'date_locked' && booking) {
-        const lock = booking.serverLocked(err.data && err.data.date, err.data && err.data.upid);
-        if (lock.fieldId) return fieldError(lock.msg, lock.fieldId);
-        return showError(lock.msg);
+      // A quote the client has, changed (task 33 C2, C3): it can't be saved
+      // without sending them the change. The dialog saves it again with how.
+      if (err instanceof LSCApi.ApiError && err.code === 'resend_required' && existing && err.data) {
+        setSaving(false);
+        Toast.hide();
+        if (!onScreen()) return;
+        SendPanel.openUpdate($('js-save'), {
+          info: err.data,
+          save: (resend) => LSCApi.put('/api/estimates/' + encodeURIComponent(existing.id), Object.assign({}, body, { resend })),
+          done: (reply) => {
+            const r = reply.resent || {};
+            saved(reply, r.by === 'email' ? 'Saved. v' + r.version + ' is on its way to your client.'
+              : r.by === 'waiting' ? 'Saved. The scheduled email will carry v' + r.version + '.'
+                : 'Saved. Your client’s link now opens v' + r.version + '.');
+          },
+          fail: (e) => refused(e),
+        });
+        return;
       }
-      if (RENTAL_ERRORS[err.code]) return showError(RENTAL_ERRORS[err.code]);
-      // UPIDs are unique (D60): the server names the project that has it.
-      if (err.code === 'upid_taken') {
-        return fieldError(err.message || 'That UPID is already used by another project.', 'f-upid');
-      }
-      if (err.code === 'upid_locked') {
-        return fieldError(err.message || 'The UPID is fixed: this project’s invoice numbers carry it.', 'f-upid');
-      }
-      showError(
-        err.kind === 'network'
-          ? 'Couldn’t save — the server is unreachable. Your work is still here; try again once it’s back.'
-          : 'Couldn’t save: ' + (err.message || 'the server refused the request.')
-      );
+      refused(err);
     }
+  }
+
+  /* A save that went through. */
+  function saved(reply, said) {
+    Toast.ok(said);
+    // Nothing more to do to a screen the user has already left — and
+    // snapshot() reads the form, which is no longer there to read.
+    if (!onScreen()) return;
+    // What is on screen is now what is stored. onSaved may go Back to the
+    // detail, and until that lands the editor is still in the page —
+    // without this a reload in the gap would warn about an estimate that
+    // had just been saved.
+    baseline = snapshot();
+    handlers.onSaved(reply.estimate);
+  }
+
+  /* A save the server refused, or that couldn't reach it. */
+  function refused(err) {
+    // The form is left exactly as it was: a failed save must never be the
+    // reason someone retypes an estimate.
+    setSaving(false);
+    Toast.hide();
+    if (!(err instanceof LSCApi.ApiError)) throw err;
+    if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+    // Confirmed by another project since this editor last looked: point at that day's note.
+    if (err.code === 'date_locked' && booking) {
+      const lock = booking.serverLocked(err.data && err.data.date, err.data && err.data.upid);
+      if (lock.fieldId) return fieldError(lock.msg, lock.fieldId);
+      return showError(lock.msg);
+    }
+    if (RENTAL_ERRORS[err.code]) return showError(RENTAL_ERRORS[err.code]);
+    // UPIDs are unique (D60): the server names the project that has it.
+    if (err.code === 'upid_taken') {
+      return fieldError(err.message || 'That UPID is already used by another project.', 'f-upid');
+    }
+    if (err.code === 'upid_locked') {
+      return fieldError(err.message || 'The UPID is fixed: this project’s invoice numbers carry it.', 'f-upid');
+    }
+    showError(
+      err.kind === 'network'
+        ? 'Couldn’t save — the server is unreachable. Your work is still here; try again once it’s back.'
+        : 'Couldn’t save: ' + (err.message || 'the server refused the request.')
+    );
   }
 
   async function remove() {

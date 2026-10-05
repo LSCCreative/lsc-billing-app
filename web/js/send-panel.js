@@ -471,6 +471,113 @@ const SendPanel = (() => {
   }
 
   /**
+   * "Save and send the update" (task 33 C2, C3): the editor's save of a quote
+   * the client already has, when the change alters what they read. The user's
+   * rule: it can't be saved without the client being sent the change. So the
+   * save itself carries `resend`, and the server freezes the next version and
+   * queues the "Quote update" email in the same transaction.
+   *
+   * @param {HTMLElement} opener
+   * @param {object} o
+   *   info      the save's 409 `resend_required` reply: { version, to,
+   *             emailReady, waiting: {scheduledFor, to}|null, validUntil }
+   *   save(resend)  → Promise of the save's reply (rejects with LSCApi.ApiError)
+   *   done(reply)   the editor's saved path
+   *   fail(err)     the editor's refusal path, for anything not about the send
+   */
+  function openUpdate(opener, o) {
+    const info = o.info || {};
+    const next = (info.version || 1) + 1;
+    const waiting = info.waiting;
+    const byEmail = Boolean(info.emailReady) && !waiting;
+    const today = LSCUtil.today();
+    const intro = waiting
+      ? 'Your client hasn’t been emailed yet: the email scheduled for ' + whenText(waiting.scheduledFor) +
+        (waiting.to ? ' to ' + waiting.to : '') + ' will open v' + next + ' instead. No second email goes.'
+      : byEmail
+        ? 'Your client has v' + info.version + '. Saving makes v' + next + ' and emails them a “Quote update” with its link. Their earlier link opens v' + next + ' too.'
+        : 'Your client has v' + info.version + '. Saving makes v' + next + ', and their link opens it. Email isn’t set up, so let them know yourself.';
+    const q = mount(opener,
+      '<div class="modal-box send-panel" role="dialog" aria-modal="true" aria-labelledby="sp-title" aria-describedby="sp-desc">' +
+      '<h2 class="modal-title" id="sp-title">' + (byEmail ? 'Save and send the update' : 'Save and update the quote') + '</h2>' +
+      '<p class="sp-intro" id="sp-desc">' + esc(intro) + '</p>' +
+      '<div class="sp-fields">' +
+      (byEmail
+        ? '<div class="sp-row field"><label class="sp-label" for="sp-to">To</label>' +
+          '<div><input id="sp-to" type="email" autocomplete="off" spellcheck="false" value="' + esc(info.to || '') + '"' +
+          ' aria-describedby="sp-to-hint"><p class="sp-hint" id="sp-to-hint">' +
+          (info.to ? 'Replies go to your own address.' : 'This client has no email saved. Type the one to send to.') + '</p></div></div>'
+        : '') +
+      '<div class="sp-row field"><label class="sp-label" for="sp-date">Valid until</label>' +
+      '<div><input id="sp-date" type="date" value="' + esc(info.validUntil || today) + '" min="' + esc(today) + '" aria-describedby="sp-date-hint">' +
+      '<p class="sp-hint" id="sp-date-hint">For v' + next + '.</p></div></div>' +
+      (byEmail
+        ? '<div class="sp-row field"><label class="sp-label" for="sp-msg">Note</label>' +
+          '<div><textarea id="sp-msg" rows="3" maxlength="5000" aria-describedby="sp-msg-hint"></textarea>' +
+          '<p class="sp-hint" id="sp-msg-hint">Optional, under the line saying the quote was updated.</p></div></div>'
+        : '') +
+      '</div>' +
+      '<div class="pfd-error" id="sp-error" role="alert"></div>' +
+      '<div class="modal-actions sp-actions">' +
+      '<button type="button" class="btn btn-ghost" id="sp-cancel">Keep editing</button>' +
+      '<button type="button" class="btn btn-accent" id="sp-ok"><span class="spinner" id="sp-spin"></span>' +
+      (byEmail ? 'Save and send update' : 'Save and update') + '</button>' +
+      '</div></div>');
+    if (!q) return;
+    panel.opts = o;
+
+    function fail(message, fieldId) {
+      q('sp-error').textContent = message;
+      if (fieldId && q(fieldId)) q(fieldId).focus();
+    }
+    function setWorking(on) {
+      panel.working = on;
+      q('sp-ok').disabled = on;
+      q('sp-cancel').disabled = on;
+      q('sp-spin').style.display = on ? 'inline-block' : 'none';
+    }
+
+    q('sp-cancel').addEventListener('click', () => close(true));
+    q('sp-ok').addEventListener('click', async () => {
+      if (panel.working) return;
+      q('sp-error').textContent = '';
+      const validUntil = q('sp-date').value;
+      if (!C.isDate(validUntil)) return fail('Choose the valid-until date.', 'sp-date');
+      if (validUntil < LSCUtil.today()) return fail('Valid until can’t be before today.', 'sp-date');
+      const resend = { by: byEmail ? 'email' : 'link', validUntil };
+      if (byEmail) {
+        resend.to = q('sp-to').value.trim();
+        if (!EMAIL_RE.test(resend.to)) return fail(resend.to ? 'That email address isn’t valid.' : 'Type the client’s email address.', 'sp-to');
+        resend.message = q('sp-msg').value;
+      }
+      setWorking(true);
+      try {
+        const reply = await o.save(resend);
+        close(false);
+        o.done(reply);
+      } catch (err) {
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        setWorking(false);
+        if (err.kind === 'auth') {
+          close(false);
+          o.fail(err);
+          return;
+        }
+        // Anything about the estimate itself (a locked date, a taken UPID):
+        // back to the editor, which knows where to point.
+        if (err.kind === 'network') return fail('The server is unreachable. Nothing was saved or sent.');
+        if (!['bad_recipient', 'message_invalid', 'valid_until_invalid', 'not_configured', 'by_invalid'].includes(err.code)) {
+          close(false);
+          o.fail(err);
+          return;
+        }
+        fail(err.message || 'The server refused.');
+      }
+    });
+    (q('sp-to') || q('sp-date')).focus();
+  }
+
+  /**
    * Binds a container's status-line buttons (Change, Cancel email, Retry).
    * `edit(sendId, button)` opens the panel to change it; cancel and retry go
    * straight to the queue, and `changed()` then redraws.
@@ -520,5 +627,5 @@ const SendPanel = (() => {
     }, 2000);
   }
 
-  return { open, close, copyLink, statusOf, statusMarkup, bindStatus, whenText, linkFor, follow };
+  return { open, openUpdate, close, copyLink, statusOf, statusMarkup, bindStatus, whenText, linkFor, follow };
 })();
