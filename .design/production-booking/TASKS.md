@@ -1086,7 +1086,8 @@ Tasks 24–26 can be built with placeholders.
 
 ## Review
 
-- [ ] **33. Money-math and security review, then design review** (review).
+- [x] **33. Money-math and security review, then design review** (review). Done 2026-10-05:
+  C1–C15 and DR1–DR17 fixed, **none deployed yet**.
   - **A `/code-review` (xhigh) of the whole track's diff, Stage B2 included**, hunting for:
     - a field that prices but doesn't print, or the reverse;
     - a line saved before a change that now totals differently;
@@ -1190,41 +1191,45 @@ Tasks 24–26 can be built with placeholders.
   frontend (**F**), Opus/high. Work them in this order:
 
   _Must fix_
-  - [ ] **DR1. Settings → Business has no Email or Phone field** (**F**). Client pages, their
-    notices and the quote PDF read `business.email` / `.phone`; live's are blank and only SQL can
-    set them. Add both fields (save already merges).
+  - [x] **DR1. Settings → Business has no Email or Phone field** (**F**). `3a810d9`: Email and Phone
+    under Business (saved merged; a malformed email refused), hint says where they show.
 
   _Should fix_
-  - [ ] **DR2. Proposed tiles cut their UPID** (**F**): "FLW…" on the month grid at 1280 (29px for
-    a 39–41px code); half-width week tiles cut time, code and name. Keep the code whole.
-  - [ ] **DR3. The menu's closed groups show an open chevron at ≥768** (**F**):
-    `booking.css:41` rotates every `.bb-chevron` in an open booking block. Scope it to the
-    block's own head.
-  - [ ] **DR4. Holidays aren't marked on any calendar** (**F**): shade them like weekends, and add
-    the name to the date's label and list (Home reads `GET /api/holidays`).
-  - [ ] **DR5. Rentals crowd Home** (**F**): on Home, bars in the quieter `.is-faded` style; lists
-    show a rental on its out and back days, not as a card for every day on hire.
-  - [ ] **DR6. Mark accepted… doesn't name a taken date** (**F**): list `takenDays` in the dialog
-    and what happens to them; "2 proposed days", not "2 pencilled and proposed".
-  - [ ] **DR7. The send panel doesn't warn about a taken date** (**F**): one line saying to move
-    the day first.
-  - [ ] **DR8. Paid invoices still say "due"** (**F**): the client page's "Amount due" heading
-    (`c.js:437`) and the owner ledger's `owed()` (`invoice.js:243`) for paid invoices.
-  - [ ] **DR9. Accent used as text** (**F**): `.onset-gtotal` is 3.71:1; also two `settings.css`
-    hovers. Use `--accent-text`.
-  - [ ] **DR10. Stale Settings copy** (**F**): delete "Sending from the app arrives with client
-    pages."
-  - [ ] **DR11. The old Date field in the editor header** (**F**, **the user's call**): nothing the
-    client sees reads it any more, so hide it on estimates with booked days (or on new ones).
+  - [x] **DR2. Proposed tiles cut their UPID** (**F**). `672c871`: month tile sizes to its code (≥ half
+    the cell); week proposed takes the lane's full width with a dashed edge; a tile sharing its
+    column shows the code line only.
+  - [x] **DR3. Closed menu groups showed an open chevron at ≥768** (**F**). `9866f80`: rule scoped to
+    `.booking-block.is-open > .booking-head`.
+  - [x] **DR4. Holidays marked on the calendars** (**F**). `a7b3723`: `calendar.js setHolidays` /
+    `HomeWeek.setHolidays` / `BookingBlock.setHolidays`; shaded like weekends, name in the cell's
+    label, list title and (wide month, week heads) beside the date. Home reads `/api/holidays` each
+    visit; the editor now loads them on open, not only once a day is dated.
+  - [x] **DR5. Rentals quieter on Home** (**F**). `ff44425`: `quietGear` (month) and the week strip use
+    the outlined wash; lists give a rental a card on out/back days and one muted "On hire" line
+    between (`gearSplit`, `onHireLine`). The editor's calendar is unchanged.
+  - [x] **DR6 + DR7. Taken dates before Mark accepted / Send** (**F**). `0ffd4a2`: the dialog names each
+    `takenDays` date and counts by status; the send panel's new `warning` option says to move a
+    taken proposed date still on the estimate.
+  - [x] **DR8. Paid invoices say paid** (**F**). `14785c2`: client "Amount paid"; owner ledger
+    "Deposit/Balance/Total paid".
+  - [x] **DR9. Accent as text** (**F**). `ad43c4c`: `--accent-text` in all three.
+  - [x] **DR10. Stale Settings copy** (**F**). `3a810d9`: sentence deleted.
+  - [x] **DR11. The old Date field** (**F**). `bd95ee7`: **the user chose "hide on every new one"**: new
+    estimates have no field and save `''`; an estimate with a date keeps it; the read-only view
+    prints it as a long date.
 
   _Could improve_
-  - [ ] **DR12.** Phone day-card heads wrap to three lines; put Duplicate day on its own row (**F**).
-  - [ ] **DR13.** The folder's total is 13px; use Delight at about 22px (**F**).
-  - [ ] **DR14.** The accepted client page keeps "Valid until" and "we'll be in touch to confirm"
-    (**F**).
-  - [ ] **DR15.** "Deposit paid" and "Deposit overdue" share the terra mark (**F**).
-  - [ ] **DR16.** The Settings fill-in list runs about 900px below the agreement box (**F**).
-  - [ ] **DR17.** Surcharge-box rows are as heavy as their total (**F**).
+  - [x] **DR12.** `7510ee1`: below 768 the day-card head is a grid, Duplicate day on row 2.
+  - [x] **DR13.** `be85dac`: folder total in Delight 22px, accent text.
+  - [x] **DR14.** `ffc74ae`: public estimate gains `acceptedOn` (server + test); page shows
+    "Accepted <date>", no valid-until, and a notice for what happened.
+  - [x] **DR15.** `9bf7401`: invoiced stages a half-filled green square; every alert a red diamond.
+  - [x] **DR16.** `d3aa32b`: from 900px the list is the agreement's height and scrolls, with a fade.
+  - [x] **DR17.** `e3ba242`: row figures regular 12px; only the total is bold.
+
+  **DR fixes not deployed.** Checked in headless Chrome against `api-scratch-mail` at 1280 / 800 /
+  375 (screens touched by each fix); 540 tests pass. DR14 changed `server/src/public.js`, so NAS
+  before Pages (the page copes without `acceptedOn`: it then shows neither date).
 
 ## Not in this list (and why)
 

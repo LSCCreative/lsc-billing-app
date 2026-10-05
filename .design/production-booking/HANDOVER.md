@@ -232,11 +232,15 @@ failed once under load (passes on rerun). Data saved before D104 could already d
 sent version; live has no sent quote, so none. `api-scratch` was restored to its state before
 these checks (backup `scratch-before-c2.db` in that session's scratchpad only).
 
-**Task 33's design review done (2026-10-05):** [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md), with 17
-findings DR1–DR17 listed under task 33 in `TASKS.md`. All are frontend, and none is built yet.
-The must-fix is DR1: Settings has no business Email or Phone field. Live's are blank, so client
-pages show no contact address. DR11 (retiring the editor's old Date field) is the user's call.
-Screenshots are in `screenshots/` (local only, not committed).
+**Task 33's design review done (2026-10-05):** [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md), 17 findings.
+**DR1–DR17 all fixed and committed (`3a810d9` … `e3ba242`), not deployed; task 33 ticked.** Each
+fix's one-line outcome is in `TASKS.md`. Decisions made there:
+- **DR11 (the user):** new estimates have no Date field; one with a stored date keeps it.
+- DR5's quiet gear is Home only (`quietGear`); the editor's calendar keeps its solid own-rental bars.
+- DR15: healthy invoiced = half-filled green square, every alert = red diamond (shape + colour).
+- DR14 added `acceptedOn` to `GET /public/estimates/:token` (the only server change; tested).
+After deploying, **the user should fill Settings → Business → Email and Phone** (live's are blank).
+Review screenshots are in `screenshots/` (local only, not committed).
 
 **Scratch now holds a review dataset** (fictional): SEND-A (signed through the dialog), SEND-B
 (deposit overdue), NBK-014 (draft with deliverables, a post plan and a Lemac rental), FLW-002 (sent;
@@ -246,8 +250,13 @@ Types; the agreement is placeholder text. The DB from before is
 `/tmp/lsc-billing-scratch/exports/scratch-before-review.db`. Use `api-scratch-mail`, so a send
 prints instead of going out.
 
-**Exact next item: DR1** (Opus/high, **Frontend task**), then DR2–DR11 in order. Deploy (NAS, then
-Pages) when the user asks: C1–C15 are still undeployed too.
+**Exact next item: deploy C1–C15 + DR1–DR17 when the user asks** (Sonnet/medium; NAS, then Pages:
+`public.js` and the editor's `resend_required` are server changes; no migration). Then the open
+items: Stripe (task 31, held, D101) and a VoiceOver pass by a person.
+
+**Scratch after the DR checks:** Settings' business ABN is now a valid example (`51824753556`),
+email `studio@example.test`, phone `02 9000 0000`. The headless checks opened SEND-A's and two
+invoice client pages, which may have logged `opened` rows.
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
