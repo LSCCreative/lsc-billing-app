@@ -9,7 +9,7 @@ const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
 const { amountDue } = require('../invoices');
 const { docSettings } = require('../documents');
-const { freezeVersion, versionsOf, signatureRow, signaturePdf } = require('../public');
+const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays } = require('../public');
 const { agreementFilename } = require('../pdf');
 const { sendRequest, pendingFor, latestFor, cancelPending, addSend, sydneyDate } = require('../sends');
 
@@ -169,6 +169,8 @@ function readFolder(db, id, today) {
     updatedAt: p.updated_at,
   });
   project.upidLocked = upidLocked(db, id);
+  // Proposed dates on the quote the client has that another project has since confirmed (C6).
+  project.takenDays = takenDays(db, id).get(id) || [];
   const rows = db.prepare('SELECT * FROM estimates WHERE project_id = ?').all(id);
   const flags = rebookFlags(db, rows.map((r) => r.id));
   const sent = versionsOf(db, rows.map((r) => r.id));
@@ -725,6 +727,7 @@ function registerProjectRoutes(app, db) {
     const clients = new Map(db.prepare('SELECT id, business_name, contact_name FROM clients').all()
       .map((c) => [c.id, c]));
 
+    const taken = takenDays(db);
     const cutoff = addDays(today, -SETTLED_DAYS);
     const all = projects.map((p) => {
       const own = estimates.get(p.id) || [];
@@ -736,6 +739,7 @@ function registerProjectRoutes(app, db) {
         client: record,
         lastActivityAt: lastActivity.get(p.id),
       });
+      project.takenDays = taken.get(p.id) || [];
       const settled = settledAt(p, bills, project.stage);
       const lead = own.find((e) => e.id === project.estimateId);
       const snapshot = lead ? JSON.parse(lead.client_json || '{}') : {};

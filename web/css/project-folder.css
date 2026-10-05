@@ -171,6 +171,12 @@
 .pf-hint {
   margin-bottom: 10px;
 }
+/* A sent quote's proposed date taken by another project (C6): the owner must
+   act before the client can accept. */
+.pf-hint-alert {
+  color: var(--err-text);
+  font-weight: 600;
+}
 .pf-muted {
   color: var(--muted);
 }

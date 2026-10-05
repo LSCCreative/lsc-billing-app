@@ -1131,7 +1131,14 @@ Tasks 24–26 can be built with placeholders.
     `mail.js ownerSignedEmail` takes the `signed` activity's `rebook` and says "The days are
     confirmed, but 16 Oct was already confirmed by another project: it's flagged “clash,
     rebook”." Tests: template (one date, three) and signing end to end; dropping the wiring fails 1.
-  - [ ] **C6. Owner never told a sent quote's proposed date was taken** (Opus/high, **F**).
+  - [x] **C6. Owner never told a sent quote's proposed date was taken** (Opus/high, **F**).
+    `public.js takenDays` (the client page's D41 test, for every live sent quote) → each project's
+    `takenDays` in the folder and the Projects list. The stage line reads "Sent v2 · a proposed
+    date is taken" as an alert (cards, folder, client history); the folder's Production days say
+    why the client can't accept and what to do, and mark the day "Taken — since confirmed for
+    <UPID>". Tests: folder, list, the other project's own folder, and the warning clearing when the
+    taker declines (a mutation keeping declined takers fails 1); card wording for 1 and 2 dates.
+    Browser: SEND-A against a scratch confirmed day on SEND-B, at phone width.
   - [ ] **C7. Blank `APP_URL` becomes `/`: `no_app_url` guard dead, relative links emailed** (backend, Sonnet/high).
   - [ ] **C8. Failed sends survive accept/paid/expiry and can be retried** (backend, Sonnet/high).
   - [ ] **C9. Void reason shown on the client's invoice page; dialog doesn't say so** (Opus/high, **F**).

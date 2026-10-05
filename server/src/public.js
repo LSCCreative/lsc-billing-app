@@ -236,6 +236,41 @@ const takenSql = `
    LIMIT 1`;
 
 /**
+ * For the owner (C6): each project's sent quote's proposed dates that another
+ * live project has since confirmed, the same test as the client's page (D41,
+ * `takenSql`), so the owner learns of it when the client does: their Accept is
+ * paused until new dates are sent. Only a quote still with the client (its
+ * newest version, on a `sent` estimate, in a project neither accepted nor
+ * declined) counts.
+ *
+ * @param {string|null} projectId  one project, or null for every one
+ * @returns {Map<string, Array<{date, upid, name}>>} by project id, dates in order
+ */
+function takenDays(db, projectId = null) {
+  const rows = db.prepare(`
+    SELECT e.project_id, json_extract(j.value, '$.date') AS date, o.upid, o.name
+      FROM estimates e
+      JOIN projects p ON p.id = e.project_id AND p.accepted_at IS NULL AND p.declined_at IS NULL
+      JOIN estimate_versions v ON v.estimate_id = e.id AND v.superseded_at IS NULL
+       AND v.n = (SELECT MAX(n) FROM estimate_versions x WHERE x.estimate_id = e.id)
+      JOIN json_each(v.client_view_json, '$.days') j
+      JOIN production_days d ON d.date = json_extract(j.value, '$.date') AND d.status = 'confirmed'
+      JOIN estimates o ON o.id = d.estimate_id AND o.status <> 'declined'
+       AND (o.project_id IS NULL OR o.project_id <> e.project_id)
+     WHERE e.status = 'sent' AND json_extract(j.value, '$.status') = 'proposed'
+       AND (? IS NULL OR e.project_id = ?)
+     ORDER BY date, o.upid
+  `).all(projectId, projectId);
+  const out = new Map();
+  rows.forEach((r) => {
+    if (!out.has(r.project_id)) out.set(r.project_id, []);
+    const list = out.get(r.project_id);
+    if (!list.some((t) => t.date === r.date)) list.push({ date: r.date, upid: r.upid || '', name: r.name || '' });
+  });
+  return out;
+}
+
+/**
  * The client's reply for a link, or null when there is no such link (or it
  * was never sent). Everything comes from the frozen client view; the state,
  * the taken days, the newer link and the FAQ address are the only live parts.
@@ -538,6 +573,6 @@ function publicInvoicePdfSource(db, token) {
 
 module.exports = {
   publicInvoice, publicInvoicePdfSource, invoiceOfLink,
-  newToken, clientView, freezeVersion, liveVersion, changedSince, versionsOf, publicEstimate, publicPdfSource, quoteDates, logOpened, OPENED_EVERY_MS,
+  newToken, clientView, freezeVersion, liveVersion, changedSince, takenDays, versionsOf, publicEstimate, publicPdfSource, quoteDates, logOpened, OPENED_EVERY_MS,
   signatureRow, signatureOfLink, signaturePdf,
 };

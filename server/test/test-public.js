@@ -241,10 +241,17 @@ test('each state: open, taken, expired, superseded, declined, accepted', async (
   const other = await shoot({ days: [day('d_other', a.days[1].date, 'confirmed')], activeRows: { prod: [capture('d_other')] } });
   let e = (await pub(token)).body.estimate;
   assert.deepEqual([e.state, e.unavailableDays], ['taken', [a.days[1].date]]);
+  // The owner is told too (C6): the folder and the Projects list name the date and who took it.
+  const takenOf = async () => (await api(`/api/projects/${a.projectId}`).then(json)).body.project.takenDays;
+  assert.deepEqual(await takenOf(), [{ date: a.days[1].date, upid: other.upid, name: other.name }]);
+  const listed = (await api('/api/projects?stage=all&limit=200').then(json)).body.projects.find((p) => p.id === a.projectId);
+  assert.deepEqual(listed.takenDays.map((t) => t.date), [a.days[1].date]);
+  assert.deepEqual((await api(`/api/projects/${other.projectId}`).then(json)).body.project.takenDays, []);
   assert.deepEqual(e.days.map((d) => Boolean(d.unavailable)), [false, true]);
   // The other project declined: its confirmed day no longer holds the date.
   await act(other.projectId, 'decline');
   assert.equal((await pub(token)).body.estimate.state, 'open');
+  assert.deepEqual(await takenOf(), [], 'and the owner’s warning goes with it');
 
   // expired (D44): the day after valid-until. Expiry wins over taken.
   today = '2026-11-04';

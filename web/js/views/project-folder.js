@@ -229,16 +229,27 @@ const ProjectFolder = (() => {
       return head + '<p class="pf-empty">None booked. Book days in the estimate’s Production Booking.</p>';
     }
     const many = folder.estimates.length > 1;
+    // Proposed dates another project has confirmed since the quote went (C6, D41).
+    const taken = new Map((project.takenDays || []).map((t) => [t.date, t]));
+    const takenHint = taken.size
+      ? '<p class="pf-hint pf-hint-alert" role="note">Your client can’t accept until they have new dates: ' +
+        (taken.size === 1 ? 'a proposed date has' : taken.size + ' proposed dates have') +
+        ' since been confirmed for another project. Move ' + (taken.size === 1 ? 'that day' : 'those days') +
+        ' in the estimate and save; the update goes to your client as you save it.</p>'
+      : '';
     return head +
-      (declined ? '<p class="pf-hint">Off every calendar while the project is declined.</p>' : '') +
+      (declined ? '<p class="pf-hint">Off every calendar while the project is declined.</p>' : '') + takenHint +
       '<ol class="pf-days' + (declined ? ' is-declined' : '') + '">' + rows.map(({ estimate, day, i, items }) => {
         const when = day.date ? C.longDate(day.date, today) : 'Day ' + (i + 1) + ' — date TBC';
         const times = day.startTime || day.endTime ? C.timeText(day) : '';
         // Confirmed by accepting on a date another project had confirmed first (D18).
+        const took = day.status === 'proposed' && day.date ? taken.get(day.date) : null;
         const rebook = day.rebook && !declined
           ? '<span class="pf-day-rebook">Clash, rebook — also confirmed for ' +
             esc(day.rebook.upid || day.rebook.name || 'another project') + '</span>'
-          : '';
+          : took
+            ? '<span class="pf-day-rebook">Taken — since confirmed for ' + esc(took.upid || took.name || 'another project') + '</span>'
+            : '';
         return (
           '<li><button type="button" class="pf-day" data-estimate="' + esc(estimate.id) + '" data-day="' + esc(day.id) + '">' +
           '<span class="pf-day-when">' + C.statusChip(day.status) + '<span class="pf-day-date">' + esc(when) + '</span>' +

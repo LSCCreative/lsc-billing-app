@@ -46,6 +46,14 @@ test('the stage line words every step', () => {
   // Valid through its last day; expired the day after (D44, derived).
   assert.equal(say('sent', { step: 'sent', version: 1, validUntil: TODAY }), 'Sent v1 · valid until 4 Oct');
   assert.equal(say('sent', { step: 'sent', version: 1, validUntil: '2026-10-03' }), 'Sent v1 · expired 3 Oct !');
+  // A proposed date another project has since confirmed (C6) outranks the valid-until.
+  const taken = (n) => {
+    const l = ProjectCard.stageLine({ stage: 'sent', stageDetail: { step: 'sent', version: 2, validUntil: '2026-10-14' },
+      takenDays: Array.from({ length: n }, (_, i) => ({ date: '2026-10-1' + i, upid: 'X' })) }, TODAY);
+    return l.word + ' · ' + l.note + (l.alert ? ' !' : '');
+  };
+  assert.equal(taken(1), 'Sent v2 · a proposed date is taken !');
+  assert.equal(taken(2), 'Sent v2 · 2 proposed dates are taken !');
   assert.equal(say('accepted', { step: 'accepted' }), 'Accepted · invoices not created');
   assert.equal(say('accepted', { step: 'deposit_draft' }), 'Accepted · deposit not sent');
   assert.equal(say('accepted', { step: 'deposit_scheduled' }), 'Accepted · deposit scheduled');

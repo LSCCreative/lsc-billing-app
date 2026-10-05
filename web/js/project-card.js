@@ -67,7 +67,7 @@ const ProjectCard = (() => {
   /**
    * The stage line's words: { word, note, alert }. `word` leads ("Sent v2"),
    * `note` follows it after a dot ("valid until 14 Oct"), and `alert` marks a
-   * line that needs the owner (expired, overdue).
+   * line that needs the owner (expired, overdue, a proposed date taken).
    */
   function stageLine(project, today) {
     const d = project.stageDetail || {};
@@ -76,6 +76,10 @@ const ProjectCard = (() => {
     switch (step) {
       case 'sent': {
         const word = d.version ? 'Sent v' + d.version : 'Sent';
+        // A proposed date another project has since confirmed (C6): the
+        // client's Accept is paused until new dates go to them (D41).
+        const taken = Array.isArray(project.takenDays) ? project.takenDays.length : 0;
+        if (taken) return { word, note: taken === 1 ? 'a proposed date is taken' : taken + ' proposed dates are taken', alert: true };
         const until = String(d.validUntil || '').slice(0, 10);
         if (C.isDate(until)) {
           return until < today
