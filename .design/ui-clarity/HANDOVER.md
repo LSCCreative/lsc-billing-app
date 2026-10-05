@@ -41,7 +41,14 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
     rail. Panels carry no margin (containers set `--panel-gap`); the legacy `.billing-block`,
     `.est-block`, `.pricing-section` keep a margin-bottom. `tokens-preview.html` now loads the real
     `app.css` and `panel.js` instead of copies.
-- **Next: task 3, "The menu button (`menu.js`)"** (frontend — Opus/high). **Frontend task.**
+  - [x] Task 3, the menu button (`2e1bd3f`). `web/js/menu.js` + `web/css/menu.css`; API in
+    menu.js's header. `LSCMenu.markup({ label, items, ariaLabel?, icon?, btnClass? })` returns ''
+    when nothing is available, so tasks 9–10 can concatenate it unconditionally. Items are
+    `{ text, hint, danger, href, download, attrs }`, `'-'` or falsy; danger items are moved last
+    below a divider automatically. `LSCMenu.open(opener, { label, items, onSelect, empty })` is for
+    lists built on the spot (the editor's Move to and Add to a day use it; `.move-pop` is gone).
+- **Next: task 4, "Agreement clauses and the one render"** (signing — Opus/high). Not a frontend
+  task (server + `documents.js` + tests); task 5 after it is **Frontend**.
 
 ## Waiting on the user
 
@@ -60,6 +67,16 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
   defaults like "New Service" untouched).
 
 ## Traps
+
+- **Menus (task 3):** an open list is moved into `<body>`, and a chosen declarative item is put
+  back and `.click()`ed in place, so a screen's delegated `data-act` handler must listen on a
+  container that holds the *closed* menu, not on the list. menu.js listens in the capture phase
+  and stops Esc there, so Esc in a menu inside a dialog closes only the menu.
+- Move to keeps its "No other day yet…" note (`open()`'s `empty`): its button is per line and
+  exists before any day does. "A menu with no items isn't drawn" is `markup()`'s rule.
+- **Screenshots:** a puppeteer `clip` capture resizes the viewport to 1×1 for a frame, which
+  flips the 767px query (and restarts the menu's fade). menu.js ignores flips that don't settle
+  (150ms); take menu shots with `captureBeyondViewport: false` and no clip.
 
 - **The studio Mac has a Fontspring DEMO of Metro Sans installed** (`~/Library/Fonts/fontspring-demo-*`):
   its glyphs for `( ) - @` and some digits are `±`. Chrome falls back to an installed font of the

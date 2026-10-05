@@ -81,7 +81,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 1. Modifies: `app.css`, `a11y.css`, `responsive.css`. New: panel classes._
 
 - [x] **3. The menu button (`menu.js`)** (frontend — Opus/high) **Frontend**
-  - **Done** (commit below): `LSCMenu.markup` / `LSCMenu.open` live; every key, outside click, AX "Actions, menu button, collapsed", the 375 sheet (48px rows, Cancel, Esc, backdrop, Tab trap) checked in the specimen and the editor's Move to / Add to a day at 1280, 800, 375; screenshots `screenshots/task3-*`.
+  - **Done** `2e1bd3f`: `LSCMenu.markup` / `LSCMenu.open` live; every key, outside click, AX "Actions, menu button, collapsed", the 375 sheet (48px rows, Cancel, Esc, backdrop, Tab trap) checked in the specimen and the editor's Move to / Add to a day at 1280, 800, 375; screenshots `screenshots/task3-*`.
   - A shared `LSCMenu`: a button opens a `role="menu"` list of items. Items can be links,
     dividers or danger. A menu with no available items isn't rendered.
   - **Keyboard** (APG menu button): arrows, Home/End, typeahead, Enter/Space, and Esc returning
