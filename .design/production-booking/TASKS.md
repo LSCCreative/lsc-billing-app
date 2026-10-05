@@ -1067,6 +1067,18 @@ Tasks 24–26 can be built with placeholders.
   - **Left as is (the user may ask):** emails still greet the contact by name ("Hi Priya,"); the
     owner's own screens still show the contact.
 
+  **Deployed 2026-10-05** (`main` `1cf0ded`). NAS first: backup `pre-v14-20261005-122248.db`
+  (integrity ok) in `data/exports` and `manual-backup`; dry run of v14 on a copy of it clean (v14,
+  no FK errors, 1 project / 1 estimate / 1 invoice kept); `.env` backed up to `.env.pre-v14`, then
+  `SMTP_HOST/PORT/USER`, `MAIL_FROM=admin@lsccreative.studio`, `MAIL_REPLY_TO`, `APP_URL` added;
+  code by tar over ssh (excluding `node_modules`, `data`, `.env*`, `docker-compose.yml`);
+  `docker compose up -d --build`; boot log `migrated to v14`, `[mail] not set up`, healthy;
+  `/api/projects` and `/api/email/status` 401, `/public/*` the app's JSON 404 with CORS. Then
+  Pages (run 37251420070, success; live `c/c.js` carries the Accept bar). Live settings: no
+  deposit % saved (so 50%), bank details all set, **business email blank**.
+  **Still open:** `SMTP_PASS` (the user adds it; the old key's value was never kept), then the
+  Settings test email (ticks task 28) and the end-to-end run.
+
 ## Review
 
 - [ ] **33. Money-math and security review, then design review** (review).

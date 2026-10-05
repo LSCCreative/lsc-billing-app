@@ -194,10 +194,15 @@ email, then tick task 28. If the dialog is gone, delete that key in Resend and m
   revisions R1–R4 (no contact person's name on client documents, the signatory's name typed at
   signing, the info block above the title) and the phone Accept bar. The user approved.
 
-**Exact next item:** **task 32's deploy** (Sonnet/medium): NAS v14, then Pages, then the end-to-end
-run. Task 31 (Stripe) is held (D101). Task 28 still needs the Resend key (above) before it can be
-ticked; without it in the NAS `.env` the app deploys fine but says "Email isn't set up" and only
-Copy link sends. The user should also try the live site once (sign in, open a project).
+- **Stage E deployed 2026-10-05** (NAS v14, then Pages, `main` `1cf0ded`; record in task 32's
+  note). The NAS `.env` has every mail setting **except `SMTP_PASS`**, which the user adds
+  themselves (the key never goes through chat); until then the app says "Email isn't set up".
+
+**Exact next item:** once `SMTP_PASS` is in and the container recreated, Settings → Email → Send a
+test email (then tick task 28), then **task 32's end-to-end run with the user** (a real estimate to
+their own address, signed, the emails, the invoices, the calendar, the signed PDF), then tick 32.
+Then task 33 (review). Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
+the client pages' "contact us" needs it.
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
