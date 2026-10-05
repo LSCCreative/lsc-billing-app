@@ -1079,17 +1079,29 @@
   background: var(--accent);
 }
 
-/* Duplicate day, beside Remove at the head's far end. */
-.day-dup {
-  margin-left: auto;
-  min-height: 44px;
-}
-.day-dup + .day-card-del {
-  margin-left: 0;
+/* Duplicate day. On a phone it has a row of its own under the head (task 33
+   DR12): beside the title, chip and × it squeezed "Day 3 — date TBC" onto
+   three lines. From 768 it sits beside Remove at the head's far end. */
+@media (max-width: 767px) {
+  .day-card-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 10px;
+    row-gap: 4px;
+  }
+  .day-dup {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: start;
+    min-height: 44px;
+  }
 }
 @media (min-width: 768px) {
   .day-dup {
-    min-height: 0;
+    margin-left: auto;
+  }
+  .day-dup + .day-card-del {
+    margin-left: 0;
   }
 }
 
