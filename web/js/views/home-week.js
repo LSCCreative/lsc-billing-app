@@ -236,7 +236,7 @@ const HomeWeek = (() => {
               ';--lane:' + it.lane + ';--lanes:' + it.lanes;
             // Under an hour and a quarter there's room for the time and the UPID, not the name.
             const cls2 = (it.s.open ? 'is-open-end' : '') + (it.s.overnight ? ' is-overnight' : '') +
-              (it.s.b - it.s.a < 75 ? ' is-short' : '');
+              (it.s.b - it.s.a < 75 ? ' is-short' : '') + (it.lanes > 1 ? ' is-narrow' : '');
             return tileButton(it.day, cls2.trim(), style, C.timeText(it.day));
           }).join('') + '</div>' +
           '</section>';

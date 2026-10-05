@@ -600,13 +600,23 @@
   left: calc((100% - 4px) * var(--lane) / var(--lanes) + 2px);
   width: calc((100% - 4px) / var(--lanes) - 2px);
 }
-/* Proposed keeps the month's shape language (D63): half the width it would
-   have, so it reads as not yet a booking even in a column of colour. */
-.wk-timed .wk-tile.is-proposed {
-  width: calc(((100% - 4px) / var(--lanes) - 2px) / 2);
+/* Proposed takes its lane's full width (task 33 DR2: at half width it cut its
+   own time, code and name), and reads as not yet a booking by a dashed edge
+   inside the grey, as Coming up's proposed rows do. */
+.wk-tile.is-proposed {
+  border: 1px dashed rgba(18, 18, 18, 0.6);
 }
-.wk-untimed .wk-tile.is-proposed {
-  width: 50%;
+/* Sharing the column: the code is the line kept; the time and name are in the
+   tile's label and title. */
+.wk-tile.is-narrow {
+  padding: 3px 3px;
+}
+.wk-tile.is-narrow .wk-tile-time,
+.wk-tile.is-narrow .wk-tile-name {
+  display: none;
+}
+.wk-tile.is-narrow .wk-tile-upid {
+  text-overflow: clip;
 }
 /* A start with no end: an hour's stub that fades out at the foot. */
 .wk-tile.is-open-end {
