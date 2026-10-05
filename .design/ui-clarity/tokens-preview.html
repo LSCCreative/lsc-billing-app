@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UI Clarity · Token specimen</title>
 <link rel="stylesheet" href="../../web/css/tokens.css">
+<!-- The real buttons and panels (task 2): the specimen shows app.css, not a copy of it. -->
+<link rel="stylesheet" href="../../web/css/app.css">
 <style>
 /* Local-only: fonts straight from the masters until Metro Sans is cleared for web/fonts. */
 @font-face{font-family:'LSC Metro Sans';src:url('../../Visual%20Design/Metro-Sans---Full-Family/Metrosans%20Regular%20Webfont/metrosans-regular-webfont.woff2') format('woff2');font-weight:400}
@@ -28,23 +30,8 @@ h1,h2,h3{font-family:var(--font-family-display);font-weight:700;letter-spacing:v
 .chip.ok{background:var(--color-status-success)}.chip.warn{background:var(--color-status-warning)}.chip.info{background:var(--color-status-info)}.chip.neutral{background:var(--color-status-neutral)}.chip.err{background:var(--color-status-error)}
 .chip.ghost{background:none;color:var(--color-text-secondary);box-shadow:inset 0 0 0 1px var(--color-border-subtle)}
 
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-3);height:var(--control-h);padding:0 var(--btn-pad-x);border-radius:var(--btn-radius);border:0;font:var(--btn-font);cursor:pointer;transition:background var(--duration-fast) var(--easing-default),color var(--duration-fast)}
-.btn:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
-.btn-primary{background:var(--color-accent-primary);color:var(--color-text-on-accent);text-transform:uppercase;letter-spacing:var(--letter-spacing-wide);font-size:var(--font-size-sm);font-weight:600}
-.btn-primary:hover{background:var(--color-accent-primary-hover)}
-.btn-secondary{background:var(--color-bg-inset);color:var(--color-text-primary)}
-.btn-secondary:hover{background:var(--color-bg-float)}
-.btn-quiet{background:none;color:var(--color-text-secondary);padding:0 var(--space-4)}
-.btn-quiet:hover{color:var(--color-text-primary);background:var(--color-bg-hover)}
-.btn-danger{background:none;color:var(--color-status-error-text);box-shadow:inset 0 0 0 1px rgba(210,88,74,.45)}
-.btn-sm{height:var(--control-h-sm);padding:0 var(--space-5);font-size:var(--font-size-sm)}
 .caret{font-size:9px;opacity:.7}
 
-.panel{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--panel-radius)}
-.panel-head{display:flex;align-items:center;justify-content:space-between;gap:var(--panel-head-gap);padding:var(--space-5) var(--panel-pad-x);border-bottom:1px solid var(--color-border-hairline)}
-.panel-title{font-family:var(--font-family-display);font-size:var(--font-size-lg);font-weight:700}
-.count{font-family:var(--font-family-mono);font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-left:var(--space-3)}
-.panel-body{padding:0 var(--panel-pad-x)}
 
 /* swatches -------------------------------------------------------------- */
 .layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--space-4)}
@@ -150,6 +137,25 @@ textarea.input{min-height:72px;resize:vertical}
     <button class="btn btn-secondary btn-sm">Small</button>
   </div>
 
+  <h2 class="spec-h">Panels</h2>
+  <div class="side">
+    <section class="panel" aria-labelledby="sp-a-t">
+      <div class="panel-head">
+        <h3 class="panel-title" id="sp-a-t"><button type="button" class="panel-toggle" aria-expanded="true" aria-controls="sp-a-b"><span class="panel-chev" aria-hidden="true"></span><span class="panel-name">Services</span><span class="panel-sum">Subtotal <span class="fig">$2,184.00</span></span></button></h3>
+      </div>
+      <div class="panel-body" id="sp-a-b">
+        <p class="note" style="padding:var(--space-6) 0">A collapsible panel, open. The whole bar is one button; its summary stays when it closes.</p>
+      </div>
+      <div class="panel-foot"><button class="btn btn-quiet">Cancel</button><button class="btn">Save extras</button></div>
+    </section>
+    <section class="panel is-collapsed" aria-labelledby="sp-b-t">
+      <div class="panel-head">
+        <h3 class="panel-title" id="sp-b-t"><button type="button" class="panel-toggle" aria-expanded="false" aria-controls="sp-b-b"><span class="panel-chev" aria-hidden="true"></span><span class="panel-name">Job details</span><span class="panel-sum">Harbour City Council · 2 days</span></button></h3>
+      </div>
+      <div class="panel-body" id="sp-b-b" hidden><p class="note" style="padding:var(--space-6) 0">Closed by default on an existing estimate.</p></div>
+    </section>
+  </div>
+
   <h2 class="spec-h">In use: the Project page</h2>
   <div class="mock-head">
     <div>
@@ -166,7 +172,7 @@ textarea.input{min-height:72px;resize:vertical}
 
   <div class="grid">
     <section class="panel">
-      <div class="panel-head"><h4 class="panel-title">Documents<span class="count">3</span></h4></div>
+      <div class="panel-head"><h4 class="panel-title">Documents<span class="panel-count">3</span></h4></div>
       <div class="panel-body">
         <div class="doc">
           <div><div class="doc-name">Estimate <span class="ref">v1</span></div><div class="doc-meta"><span class="chip ok">Accepted</span>signed by Jo Park, 5 Oct</div></div>
@@ -196,7 +202,7 @@ textarea.input{min-height:72px;resize:vertical}
     </section>
     <div class="side">
       <section class="panel">
-        <div class="panel-head"><h4 class="panel-title">Production days<span class="count">2</span></h4></div>
+        <div class="panel-head"><h4 class="panel-title">Production days<span class="panel-count">2</span></h4></div>
         <div class="panel-body">
           <div class="day"><span class="chip ok">Conf</span><div><div>Thu 8 October</div><div class="ref">16:00–22:00 · Video Capture</div></div></div>
           <div class="day"><span class="chip ok">Conf</span><div><div>Sun 11 October</div><div class="ref">17:00–23:00 · Video Capture</div></div></div>
@@ -215,7 +221,7 @@ textarea.input{min-height:72px;resize:vertical}
 
   <h2 class="spec-h">In use: the agreement builder</h2>
   <section class="panel">
-    <div class="panel-head"><h4 class="panel-title">Clauses<span class="count">12</span></h4><button class="btn btn-quiet btn-sm">⋯</button></div>
+    <div class="panel-head"><h4 class="panel-title">Clauses<span class="panel-count">12</span></h4><button class="btn btn-quiet btn-sm">⋯</button></div>
     <div class="panel-body">
       <div class="clauses">
         <div class="clause"><div class="clause-row"><span class="handle">⠿</span><span class="num">1</span><span class="ctitle">Services and Deliverables</span><span></span><span class="chev">›</span></div></div>
@@ -249,5 +255,6 @@ textarea.input{min-height:72px;resize:vertical}
     <div class="actions"><button class="btn btn-quiet">⋯</button><button class="btn btn-quiet">Cancel</button><button class="btn btn-primary">Save</button></div>
   </div>
 </main>
+<script src="../../web/js/panel.js"></script>
 </body>
 </html>

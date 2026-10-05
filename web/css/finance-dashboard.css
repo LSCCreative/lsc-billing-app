@@ -23,10 +23,9 @@
 /* A section heading at .sum-label scale but in --text: these name the page's
    parts, and the muted 9px label is reserved for figure captions. */
 .dash-h {
-  font-size: 10px;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--text);
   margin: 0 0 12px;
 }
@@ -164,10 +163,9 @@
   padding: 20px 22px;
 }
 .dash-panel-h {
-  font-size: 10px;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--text);
   margin: 0 0 14px;
 }

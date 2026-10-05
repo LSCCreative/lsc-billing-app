@@ -112,7 +112,7 @@
  * link across, and billed at cost (calc.js travelRowDef). Its Rate, Direct and
  * Your time don't apply, so they are shown as such and disabled. A card
  * without one (every card saved before 6b) gets an "+ Add Vehicle per km"
- * button beside "+ Add Item".
+ * button beside "+ Add item".
  *
  * EACH ROW'S STATE LINE, UNDER ITS MARK-UP
  * For the unit on show: "auto · floor $X", "set by you · ↺ use $X", with
@@ -843,7 +843,7 @@ const PricingView = (() => {
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<div class="pricing-sec-foot">' +
       '<span class="pricing-hint">' + sec.rows.length + ' service' + (sec.rows.length === 1 ? '' : 's') + '</span>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-add-row="' + si + '">+ Add Service</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-add-row="' + si + '">+ Add service</button>' +
       '</div></div>'
     );
   }
@@ -931,8 +931,8 @@ const PricingView = (() => {
 
     return (
       '<div class="pricing-section"><div class="pricing-sec-head">' +
-      '<h2 class="pricing-sec-label">Travel &amp; Accommodation</h2>' +
-      '<span style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Expenses</span></div>' +
+      '<h2 class="pricing-sec-label">Travel &amp; accommodation</h2>' +
+      '<span class="bb-label-tag">Expenses</span></div>' +
       '<table class="pricing-table"><thead><tr><th>Item</th>' +
       '<th style="text-align:right">Rate ($)</th>' +
       '<th style="text-align:right">Mark-Up ($)</th>' +
@@ -946,7 +946,7 @@ const PricingView = (() => {
       (card.travelRows.some((r) => r.perKm)
         ? ''
         : '<button type="button" class="btn btn-ghost btn-sm" id="js-add-km">+ Add Vehicle per km</button>') +
-      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-travel">+ Add Item</button></span>' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-travel">+ Add item</button></span>' +
       '</div></div>'
     );
   }
@@ -1125,7 +1125,7 @@ const PricingView = (() => {
         : '<p class="dtype-empty">Add the kinds of deliverable you make, like Brand Story or Socials, and the post ' +
           'services each needs.</p>') +
       '<div class="dtype-foot"><span class="pricing-hint">' + types.length + ' type' + (types.length === 1 ? '' : 's') +
-      '</span><button type="button" class="btn btn-ghost btn-sm" id="dtype-add-type">+ Add Deliverable Type</button></div>'
+      '</span><button type="button" class="btn btn-ghost btn-sm" id="dtype-add-type">+ Add deliverable type</button></div>'
     );
   }
 
@@ -1484,7 +1484,7 @@ const PricingView = (() => {
         '<label class="hol-field"><span>Date</span><input type="date" id="hol-add-date" required></label>' +
         '<label class="hol-field hol-field-name"><span>Name <span class="hol-optional">(optional)</span></span>' +
         '<input type="text" id="hol-add-name" maxlength="100" placeholder="e.g. NSW Bank Holiday"></label>' +
-        '<span class="hol-add-btns"><button type="submit" class="btn btn-accent btn-sm">Add date</button><button type="button" class="btn btn-ghost btn-sm" id="hol-add-cancel">Cancel</button></span>' +
+        '<span class="hol-add-btns"><button type="submit" class="btn btn-sm">Add date</button><button type="button" class="btn btn-ghost btn-sm" id="hol-add-cancel">Cancel</button></span>' +
         '</form>'
       : '';
     return (
@@ -1668,7 +1668,7 @@ const PricingView = (() => {
       (card.labourSections.some((s) => s.id === ADDITIONAL_ID)
         ? ''
         : '<button type="button" class="btn btn-ghost btn-sm" id="js-add-additional">+ Add Additional work</button>') +
-      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-cat">+ Add Category</button></span>' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="js-add-cat">+ Add category</button></span>' +
       '</div>' +
       /* Directly above the tables, so it is read before the first read-only
          field is reached rather than after. #pricing-rate-note is the target of
@@ -1709,9 +1709,9 @@ const PricingView = (() => {
       '<p>Changes apply to estimates you build from here on. Estimates already saved keep the figures they were quoted at.</p>' +
       '<div style="display:flex;align-items:center;gap:12px">' +
       '<span class="saved-msg" id="saved-msg">✓ Services saved</span>' +
-      '<button type="button" class="btn btn-ghost btn-sm" id="js-reset" data-write>Reset Defaults</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="js-reset" data-write>Reset defaults</button>' +
       '<button type="button" class="btn btn-accent" id="js-save-pricing" data-write>' +
-      '<span class="spinner" id="save-spin"></span><span id="save-label">Save Services</span></button>' +
+      '<span class="spinner" id="save-spin"></span><span id="save-label">Save services</span></button>' +
       '</div></div>' +
       /* Below the save bar: it saves itself (see SURCHARGES AND PUBLIC
          HOLIDAYS above), and the bar's Save has nothing to do with it. */
@@ -1774,7 +1774,7 @@ const PricingView = (() => {
     $('js-save-pricing').disabled = next;
     $('js-reset').disabled = next;
     $('save-spin').style.display = next ? 'inline-block' : 'none';
-    $('save-label').textContent = next ? 'Saving…' : 'Save Services';
+    $('save-label').textContent = next ? 'Saving…' : 'Save services';
   }
 
   function flashSaved() {

@@ -598,9 +598,8 @@
     content: attr(data-label);
     flex: 0 0 auto;
     white-space: nowrap;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-normal);
     color: var(--muted);
   }
   /* The first cell is the row's subject — a service name, or the text input for
@@ -718,9 +717,8 @@
     content: attr(data-label);
     flex: 0 0 auto;
     white-space: nowrap;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-normal);
     color: var(--muted);
   }
   /* The name is the row's subject: its own line, full width, clear of the
@@ -842,9 +840,8 @@
     content: attr(data-label);
     flex: 0 0 auto;
     white-space: nowrap;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-normal);
     color: var(--muted);
   }
   /* The subject of the row, same as .gt-row's first cell in the editor. */

@@ -419,7 +419,7 @@ const EstimateEditor = (() => {
      reads as a stacked list instead of six columns squeezed into 335px. The
      labels have to be per cell rather than generated from nth-child, because
      three sections share .expense-grid with different headings (Travel is
-     "Qty / Cost", crew is "Days"/"Day Rate", equipment is "Days"/"Cost/Day").
+     "Qty / Cost", crew is "Days"/"Day rate", equipment is "Days"/"Cost/Day").
      Inert above 768px: nothing reads the attribute there. */
 
   /* No Rate column on labour rows (2026-09-21). A row's stored `rate` has been
@@ -481,7 +481,7 @@ const EstimateEditor = (() => {
       '<div class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</div>' +
       /* A Production line on a surcharged day says why its price is higher,
          under the price, owner-only (the client's copy never says it, D8). */
-      '<div class="right' + (section.id === 'prod' ? ' bill-col' : '') + '" data-label="Client Bill">' +
+      '<div class="right' + (section.id === 'prod' ? ' bill-col' : '') + '" data-label="Client bill">' +
       '<span class="bill-cell">—</span>' + customCell +
       (section.id === 'prod' ? '<span class="sur-note" hidden></span>' : '') + '</div>' +
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' +
@@ -518,7 +518,7 @@ const EstimateEditor = (() => {
       (line.qty || '') + '" aria-label="' + (perKm ? 'Kilometres' : 'Quantity') + ' for ' + esc(line.name) + '"></div>' +
       '<div class="right muted-td" data-label="Rate">' + rateLabel + '</div>' +
       '<div class="right muted-td" data-label="Mark-Up">' + muLabel + '</div>' +
-      '<div class="right" data-label="Client Bill"><span class="bill-cell">—</span></div>' +
+      '<div class="right" data-label="Client bill"><span class="bill-cell">—</span></div>' +
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' +
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button></div>';
 
@@ -538,7 +538,7 @@ const EstimateEditor = (() => {
   function buildCostRow(kind, line) {
     const isEquip = kind === 'equip';
     const legacy = isEquip && !Object.prototype.hasOwnProperty.call(line, 'item');
-    const costCol = isEquip ? 'Cost/Day' : 'Day Rate';
+    const costCol = isEquip ? 'Cost/day' : 'Day rate';
 
     const tr = document.createElement('div');
     tr.className = 'gt-row expense-grid';
@@ -894,7 +894,7 @@ const EstimateEditor = (() => {
         '" aria-label="Service to add to ' + esc(section.label) + '">' + options + '</select>' +
         '<select class="svc-select unit-select" id="unit-' + esc(section.id) +
         '" aria-label="Unit to add for ' + esc(section.label) + '"></select>' +
-        '<button type="button" class="btn btn-accent btn-sm" id="add-' + esc(section.id) + '">+ Add Service</button></div>';
+        '<button type="button" class="btn btn-sm" id="add-' + esc(section.id) + '">+ Add service</button></div>';
 
     const tag = section.archived
       ? '<span class="bb-label-tag">No longer on the rate card</span>'
@@ -907,7 +907,7 @@ const EstimateEditor = (() => {
       (section.id === 'post' && !section.archived ? postPlanMarkup() : '') +
       picker +
       '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
-      '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>' +
+      '<div class="right">Markup</div><div class="right">Client bill</div><div></div></div>' +
       bodyMarkup(section.id, 'No services added. Use the selector above to add one.') +
       '</div>'
     );
@@ -920,7 +920,7 @@ const EstimateEditor = (() => {
     return (
       '<div class="post-plan" id="post-plan" hidden>' +
       '<dl class="pp-figs">' +
-      '<div class="pp-fig"><dt>Production Capture Hours</dt><dd id="pp-capture">0</dd></div>' +
+      '<div class="pp-fig"><dt>Production capture hours</dt><dd id="pp-capture">0</dd></div>' +
       '<div class="pp-fig pp-rec"><dt>Recommended Post Production Hours' +
       LSCInfo.markup({
         id: 'post-plan',
@@ -947,7 +947,7 @@ const EstimateEditor = (() => {
 
   const labourHead =
     '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
-    '<div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>';
+    '<div class="right">Markup</div><div class="right">Client bill</div><div></div></div>';
 
   const prodSection = () => sections.find((s) => s.id === 'prod' && !s.archived) || null;
 
@@ -956,9 +956,9 @@ const EstimateEditor = (() => {
   const DAY_GROUPS = [
     ['prod', 'Production', labourHead],
     ['travel', 'Travel', '<div class="gt-head expense-grid"><div>Service</div><div class="right">Qty / Cost</div>' +
-      '<div class="right">Rate</div><div class="right">Mark-Up</div><div class="right">Client Bill</div><div></div></div>'],
+      '<div class="right">Rate</div><div class="right">Markup</div><div class="right">Client bill</div><div></div></div>'],
     ['crew', 'Crew', '<div class="gt-head expense-grid"><div>Role / Name</div><div class="right">Days</div>' +
-      '<div class="right">Day Rate</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
+      '<div class="right">Day rate</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
     ['equip', 'Equipment', '<div class="gt-head expense-grid"><div>Vendor · Item</div><div class="right">Days</div>' +
       '<div class="right">Cost/Day</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
   ];
@@ -1933,8 +1933,8 @@ const EstimateEditor = (() => {
      category. */
   const ON_SET = [
     ['prod', null, 'On set'], // labelled with the Rate Card's own name for the section
-    ['travel', 'Travel &amp; Accommodation', 'Expenses'],
-    ['crew', 'External Crew &amp; Contracts', 'Expenses'],
+    ['travel', 'Travel &amp; accommodation', 'Expenses'],
+    ['crew', 'External crew &amp; contracts', 'Expenses'],
     ['equip', 'Equipment Hire', 'Expenses'],
   ];
   const ON_SET_MENU = { prod: 'Production', travel: 'Travel', crew: 'External Crew', equip: 'Equipment Hire' };
@@ -2041,7 +2041,7 @@ const EstimateEditor = (() => {
       '<div class="billing-block deliv-block" id="block-deliverables">' +
       '<div class="bb-head"><div><h2 class="bb-label">Deliverables</h2>' +
       '<span class="bb-label-tag">PROJECT OUTPUT</span></div>' +
-      '<button type="button" class="btn btn-accent btn-sm" id="add-deliverables">+ Add Deliverable</button></div>' +
+      '<button type="button" class="btn btn-sm" id="add-deliverables">+ Add deliverable</button></div>' +
       '<div class="gt-head deliv-grid deliv-typed"><div>Type</div><div>Name</div><div>Format</div>' +
       '<div>Length</div><div class="right">Qty</div><div class="right">Post hrs (rec.)</div><div></div></div>' +
       bodyMarkup('deliverables', 'No deliverables added yet — click “+ Add Deliverable” above.') +
@@ -2169,9 +2169,9 @@ const EstimateEditor = (() => {
       surchargeBoxMarkup() +
       overheadToggleMarkup() +
       '<div class="summary-bar">' +
-      '<div class="sum-item"><div class="sum-label">Total Hours</div><div class="sum-value" id="s-hours">0</div></div>' +
-      '<div class="sum-item"><div class="sum-label">Labour Subtotal</div><div class="sum-value" id="s-labour">$0.00</div></div>' +
-      '<div class="sum-item"><div class="sum-label">Expenses Subtotal</div><div class="sum-value" id="s-expenses">$0.00</div></div>' +
+      '<div class="sum-item"><div class="sum-label">Total hours</div><div class="sum-value" id="s-hours">0</div></div>' +
+      '<div class="sum-item"><div class="sum-label">Labour subtotal</div><div class="sum-value" id="s-labour">$0.00</div></div>' +
+      '<div class="sum-item"><div class="sum-label">Expenses subtotal</div><div class="sum-value" id="s-expenses">$0.00</div></div>' +
       '<div class="sum-item"><div class="sum-label">Client Price (ex GST)</div><div class="sum-value" id="s-client-price">$0.00</div></div>' +
       '<div class="sum-item"><div class="sum-label">GST</div><div class="sum-value" id="s-gst" style="font-size:15px">$0.00</div></div>' +
       '</div>' +
@@ -2255,7 +2255,7 @@ const EstimateEditor = (() => {
     let html =
       '<button class="back-btn" id="js-back">← Back</button>' +
       '<div class="page-head"><div><h1 class="page-title">' +
-      (estimate ? 'Edit Estimate' : 'New Estimate') + '</h1>' +
+      (estimate ? 'Edit estimate' : 'New estimate') + '</h1>' +
       '<div class="page-sub">Select services from each category to build your estimate</div></div></div>' +
       sentNoteMarkup(estimate) + acceptedNoteMarkup(estimate) +
       '<div class="form-grid">' +
@@ -2283,24 +2283,24 @@ const EstimateEditor = (() => {
         ? '<div class="field"><label for="f-date">Date</label>' +
           '<input id="f-date" type="date" value="' + esc(estimate.date) + '"></div>'
         : '') +
-      '<div class="field client-field"><label for="f-business">Business Name</label>' +
+      '<div class="field client-field"><label for="f-business">Business name</label>' +
       '<input id="f-business" type="text" value="' + esc(client.businessName || '') + '">' +
       '<div class="client-link-status">' +
       '<span id="client-linked" hidden>From your client list</span>' +
       '<label class="client-save-toggle" id="client-save-wrap" hidden>' +
       '<input type="checkbox" id="f-saveclient" checked><span>Save to client list</span></label>' +
       '</div></div>' +
-      '<div class="field"><label for="f-contact">Client Name</label>' +
+      '<div class="field"><label for="f-contact">Client name</label>' +
       '<input id="f-contact" type="text" value="' + esc(client.contactName || '') + '"></div>' +
-      '<div class="field"><label for="f-email">Client Email</label>' +
+      '<div class="field"><label for="f-email">Client email</label>' +
       '<input id="f-email" type="email" value="' + esc(client.email || '') + '"></div>' +
-      '<div class="field"><label for="f-phone">Client Phone</label>' +
+      '<div class="field"><label for="f-phone">Client phone</label>' +
       '<input id="f-phone" type="tel" value="' + esc(client.phone || '') + '"></div>' +
       '<div class="field"><label for="f-abn">Client ABN</label>' +
       '<input id="f-abn" type="text" inputmode="numeric" value="' + esc(abnFormat(client.abn)) + '"></div>' +
-      '<div class="field"><label for="f-address">Client Address</label>' +
+      '<div class="field"><label for="f-address">Client address</label>' +
       '<input id="f-address" type="text" value="' + esc(client.address || '') + '"></div>' +
-      '<div class="field full"><label for="f-notes">Internal Notes</label>' +
+      '<div class="field full"><label for="f-notes">Internal notes</label>' +
       '<textarea id="f-notes">' + esc(estimate ? estimate.notes : '') + '</textarea></div>' +
       '</div>' +
       /* The Document Type switch and invoice number are retired (D62, task
@@ -2352,7 +2352,7 @@ const EstimateEditor = (() => {
       (estimate ? '<button type="button" class="btn btn-danger btn-sm" id="js-delete" data-write>Delete</button>' : '') +
       '<button type="button" class="btn btn-ghost" id="js-cancel">Cancel</button>' +
       '<button type="button" class="btn btn-accent" id="js-save" data-write>' +
-      '<span class="spinner" id="save-spin"></span><span id="save-label">Save Estimate</span></button>' +
+      '<span class="spinner" id="save-spin"></span><span id="save-label">Save estimate</span></button>' +
       '</div>';
 
     return html;
@@ -2909,13 +2909,13 @@ const EstimateEditor = (() => {
       '<h2 class="modal-title" id="cb-title">How this is calculated</h2>' +
       '<div class="cb-rows">' +
       breakdownRow(
-        'Direct Job Costs',
+        'Direct job costs',
         b.direct,
         'What the job costs you out of pocket — crew, equipment and travel at cost. Passed through, so ' +
           'no markup goes on it. Labour is not here: it is what the floor is testing, not an input to it.'
       ) +
       breakdownRow(
-        'Overhead Allocation',
+        'Overhead allocation',
         b.alloc,
         hours + ' × ' + fmt(b.rate) + '/hr — this job’s share of what the business costs to run.'
       ) +
@@ -2929,7 +2929,7 @@ const EstimateEditor = (() => {
       '% markup come from your Overhead and Goals settings. Advisory only — nothing here ' +
       'changes what the client is billed.</p>' +
       '<div class="modal-actions">' +
-      '<button type="button" class="btn btn-accent" id="cb-close">Close</button></div></div>'
+      '<button type="button" class="btn" id="cb-close">Close</button></div></div>'
     );
   }
 
@@ -3231,7 +3231,7 @@ const EstimateEditor = (() => {
     if (!onScreen()) return;
     $('js-save').disabled = next;
     $('save-spin').style.display = next ? 'inline-block' : 'none';
-    $('save-label').textContent = next ? 'Saving…' : 'Save Estimate';
+    $('save-label').textContent = next ? 'Saving…' : 'Save estimate';
     const del = $('js-delete');
     if (del) del.disabled = next;
   }

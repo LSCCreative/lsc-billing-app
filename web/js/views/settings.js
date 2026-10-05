@@ -191,11 +191,11 @@ const SettingsView = (() => {
     return section('payment', 'Payment',
       'Printed on invoices only. An estimate never shows them, and a block left blank is left off the document.',
       '<div class="form-grid">' +
-        field('set-bank-name', 'Bank Name', f.bankName, { attrs: ' placeholder="e.g. Commonwealth Bank"' }) +
-        field('set-account-name', 'Account Name', f.accountName, { attrs: ' placeholder="e.g. LSC Creative Pty Ltd"' }) +
+        field('set-bank-name', 'Bank name', f.bankName, { attrs: ' placeholder="e.g. Commonwealth Bank"' }) +
+        field('set-account-name', 'Account name', f.accountName, { attrs: ' placeholder="e.g. LSC Creative Pty Ltd"' }) +
         field('set-bsb', 'BSB', f.bsb, { attrs: ' inputmode="numeric" placeholder="e.g. 062-000"' }) +
-        field('set-account-num', 'Account Number', f.accountNumber, { attrs: ' inputmode="numeric" placeholder="e.g. 12345678"' }) +
-        field('set-terms', 'Payment Terms', f.terms, { textarea: true, full: true, attrs: ' placeholder="e.g. Strictly 14 Days — EFT only. Please reference invoice number."' }) +
+        field('set-account-num', 'Account number', f.accountNumber, { attrs: ' inputmode="numeric" placeholder="e.g. 12345678"' }) +
+        field('set-terms', 'Payment terms', f.terms, { textarea: true, full: true, attrs: ' placeholder="e.g. Strictly 14 Days — EFT only. Please reference invoice number."' }) +
       '</div>');
   }
 
@@ -286,7 +286,7 @@ const SettingsView = (() => {
         '<div class="pricing-save-bar set-save-bar">' +
           '<p id="set-save-state" aria-live="polite">No unsaved changes.</p>' +
           '<div><button type="button" class="btn btn-accent" id="set-save" data-write>' +
-          '<span class="spinner" id="set-spin"></span><span id="set-save-label">Save Settings</span></button></div>' +
+          '<span class="spinner" id="set-spin"></span><span id="set-save-label">Save settings</span></button></div>' +
         '</div>' +
       '</div></div>';
   }
@@ -524,7 +524,7 @@ const SettingsView = (() => {
     saving = next;
     $('set-save').disabled = next;
     $('set-spin').style.display = next ? 'inline-block' : 'none';
-    $('set-save-label').textContent = next ? 'Saving…' : 'Save Settings';
+    $('set-save-label').textContent = next ? 'Saving…' : 'Save settings';
     if (next) $('set-save-state').textContent = 'Saving…';
   }
 

@@ -58,9 +58,8 @@
   background: transparent;
   border: 1px solid var(--border);
   color: var(--muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
@@ -74,8 +73,9 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 .stage-chip:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 .stage-chip-count {
   font-variant-numeric: tabular-nums;
@@ -209,9 +209,10 @@
 }
 .card-next-label {
   color: var(--muted);
-  font-size: 10px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wide);
 }
 
 @media (prefers-reduced-motion: reduce) {

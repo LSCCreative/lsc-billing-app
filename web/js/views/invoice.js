@@ -180,7 +180,7 @@ const InvoiceView = (() => {
   function actionsMarkup(inv) {
     const { main, quiet } = actionsFor(inv);
     const btn = (a, cls) =>
-      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '"' + (a.id === 'pdf' || a.id === 'breakdown' || a.id === 'legacy-pdf' || a.id === 'copy' ? '' : ' data-write') + '>' +
+      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '"' + (a.primary ? ' data-primary' : '') + (a.id === 'pdf' || a.id === 'breakdown' || a.id === 'legacy-pdf' || a.id === 'copy' ? '' : ' data-write') + '>' +
       '<span class="spinner"></span>' + esc(a.label) + '</button>';
     return (
       '<div class="pf-actions">' +
@@ -335,7 +335,7 @@ const InvoiceView = (() => {
       '<select class="svc-select" id="inv-svc" aria-label="Additional work to add">' +
       sec.rows.map((r) => '<option value="' + esc(r.name) + '">' + esc(r.name) + '</option>').join('') + '</select>' +
       '<select class="svc-select unit-select" id="inv-unit" aria-label="Unit to add"></select>' +
-      '<button type="button" class="btn btn-accent btn-sm" id="inv-add">+ Add</button></div>'
+      '<button type="button" class="btn btn-sm" id="inv-add">+ Add</button></div>'
     );
   }
 
@@ -390,7 +390,7 @@ const InvoiceView = (() => {
       '</div>' +
       (editable
         ? '<div class="inv-save"><span class="inv-save-state" id="inv-save-state" aria-live="polite"></span>' +
-          '<button type="button" class="btn btn-accent" id="inv-save" data-write disabled><span class="spinner"></span>Save extras</button></div>'
+          '<button type="button" class="btn" id="inv-save" data-write disabled><span class="spinner"></span>Save extras</button></div>'
         : '') +
       '<p class="pf-hint inv-extras-hint">' + (editable
         ? 'Billed at the standard rate: no day or time rate applies to extras. Editable until the invoice is sent.'
@@ -558,9 +558,12 @@ const InvoiceView = (() => {
     if (!save) return;
     const changed = dirty();
     save.disabled = busy || !changed;
-    // Quiet until there is something to save, then the screen's call to action.
+    // Quiet until there is something to save, then the screen's call to action:
+    // it takes the terracotta from the header's primary (Send…, Mark paid…)
+    // while the extras are unsaved, so the view still has one.
     save.classList.toggle('btn-accent', changed);
     save.classList.toggle('btn-ghost', !changed);
+    document.querySelectorAll('.pf-actions [data-primary]').forEach((b) => b.classList.toggle('btn-accent', !changed));
     const state = $('inv-save-state');
     if (state && !busy) state.textContent = changed ? 'Unsaved changes' : '';
   }
@@ -989,7 +992,7 @@ const InvoiceView = (() => {
         return;
       }
       placeholder(projectId, '<h3>Couldn’t open that invoice</h3><p>' + esc(failureText(err)) + '</p>' +
-        '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button>');
+        '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try again</button>');
       root.querySelector('#js-retry').addEventListener('click', () => load(projectId, invoiceId));
     }
   }

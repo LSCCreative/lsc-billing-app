@@ -61,7 +61,7 @@ const ProjectsView = (() => {
         body:
           'Every estimate is priced from it. What’s in there now is the built-in default ' +
           'card — open it, change anything that’s out of date, and save once to make it yours.',
-        action: 'Open Pricing',
+        action: 'Open pricing',
       });
     }
     if (!LSCData.settingsConfigured()) {
@@ -71,7 +71,7 @@ const ProjectsView = (() => {
         body:
           'Your business name, ABN and bank details. Until they’re saved an invoice prints ' +
           'no payment block at all, and one that charges GST won’t export without an ABN.',
-        action: 'Open Settings',
+        action: 'Open settings',
       });
     }
     return steps;
@@ -330,7 +330,7 @@ const ProjectsView = (() => {
       box.removeAttribute('aria-busy');
       box.innerHTML =
         '<div class="empty-state"><h3>Couldn’t load your projects</h3><p>' + esc(failureText(err)) + '</p>' +
-        '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button></div>';
+        '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try again</button></div>';
       $('js-retry').addEventListener('click', load);
       return;
     }

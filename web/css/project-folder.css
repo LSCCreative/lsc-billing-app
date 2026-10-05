@@ -40,9 +40,8 @@
   margin-top: 14px;
 }
 .pf-facts dt {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
   margin-bottom: 4px;
 }
@@ -237,8 +236,9 @@
   border-color: var(--accent);
 }
 .pf-day:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 .pf-day-when {
   display: flex;
@@ -276,9 +276,8 @@
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .pf-day:hover .pf-day-go {
@@ -419,9 +418,8 @@
 }
 .pfd-choice legend {
   margin-bottom: 6px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .pfd-choice label {

@@ -35,8 +35,9 @@
 #connection-banner-retry { flex-shrink: 0; }
 
 #connection-banner-retry:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 
 /* Write actions go dead while the server is unreachable. The block itself is

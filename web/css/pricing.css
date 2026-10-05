@@ -152,8 +152,9 @@
   border-color: var(--accent);
 }
 .pricing-unit-sel:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 /* The state line may carry three parts ("set by you · below floor by $12.40
    · ↺ use $57"), more than the Mark-Up column is wide, so it wraps — but
@@ -268,9 +269,8 @@
   margin: 0 0 14px;
 }
 .pricing-show-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
   margin-right: 4px;
 }
@@ -355,11 +355,12 @@
    the text stays --text for contrast. */
 .pricing-sec-tag {
   flex-shrink: 0;
-  font-size: 9px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   padding: 2px 7px;
   border: 1px solid var(--accent-text);
   color: var(--text);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
   white-space: nowrap;
   cursor: help;
@@ -506,9 +507,8 @@
   min-height: 44px;
   padding: 0 6px;
   border: 1px solid var(--border);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
@@ -521,8 +521,9 @@
   color: var(--text);
 }
 .surch-day input:focus-visible + span {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 .surch-day input[aria-invalid='true'] + span {
   border-color: var(--err-text);
@@ -643,9 +644,8 @@
 .hol-count {
   font-family: var(--font-family-body);
   font-weight: 400;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .hol-list {
@@ -681,11 +681,12 @@
 .hol-src {
   grid-area: src;
   justify-self: start;
-  font-size: 9px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   padding: 1px 6px;
   border: 1px solid var(--border);
   color: var(--muted);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -740,9 +741,8 @@
   flex-direction: column;
   gap: 5px;
   flex: 1 1 100%;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .hol-optional {
@@ -933,9 +933,8 @@
   min-width: 0;
 }
 .dtype-lbl {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .dtype-lbl-note {
@@ -1054,8 +1053,9 @@
   color: var(--color-status-error-text);
 }
 .dtype-chip-x:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
 }
 /* A service no longer on the card: struck through, dashed, and the word
    itself, so it never rests on colour alone. */
@@ -1069,8 +1069,9 @@
 }
 .dtype-chip-flag {
   flex-shrink: 0;
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
   color: var(--err-text);
 }
@@ -1226,9 +1227,8 @@
     padding-top: 7px;
     padding-bottom: 7px;
     border-top: 1px solid var(--color-border-hairline);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-normal);
     color: var(--muted);
   }
   .dtype-head + .dtype-list {

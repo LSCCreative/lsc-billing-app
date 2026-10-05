@@ -82,7 +82,7 @@ const ClientsView = (() => {
       if (!LSCRouter.isCurrent(ticket)) return; // moved on while it loaded
       if (err.kind === 'auth') return handlers.onAuthLost();
       root.innerHTML =
-        listHead('Could not load', '<button class="btn btn-ghost" id="js-retry">Try Again</button>') +
+        listHead('Could not load', '<button class="btn btn-ghost" id="js-retry">Try again</button>') +
         '<div class="empty-state"><h3>Couldn’t load your clients</h3><p>' +
         esc(err.kind === 'network' ? 'The server could not be reached.' : err.message || 'The server had a problem.') +
         '</p></div>';
@@ -95,7 +95,7 @@ const ClientsView = (() => {
     root.innerHTML =
       listHead(
         count ? count + ' client' + (count !== 1 ? 's' : '') : 'No clients yet',
-        '<button class="btn btn-accent" id="js-new">+ New Client</button>'
+        '<button class="btn btn-accent" id="js-new">+ New client</button>'
       ) +
       (count
         ? '<div class="cards-grid" role="list">' + clients.map(cardMarkup).join('') + '</div>'
@@ -134,7 +134,7 @@ const ClientsView = (() => {
       '</div></div></div>' +
       '<div class="form-grid">' +
       field('c-business', 'Business Name *', c.businessName || '', { full: true }) +
-      field('c-contact', 'Contact Name', c.contactName || '') +
+      field('c-contact', 'Contact name', c.contactName || '') +
       field('c-email', 'Email', c.email || '', { type: 'email' }) +
       field('c-phone', 'Phone', c.phone || '', { type: 'tel' }) +
       field('c-abn', 'ABN', abnFormat(c.abn), { attrs: 'inputmode="numeric" placeholder="e.g. 51 824 753 556"' }) +
@@ -146,7 +146,7 @@ const ClientsView = (() => {
       (client ? '<button type="button" class="btn btn-danger btn-sm" id="js-delete" data-write>Delete</button>' : '') +
       '<button type="button" class="btn btn-ghost" id="js-cancel">Cancel</button>' +
       '<button type="button" class="btn btn-accent" id="js-save" data-write>' +
-      '<span class="spinner" id="client-spin"></span><span id="client-save-label">Save Client</span></button>' +
+      '<span class="spinner" id="client-spin"></span><span id="client-save-label">Save client</span></button>' +
       '</div>' +
       (client ? '<div id="client-history"></div>' : '')
     );
@@ -230,7 +230,7 @@ const ClientsView = (() => {
       if (!onScreen()) return;
       $('js-save').disabled = next;
       $('client-spin').style.display = next ? 'inline-block' : 'none';
-      $('client-save-label').textContent = next ? 'Saving…' : 'Save Client';
+      $('client-save-label').textContent = next ? 'Saving…' : 'Save client';
       if ($('js-delete')) $('js-delete').disabled = next;
     };
 
@@ -368,7 +368,7 @@ const ClientsView = (() => {
         '<div class="empty-state"><h3>' +
         (gone ? 'That client doesn’t exist any more' : 'Couldn’t open that client') + '</h3><p>' +
         esc(gone ? 'They may have been deleted. Estimates saved for them keep their own copy of the details.' : failureText(err, 'load them')) +
-        '</p>' + (gone ? '' : '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button>') +
+        '</p>' + (gone ? '' : '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try again</button>') +
         '</div>';
       root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(LIST));
       if (!gone) root.querySelector('#js-retry').addEventListener('click', () => showClient(id));

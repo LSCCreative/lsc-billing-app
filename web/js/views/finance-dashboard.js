@@ -717,7 +717,7 @@ const FinanceDashboardView = (() => {
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'btn btn-ghost btn-xs';
-      open.textContent = 'Open Settings';
+      open.textContent = 'Open settings';
       open.addEventListener('click', () => LSCRouter.go('/settings/business'));
       el.append(' ', open);
     }

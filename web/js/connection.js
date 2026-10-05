@@ -59,7 +59,7 @@ const ConnectionBanner = (() => {
   function setChecking(next) {
     checking = next;
     els.retry.disabled = next;
-    els.retry.textContent = next ? 'Checking…' : 'Try Again';
+    els.retry.textContent = next ? 'Checking…' : 'Try again';
   }
 
   async function retry() {

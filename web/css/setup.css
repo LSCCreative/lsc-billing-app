@@ -76,13 +76,15 @@
   outline: none;
 }
 .fix-group-upid:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 .fix-group-kicker {
-  font-size: 10px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
 }
 

@@ -72,10 +72,10 @@
 }
 
 .set-group-head {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--color-text-primary);
   margin: 24px 0 12px;
 }
 .set-section-head + .set-group-head,
@@ -255,9 +255,10 @@
   margin-bottom: 14px;
   padding: 6px 12px;
   border: 1px solid var(--border);
-  font-size: 10px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
 }
 .set-status-dot {

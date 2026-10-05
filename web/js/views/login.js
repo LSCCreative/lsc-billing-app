@@ -36,7 +36,7 @@ const LoginView = (() => {
 
         <button type="submit" class="btn btn-accent" id="login-submit" data-pending="false">
           <span class="spinner" aria-hidden="true"></span>
-          <span id="login-submit-label">Sign In</span>
+          <span id="login-submit-label">Sign in</span>
         </button>
 
         <div id="login-error" role="alert" aria-live="assertive"></div>
@@ -58,7 +58,7 @@ const LoginView = (() => {
     pending = next;
     els.submit.disabled = next;
     els.submit.dataset.pending = String(next);
-    els.submitLabel.textContent = next ? 'Signing In…' : 'Sign In';
+    els.submitLabel.textContent = next ? 'Signing in…' : 'Sign in';
     els.username.disabled = next;
     els.password.disabled = next;
   }

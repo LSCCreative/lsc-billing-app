@@ -444,7 +444,7 @@ const GoalsView = (() => {
          the save bar, per the overhead-finance IA; moved 2026-09-28 by the
          user's call (Finance & Price design review, should-fix 8). */
       '<div class="proj-card goals-outcome">' +
-      '<div class="sum-label">Target Annual Revenue</div>' +
+      '<div class="sum-label">Target annual revenue</div>' +
       '<div class="goals-outcome-value' + (value === null ? ' is-empty' : '') + '" id="goals-tar-value">' +
       (value === null ? '—' : fmt(value)) + '</div>' +
       '<p class="goals-outcome-note" id="goals-tar-note">' + outcomeNote(r) + '</p>' +
@@ -509,7 +509,7 @@ const GoalsView = (() => {
       '<div style="display:flex;align-items:center;gap:12px">' +
       '<span class="saved-msg" id="goals-saved-msg">✓ Goals saved</span>' +
       '<button type="button" class="btn btn-accent" id="goals-save" data-write>' +
-      '<span class="spinner" id="goals-spin"></span><span id="goals-save-label">Save Goals</span></button>' +
+      '<span class="spinner" id="goals-spin"></span><span id="goals-save-label">Save goals</span></button>' +
       '</div></div>'
     );
   }
@@ -536,7 +536,7 @@ const GoalsView = (() => {
     if (!onScreen()) return;
     $('goals-save').disabled = next;
     $('goals-spin').style.display = next ? 'inline-block' : 'none';
-    $('goals-save-label').textContent = next ? 'Saving…' : 'Save Goals';
+    $('goals-save-label').textContent = next ? 'Saving…' : 'Save goals';
   }
 
   function flashSaved() {

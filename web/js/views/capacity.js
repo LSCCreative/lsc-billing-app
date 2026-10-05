@@ -272,7 +272,7 @@ const CapacityView = (() => {
       '<div style="display:flex;align-items:center;gap:12px">' +
       '<span class="saved-msg" id="capacity-saved-msg">✓ Capacity saved</span>' +
       '<button type="button" class="btn btn-accent" id="capacity-save" data-write>' +
-      '<span class="spinner" id="capacity-spin"></span><span id="capacity-save-label">Save Capacity</span></button>' +
+      '<span class="spinner" id="capacity-spin"></span><span id="capacity-save-label">Save capacity</span></button>' +
       '</div></div>' +
 
       /* Last: a pointer, not a figure. Since service rate tiers (2026-09-28) the
@@ -305,7 +305,7 @@ const CapacityView = (() => {
     if (!onScreen()) return;
     $('capacity-save').disabled = next;
     $('capacity-spin').style.display = next ? 'inline-block' : 'none';
-    $('capacity-save-label').textContent = next ? 'Saving…' : 'Save Capacity';
+    $('capacity-save-label').textContent = next ? 'Saving…' : 'Save capacity';
   }
 
   function flashSaved() {

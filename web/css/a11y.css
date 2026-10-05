@@ -40,16 +40,14 @@
   opacity: 1;
 }
 
-/* app.css sets `outline:none` on every text input, select and custom button in
-   the app (.field input/textarea, .svc-select, .text-inp, .num-inp, the
-   pricing-table/tax-setting/doc-type/invoice-number inputs) and leaves .btn /
-   .nav-link / .back-btn / .del-btn to the UA default, which this theme's dark
-   background makes inconsistent at best. A few screens had added their own
-   scoped `:focus-visible` ring with exactly this treatment (connection.css
-   still does; estimates.css draws it on a whole card, see .card-open) — this
-   is that same ring, applied everywhere else so keyboard
-   navigation is never guesswork about what's focused. `:focus-visible` rather
-   than `:focus` so a mouse click still doesn't ring anything. */
+/* The one focus ring (ui-clarity task 2): --shadow-focus, a 2px page-coloured
+   gap then a 2px --color-border-focus ring, drawn as a shadow so it follows
+   each control's radius. app.css sets `outline:none` on its inputs; this puts
+   the ring on every focusable thing instead. The transparent outline is for
+   forced-colours mode, which drops shadows and paints the outline. Screen
+   files that ring something differently (a whole card, an inset ring on a
+   calendar cell) use the same colour. `:focus-visible` rather than `:focus`
+   so a mouse click doesn't ring anything. */
 .btn:focus-visible,
 .nav-link:focus-visible,
 .back-btn:focus-visible,
@@ -72,14 +70,9 @@ select:focus-visible,
 textarea:focus-visible,
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--color-border-focus);
+  outline: 2px solid transparent;
   outline-offset: 2px;
-}
-
-/* .nav-link already animates a border-bottom on hover; the ring sits outside
-   the button so the two don't compete for the same edge. */
-.nav-link:focus-visible {
-  outline-offset: 3px;
+  box-shadow: var(--shadow-focus);
 }
 
 /* ── Field-level errors ─────────────────────────────────────────────────────

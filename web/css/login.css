@@ -32,9 +32,10 @@
 .login-wordmark em { color: var(--accent); font-style: normal; }
 
 .login-sub {
-  font-size: 10px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: .14em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
   margin-top: 6px;
   padding-bottom: 22px;

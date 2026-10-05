@@ -319,7 +319,7 @@ const SetupView = (() => {
         headMarkup('Could not load') +
         '<div class="empty-state"><h3>Couldn’t load the estimates that need a UPID</h3><p>' +
         esc(err.kind === 'network' ? 'The server could not be reached.' : err.message || 'The server had a problem.') +
-        '</p><button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button></div>';
+        '</p><button type="button" class="btn" id="js-retry" style="margin-top:16px">Try again</button></div>';
       root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(LIST));
       root.querySelector('#js-retry').addEventListener('click', () => mount(root));
       return;

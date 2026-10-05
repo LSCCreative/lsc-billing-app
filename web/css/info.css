@@ -82,8 +82,9 @@
   display: none;
 }
 .info-pop:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 /* The notch: a square turned 45°, carrying the panel's own border on the two
    sides that face the button. Above the panel it sits in the accent rule;
@@ -111,9 +112,8 @@
 .info-pop-t {
   display: block;
   margin-bottom: 8px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .info-pop-p {

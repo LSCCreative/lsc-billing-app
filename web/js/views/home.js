@@ -148,7 +148,7 @@ const HomeView = (() => {
     if (!box) return;
     box.hidden = !text;
     box.innerHTML = text
-      ? '<span>' + esc(text) + '</span>' + (retry ? '<button type="button" class="btn btn-ghost btn-sm" id="home-cal-retry">Try Again</button>' : '')
+      ? '<span>' + esc(text) + '</span>' + (retry ? '<button type="button" class="btn btn-ghost btn-sm" id="home-cal-retry">Try again</button>' : '')
       : '';
     const btn = box.querySelector('#home-cal-retry');
     if (btn) btn.addEventListener('click', retry);
@@ -332,7 +332,7 @@ const HomeView = (() => {
       if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
       if (err.kind === 'auth') return handlers.onAuthLost();
       box.innerHTML = '<p class="home-empty">Couldn’t load what’s coming up: ' + esc(failureText(err)) +
-        '</p><button type="button" class="btn btn-ghost btn-sm" id="home-up-retry">Try Again</button>';
+        '</p><button type="button" class="btn btn-ghost btn-sm" id="home-up-retry">Try again</button>';
       box.querySelector('#home-up-retry').addEventListener('click', () => {
         box.innerHTML = '<p class="home-empty">Loading…</p>';
         loadComingUp();
@@ -392,7 +392,7 @@ const HomeView = (() => {
       if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
       if (err.kind === 'auth') return handlers.onAuthLost();
       box.innerHTML = '<p class="home-empty">Couldn’t load recent activity: ' + esc(failureText(err)) +
-        '</p><button type="button" class="btn btn-ghost btn-sm" id="home-act-retry">Try Again</button>';
+        '</p><button type="button" class="btn btn-ghost btn-sm" id="home-act-retry">Try again</button>';
       box.querySelector('#home-act-retry').addEventListener('click', () => {
         box.innerHTML = '<p class="home-empty">Loading…</p>';
         loadActivity();

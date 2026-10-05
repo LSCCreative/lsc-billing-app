@@ -61,8 +61,9 @@
   outline: none;
 }
 .proj-card:has(.card-open:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
   border-color: var(--accent);
 }
 .proj-card:has(.card-open:focus-visible)::after {
@@ -243,9 +244,10 @@
 }
 
 .mjp-line-label {
-  font-size: 9px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
 }
 
@@ -371,9 +373,10 @@
 }
 
 .cb-total-label {
-  font-size: 9px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
 }
 
@@ -446,8 +449,9 @@
   border-color: var(--accent);
 }
 .lab-unit-sel:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 .lab-unit-sel option {
   background: var(--color-bg-float);
@@ -528,9 +532,8 @@
   border-top: 1px solid var(--color-border-hairline);
 }
 .rates-bar-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .rates-bar-note {
@@ -555,28 +558,10 @@
   margin-top: -25px;
 }
 
-/* ── Deliverables, the headline block (production-booking B2-3, D86) ────────
-   What the client is buying, so it's the one block on the editor that isn't
-   neutral: the Total box's accent tint, a 2px accent border and a larger
-   Delight heading. Not cards, and no badge per row (the brief's B2 Aesthetic
-   Direction). Additive: .billing-block and .deliv-grid in app.css are as
-   they were; these win by specificity. */
-.billing-block.deliv-block {
-  border: 2px solid color-mix(in srgb, var(--color-accent-primary) 60%, transparent);
-  background: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
-}
-.billing-block.deliv-block .bb-head {
-  background: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
-  border-bottom-color: color-mix(in srgb, var(--color-accent-primary) 45%, transparent);
-  padding: 12px 16px;
-}
-.billing-block.deliv-block .bb-label {
-  font-size: 15px;
-  letter-spacing: 0.1em;
-}
-.billing-block.deliv-block .gt-head {
-  border-bottom-color: color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
-}
+/* ── Deliverables (production-booking B2-3, D86) ────────────────────────────
+   D86 made this the editor's one non-neutral block (accent border and tint).
+   ui-clarity's U17 keeps terracotta for the one primary action, so it is an
+   ordinary panel now; it still leads the editor's money blocks. */
 /* Type · Name · Format · Length · Qty · Post hrs (rec.) · ×. The editor's
    only; the read-only screens keep app.css's four-column .deliv-grid. */
 .deliv-grid.deliv-typed {
@@ -600,8 +585,9 @@
   border-color: var(--accent);
 }
 .deliv-type-sel:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 .deliv-type-sel option {
   background: var(--color-bg-float);
@@ -641,9 +627,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 9px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
   margin-bottom: 4px;
 }
@@ -694,11 +681,10 @@
   margin-bottom: 10px;
 }
 .sur-box-h {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-family: var(--font-family-body);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--text);
 }
 .sur-box-rows {
@@ -743,9 +729,10 @@
   border-top: 1px solid var(--border);
 }
 .sur-box-total-label {
-  font-size: 9px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
 }
 .sur-box-total .sur-box-amt {

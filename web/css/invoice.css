@@ -92,9 +92,10 @@
   background: var(--surface);
 }
 .inv-due-label {
-  font-size: 10px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--muted);
 }
 .inv-due-figure {
@@ -197,8 +198,9 @@
   color: var(--text);
 }
 .inv-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 
 /* ── Sections ─────────────────────────────────────────────────────────────── */
@@ -208,10 +210,9 @@
 }
 .inv-h3 {
   margin: 18px 0 8px;
-  font-size: 10px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 
@@ -278,8 +279,9 @@
   display: none;
 }
 .inv-estimate summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
 }
 .inv-est-title {
   font-family: 'Delight', 'Georgia', serif;
@@ -361,9 +363,8 @@
   justify-content: space-between;
 }
 .inv-preview {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--accent-text);
 }
 .inv-ledger {
@@ -390,9 +391,8 @@
 }
 .inv-q {
   margin-left: 4px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .inv-num {
@@ -425,10 +425,11 @@
   border-bottom: 0;
 }
 .inv-row.is-due dt {
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--letter-spacing-wide);
 }
 .inv-row.is-due dd {
   font-family: 'Delight', 'Georgia', serif;

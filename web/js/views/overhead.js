@@ -43,7 +43,7 @@
  * "Tertiary navigation"). Operating Costs is everything this file already was,
  * unchanged. Depreciation is the capital-asset register in views/depreciation.js
  * (DepreciationView), which renders into #oh-inner and owns its own modal.
- * The page-head button follows the tab: "+ Add Expense" or "+ Add Asset".
+ * The page-head button follows the tab: "+ Add expense" or "+ Add asset".
  *
  * `handlers.inner` picks the tab on mount: 'depreciation' lands on it — the
  * Dashboard's Replacement reserve link sends exactly that through FinanceView's
@@ -130,7 +130,7 @@ const OverheadView = (() => {
   let innerTab = 'operating'; // 'operating' | 'depreciation'
 
   const INNER_TABS = [
-    { id: 'operating', label: 'Operating Costs' },
+    { id: 'operating', label: 'Operating costs' },
     { id: 'depreciation', label: 'Depreciation' },
   ];
 
@@ -181,9 +181,9 @@ const OverheadView = (() => {
     const annual = annualOverheadTotal(items());
     return (
       '<div class="proj-card oh-summary">' +
-      '<div class="oh-stat"><div class="sum-label">Monthly Total</div>' +
+      '<div class="oh-stat"><div class="sum-label">Monthly total</div>' +
       '<div class="oh-stat-value">' + fmt(annual / 12) + '</div></div>' +
-      '<div class="oh-stat"><div class="sum-label">Annual Total</div>' +
+      '<div class="oh-stat"><div class="sum-label">Annual total</div>' +
       '<div class="oh-stat-value">' + fmt(annual) + '</div></div>' +
       '</div>'
     );
@@ -195,7 +195,7 @@ const OverheadView = (() => {
   function tableMarkup() {
     const list = items();
     const head =
-      '<div class="est-block-head"><h2 class="est-block-label">Recurring Costs</h2>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Recurring costs</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
       list.length + ' expense' + (list.length !== 1 ? 's' : '') + '</span></div>';
 
@@ -216,7 +216,7 @@ const OverheadView = (() => {
           '<td class="muted-td" data-label="Category">' + esc(labelOf(CATEGORIES, item.category)) + '</td>' +
           '<td class="right" data-label="Cost">' + fmt(item.cost) + '</td>' +
           '<td class="muted-td" data-label="Frequency">' + esc(labelOf(FREQUENCIES, item.frequency)) + '</td>' +
-          '<td class="right" data-label="Monthly Equivalent">' + fmt(annualisedCost(item) / 12) + '</td>' +
+          '<td class="right" data-label="Monthly equivalent">' + fmt(annualisedCost(item) / 12) + '</td>' +
           '<td class="oh-act" data-label="">' +
           '<button type="button" class="btn btn-ghost btn-sm" data-edit="' + esc(item.id) + '"' +
           ' aria-label="Edit ' + esc(item.name || 'this expense') + '">Edit</button>' +
@@ -230,7 +230,7 @@ const OverheadView = (() => {
       '<div class="est-block" id="oh-table-block">' + head +
       '<table class="est-table oh-table"><thead><tr><th>Expense</th><th>Category</th>' +
       '<th class="right">Cost</th><th>Frequency</th>' +
-      '<th class="right">Monthly Equivalent</th><th></th></tr></thead><tbody>' +
+      '<th class="right">Monthly equivalent</th><th></th></tr></thead><tbody>' +
       rows + '</tbody></table></div>'
     );
   }
@@ -259,7 +259,7 @@ const OverheadView = (() => {
         : 'What it costs to keep the business open, before any job') +
       '</div></div>' +
       '<button type="button" class="btn btn-accent" id="oh-add" data-write>' +
-      (asset ? '+ Add Asset' : '+ Add Expense') + '</button></div>' +
+      (asset ? '+ Add asset' : '+ Add expense') + '</button></div>' +
       innerNavMarkup()
     );
   }
@@ -475,12 +475,12 @@ const OverheadView = (() => {
   }
 
   function modalMarkup() {
-    const title = editingId ? 'Edit Expense' : 'Add Expense';
+    const title = editingId ? 'Edit expense' : 'Add expense';
     return (
       '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="oh-modal-title">' +
       '<h2 class="modal-title" id="oh-modal-title">' + title + '</h2>' +
       '<div class="form-grid">' +
-        '<div class="field full"><label for="oh-name">Expense Name</label>' +
+        '<div class="field full"><label for="oh-name">Expense name</label>' +
         '<input id="oh-name" type="text" placeholder="e.g. Adobe Creative Cloud" value="' +
         esc(form.name) + '"></div>' +
         '<div class="field"><label for="oh-category">Category</label>' +
@@ -511,7 +511,7 @@ const OverheadView = (() => {
         '<button type="button" class="btn btn-ghost btn-sm" id="oh-cancel">Cancel</button>' +
         '<button type="button" class="btn btn-accent" id="oh-save" data-write>' +
         '<span class="spinner" id="oh-spin"></span>' +
-        '<span id="oh-save-label">' + (editingId ? 'Save Changes' : 'Add Expense') + '</span>' +
+        '<span id="oh-save-label">' + (editingId ? 'Save changes' : 'Add expense') + '</span>' +
       '</button></div></div>'
     );
   }
@@ -548,7 +548,7 @@ const OverheadView = (() => {
     $m('oh-spin').style.display = next ? 'inline-block' : 'none';
     $m('oh-save-label').textContent = next
       ? 'Saving…'
-      : editingId ? 'Save Changes' : 'Add Expense';
+      : editingId ? 'Save changes' : 'Add expense';
   }
 
   async function saveItem() {
@@ -587,7 +587,7 @@ const OverheadView = (() => {
       if (!onScreen()) return;
       render();
       /* render() replaced the button closeModal() just focused — the whole
-         screen, "+ Add Expense" included. Back onto that row's Edit, else the
+         screen, "+ Add expense" included. Back onto that row's Edit, else the
          Add button; never <body>, which drops a keyboard user at the top of
          the page. The same rule as the Dispose dialog in depreciation.js. */
       const again = (savedId && root.querySelector('[data-edit="' + savedId + '"]')) || $('oh-add');

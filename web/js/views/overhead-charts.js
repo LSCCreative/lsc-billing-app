@@ -266,7 +266,7 @@ const OverheadCharts = (() => {
         : 'No change' + since;
     }
     return (
-      '<div class="est-block-head"><h2 class="est-block-label">Overhead Trend</h2>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Overhead trend</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' + esc(note) + '</span></div>'
     );
   }
@@ -601,7 +601,7 @@ const OverheadCharts = (() => {
     const { groups: all, total } = byCategory(items, categories);
     const groups = ringGroups(all);
     const head =
-      '<div class="est-block-head"><h2 class="est-block-label">Category Breakdown</h2>' +
+      '<div class="est-block-head"><h2 class="est-block-label">Category breakdown</h2>' +
       '<span class="est-block-sum" style="color:var(--muted)">' +
       (all.length ? all.length + ' categor' + (all.length === 1 ? 'y' : 'ies') : '') +
       '</span></div>';

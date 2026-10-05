@@ -71,7 +71,7 @@ const EstimateDetail = (() => {
       }) + '</span>' +
       '<button class="btn btn-accent btn-sm" id="js-export">' +
       '<span class="spinner" id="exp-spin"></span>↑ ' +
-      (estimate.docType === 'invoice' ? 'Export Client Invoice' : 'Export Quote PDF') +
+      (estimate.docType === 'invoice' ? 'Export client invoice' : 'Export quote PDF') +
       '</button>' +
       '</div></div>' +
       '<div id="export-error" role="alert"></div>'
@@ -136,7 +136,7 @@ const EstimateDetail = (() => {
 
   const LABOUR_HEAD =
     '<thead><tr><th>Service</th><th class="right">Qty</th>' +
-    '<th class="right">Mark-Up</th><th class="right">Bill</th></tr></thead>';
+    '<th class="right">Markup</th><th class="right">Bill</th></tr></thead>';
 
   /* A post line's deliverable tag (B2-10, D95): the deliverable's name as
      saved with this estimate, as the client PDF prints it (pdf.js
@@ -299,7 +299,7 @@ const EstimateDetail = (() => {
 
     return (
       '<div class="est-block"><div class="est-block-head">' +
-      '<h2 class="est-block-label">Travel &amp; Accommodation</h2>' +
+      '<h2 class="est-block-label">Travel &amp; accommodation</h2>' +
       '<span class="est-block-sum">' + fmt(subtotal) + '</span></div>' +
       '<table class="est-table est-table-4"><thead><tr><th>Service</th><th class="right">Qty</th>' +
       '<th class="right">Rate</th><th class="right">Bill</th></tr></thead><tbody>' +
@@ -343,13 +343,13 @@ const EstimateDetail = (() => {
     return (
       '<div class="est-totals">' +
       '<div class="totals-card"><table>' +
-      '<tr><td class="tl">Labour Subtotal</td><td class="tv">' + fmt(t.labourTotal) + '</td></tr>' +
+      '<tr><td class="tl">Labour subtotal</td><td class="tv">' + fmt(t.labourTotal) + '</td></tr>' +
       /* Owner-only, like the rest of this card: what surcharges added, already
          inside Labour Subtotal (production-booking task 8). */
       (t.surchargeTotal > 0
         ? '<tr class="sur-total-row"><td class="tl">incl. Surcharges</td><td class="tv">' + fmt(t.surchargeTotal) + '</td></tr>'
         : '') +
-      '<tr><td class="tl">Expenses Subtotal</td><td class="tv">' + fmt(t.expenseTotal) + '</td></tr>' +
+      '<tr><td class="tl">Expenses subtotal</td><td class="tv">' + fmt(t.expenseTotal) + '</td></tr>' +
       /* Ex-GST whenever GST was charged, unlike the as-billed subtotals above
          it: on a GST-exclusive card costs are typed ex-GST, and on an inclusive
          one computeTotals takes the GST out (estimate-accuracy task 3). */
@@ -361,9 +361,9 @@ const EstimateDetail = (() => {
       '<tr><td class="tl">Tax Set-Aside</td><td class="tv">' + fmt(t.taxSetAside) + '</td></tr>' +
       '<tr><td class="tl" style="color:var(--ok)">Est. Take-Home</td>' +
       '<td class="tv" style="color:var(--ok)">' + fmt(t.estTakeHome) + '</td></tr>' +
-      '<tr><td class="tl">Total Hours</td><td class="tv">' + esc(t.totalHours || 0) + '</td></tr>' +
+      '<tr><td class="tl">Total hours</td><td class="tv">' + esc(t.totalHours || 0) + '</td></tr>' +
       '</table></div>' +
-      '<div class="notes-card"><h4>Internal Notes</h4><p>' +
+      '<div class="notes-card"><h4>Internal notes</h4><p>' +
       (notes ? esc(notes) : '<em style="color:var(--muted)">No notes added.</em>') +
       '</p></div></div>'
     );
@@ -387,9 +387,9 @@ const EstimateDetail = (() => {
     const crew = (activeRows.crew || []).filter((c) => costBill(c) > 0 || c.role);
     return (
       labourBlocks(estimate, pricing) +
-      costBlock('Equipment Hire', equip, equipName, ['Item', 'Days', 'Cost/Day']) +
+      costBlock('Equipment Hire', equip, equipName, ['Item', 'Days', 'Cost/day']) +
       travelBlock(activeRows, pricing) +
-      costBlock('External Crew &amp; Contracts', crew, (c) => esc(c.role || 'Crew'), ['Role / Name', 'Days', 'Day Rate']) +
+      costBlock('External crew &amp; contracts', crew, (c) => esc(c.role || 'Crew'), ['Role / name', 'Days', 'Day rate']) +
       deliverablesBlock(activeRows)
     );
   }
@@ -438,7 +438,7 @@ const EstimateDetail = (() => {
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'btn btn-ghost btn-xs';
-      open.textContent = 'Open Settings';
+      open.textContent = 'Open settings';
       open.addEventListener('click', () => LSCRouter.go('/settings/business'));
       els.exportError.append(' ', open);
     }

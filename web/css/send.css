@@ -44,9 +44,8 @@
 .sp-label,
 .send-panel .field > label,
 .sp-when legend {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .sp-when legend {
@@ -105,9 +104,8 @@
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
   transition: background 0.15s, color 0.15s;
 }
@@ -123,8 +121,9 @@
   color: var(--text);
 }
 .sp-seg input:focus-visible + span {
-  outline: 2px solid var(--accent-text, var(--accent));
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 
 .sp-at {
@@ -174,8 +173,9 @@
   cursor: pointer;
 }
 .sp-inline-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 
 /* What Confirm will do, in one line, before it's pressed. */
@@ -345,8 +345,9 @@
   color: var(--text);
 }
 .send-status-act:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid transparent;
   outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 .send-status-act:disabled {
   opacity: 0.5;

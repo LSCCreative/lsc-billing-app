@@ -63,7 +63,7 @@ const EstimatesView = (() => {
   function showMissing(title, message, retry, back) {
     showPlaceholder(
       '<h3>' + esc(title) + '</h3><p>' + esc(message) + '</p>' +
-      (retry ? '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button>' : ''),
+      (retry ? '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try again</button>' : ''),
       back
     );
     if (retry) root.querySelector('#js-retry').addEventListener('click', retry);

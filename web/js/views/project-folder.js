@@ -994,7 +994,7 @@ const ProjectFolder = (() => {
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'btn btn-ghost btn-xs';
-      open.textContent = 'Open Settings';
+      open.textContent = 'Open settings';
       open.addEventListener('click', () => LSCRouter.go('/settings/business'));
       box.append(' ', open);
     }
@@ -1097,7 +1097,7 @@ const ProjectFolder = (() => {
       if (err.kind === 'auth') return handlers.onAuthLost();
       if (err.status === 404) return showMissing();
       placeholder('<h3>Couldn’t open that project</h3><p>' + esc(failureText(err)) + '</p>' +
-        '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try Again</button>');
+        '<button type="button" class="btn" id="js-retry" style="margin-top:16px">Try again</button>');
       root.querySelector('#js-retry').addEventListener('click', () => load(id));
     }
     return undefined;

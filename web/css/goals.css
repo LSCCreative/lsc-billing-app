@@ -33,9 +33,8 @@
    border or background at all, because an input-shaped outline would promise
    an edit this screen doesn't own (the hint links to where it's changed). */
 .goals-derived-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .goals-derived-value {
@@ -203,9 +202,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
 .goals-ty-levy .text-inp {

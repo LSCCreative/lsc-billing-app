@@ -592,7 +592,7 @@ const DepreciationView = (() => {
     return (
       '<div class="dep-actions">' +
       '<div class="dep-actions-row">' +
-      '<button type="button" class="btn btn-accent btn-sm" id="dep-csv">' +
+      '<button type="button" class="btn btn-sm" id="dep-csv">' +
       '<span class="spinner" id="dep-csv-spin"></span><span>Download CSV — ' + shown + '</span></button>' +
       lodge +
       '</div>' +
@@ -1135,7 +1135,7 @@ const DepreciationView = (() => {
       '<button type="button" class="btn btn-ghost btn-sm" id="dep-cancel">Cancel</button>' +
       '<button type="button" class="btn btn-accent" id="dep-disp-save" data-write>' +
       '<span class="spinner" id="dep-disp-spin"></span>' +
-      '<span id="dep-disp-save-label">' + (already ? 'Save Disposal' : 'Record Disposal') + '</span></button>' +
+      '<span id="dep-disp-save-label">' + (already ? 'Save disposal' : 'Record disposal') + '</span></button>' +
       '</div></div>'
     );
   }
@@ -1149,7 +1149,7 @@ const DepreciationView = (() => {
     $m('dep-disp-spin').style.display = next ? 'inline-block' : 'none';
     $m('dep-disp-save-label').textContent = next
       ? 'Saving…'
-      : isDisposed(disposing) ? 'Save Disposal' : 'Record Disposal';
+      : isDisposed(disposing) ? 'Save disposal' : 'Record disposal';
   }
 
   /* One write for record, correct and undo: the whole stored asset with only
@@ -1390,7 +1390,7 @@ const DepreciationView = (() => {
     const lifePlaceholder = LIFE_HINT[form.category] ? 'e.g. ' + LIFE_HINT[form.category] : 'years';
     return (
       '<div class="modal-box dep-modal" role="dialog" aria-modal="true" aria-labelledby="dep-modal-title">' +
-      '<h2 class="modal-title" id="dep-modal-title">' + (editing ? 'Edit Asset' : 'Add Asset') + '</h2>' +
+      '<h2 class="modal-title" id="dep-modal-title">' + (editing ? 'Edit asset' : 'Add asset') + '</h2>' +
 
       '<div class="form-grid">' +
       field('dep-name', 'Asset name', inputHtml('dep-name', 'text', 'name', 'placeholder="e.g. Sony FX6 body"'), '', true) +
@@ -1476,7 +1476,7 @@ const DepreciationView = (() => {
       '<button type="button" class="btn btn-ghost btn-sm" id="dep-cancel">Cancel</button>' +
       '<button type="button" class="btn btn-accent" id="dep-save" data-write>' +
       '<span class="spinner" id="dep-spin"></span>' +
-      '<span id="dep-save-label">' + (editing ? 'Save Changes' : 'Add Asset') + '</span></button>' +
+      '<span id="dep-save-label">' + (editing ? 'Save changes' : 'Add asset') + '</span></button>' +
       '</div></div>'
     );
   }
@@ -1609,7 +1609,7 @@ const DepreciationView = (() => {
     $m('dep-save').disabled = next;
     $m('dep-cancel').disabled = next;
     $m('dep-spin').style.display = next ? 'inline-block' : 'none';
-    $m('dep-save-label').textContent = next ? 'Saving…' : editing ? 'Save Changes' : 'Add Asset';
+    $m('dep-save-label').textContent = next ? 'Saving…' : editing ? 'Save changes' : 'Add asset';
   }
 
   async function saveAsset() {
@@ -1636,7 +1636,7 @@ const DepreciationView = (() => {
       render();
       /* An Edit button that opened the dialog was inside what render() just
          replaced, so closeModal() focused a detached node. Back onto that row's
-         Edit, else Overhead's "+ Add Asset" — never <body>. The same rule as
+         Edit, else Overhead's "+ Add asset" — never <body>. The same rule as
          writeDisposal(). An Add opened from the page head keeps its focus:
          that button sits outside this view's root. */
       if (!root.contains(document.activeElement) && document.activeElement !== document.getElementById('oh-add')) {
@@ -1849,7 +1849,7 @@ const DepreciationView = (() => {
     });
   }
 
-  /* Overhead's page-head "+ Add Asset" button — and the Operating Costs
+  /* Overhead's page-head "+ Add asset" button — and the Operating Costs
      double-count hint's "Track it in Depreciation", which passes the expense's
      name as `prefill.name`. Only the name: the expense's cost was entered
      GST-exclusive, and this form's cost is GST-inclusive, so carrying the
