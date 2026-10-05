@@ -228,8 +228,17 @@ function registerInvoiceRoutes(app, db) {
     if (!PAID_VIA.includes(via)) return res.status(400).json({ error: 'paid_via_invalid', message: 'Choose how it was paid.' });
     const now = nowIso();
     db.transaction(() => {
-      db.prepare("UPDATE invoices SET status = 'paid', paid_at = ?, paid_via = ?, updated_at = ? WHERE id = ?")
-        .run(paidAt, via, now, row.id);
+      // One the client never got (a draft, or one whose email hadn't gone)
+      // is issued the day it was paid (C4): a tax invoice carries a date, and
+      // one issued after its own payment would read wrong. A sent one keeps
+      // the dates it went out with.
+      const unsent = row.status === 'draft' || row.status === 'scheduled';
+      db.prepare(`
+        UPDATE invoices SET status = 'paid', paid_at = ?, paid_via = ?, updated_at = ?,
+               issued_at = CASE WHEN ? AND (issued_at IS NULL OR issued_at > ?) THEN ? ELSE issued_at END,
+               due_at = CASE WHEN ? AND due_at IS NULL THEN ? ELSE due_at END
+         WHERE id = ?
+      `).run(paidAt, via, now, unsent ? 1 : 0, paidAt, paidAt, unsent ? 1 : 0, paidAt, row.id);
       // Paid before its scheduled email went: the email would ask for money already in.
       cancelPending(db, 'invoice', [row.id], now);
       touch(row, now);

@@ -294,6 +294,8 @@ test('invoice, Copy link: sent now with no email; voiding or paying cancels a wa
   await sendInvoice(p, { by: 'email', to: 'priya@salt.example', scheduledFor: at(2), dueAt: dayIn(9) });
   await post(`/api/invoices/${p.id}/paid?today=${today}`, { paidAt: today, via: 'bank' });
   assert.equal(rowsOf(p.id)[0].status, 'cancelled');
+  // Its email never went, so it's issued the day it was paid, not the day it was to go (C4).
+  assert.deepEqual([invRow(p.id).issued_at, invRow(p.id).due_at], [today, dayIn(9)]);
 
   const d = await deposit();
   assert.equal((await sendInvoice(d, { by: 'email', to: 'priya@salt.example', dueAt: dayIn(-1) })).body.error, 'due_at_invalid');

@@ -1122,7 +1122,11 @@ Tasks 24–26 can be built with placeholders.
     tests; mutations: check skipped (4 fail), update wording off (1), contact name counted (1).
     Browser (`api-scratch-mail`): SEND-A edited → dialog → v5 emailed, activity "Edited and sent v5".
     Data saved before this deploy could already differ from its version; live has none sent.
-  - [ ] **C4. Mark paid on a draft leaves no issue date: undated tax invoice** (money, Opus/high).
+  - [x] **C4. Mark paid on a draft leaves no issue date: undated tax invoice** (money, Opus/high).
+    An invoice the client never got (draft, or scheduled with its email not gone) is issued the day
+    it was paid (and an issue date after the payment moves back to it); a draft with no due date
+    is due that day too. A sent invoice keeps its dates. Mutations: no unsent rule (2 fail), every
+    invoice redated (1).
   - [ ] **C5. Owner's "signed" email says days confirmed even when a clash was flagged** (backend, Sonnet/high).
   - [ ] **C6. Owner never told a sent quote's proposed date was taken** (Opus/high, **F**).
   - [ ] **C7. Blank `APP_URL` becomes `/`: `no_app_url` guard dead, relative links emailed** (backend, Sonnet/high).

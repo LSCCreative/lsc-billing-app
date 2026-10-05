@@ -2727,6 +2727,10 @@ test('invoice: Mark sent dates it, Mark paid closes it, and the stage line moves
   // The final, paid by card without being marked sent first, settles the project.
   const all = await inv(fin.id, 'paid', { paidAt: '2026-10-04', via: 'card' });
   assert.deepEqual([all.body.project.stage, all.body.invoice.paidVia], ['paid', 'card']);
+  // Never sent, so it's issued (and due) the day it was paid: no undated tax invoice (C4).
+  assert.deepEqual([all.body.invoice.issuedAt, all.body.invoice.dueAt], ['2026-10-04', '2026-10-04']);
+  // A sent one keeps its dates.
+  assert.deepEqual([invRow(dep.id).issued_at, invRow(dep.id).due_at], ['2026-10-04', '2026-10-18']);
 
   // An old-way invoice is read-only, but can be marked paid: its stage line waits on it.
   const old = (await saveEstimate({ name: 'T20 Old', upid: 'T20-OLD' })).body.estimate;
