@@ -1087,7 +1087,7 @@ Tasks 24–26 can be built with placeholders.
 ## Review
 
 - [x] **33. Money-math and security review, then design review** (review). Done 2026-10-05:
-  C1–C15 and DR1–DR17 fixed, **none deployed yet**.
+  C1–C15 and DR1–DR17 fixed and **deployed 2026-10-05** (`main` `df0bd3c`, NAS then Pages).
   - **A `/code-review` (xhigh) of the whole track's diff, Stage B2 included**, hunting for:
     - a field that prices but doesn't print, or the reverse;
     - a line saved before a change that now totals differently;

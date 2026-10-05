@@ -217,7 +217,7 @@ the client pages' "contact us" and (since C1) the quote PDF's sign-off need it.
   editor banner on accepted estimates; C12 the signed copy greets the signer; C13 Mark sent
   routes are test-only; C14 real due dates; C15 the owner's own look at a link isn't logged.
 
-**Deploy (when the user asks): NAS, then Pages.** No migration, no new table; server and web both
+**Deployed 2026-10-05 (NAS, then Pages, `main` `df0bd3c`):** backup `data/exports/pre-c-dr-20261005-193427.db`; code by tar over ssh; boot log healthy, `[mail] connected`; Pages run 37284686925 success, live `calendar.js?v=df0bd3c4`; `/api/projects` and `/api/email/status` 401, `/public/*` 404. (Was: NAS, then Pages. No migration, no new table; server and web both
 changed (the editor needs the server's `resend_required`). Live `APP_URL` is already absolute.
 
 **For the user to decide (not blocking):** C9 the void reason could be hidden from the client
@@ -250,9 +250,7 @@ Types; the agreement is placeholder text. The DB from before is
 `/tmp/lsc-billing-scratch/exports/scratch-before-review.db`. Use `api-scratch-mail`, so a send
 prints instead of going out.
 
-**Exact next item: deploy C1–C15 + DR1–DR17 when the user asks** (Sonnet/medium; NAS, then Pages:
-`public.js` and the editor's `resend_required` are server changes; no migration). Then the open
-items: Stripe (task 31, held, D101) and a VoiceOver pass by a person.
+**Exact next item: nothing queued; C1–C15 + DR1–DR17 are live.** Open items: Stripe (task 31, held, D101) and a VoiceOver pass by a person.
 
 **Scratch after the DR checks:** Settings' business ABN is now a valid example (`51824753556`),
 email `studio@example.test`, phone `02 9000 0000`. The headless checks opened SEND-A's and two
