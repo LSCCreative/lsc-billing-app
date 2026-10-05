@@ -2688,6 +2688,21 @@ test('invoice: a draft final takes Additional work extras, priced from their own
   const r = await putInv(single.id, { extras: [OT20] });
   assert.deepEqual([r.body.invoice.totals.extras, r.body.invoice.totals.total.gst], [{ clientPriceExGst: 420, gst: 0, totalIncGst: 420 }, 0]);
   dropProject(free.projectId);
+
+  // Quoted registered, deregistered since: its extras still charge the job's 10% (C10),
+  // and one quoted unregistered gets none after registering.
+  const taxed = (await saveEstimate({ name: 'T20 Taxed', upid: 'T20-TAX', activeRows: { post: [capture(null, { mu: 500 })] } })).body.estimate;
+  await act(taxed.projectId, 'accept', { invoicing: 'single' });
+  await gstOff();
+  const plain = (await saveEstimate({ name: 'T20 Plain', upid: 'T20-PLAIN', activeRows: { post: [capture(null, { mu: 500 })] } })).body.estimate;
+  await act(plain.projectId, 'accept', { invoicing: 'single' });
+  const [onTaxed] = invoiceRows(taxed.projectId);
+  assert.deepEqual((await putInv(onTaxed.id, { extras: [OT20] })).body.invoice.totals.extras, { clientPriceExGst: 420, gst: 42, totalIncGst: 462 });
+  await gstOn();
+  const [onPlain] = invoiceRows(plain.projectId);
+  assert.deepEqual((await putInv(onPlain.id, { extras: [OT20] })).body.invoice.totals.extras, { clientPriceExGst: 420, gst: 0, totalIncGst: 420 });
+  dropProject(taxed.projectId);
+  dropProject(plain.projectId);
   await gstOff();
 });
 

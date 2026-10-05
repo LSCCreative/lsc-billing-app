@@ -3184,6 +3184,32 @@ test('invoices worked example, GST-exclusive card: $5,000 + GST is $5,500, depos
   assert.equal(final.balanceDue, 3212);
 });
 
+test('extras charge GST as the job did, not as today\'s settings say (C10)', () => {
+  const { jobGstSettings } = require('../src/calc');
+  const unreg = settingsWith({ registered: false });
+  const exc = settingsWith(GST_EXCLUSIVE);
+  const inc = settingsWith(GST_INCLUSIVE);
+  const taxed = figures(5000, 500, 5500); // quoted registered, 10%, ex-GST card
+  const untaxed = figures(5000, 0, 5000); // quoted unregistered
+
+  // Registered since the quote: its extras still carry no GST ($420, not $462).
+  assert.deepEqual(jobGstSettings(untaxed, false, exc).gst, { registered: false, rate: 0, pricesIncludeGst: false });
+  assert.deepEqual(finalInvoiceTotals(untaxed, extrasTotals(OVERTIME, INVOICE_CARD, exc, false, untaxed), null).extras, figures(420, 0, 420));
+  // Deregistered since: they still carry the job's 10% ($462), on an ex-GST card.
+  assert.deepEqual(jobGstSettings(taxed, false, unreg).gst, { registered: true, rate: 0.1, pricesIncludeGst: false });
+  assert.deepEqual(finalInvoiceTotals(taxed, extrasTotals(OVERTIME, INVOICE_CARD, unreg, false, taxed), null).extras, figures(420, 42, 462));
+  // Unchanged: today's rate, and today's card mode, exactly (the inclusive split to the cent).
+  assert.deepEqual(jobGstSettings(figures(4545.45, 454.55, 5000), false, inc).gst, GST_INCLUSIVE);
+  assert.deepEqual(extrasTotals(OVERTIME, INVOICE_CARD, inc, false, figures(4545.45, 454.55, 5000)),
+    extrasTotals(OVERTIME, INVOICE_CARD, inc, false));
+  // The rate changed since (7% then, 10% now): the job's 7%.
+  assert.equal(jobGstSettings(figures(1000, 70, 1070), false, exc).gst.rate, 0.07);
+  // A GST-free job stays GST-free whatever the figures say.
+  assert.equal(jobGstSettings(taxed, true, exc).gst.registered, false);
+  // A cent of rounding either way is still today's rate: $3.33 ex at 10% is 33c GST.
+  assert.equal(jobGstSettings(figures(3.33, 0.33, 3.66), false, exc).gst.rate, 0.1);
+});
+
 test('deposit: 30% and 0%, and a pct that is blank, negative, over 100 or text', () => {
   const unregJob = figures(5000, 0, 5000);
   const incJob = figures(4545.45, 454.55, 5000);

@@ -105,7 +105,7 @@ const InvoiceView = (() => {
     const snapshot = inv.estimate || {};
     const job = snapshot.totals || {};
     const add = lines.length
-      ? LSCCalc.extrasTotals({ [EXTRAS_SECTION]: lines }, LSCData.pricing(), LSCData.settings(), snapshot.gstFree === true)
+      ? LSCCalc.extrasTotals({ [EXTRAS_SECTION]: lines }, LSCData.pricing(), LSCData.settings(), snapshot.gstFree === true, job)
       : null;
     return inv.kind === 'final'
       ? LSCCalc.finalInvoiceTotals(job, add, (inv.less && inv.less.totals) || {})

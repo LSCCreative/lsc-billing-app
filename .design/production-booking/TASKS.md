@@ -1153,7 +1153,14 @@ Tasks 24–26 can be built with placeholders.
     Kept visible to the client (it explains the replacement); the void dialog's hint now says the
     client sees it and to write it for them. Checked in the browser on INV-SEND-B-D (dialog closed
     unvoided). **The user may prefer it hidden:** a one-line change in `public.js invoiceView`.
-  - [ ] **C10. Extras priced with today's GST settings, not the job's** (money, Opus/high).
+  - [x] **C10. Extras priced with today's GST settings, not the job's** (money, Opus/high).
+    `calc.js jobGstSettings` (both copies): whether GST is charged, and the rate, come from the
+    job's stored totals (today's rate when it explains the job's GST to the cent, else the ratio to
+    0.1%); only "prices include GST" is today's, since extras are priced from today's card.
+    `extrasTotals` takes the job's totals; `invoices.js billTotals` and the invoice screen's preview
+    pass them. Worked examples in `test-calc.js`, both directions through the route in
+    `test-api.js`. Mutations: job ignored (1), rate tolerance off (1), card mode dropped (1),
+    untaxed job taxed (1), route not passing the job (1).
   - [ ] **C11. No warning when editing an accepted, invoiced estimate** (Opus/high, **F**).
   - [ ] **C12. Signed copy greets/sends to the contact on file, not the signer** (backend, Sonnet/high).
   - [ ] **C13. Unused Stage D `/sent` routes keep weaker guards** (backend, Sonnet/high).

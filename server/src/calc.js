@@ -2717,21 +2717,65 @@ function depositAmount(estimateTotals, pct) {
 }
 
 /**
+ * The GST settings an invoice's extras are priced under (task 33 C10): the
+ * job's, not today's. Whether GST is charged, and at what rate, are facts of
+ * the accepted estimate, read from its stored figures as gstTreatment reads
+ * them: registering, or changing the rate, after the job was quoted must not
+ * add GST to its extras, or drop it. Only whether prices include GST is
+ * today's, because the extras are priced from today's rate card and that flag
+ * says how its prices are written.
+ *
+ * The rate is the job's GST over its ex-GST price. Both were rounded to the
+ * cent, so that ratio is today's rate whenever today's rate explains the
+ * job's GST to within the rounding (a cent, either way, in either mode);
+ * otherwise it is the ratio itself, to a tenth of a percent.
+ *
+ *   job $1,000 ex + $100 GST, today unregistered → registered, 10%, ex-GST prices
+ *   job $1,000, no GST, today registered at 10%  → not registered
+ *   job $1,000 ex + $70 GST, today 10%           → 7%
+ *
+ * @param {object} jobTotals — the accepted estimate's stored totals.
+ * @param {boolean} gstFree — the estimate's own gst_free.
+ * @param {object} settings — today's { gst: { registered, rate, pricesIncludeGst } }.
+ * @returns {object} settings with `gst` replaced.
+ */
+function jobGstSettings(jobTotals, gstFree, settings) {
+  const today = (settings && settings.gst) || {};
+  const out = Object.assign({}, settings);
+  if (gstFree === true || gstTreatment(jobTotals) !== 'taxable') {
+    out.gst = { registered: false, rate: 0, pricesIncludeGst: false };
+    return out;
+  }
+  const ex = num(jobTotals.clientPriceExGst);
+  const gst = num(jobTotals.gst);
+  const todayRate = today.registered === true ? num(today.rate) : 0;
+  const rate = todayRate > 0 && Math.abs(gst - ex * todayRate) <= 0.011
+    ? todayRate
+    : (ex > 0 ? Math.round((gst / ex) * 1000) / 1000 : todayRate);
+  out.gst = { registered: true, rate, pricesIncludeGst: today.registered === true && today.pricesIncludeGst === true };
+  return out;
+}
+
+/**
  * Extras, priced: the lines added to a final or single invoice after the shoot
  * (D35), through computeTotals like any estimate's lines.
  *
  * With no days and no surcharges, whatever the lines carry: an extra is never
  * surcharged (D14), and Overtime is billed for the hours, not the day. GST
- * follows the estimate: a GST-free job's extras are GST-free too.
+ * follows the estimate: a GST-free job's extras are GST-free too, and given
+ * the job's totals, the extras charge GST as the job did (jobGstSettings, C10).
  *
  * @param {object} extraRows — activeRows-shaped, normally `{ additional: [...] }`.
  * @param {object} pricing — the rate card (lines carry their own snapshots).
  * @param {object} settings — { gst }.
  * @param {boolean} gstFree — the estimate's own gst_free.
+ * @param {object} [jobTotals] — the accepted estimate's stored totals. Absent,
+ *   today's GST settings price them, as before C10.
  * @returns {object} computeTotals' totals for the extras alone.
  */
-function extrasTotals(extraRows, pricing, settings, gstFree) {
-  return computeTotals(extraRows || {}, pricing, settings, { gstFree: gstFree === true });
+function extrasTotals(extraRows, pricing, settings, gstFree, jobTotals) {
+  const cfg = jobTotals ? jobGstSettings(jobTotals, gstFree, settings) : settings;
+  return computeTotals(extraRows || {}, pricing, cfg, { gstFree: gstFree === true });
 }
 
 /* The full job (the estimate plus extras), less a deposit when there is one. */
@@ -2976,6 +3020,7 @@ if (typeof module === 'object' && module.exports) {
     postPlan,
     depositAmount,
     extrasTotals,
+    jobGstSettings,
     finalInvoiceTotals,
     singleInvoiceTotals,
     averageJobValue,
@@ -3040,6 +3085,7 @@ if (typeof module === 'object' && module.exports) {
     postPlan,
     depositAmount,
     extrasTotals,
+    jobGstSettings,
     finalInvoiceTotals,
     singleInvoiceTotals,
     averageJobValue,

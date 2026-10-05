@@ -118,7 +118,9 @@ function billTotals(kind, snapshot, extras, depositTotals, pricing, settings) {
   const job = (snapshot && snapshot.totals) || {};
   let add = null;
   if (Array.isArray(extras)) {
-    add = extras.length ? extrasTotals({ [EXTRAS_SECTION]: extras }, pricing, settings, snapshot && snapshot.gstFree === true) : null;
+    add = extras.length
+      ? extrasTotals({ [EXTRAS_SECTION]: extras }, pricing, settings, snapshot && snapshot.gstFree === true, job)
+      : null;
   } else if (extras && Number(extras.totalIncGst)) {
     add = extras;
   }
