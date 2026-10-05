@@ -441,7 +441,8 @@ async function buildMail(db, row, ctx) {
     mail: {
       ...signedCopyEmail({
         businessName: business.name,
-        contactName: doc.client.contactName,
+        // The person who signed, as they typed it (C12): they may not be the contact on file.
+        contactName: sigRow.full_name,
         upid: doc.upid,
         projectName: doc.projectName,
       }),

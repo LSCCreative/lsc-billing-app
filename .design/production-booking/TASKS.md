@@ -1167,7 +1167,10 @@ Tasks 24–26 can be built with placeholders.
     estimate: "Accepted and invoiced. Changes here don't reach INV-…-D and INV-…-F: they bill the
     estimate as accepted. To bill more, add extras to the final invoice; to change a sent one,
     void and remake it. Your client's page keeps the version they accepted." Browser: SEND-B.
-  - [ ] **C12. Signed copy greets/sends to the contact on file, not the signer** (backend, Sonnet/high).
+  - [x] **C12. Signed copy greets/sends to the contact on file, not the signer** (backend, Sonnet/high).
+    It greets the signer by the name they typed. It still goes to the quote's client email, the
+    only address there is (signing asks for none; the user may want an email field there).
+    Mutation: greeting the contact again (1 fail).
   - [ ] **C13. Unused Stage D `/sent` routes keep weaker guards** (backend, Sonnet/high).
   - [ ] **C14. `sends.js` own `isYmd` accepts impossible due dates** (backend, Sonnet/high).
   - [ ] **C15. Owner previewing a copied link logs "client opened"** (backend, Sonnet/high).

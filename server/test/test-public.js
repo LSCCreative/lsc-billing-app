@@ -754,7 +754,7 @@ test('signing queues the owner’s notice and the client’s signed copy (PDF at
   const e = (await pub(token, url)).body.estimate;
   const r = await fetch(`${url}/public/estimates/${token}/accept`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+    body: JSON.stringify({ fullName: 'Sam Lee', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
   }).then(json);
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const rows = db.prepare(`SELECT s.purpose, s.to_email, s.version_id FROM sends s WHERE s.doc_id = ? ORDER BY s.purpose`).all(est.id);
@@ -769,17 +769,18 @@ test('signing queues the owner’s notice and the client’s signed copy (PDF at
   assert.match(owner.text, new RegExp(`https://pages\\.example/app/#/projects/${est.projectId}`));
   assert.equal(owner.replyTo, 'owner@example.com');
   assert.match(client.subject, /^Your signed agreement PUB-\d+/);
+  assert.match(client.text, /^Hi Sam Lee,/, 'greets the signer, not the contact on file (C12)');
   assert.equal(client.attachments.length, 1);
   assert.match(client.attachments[0].filename, /\.pdf$/);
   assert.equal(client.attachments[0].content.subarray(0, 9).toString(), '%PDF-fake');
-  assert.ok(client.attachments[0].content.includes('Signatory: Priya Nair, Director'), 'the PDF is the signed text');
+  assert.ok(client.attachments[0].content.includes('Signatory: Sam Lee, Director'), 'the PDF is the signed text');
   assert.doesNotMatch(JSON.stringify(outbox), /re_KEY_NEVER_SHOWN/);
   assert.deepEqual(db.prepare('SELECT status FROM sends WHERE doc_id = ?').all(est.id).map((x) => x.status), ['sent', 'sent']);
 
   // A second submit is the same signature: no more email.
   const again = await fetch(`${url}/public/estimates/${token}/accept`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+    body: JSON.stringify({ fullName: 'Sam Lee', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
   });
   assert.equal(again.status, 200);
   await new Promise((r2) => setTimeout(r2, 60));
