@@ -25,12 +25,15 @@
  *   invoicing.depositPct (D33)  invoicing.validDays (D44)  invoicing.dueDays
  *   messages.{estimate,deposit,final,single} (D43)
  *   agreement.text (D39)  agreement.faqUrl (D55; '' hides the FAQ button)
+ *   business.email and .phone (task 33 DR1): the client pages' contact line
+ *   and notices, and the estimate PDF's sign-off. Stored before, but only SQL
+ *   could set them.
  * The service agreement's "Preview with a project…" fills the text on screen,
  * saved or not, through the same documents.js that stage E's signing will use.
  *
  * SAVING MERGES, IT DOES NOT REPLACE
  * PUT /api/settings writes the body over the whole row, and this screen does
- * not show every key in it (`paths`, business.email and .phone). So it reads
+ * not show every key in it (`paths`, for one). So it reads
  * the settings fresh when it opens, never from LSCData's boot-time copy, and
  * saves its own keys merged onto what it read. Sending only its own would drop
  * the rest; dropping `gst` would change the money on every estimate saved
@@ -63,6 +66,8 @@ const SettingsView = (() => {
   const TEXT = [
     ['set-biz-name', 'businessName'],
     ['set-abn', 'abn'],
+    ['set-biz-email', 'businessEmail'],
+    ['set-biz-phone', 'businessPhone'],
     ['set-gst-rate', 'rateRaw'],
     ['set-bank-name', 'bankName'],
     ['set-account-name', 'accountName'],
@@ -104,6 +109,8 @@ const SettingsView = (() => {
     const f = {
       businessName: business.name || '',
       abn: abnFormat(business.abn),
+      businessEmail: business.email || '',
+      businessPhone: business.phone || '',
       registered: gst.registered === true,
       rateRaw: toPercent(gst.rate),
       pricesIncludeGst: gst.pricesIncludeGst === true,
@@ -162,7 +169,11 @@ const SettingsView = (() => {
       '<div class="form-grid">' +
         field('set-biz-name', 'Legal / Business Name', f.businessName, { attrs: ' placeholder="e.g. Lachlan Sullivan-Carey" autocomplete="organization"' }) +
         field('set-abn', 'ABN', f.abn, { attrs: ' inputmode="numeric" placeholder="e.g. 51 824 753 556"' }) +
+        field('set-biz-email', 'Email', f.businessEmail, { type: 'email', attrs: ' placeholder="e.g. hello@lsccreative.studio" autocomplete="email" aria-describedby="set-contact-hint"' }) +
+        field('set-biz-phone', 'Phone', f.businessPhone, { type: 'tel', attrs: ' placeholder="e.g. 0412 345 678" autocomplete="tel" aria-describedby="set-contact-hint"' }) +
       '</div>' +
+      '<p class="set-hint" id="set-contact-hint">How a client reaches you: shown at the foot of every client page, ' +
+      'in its notices (“Contact …”), and on the estimate PDF. Left blank, a client page says “contact us” with no address.</p>' +
       '<h3 class="set-group-head">GST</h3>' +
       '<label class="set-check"><input type="checkbox" id="set-gst-reg"' + (f.registered ? ' checked' : '') +
       '><span>Registered for GST</span></label>' +
@@ -206,8 +217,7 @@ const SettingsView = (() => {
       '<p class="set-numbering">Taken from the project’s UPID. For UPID <strong>B210</strong>: ' +
       '<code>INV-B210-D</code> deposit, <code>INV-B210-F</code> final, or <code>INV-B210</code> for a single invoice.</p>' +
       '<h3 class="set-group-head">Default messages</h3>' +
-      '<p class="set-hint set-hint-lead">What each email says above its link. You can change it before each send. ' +
-      'Sending from the app arrives with client pages.</p>' +
+      '<p class="set-hint set-hint-lead">What each email says above its link. You can change it before each send.</p>' +
       '<div class="form-grid set-msgs">' + msgs + '</div>');
   }
 
@@ -436,6 +446,10 @@ const SettingsView = (() => {
     if (abn && !abnValid(abn)) {
       found.push({ msg: 'That ABN doesn’t check out. It should be 11 digits, as shown on the ABN Lookup.', field: $('set-abn') });
     }
+    const email = form.businessEmail.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      found.push({ msg: 'That email doesn’t look right. It should read like name@example.com.', field: $('set-biz-email') });
+    }
     if (form.registered && !abn) {
       found.push({ msg: 'GST registration needs your ABN. Add it under Business.', field: $('set-abn') });
     }
@@ -474,6 +488,8 @@ const SettingsView = (() => {
       business: Object.assign({}, loaded.business, {
         name: form.businessName.trim(),
         abn: abnDigits(form.abn),
+        email: form.businessEmail.trim(),
+        phone: form.businessPhone.trim(),
       }),
       gst: Object.assign({}, loaded.gst, {
         registered: form.registered,
