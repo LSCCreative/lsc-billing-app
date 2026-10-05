@@ -2697,6 +2697,10 @@ test('invoice: a draft final takes Additional work extras, priced from their own
   const plain = (await saveEstimate({ name: 'T20 Plain', upid: 'T20-PLAIN', activeRows: { post: [capture(null, { mu: 500 })] } })).body.estimate;
   await act(plain.projectId, 'accept', { invoicing: 'single' });
   const [onTaxed] = invoiceRows(taxed.projectId);
+  // The editor is told what bills this estimate, to say an edit won't reach it (C11).
+  const opened = { body: await (await api(`/api/estimates/${taxed.id}`)).json() };
+  assert.deepEqual(opened.body.estimate.invoices, [{ number: 'INV-T20-TAX', kind: 'single', status: 'draft' }]);
+  assert.deepEqual((await folderOf(taxed.projectId)).body.estimates[0].invoices, opened.body.estimate.invoices, 'and so does the folder, which the editor reads');
   assert.deepEqual((await putInv(onTaxed.id, { extras: [OT20] })).body.invoice.totals.extras, { clientPriceExGst: 420, gst: 42, totalIncGst: 462 });
   await gstOn();
   const [onPlain] = invoiceRows(plain.projectId);

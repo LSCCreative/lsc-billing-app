@@ -138,9 +138,16 @@ function registerEstimateRoutes(app, db) {
   // project has an invoice the app made, as planProjectWrite refuses a change.
   // `versions` (task 25, D34): what of it has been sent, for the editor's
   // "Editing after v2 was sent" banner. Owner-only, like the rest.
+  // `invoices` (task 33 C11): the app-made invoices billing this estimate, so
+  // the editor can say that a change here doesn't reach them.
+  const billing = db.prepare(`
+    SELECT number, kind, status FROM invoices
+     WHERE estimate_id = ? AND kind <> 'legacy' AND status <> 'void' ORDER BY created_at, id
+  `);
   const loadJson = (row) => Object.assign(loadEstimate(row, readDays(db, row.id), readRentals(db, row.id)), {
     upidLocked: upidLocked(db, row.project_id),
     versions: versionsOf(db, [row.id]).get(row.id) || [],
+    invoices: billing.all(row.id),
   });
 
   app.get('/api/estimates', (_req, res) => {

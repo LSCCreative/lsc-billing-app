@@ -185,6 +185,9 @@ function readFolder(db, id, today) {
       estimate.publicToken = row.public_token || null;
       estimate.versions = sent.get(row.id) || [];
       estimate.send = estimateSends.get(row.id) || null;
+      // What bills it (C11), as GET /api/estimates/:id has it: the editor says an edit won't reach them.
+      estimate.invoices = bills.filter((i) => i.estimate_id === row.id && i.kind !== 'legacy' && i.status !== 'void')
+        .map((i) => ({ number: i.number, kind: i.kind, status: i.status }));
       estimate.days.forEach((d) => {
         if (flags.has(d.id)) d.rebook = flags.get(d.id);
       });

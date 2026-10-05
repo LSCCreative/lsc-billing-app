@@ -1161,7 +1161,12 @@ Tasks 24–26 can be built with placeholders.
     pass them. Worked examples in `test-calc.js`, both directions through the route in
     `test-api.js`. Mutations: job ignored (1), rate tolerance off (1), card mode dropped (1),
     untaxed job taxed (1), route not passing the job (1).
-  - [ ] **C11. No warning when editing an accepted, invoiced estimate** (Opus/high, **F**).
+  - [x] **C11. No warning when editing an accepted, invoiced estimate** (Opus/high, **F**).
+    Each estimate (GET `/api/estimates/:id` and the folder's, which the editor reads) carries
+    `invoices`: the app-made, unvoided ones billing it. The editor's banner on an accepted
+    estimate: "Accepted and invoiced. Changes here don't reach INV-…-D and INV-…-F: they bill the
+    estimate as accepted. To bill more, add extras to the final invoice; to change a sent one,
+    void and remake it. Your client's page keeps the version they accepted." Browser: SEND-B.
   - [ ] **C12. Signed copy greets/sends to the contact on file, not the signer** (backend, Sonnet/high).
   - [ ] **C13. Unused Stage D `/sent` routes keep weaker guards** (backend, Sonnet/high).
   - [ ] **C14. `sends.js` own `isYmd` accepts impossible due dates** (backend, Sonnet/high).

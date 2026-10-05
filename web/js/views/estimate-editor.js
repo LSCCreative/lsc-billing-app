@@ -2232,6 +2232,23 @@ const EstimateEditor = (() => {
       'Your client has v' + last.n + '. Saving a change they would see sends it to them as v' + (last.n + 1) + '.</p></div>';
   }
 
+  /* Editing an accepted estimate (task 33 C11): its invoices bill it as it
+     was accepted, so nothing here reaches them, and the client's page keeps
+     the version they accepted. Said before the owner changes a price
+     expecting the bill to follow. */
+  function acceptedNoteMarkup(estimate) {
+    if (!estimate || estimate.status !== 'accepted') return '';
+    const bills = (estimate.invoices || []).map((i) => i.number).filter(Boolean);
+    const named = bills.length > 1 ? bills.slice(0, -1).join(', ') + ' and ' + bills[bills.length - 1] : bills[0];
+    return '<div class="upid-banner" role="note"><p><strong>Accepted' + (bills.length ? ' and invoiced' : '') + '.</strong> ' +
+      (bills.length
+        ? 'Changes here don’t reach ' + esc(named) + ': ' + (bills.length > 1 ? 'they bill' : 'it bills') +
+          ' the estimate as accepted. To bill more, add extras to the ' + (bills.some((n) => /-F\d*$/.test(n)) ? 'final ' : '') +
+          'invoice; to change a sent one, void and remake it.'
+        : 'Changes here don’t reach the invoices, which are made from the estimate as accepted.') +
+      ' Your client’s page keeps the version they accepted.</p></div>';
+  }
+
   function formMarkup(estimate, pricing) {
     const client = (estimate && estimate.client) || {};
 
@@ -2240,7 +2257,7 @@ const EstimateEditor = (() => {
       '<div class="page-head"><div><h1 class="page-title">' +
       (estimate ? 'Edit Estimate' : 'New Estimate') + '</h1>' +
       '<div class="page-sub">Select services from each category to build your estimate</div></div></div>' +
-      sentNoteMarkup(estimate) +
+      sentNoteMarkup(estimate) + acceptedNoteMarkup(estimate) +
       '<div class="form-grid">' +
       '<div class="field full"><label for="f-upid" class="label-accent">UPID — Unique Project Identifier *</label>' +
       '<input id="f-upid" type="text" value="' + esc(estimate ? estimate.upid : '') + '"' +
