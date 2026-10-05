@@ -142,7 +142,8 @@ const ProjectFolder = (() => {
       : project.needsUpid ? 'UPID needed' : 'No UPID yet';
     const next = project.nextDay;
     const facts = [
-      ['Total (inc GST)', fmt(project.totalIncGst)],
+      // The job's figure, as large as the Projects card shows it (task 33 DR13).
+      ['Total (inc GST)', fmt(project.totalIncGst), 'pf-total'],
       next && C.isDate(next.date)
         ? ['Next production day', C.statusChip(next.status) + '<span>' +
           esc(next.date === today ? 'Today' : C.longDate(next.date, today)) + '</span>']
@@ -157,7 +158,7 @@ const ProjectFolder = (() => {
         ? '<div class="est-client">' + esc([client.businessName, client.contactName].filter(Boolean).join(' · ')) + '</div>'
         : '') +
       '<div class="pf-stage">' + ProjectCard.stageMarkup(project, today) + '</div>' +
-      '<dl class="pf-facts">' + facts.map(([k, v]) => '<div><dt>' + k + '</dt><dd>' + v + '</dd></div>').join('') + '</dl>' +
+      '<dl class="pf-facts">' + facts.map(([k, v, cls]) => '<div><dt>' + k + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</dd></div>').join('') + '</dl>' +
       '</div>'
     );
   }

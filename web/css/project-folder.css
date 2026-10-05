@@ -54,6 +54,18 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+/* The total in the card's own type (task 33 DR13): Delight, accent text. The
+   facts sit on one baseline, so the shorter ones line up with its foot. */
+.pf-facts {
+  align-items: flex-end;
+}
+.pf-facts dd.pf-total {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--accent-text);
+}
 
 .pf-actions {
   display: flex;
