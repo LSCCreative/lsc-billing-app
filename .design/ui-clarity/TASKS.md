@@ -47,7 +47,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
 
 ## Foundation: the system
 
-- [ ] **1. Tokens live, palette and type across the app** (frontend — Opus/high) **Frontend**
+- [x] **1. Tokens live, palette and type across the app** (frontend — Opus/high) **Frontend**
+  - **Done** `07df49a`: every screen warm at 1280 and 375, no old colours left (computed-style scan), no overflow; screenshots `screenshots/task1-*`.
   - Load `tokens.css` first in `web/index.html`, and in `web/c/index.html` for the shared primitives
     only (the client pages stay light, via `[data-theme="light"]` or their own `c.css`).
   - Delete the `:root` values in `app.css` and `a11y.css` that the legacy aliases now supply, and

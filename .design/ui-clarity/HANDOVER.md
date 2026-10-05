@@ -26,15 +26,29 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
   `.design/ui-clarity/tokens-preview.html` is the specimen. Open it with launch.json's `design`
   server at `/.design/ui-clarity/tokens-preview.html`.
 - **Phase 5** (tasks): done, in `TASKS.md` (18 tasks).
-- **Next: Phase 6, build task 1, "Tokens live, palette and type across the app"** (frontend —
-  Opus/high). **Frontend task.**
+- **Phase 6** (build) on branch **`ui-clarity`** (off `production-booking`, unpushed, not deployed).
+  - [x] Task 1, tokens live (`07df49a`). `tokens.css` loads first in `web/index.html`, and in
+    `web/c/index.html` with `<html data-theme="light">` (c.css's names now alias the tokens). No
+    raw hex left in the screen CSS except Overhead's measured chart palette and warm-white alphas.
+    Funnel Sans is deleted. Inputs moved to `--input-bg` / `--input-border` in app.css and wherever
+    they used the old `#1a1c20` well; other inputs still read `--surface`/`--border` (task 13).
+- **Next: task 2, "Button hierarchy and the panel component"** (frontend — Opus/high).
+  **Frontend task.**
 
 ## Waiting on the user
 
 - **The logo file** (for D2), PNG or SVG.
-- **The Metro Sans licence:** confirm that web embedding is allowed. The repo is public.
+- **The Metro Sans licence:** confirm that web embedding is allowed (the repo is public), and that
+  it's a bought licence: the installed copy is a Fontspring demo, which is never licensed for web.
 
 ## Traps
+
+- **The studio Mac has a Fontspring DEMO of Metro Sans installed** (`~/Library/Fonts/fontspring-demo-*`):
+  its glyphs for `( ) - @` and some digits are `±`. Chrome falls back to an installed font of the
+  same family name when a web font file 404s, so `tokens.css` names the face **'LSC Metro Sans'**.
+  Keep that name. The masters in `Visual Design/` are the full family (checked).
+- Screenshots: `node <scratch>/shots.js` pattern (headless Chrome via `server/node_modules/puppeteer-core`,
+  in-page login, computed-colour scan for old palette values). `screenshots/` stays local, uncommitted.
 
 - Metro Sans has **no tabular figures**: money uses `--font-figures` (mono), U24.
 - `tokens.css` declares Metro Sans at `../fonts/MetroSans-{400,500,600}.woff2`. Copy and rename them from
