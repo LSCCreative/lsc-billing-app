@@ -1143,7 +1143,12 @@ Tasks 24–26 can be built with placeholders.
     `config.js appUrlOf`: an absolute http(s) address with one trailing slash, else `''`; the
     outbox normalises again, so `''` and `/` both fail the send with `no_app_url`. Boot logs
     when it's missing or unusable. Mutation: outbox not normalising (1 fail).
-  - [ ] **C8. Failed sends survive accept/paid/expiry and can be retried** (backend, Sonnet/high).
+  - [x] **C8. Failed sends survive accept/paid/expiry and can be retried** (backend, Sonnet/high).
+    `cancelPending` (accept, decline, paid, void) now cancels failed rows too. `sends.js movedOn`:
+    an estimate email goes only while its quote is with the client (`liveVersion`) and within its
+    valid-until; an invoice email only while the invoice is `scheduled`. Checked by `retrySend`
+    (409 `doc_moved_on` / `doc_expired`) and again as the outbox builds the email. Mutations: cancel
+    leaving failed (1), retry unchecked (1), send unchecked (1).
   - [ ] **C9. Void reason shown on the client's invoice page; dialog doesn't say so** (Opus/high, **F**).
   - [ ] **C10. Extras priced with today's GST settings, not the job's** (money, Opus/high).
   - [ ] **C11. No warning when editing an accepted, invoiced estimate** (Opus/high, **F**).

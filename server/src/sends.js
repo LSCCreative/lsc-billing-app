@@ -38,7 +38,7 @@
  */
 
 const { newId, nowIso } = require('./db');
-const { newToken, signatureRow, signaturePdf } = require('./public');
+const { newToken, signatureRow, signaturePdf, liveVersion } = require('./public');
 const { readSettings } = require('./ratecard');
 const { documentEmail, ownerSignedEmail, signedCopyEmail, isEmail } = require('./mail');
 const { agreementFilename } = require('./pdf');
@@ -157,10 +157,11 @@ function sendJson(s) {
 }
 
 /**
- * Cancels whatever is still scheduled for these documents: a decline, an
- * accept or a void means an email about the document as it was would be
- * wrong. A send already going can't be called back. Inside the caller's
- * transaction.
+ * Cancels whatever is still scheduled for these documents, and any that
+ * failed (C8): a decline, an accept, a payment or a void means an email about
+ * the document as it was would be wrong, and a failed one left standing could
+ * still be retried. A send already going can't be called back. Inside the
+ * caller's transaction.
  *
  * @returns {number} how many were cancelled
  */
@@ -168,9 +169,36 @@ function cancelPending(db, docKind, docIds, now) {
   if (!docIds.length) return 0;
   return db.prepare(`
     UPDATE sends SET status = 'cancelled', updated_at = ?
-     WHERE doc_kind = ? AND purpose = 'document' AND status = 'scheduled'
+     WHERE doc_kind = ? AND purpose = 'document' AND status IN ('scheduled', 'failed')
        AND doc_id IN (SELECT value FROM json_each(?))
   `).run(now, docKind, JSON.stringify(docIds.map(String))).changes;
+}
+
+/**
+ * Why a document email can't go now, or null (C8). An estimate's goes only
+ * while a version of it is with the client (public.js liveVersion) and not
+ * past its valid-until; an invoice's only while the invoice waits on it
+ * (`scheduled`). Checked on a retry and again as it is sent, so nothing that
+ * slipped past a cancel asks a client to accept, or pay, twice.
+ *
+ * @param {string} today  'YYYY-MM-DD', the business's
+ * @returns {{code:string, message:string}|null}
+ */
+function movedOn(db, row, today) {
+  if (row.purpose !== 'document') return null;
+  if (row.doc_kind === 'estimate') {
+    const version = liveVersion(db, row.doc_id);
+    if (!version) return { code: 'doc_moved_on', message: 'This quote has been accepted, declined or replaced since, so this email won’t be sent.' };
+    if (version.valid_until && today > version.valid_until) {
+      return { code: 'doc_expired', message: `v${version.n} expired on ${dayMonth(version.valid_until)}, so this email won’t be sent. Send the quote again.` };
+    }
+    return null;
+  }
+  const inv = db.prepare('SELECT status FROM invoices WHERE id = ?').get(row.doc_id);
+  if (inv && inv.status !== 'scheduled') {
+    return { code: 'doc_moved_on', message: `This invoice is ${inv.status === 'void' ? 'void' : inv.status === 'paid' ? 'paid' : 'no longer waiting on this email'}, so it won’t be sent.` };
+  }
+  return null;
 }
 
 /* An invoice queued to email whose send was cancelled is a draft again, with
@@ -254,6 +282,8 @@ function retrySend(db, id, now = nowIso()) {
   return db.transaction(() => {
     const row = getSend(db, id);
     if (!row) throw Object.assign(new Error('not found'), { code: 'not_found', status: 404 });
+    const stale = row.status === 'failed' ? movedOn(db, row, sydneyDate(now)) : null;
+    if (stale) throw fail(stale.code, stale.message);
     const { changes } = db.prepare(`
       UPDATE sends SET status = 'scheduled', scheduled_for = ?, error = NULL, late = 0, updated_at = ?
        WHERE id = ? AND status = 'failed'
@@ -347,6 +377,8 @@ async function buildMail(db, row, ctx) {
   if (row.purpose === 'document') {
     const doc = documentContext(db, row);
     if (doc.kind !== 'estimate' && doc.inv.status === 'void') throw fail('doc_void', 'This invoice was voided, so it won’t be sent.');
+    const stale = movedOn(db, row, sydneyDate(ctx.now || nowIso()));
+    if (stale) throw fail(stale.code, stale.message);
     if (!appUrl) throw fail('no_app_url', 'The server doesn’t know the app’s web address (APP_URL), so it can’t make the link.');
     let token = doc.token;
     if (!token && doc.kind === 'estimate') throw fail('no_link', 'This estimate has no client link yet (it hasn’t been sent as a version).');
@@ -432,7 +464,7 @@ async function buildMail(db, row, ctx) {
 function createOutbox(db, mailer, opts = {}) {
   const now = opts.now || nowIso;
   // Normalised again here, so a caller passing it straight in can't bring a relative one back (C7).
-  const ctx = { appUrl: appUrlOf(opts.appUrl), render: opts.render };
+  const ctx = { appUrl: appUrlOf(opts.appUrl), render: opts.render, now: null };
   let timer = null;
   let running = Promise.resolve();
 
@@ -453,7 +485,7 @@ function createOutbox(db, mailer, opts = {}) {
   async function deliver(row) {
     let outcome;
     try {
-      const built = await buildMail(db, row, ctx);
+      const built = await buildMail(db, row, { ...ctx, now: now() });
       await mailer.send({ to: built.to, ...built.mail });
       outcome = { status: 'sent' };
     } catch (err) {

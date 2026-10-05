@@ -55,7 +55,7 @@ function seedProject() {
   const eid = `est_m${seq}`;
   db.prepare(`INSERT INTO projects (id, client_id, upid, created_at, updated_at) VALUES (?, NULL, ?, ?, ?)`).run(pid, `MAIL-${seq}`, now, now);
   const cols = db.prepare('PRAGMA table_info(estimates)').all().filter((c) => c.notnull && c.dflt_value === null && c.name !== 'id');
-  const base = { id: eid, project_id: pid, upid: `MAIL-${seq}`, name: `Harbour ${seq}`, public_token: `tok${seq}`.padEnd(43, 'x') };
+  const base = { id: eid, project_id: pid, upid: `MAIL-${seq}`, name: `Harbour ${seq}`, status: 'sent', public_token: `tok${seq}`.padEnd(43, 'x') };
   cols.forEach((c) => { if (!(c.name in base)) base[c.name] = c.type.toUpperCase().includes('INT') || c.type.toUpperCase().includes('REAL') ? 0 : (/_at$/.test(c.name) ? now : '{}'); });
   db.prepare(`INSERT INTO estimates (${Object.keys(base).join(',')}) VALUES (${Object.keys(base).map(() => '?').join(',')})`).run(...Object.values(base));
   const vid = `ver_m${seq}`;
@@ -308,7 +308,7 @@ test('queue: an invoice email makes its link the first time and keeps it; a void
   const box = outboxFor(t);
   const now = iso(T0);
   const snap = JSON.stringify({ name: 'Harbour', client: { businessName: 'Saltwater Co.', contactName: 'Priya Nair', email: 'priya@salt.example' } });
-  db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, estimate_snapshot_json, created_at, updated_at) VALUES ('inv_m1', ?, 'deposit', 'INV-X-D', 'draft', ?, ?, ?)`).run(p.pid, snap, now, now);
+  db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, estimate_snapshot_json, created_at, updated_at) VALUES ('inv_m1', ?, 'deposit', 'INV-X-D', 'scheduled', ?, ?, ?)`).run(p.pid, snap, now, now);
   db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, estimate_snapshot_json, created_at, updated_at) VALUES ('inv_m2', ?, 'final', 'INV-X-F', 'void', ?, ?, ?)`).run(p.pid, snap, now, now);
   sends.addSend(db, { docKind: 'invoice', docId: 'inv_m1', toEmail: '', message: 'Deposit invoice', scheduledFor: now }, now);
   const voided = sends.addSend(db, { docKind: 'invoice', docId: 'inv_m2', toEmail: 'a@b.co', scheduledFor: now }, now);

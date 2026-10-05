@@ -412,3 +412,53 @@ test('an invoice that replaces a voided one is emailed as an “Invoice update�
   assert.match(mail[0].subject, new RegExp(`^Invoice update: .* \\(${remade.number}\\)$`));
   assert.match(mail[0].text, new RegExp(`It replaces ${number}, which no longer needs paying`));
 });
+
+test('a failed email is cancelled when its document moves on, and can’t be retried once it has (C8)', async () => {
+  // Accepted after the quote's email failed: the failed row goes, so no retry asks them to accept again.
+  const est = await estimate();
+  failing = true;
+  await send(est, email());
+  await settle(() => rowsOf(est.id)[0].status === 'failed');
+  failing = false;
+  await post(`/api/projects/${est.projectId}/accept?today=${today}`, { invoicing: 'single' });
+  const [row] = rowsOf(est.id);
+  assert.equal(row.status, 'cancelled');
+  assert.equal((await post(`/api/sends/${row.id}/retry`)).body.error, 'not_failed');
+
+  // Expired since it failed: the retry is refused, and says to send it again.
+  const old = await estimate();
+  failing = true;
+  await send(old, email());
+  await settle(() => rowsOf(old.id)[0].status === 'failed');
+  failing = false;
+  db.prepare('UPDATE estimate_versions SET valid_until = ? WHERE estimate_id = ?').run(dayIn(-1), old.id);
+  const expired = await post(`/api/sends/${rowsOf(old.id)[0].id}/retry`);
+  assert.deepEqual([expired.status, expired.body.error], [409, 'doc_expired']);
+  assert.match(expired.body.message, /Send the quote again/);
+  assert.equal(rowsOf(old.id)[0].status, 'failed');
+
+  // Moved on with no cancel (a row from before this fix): refused as it is sent, not mailed.
+  const moved = await estimate();
+  failing = true;
+  await send(moved, email());
+  await settle(() => rowsOf(moved.id)[0].status === 'failed');
+  failing = false;
+  db.prepare("UPDATE estimates SET status = 'declined' WHERE id = ?").run(moved.id);
+  assert.equal((await post(`/api/sends/${rowsOf(moved.id)[0].id}/retry`)).body.error, 'doc_moved_on');
+  db.prepare("UPDATE sends SET status = 'scheduled' WHERE id = ?").run(rowsOf(moved.id)[0].id);
+  mail.length = 0;
+  await send(await estimate(), email()); // its kick runs every due send
+  await settle(() => rowsOf(moved.id)[0].status !== 'scheduled');
+  assert.equal(rowsOf(moved.id)[0].status, 'failed');
+  assert.match(rowsOf(moved.id)[0].error, /won’t be sent/);
+  assert.equal(mail.filter((m) => m.subject.includes(moved.upid)).length, 0);
+
+  // Paid after the invoice's email failed: cancelled, so no retry asks for money already in.
+  const dep = await deposit();
+  failing = true;
+  await sendInvoice(dep, { by: 'email', to: 'priya@salt.example', dueAt: dayIn(7) });
+  await settle(() => rowsOf(dep.id)[0].status === 'failed');
+  failing = false;
+  await post(`/api/invoices/${dep.id}/paid?today=${today}`, { paidAt: today, via: 'bank' });
+  assert.equal(rowsOf(dep.id)[0].status, 'cancelled');
+});
