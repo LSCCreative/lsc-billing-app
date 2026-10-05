@@ -237,7 +237,7 @@ test('each state: open, taken, expired, superseded, declined, accepted', async (
   // taken (D41): another project confirms a proposed day's date.
   const a = await shoot();
   const { token } = await sent(a);
-  assert.equal((await pub(token)).body.estimate.state, 'open');
+  assert.deepEqual([(await pub(token)).body.estimate.state, (await pub(token)).body.estimate.acceptedOn], ['open', '']);
   const other = await shoot({ days: [day('d_other', a.days[1].date, 'confirmed')], activeRows: { prod: [capture('d_other')] } });
   let e = (await pub(token)).body.estimate;
   assert.deepEqual([e.state, e.unavailableDays], ['taken', [a.days[1].date]]);
@@ -276,6 +276,10 @@ test('each state: open, taken, expired, superseded, declined, accepted', async (
   e = (await pub(token)).body.estimate;
   assert.equal(e.state, 'accepted');
   assert.deepEqual(e.days.map((d) => d.status), ['confirmed', 'confirmed'], 'accepted in the app reads the same');
+  // DR14: the page says when it was accepted, as the business's (Sydney) date.
+  const acceptedAt = db.prepare('SELECT accepted_at FROM projects WHERE id = ?').get(a.projectId).accepted_at;
+  assert.equal(e.acceptedOn, new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date(acceptedAt)));
+  assert.match(e.acceptedOn, /^\d{4}-\d{2}-\d{2}$/);
   // The stored client view is untouched: it's the version as sent.
   const stored = JSON.parse(db.prepare('SELECT client_view_json FROM estimate_versions v JOIN estimates x ON x.id = v.estimate_id WHERE x.public_token = ? ORDER BY n DESC LIMIT 1').get(token).client_view_json);
   assert.deepEqual(stored.days.map((d) => d.status), ['pencilled', 'proposed']);

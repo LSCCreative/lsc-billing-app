@@ -270,6 +270,12 @@ function takenDays(db, projectId = null) {
   return out;
 }
 
+/* The business's date for an instant (as sends.js sydneyDate, which can't be
+   required here: sends.js requires this file). */
+const sydneyDay = (iso) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date(iso));
+
 /**
  * The client's reply for a link, or null when there is no such link (or it
  * was never sent). Everything comes from the frozen client view; the state,
@@ -326,6 +332,8 @@ function publicEstimate(db, token, today) {
   return Object.assign(view, {
     state,
     validUntil: version.valid_until || '',
+    // An accepted page reads "Accepted 5 October 2026", not its old valid-until (task 33 DR14).
+    acceptedOn: state === 'accepted' && project && project.accepted_at ? sydneyDay(project.accepted_at) : '',
     unavailableDays: view.days.filter((d) => d.unavailable).map((d) => d.date),
     latestToken,
     faqUrl: docSettings(readSettings(db)).faqUrl,

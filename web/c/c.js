@@ -113,7 +113,10 @@
         metaRow('For', e.client && e.client.businessName) +
         metaRow('Reference', e.upid) +
         metaRow('Issued', longDate(e.issuedOn)) +
-        metaRow('Valid until', longDate(e.validUntil)) +
+        // Accepted, it says when, not how long it was open (task 33 DR14).
+        (e.state === 'accepted'
+          ? metaRow('Accepted', longDate(e.acceptedOn))
+          : metaRow('Valid until', longDate(e.validUntil))) +
       '</dl>' +
       '<h1 class="title">' + esc(e.name) + '</h1>' +
       (e.state === 'open'
@@ -217,7 +220,7 @@
         : '') +
       '<p class="total"><span class="total-label">Total</span><span class="total-fig">' + money(t.total) + '</span></p>' +
       '<p class="fine">' + esc(gstNote(t.treatment)) +
-        (e.validUntil ? ' Valid until ' + esc(longDate(e.validUntil)) + '.' : '') + '</p>' +
+        (e.validUntil && e.state !== 'accepted' ? ' Valid until ' + esc(longDate(e.validUntil)) + '.' : '') + '</p>' +
     '</section>';
   }
 
@@ -255,8 +258,13 @@
       case 'accepted':
         // An estimate accepted in the app was never signed here: no agreement
         // to offer until signing (task 27) says there is one.
+        // Worded for what has happened (DR14): the dated days already read Confirmed above.
         return notice('Thank you',
-          'We’ll be in touch to confirm the details.',
+          'You accepted this quote' + (e.acceptedOn ? ' on ' + esc(longDate(e.acceptedOn)) : '') + '. ' +
+          ((e.days || []).some((d) => !d.date)
+            ? 'The dated production days above are confirmed, and we’ll be in touch to set the rest.'
+            : 'The production days above are confirmed.') +
+          ' Questions? Contact ' + contact + '.',
           e.signed
             ? '<button type="button" class="btn btn-quiet" data-act="agreement">Download signed agreement</button>' +
               '<p class="panel-msg" id="ag-msg" role="status"></p>'
