@@ -1097,6 +1097,35 @@ Tasks 24–26 can be built with placeholders.
   - **Then `/design-review`** against the brief, covering both surfaces.
   - List the fixes here under "Code review fixes" and "Design review fixes", as earlier tracks do.
 
+  **Code review (2026-10-05, xhigh, `86edf25^..464c43a`):** no owner-only figure reachable from
+  `/public/*`, no double send, no replayable signature; `calc.js` and `documents.js` copies identical.
+  15 findings, worked in this order (bucket per CLAUDE.md; **F** = frontend task):
+
+  - [x] **C1. Client quote PDF was the old template** (money/print, Opus/high, **F**). Fixed with
+    D103 (the client sees "Quote"): `buildQuoteHtml` headed `QUOTE <UPID>` via `invoiceHeadHtml`,
+    the version's issue/valid-until dates (`public.js` `versionDates`, `quoteDates` for the owner's
+    download: the live version while unedited, else today + Settings' valid-for days), Settings
+    contact instead of the hard-coded footer, filename `Quote <UPID> - …`; "quote" on the client
+    page, invoice pages/PDFs, client emails, fallback agreement, signed-agreement label,
+    disclaimer (old frozen ones reworded on read), default email message. Owner screens and the
+    Cost Breakdown keep "Estimate". 527 tests; mutations: valid-until dropped (2 fail), edited-since
+    ignored (1), superseded ignored (1, after adding its case), old disclaimer kept (1). Browser:
+    `c/#e` and `c/#i` on `api-scratch`, quote PDF read back. Not committed, not deployed.
+  - [ ] **C2. Signing confirms the live days, but bills the signed version** (money, Opus/high).
+  - [ ] **C3. Mark accepted bills an estimate edited after the version sent, unwarned** (money, Opus/high, **F**).
+  - [ ] **C4. Mark paid on a draft leaves no issue date: undated tax invoice** (money, Opus/high).
+  - [ ] **C5. Owner's "signed" email says days confirmed even when a clash was flagged** (backend, Sonnet/high).
+  - [ ] **C6. Owner never told a sent quote's proposed date was taken** (Opus/high, **F**).
+  - [ ] **C7. Blank `APP_URL` becomes `/`: `no_app_url` guard dead, relative links emailed** (backend, Sonnet/high).
+  - [ ] **C8. Failed sends survive accept/paid/expiry and can be retried** (backend, Sonnet/high).
+  - [ ] **C9. Void reason shown on the client's invoice page; dialog doesn't say so** (Opus/high, **F**).
+  - [ ] **C10. Extras priced with today's GST settings, not the job's** (money, Opus/high).
+  - [ ] **C11. No warning when editing an accepted, invoiced estimate** (Opus/high, **F**).
+  - [ ] **C12. Signed copy greets/sends to the contact on file, not the signer** (backend, Sonnet/high).
+  - [ ] **C13. Unused Stage D `/sent` routes keep weaker guards** (backend, Sonnet/high).
+  - [ ] **C14. `sends.js` own `isYmd` accepts impossible due dates** (backend, Sonnet/high).
+  - [ ] **C15. Owner previewing a copied link logs "client opened"** (backend, Sonnet/high).
+
 ## Not in this list (and why)
 
 - **`estimate-accuracy` tasks 9, 10, 12–14** stay in that track and are un-grilled. When grilled,

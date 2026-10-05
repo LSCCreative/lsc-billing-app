@@ -120,8 +120,9 @@ function shell({ heading, bodyHtml, button, footer }) {
     '</div></body></html>';
 }
 
+/* What the client is told it is: an estimate is a "quote" to them (D103). */
 const KIND_WORDS = {
-  estimate: { noun: 'Estimate', button: 'View the estimate' },
+  estimate: { noun: 'Quote', button: 'View the quote' },
   deposit: { noun: 'Deposit invoice', button: 'View the invoice' },
   final: { noun: 'Final invoice', button: 'View the invoice' },
   single: { noun: 'Invoice', button: 'View the invoice' },
@@ -187,7 +188,7 @@ function signedCopyEmail(v) {
   const hello = v.contactName ? `Hi ${v.contactName},` : 'Hi,';
   const lines = [
     hello,
-    `Thanks for accepting the estimate${v.projectName ? ` for ${v.projectName}` : ''}. Your signed service agreement is attached for your records.`,
+    `Thanks for accepting the quote${v.projectName ? ` for ${v.projectName}` : ''}. Your signed service agreement is attached for your records.`,
     'We’ll be in touch about the next steps. Reply to this email if you have any questions.',
   ];
   return {

@@ -947,7 +947,7 @@ test('pdf: a non-ASCII name exports with its filename intact and takes no backup
     const disposition = res.headers.get('content-disposition');
     const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
     assert.ok(encoded, disposition);
-    assert.equal(decodeURIComponent(encoded[1]), 'EST - Café Ltd - Nick’s launch — v2.pdf');
+    assert.equal(decodeURIComponent(encoded[1]), 'Quote - Café Ltd - Nick’s launch — v2.pdf');
   }
   await res.arrayBuffer();
 

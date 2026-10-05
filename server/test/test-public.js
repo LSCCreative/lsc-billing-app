@@ -25,6 +25,7 @@ const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const { PRICING_SHAPE } = require('../src/calc');
+const { PROPOSED_DISCLAIMER } = require('../src/pdf');
 
 const PASSWORD = 'correct-horse-battery-staple';
 let today = '2026-10-04';
@@ -328,6 +329,57 @@ test('the PDF prints the version that was sent, not today\'s edits', async () =>
   assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
 });
 
+/* D103: the client's PDF is a quote, dated as the page is. Read through the
+   stand-in renderer (defined with signing, below), which hands back the HTML. */
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const longYmd = (ymd) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return d + ' ' + MONTH_NAMES[m - 1] + ' ' + y;
+};
+
+test('the client\'s PDF is a quote: QUOTE and the UPID, its version, and the page\'s issue and valid-until dates (D103)', async () => {
+  const url = await signer();
+  const est = await shoot();
+  const { token } = await sent(est, '2026-11-03');
+  await sent(est, '2026-11-20');
+  const page = (await pub(token, url)).body.estimate;
+  assert.equal(page.version, 2);
+  const r = await fetch(`${url}/public/estimates/${token}/pdf`);
+  assert.equal(r.status, 200);
+  assert.match(decodeURIComponent(r.headers.get('content-disposition')), new RegExp(`Quote ${est.upid} - Saltwater Co\\. - Harbour`));
+  const html = Buffer.from(await r.arrayBuffer()).toString();
+  assert.match(html, new RegExp(`QUOTE <span[^>]*>${est.upid}</span>`));
+  assert.ok(html.includes('Version 2 · Issued ' + longYmd(page.issuedOn)), 'issued as the page says');
+  assert.match(html, />Valid until 20 November 2026</);
+  assert.match(html, /Valid until 20 November 2026\./);
+  assert.doesNotMatch(html, /estimate|30 days/i);
+});
+
+test('a version frozen before D103 shows today\'s proposed-dates wording', async () => {
+  const est = await shoot();
+  const { token } = await sent(est);
+  db.prepare(`UPDATE estimate_versions SET client_view_json = json_set(client_view_json, '$.disclaimer', ?) WHERE estimate_id = ?`)
+    .run('The proposed dates are not locked in and other project bookings may happen before this estimate is agreed upon.', est.id);
+  assert.equal((await pub(token)).body.estimate.disclaimer, PROPOSED_DISCLAIMER);
+});
+
+test('the owner\'s quote PDF is dated as the client\'s link while that version stands, else as a quote not yet sent', async () => {
+  const { quoteDates } = require('../src/public');
+  const est = await shoot();
+  assert.deepEqual(quoteDates(db, est.id, '2026-10-04', 30), { issuedOn: '2026-10-04', validUntil: '2026-11-03', version: null });
+  const { token } = await sent(est, '2026-11-20');
+  const issued = (await pub(token)).body.estimate.issuedOn;
+  assert.deepEqual(quoteDates(db, est.id, '2026-10-04', 30), { issuedOn: issued, validUntil: '2026-11-20', version: 1 });
+  // Superseded (another estimate in the project went since): not the live offer.
+  const supersede = db.prepare('UPDATE estimate_versions SET superseded_at = ? WHERE estimate_id = ?');
+  supersede.run(nowIso(), est.id);
+  assert.equal(quoteDates(db, est.id, '2026-10-04', 30).version, null);
+  supersede.run(null, est.id);
+  // Edited since it went: a PDF now is of the next quote, not the one the client has.
+  await api(`/api/estimates/${est.id}`, { method: 'PUT', body: JSON.stringify({ ...est, name: 'Edited after' }) });
+  assert.deepEqual(quoteDates(db, est.id, '2026-10-04', 7), { issuedOn: '2026-10-04', validUntil: '2026-10-11', version: null });
+});
+
 test('opening the link logs "opened" once a day per version, and Home shows it (task 26, D52)', async () => {
   let clock = '2026-10-05T01:00:00.000Z';
   const url = await start({ now: () => clock, publicLimits: { all: { max: 10000, windowMs: 60000 }, pdf: { max: 10000, windowMs: 60000 } } });
@@ -583,14 +635,14 @@ test('signing: what must be typed, and a changed version or agreement asks for a
   await setAgreement('');
 });
 
-test('signing: with no agreement written, the client accepts the estimate itself; nothing internal leaks', async () => {
+test('signing: with no agreement written, the client accepts the quote itself; nothing internal leaks', async () => {
   await api('/api/settings', { method: 'PUT', body: JSON.stringify({}) });
   const est = await shoot();
   const { token } = await sent(est);
   const raw = await (await fetch(`${await signer()}/public/estimates/${token}`)).text();
   assert.doesNotMatch(raw, FORBIDDEN);
   const { e, body } = await offer(token);
-  assert.match(fill(e.agreement, 'Priya Nair', 'Director'), new RegExp(`Saltwater Co\\. accepts estimate ${est.upid}, Harbour \\d+, for \\$[\\d,.]+, as set out in the estimate\\.[\\s\\S]*Priya Nair, Director, on 4 October 2026\\.`));
+  assert.match(fill(e.agreement, 'Priya Nair', 'Director'), new RegExp(`Saltwater Co\\. accepts quote ${est.upid}, Harbour \\d+, for \\$[\\d,.]+, as set out in the quote\\.[\\s\\S]*Priya Nair, Director, on 4 October 2026\\.`));
   const r = await fetch(`${await signer()}/public/estimates/${token}/accept`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: PAGES }, body: JSON.stringify(body),
   });

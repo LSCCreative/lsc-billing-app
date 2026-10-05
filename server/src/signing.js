@@ -49,9 +49,10 @@ function joinAgreement(agreement, fill) {
 }
 
 /* What a client agrees to when the owner hasn't written an agreement yet
-   (Settings → Service agreement left empty): only the estimate itself. */
-const FALLBACK_TEXT = 'ACCEPTANCE OF ESTIMATE\n\n' +
-  '{client_business} accepts estimate {upid}, {project_name}, for {total}, as set out in the estimate.\n\n' +
+   (Settings → Service agreement left empty): only the quote itself. The
+   client's word for an estimate is "quote" (D103). */
+const FALLBACK_TEXT = 'ACCEPTANCE OF QUOTE\n\n' +
+  '{client_business} accepts quote {upid}, {project_name}, for {total}, as set out in the quote.\n\n' +
   'Signed for {client_business} by {client_contact}, {signatory_role}, on {date}.';
 
 const NAME_MAX = 100;
@@ -148,14 +149,14 @@ function gate(db, token, body, today) {
   const view = publicEstimate(db, token, today);
   if (view.state !== 'open') {
     return {
-      reply: reply(409, { error: 'not_open', state: view.state, message: 'This estimate can’t be accepted any more.' }),
+      reply: reply(409, { error: 'not_open', state: view.state, message: 'This quote can’t be accepted any more.' }),
     };
   }
   if (body.version !== link.version.n) {
     return {
       reply: reply(409, {
         error: 'version_changed',
-        message: 'We’ve just sent a newer version of this estimate. Look it over before you sign.',
+        message: 'We’ve just sent a newer version of this quote. Look it over before you sign.',
       }),
     };
   }

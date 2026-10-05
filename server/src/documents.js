@@ -31,7 +31,7 @@
     validDays: 30, // D44
     dueDays: 14, // the invoice screen's due date, before task 21 a constant
     messages: Object.freeze({
-      estimate: 'Here’s the estimate for your project. You can look it over and accept it online from the link below.',
+      estimate: 'Here’s the quote for your project. You can look it over and accept it online from the link below.',
       deposit: 'Here’s the project deposit invoice. Payment details are on the invoice.',
       final: 'Here’s the final invoice for your project. Payment details are on the invoice.',
       single: 'Here’s the invoice for your project. Payment details are on the invoice.',

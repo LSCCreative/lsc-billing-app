@@ -209,6 +209,8 @@ function publicEstimate(db, token, today) {
   const view = JSON.parse(version.client_view_json);
   // Versions frozen before contact names left the client view still hold one.
   if (view.client) delete view.client.contactName;
+  // And before D103 their disclaimer said "estimate": the words are today's.
+  if (view.disclaimer) view.disclaimer = PROPOSED_DISCLAIMER;
 
   let state = stateOf(db, row, version, project, today);
   if (state === 'open' || state === 'expired') {
@@ -286,16 +288,57 @@ function logOpened(db, token, now) {
   return true;
 }
 
+/* A version's quote dates, as its client page shows them (D44, D103). */
+function versionDates(version) {
+  let view = {};
+  try {
+    view = JSON.parse(version.client_view_json || '{}') || {};
+  } catch (_) {
+    view = {}; // an unreadable view still has its valid-until column
+  }
+  return { issuedOn: str(view.issuedOn), validUntil: str(version.valid_until), version: version.n };
+}
+
 /** The version a link's PDF prints: the frozen estimate, rate card and business. */
 function publicPdfSource(db, token) {
   const row = db.prepare('SELECT id FROM estimates WHERE public_token = ?').get(String(token));
   const version = row
-    ? db.prepare('SELECT n, snapshot_json FROM estimate_versions WHERE estimate_id = ? ORDER BY n DESC LIMIT 1').get(row.id)
+    ? db.prepare('SELECT n, snapshot_json, client_view_json, valid_until FROM estimate_versions WHERE estimate_id = ? ORDER BY n DESC LIMIT 1').get(row.id)
     : null;
   if (!version) return null;
   const snap = JSON.parse(version.snapshot_json);
-  // Printed as the estimate it was sent as, whatever its retired doc type (D62).
-  return { n: version.n, estimate: { ...snap.estimate, docType: 'estimate' }, pricing: snap.pricing, business: snap.business || {} };
+  // Printed as the quote it was sent as, whatever its retired doc type (D62).
+  return {
+    n: version.n,
+    estimate: { ...snap.estimate, docType: 'estimate' },
+    pricing: snap.pricing,
+    business: snap.business || {},
+    dates: versionDates(version),
+  };
+}
+
+const plusDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+
+/**
+ * The dates the owner's own download of a quote prints (routes/pdf.js). While
+ * the newest version sent is still the live one and the estimate hasn't been
+ * edited since, it is that version, so a PDF attached by hand agrees with the
+ * client's link. Otherwise it's a quote not yet sent: issued today, valid for
+ * the Settings' number of days (D44), with no version number.
+ *
+ * @param {string} today      'YYYY-MM-DD'
+ * @param {number} validDays  documents.js docSettings(...).validDays
+ */
+function quoteDates(db, estimateId, today, validDays) {
+  const row = db.prepare('SELECT updated_at FROM estimates WHERE id = ?').get(estimateId);
+  const version = row
+    ? db.prepare(`
+        SELECT n, client_view_json, valid_until, sent_at, superseded_at FROM estimate_versions
+         WHERE estimate_id = ? ORDER BY n DESC LIMIT 1
+      `).get(estimateId)
+    : null;
+  if (version && !version.superseded_at && !(row.updated_at > version.sent_at)) return versionDates(version);
+  return { issuedOn: today, validUntil: plusDays(today, validDays), version: null };
 }
 
 /**
@@ -452,6 +495,6 @@ function publicInvoicePdfSource(db, token) {
 
 module.exports = {
   publicInvoice, publicInvoicePdfSource, invoiceOfLink,
-  newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource, logOpened, OPENED_EVERY_MS,
+  newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource, quoteDates, logOpened, OPENED_EVERY_MS,
   signatureRow, signatureOfLink, signaturePdf,
 };

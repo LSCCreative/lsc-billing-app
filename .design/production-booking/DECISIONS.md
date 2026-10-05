@@ -147,7 +147,8 @@ days fall on those dates or times, or that have short notice ticked.
 
 30. **One name: "Estimate".** An estimate is what the user builds and what the client receives.
     "Quote" is not a separate thing in the app, and screens and the client page say "Estimate". (In
-    the request and earlier decisions, "quote" means a sent estimate.)
+    the request and earlier decisions, "quote" means a sent estimate.) **Narrowed by D103:** the
+    client is shown "Quote"; the owner's screens still say "Estimate".
 31. **A project is one UPID, under its client.** The project folder is everything with that UPID:
     the estimate (and its sent versions, see 34), Cost Breakdowns, the deposit and final invoices,
     and the signed agreement. It shows under the client on the Clients screen and opens from the
@@ -465,6 +466,15 @@ The six interpretations in the brief's B2 Key Interactions were confirmed by the
      address. `mail.js` speaks plain SMTP from `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
      `SMTP_PASS`, `MAIL_FROM`, `MAIL_REPLY_TO`), so a provider change is an `.env` edit. Replies
      to `admin@` reach the user through Cloudflare Email Routing (free). No Google app password.
+
+103. **The client sees "Quote", never "Estimate"** (2026-10-05, task 33; narrows D30). Everything a
+     client reads says quote: the client page (`web/c/`), the quote PDF (headed `QUOTE <UPID>`,
+     filename `Quote <UPID> - …`), the invoice pages and PDFs ("Quote total", "For quote …"), the
+     emails to the client, the fallback agreement text, the signed agreement's label and the
+     proposed-dates disclaimer (an older version's frozen one is reworded when read). The owner's
+     screens, the Cost Breakdown (owner-only, D8), the code, the API paths and the data keep
+     "estimate". The quote PDF prints the version's own issue and valid-until dates (no more "valid
+     for 30 days") and the business's contact details from Settings (no hard-coded name).
 
 ## Left for the user to supply (not decisions, inputs)
 

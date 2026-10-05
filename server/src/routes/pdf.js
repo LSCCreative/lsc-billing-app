@@ -10,6 +10,9 @@ const {
 const { readPricing, readSettings } = require('../ratecard');
 const { loadEstimate } = require('../estimate');
 const { readDays } = require('../days');
+const { docSettings } = require('../documents');
+const { quoteDates } = require('../public');
+const { todayOf } = require('./projects');
 
 function registerPdfRoutes(app, db) {
   /* Renders `html`, keeps a copy in exportDir and sends it as a download. */
@@ -48,11 +51,16 @@ function registerPdfRoutes(app, db) {
     if (!loaded) return res.status(404).json({ error: 'not_found' });
     const estimate = (req.body || {}).as === 'estimate' ? { ...loaded, docType: 'estimate' } : loaded;
 
+    const today = todayOf(req);
+    if (!today) return res.status(400).json({ error: 'today_invalid' });
     const settings = readSettings(db);
     const blocker = exportBlocker(estimate, settings);
     if (blocker) return res.status(422).json(blocker);
 
-    return sendPdf(res, next, buildEstimateHtml(estimate, readPricing(db), settings), exportFilename(estimate));
+    // The quote's issue and valid-until dates: the version the client has, or
+    // today's for one not sent yet (public.js quoteDates, D103).
+    const dates = quoteDates(db, loaded.id, today, docSettings(settings).validDays);
+    return sendPdf(res, next, buildEstimateHtml(estimate, readPricing(db), settings, dates), exportFilename(estimate));
   });
 
   // The owner's Cost Breakdown (D8, D13). Owner-only: it sits behind the

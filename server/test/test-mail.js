@@ -108,8 +108,10 @@ test('templates: the estimate email carries the message, the client link and not
     kind: 'estimate', businessName: 'LSC Creative', upid: 'AUD-B', projectName: 'Harbour <script>',
     message: 'Hi Priya,\nHere it is.\n\nThanks <b>', link: 'https://pages.example/app/c/#e/abc',
   });
-  assert.equal(m.subject, 'Estimate AUD-B: Harbour <script> · LSC Creative');
-  assert.match(m.text, /Hi Priya,\nHere it is\.\n\nThanks <b>\n\nView the estimate: https:\/\/pages\.example\/app\/c\/#e\/abc/);
+  // The client's word for an estimate is "quote" (D103).
+  assert.equal(m.subject, 'Quote AUD-B: Harbour <script> · LSC Creative');
+  assert.match(m.text, /Hi Priya,\nHere it is\.\n\nThanks <b>\n\nView the quote: https:\/\/pages\.example\/app\/c\/#e\/abc/);
+  assert.doesNotMatch(m.subject + m.text + m.html, /estimate/i);
   assert.match(m.html, /href="https:\/\/pages\.example\/app\/c\/#e\/abc"/);
   assert.doesNotMatch(m.html, /<script>|<b>/);
   assert.match(m.html, /&lt;script&gt;/);
@@ -127,6 +129,7 @@ test('templates: the owner’s notice links to the project, and says when the in
   const bad = ownerSignedEmail({ clientName: '', signedBy: 'Priya Nair', role: 'Director', upid: '', projectName: 'Harbour', invoiceProblem: 'upid_required', link: 'https://p/' });
   assert.match(bad.text, /Create invoices/);
   assert.match(signedCopyEmail({ businessName: 'LSC', contactName: 'Priya', upid: 'AUD-B', projectName: 'Harbour' }).text, /^Hi Priya,/);
+  assert.match(signedCopyEmail({ businessName: 'LSC', contactName: '', upid: 'AUD-B', projectName: 'Harbour' }).text, /Thanks for accepting the quote for Harbour\./);
 });
 
 // ── The queue ───────────────────────────────────────────────────────────────
@@ -141,7 +144,7 @@ test('queue: a due send goes out once, with the client’s link; a future one wa
   assert.equal(t.sent.length, 1);
   assert.equal(t.sent[0].to, 'priya@salt.example');
   assert.match(t.sent[0].text, new RegExp(`https://pages\\.example/app/c/#e/${p.token}`));
-  assert.match(t.sent[0].subject, /^Estimate MAIL-\d+: Harbour \d+ · LSC Creative$|^Estimate MAIL-\d+: Harbour \d+ ·/);
+  assert.match(t.sent[0].subject, /^Quote MAIL-\d+: Harbour \d+ · LSC Creative$|^Quote MAIL-\d+: Harbour \d+ ·/);
   const row = sends.getSend(db, now.id);
   assert.deepEqual([row.status, row.sent_at, row.late, row.error], ['sent', iso(T0), 0, null]);
   assert.equal(sends.getSend(db, later.id).status, 'scheduled');

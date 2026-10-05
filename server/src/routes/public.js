@@ -132,7 +132,7 @@ function registerPublicRoutes(app, db, opts = {}) {
     if (!src) return notFound(res);
     let buffer;
     try {
-      buffer = await renderPdfBuffer(buildEstimateHtml(src.estimate, src.pricing, { business: src.business }));
+      buffer = await render(buildEstimateHtml(src.estimate, src.pricing, { business: src.business }, src.dates));
     } catch (err) {
       if (err.code === 'pdf_unavailable') return res.status(503).json({ error: 'pdf_unavailable' });
       return next(err);

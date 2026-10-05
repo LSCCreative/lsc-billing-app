@@ -140,7 +140,7 @@ const UNIT_WORDS = {
   unit: ['unit', 'units'],
 };
 const PROPOSED_DISCLAIMER =
-  'The proposed dates are not locked in and other project bookings may happen before this estimate is agreed upon.';
+  'The proposed dates are not locked in and other project bookings may happen before this quote is agreed upon.';
 
 /** "Saturday 3 October 2026", or "Date TBC". Read as text: no timezone moves it. */
 function dayDate(ymd) {
@@ -308,31 +308,42 @@ function gstNote(treatment, docWord) {
 
 const PDF_STYLE = '*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#181818;background:#fff}.sh{font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #181818}';
 
-function buildQuoteHtml(estimate, pricing, business) {
-  const client = estimate.client || {};
+/**
+ * The client's copy of an estimate, called a quote: everything the client sees
+ * says "Quote" (D103), while the owner's screens keep "Estimate" (D30).
+ *
+ * Headed like an invoice (invoiceHeadHtml): QUOTE and the UPID, then when it
+ * was issued and how long it stands. `dates` is { issuedOn, validUntil,
+ * version } as 'YYYY-MM-DD' and a number: a sent version's own, or
+ * public.js quoteDates' for the owner's download, so the PDF and the client's
+ * page give the same valid-until. Who to ask is the business's own details
+ * from Settings, never a name typed into this file.
+ */
+function buildQuoteHtml(estimate, pricing, business, dates) {
+  const b = business || {};
+  const d = dates || {};
   const labourSections = (pricing && pricing.labourSections) || [];
   const serviceItems = serviceItemsHtml(estimate.activeRows, labourSections, estimate.sectionLabels, dayIdsOf(estimate));
   const treatment = gstTreatment(estimate.totals, estimate);
+  const dateLines = [
+    [d.version > 1 ? 'Version ' + d.version : '', d.issuedOn ? 'Issued ' + longDate(d.issuedOn) : ''].filter(Boolean).join(' · '),
+    d.validUntil ? 'Valid until ' + longDate(d.validUntil) : '',
+  ].filter(Boolean);
+  const contact = [b.name ? '<strong>' + esc(b.name) + '</strong>' : '', esc(b.email || ''), esc(b.phone || '')]
+    .filter(Boolean).join('<br>');
 
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + PDF_STYLE + '</style></head><body>' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:16px;border-bottom:3px solid #181818">' +
-      '<div><div style="font-size:22pt;font-weight:900;letter-spacing:.02em">LSC CREATIVE<span style="color:#B85444">.</span></div>' +
-      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-top:4px">Motion Productions</div>' +
-      sellerHtml(business) + '</div>' +
-      '<div style="text-align:right"><div style="font-size:13pt;font-weight:700;color:#B85444;letter-spacing:.04em">' + esc(estimate.upid || '—') + '</div>' +
-      '<div style="font-size:9pt;color:#888;margin-top:2px">' + esc(estimate.date || '') + '</div>' +
-      '<div style="font-size:15pt;font-weight:800;color:#181818;margin-top:6px">' + esc(estimate.name) + '</div>' +
-      (client.businessName ? '<div style="font-size:10pt;color:#555;margin-top:3px;font-weight:500">' + esc(client.businessName) + '</div>' : '') +
-      '</div></div>' +
+    invoiceHeadHtml(b, 'QUOTE', estimate.upid, dateLines, estimate) +
     deliverablesTableHtml(estimate.activeRows) +
     productionDaysHtml(estimate, pricing, true) +
     whatGoesInHtml(serviceItems, estimate) +
     '<div style="margin-bottom:28px"><div class="sh">Your Investment</div>' +
       totalsBoxHtml('Total Investment', estimate.totals, treatment) +
-      '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'quote') + ' Quote valid for 30 days from issue date.</div></div>' +
+      '<div style="margin-top:10px;font-size:8.5pt;color:#aaa">' + gstNote(treatment, 'quote') +
+        (d.validUntil ? ' Valid until ' + esc(longDate(d.validUntil)) + '.' : '') + '</div></div>' +
     '<div style="margin-top:36px;padding-top:20px;border-top:1px solid #e8e8e8">' +
-      '<div style="font-size:10.5pt;color:#333;line-height:2.1">If you have any questions or want to chat through this estimate, please reach out.<br><br>' +
-      '<strong>Lachlan Sullivan-Carey</strong><br>lachlan@creativelsc.com<br>04 12 710 836</div>' +
+      '<div style="font-size:10.5pt;color:#333;line-height:2.1">If you have any questions or want to chat through this quote, please reach out.' +
+      (contact ? '<br><br>' + contact : '') + '</div>' +
     '</div></body></html>';
 }
 
@@ -476,7 +487,7 @@ function invoiceSummaryRows(doc, treatment) {
   const row = (label, value, strong) =>
     '<tr><td style="' + cell + ';color:' + (strong ? '#181818;font-weight:700' : '#555') + '">' + label + '</td>' +
     '<td style="' + cell + ';text-align:right;font-weight:' + (strong ? 800 : 600) + ';color:#181818">' + value + '</td></tr>';
-  return row('Estimate total' + inc, fmt((t.job || {}).totalIncGst)) +
+  return row('Quote total' + inc, fmt((t.job || {}).totalIncGst)) +
     (extras ? row('Extras' + inc, fmt(extras)) + row('Total' + inc, fmt((t.total || {}).totalIncGst), true) : '') +
     (final ? row(lessDepositLabel(doc.less), minus((t.deposit || {}).totalIncGst)) : '');
 }
@@ -504,10 +515,10 @@ function depositBodyHtml(doc, treatment) {
   const inc = treatment === 'taxable' ? ' (inc. GST)' : '';
   return '<div style="margin-bottom:28px"><div class="sh">Deposit</div>' +
       '<div style="font-size:14pt;font-weight:800;color:#181818">Deposit &mdash; ' + pctText(doc.pct) + '% to secure your booking</div>' +
-      '<div style="font-size:10pt;color:#555;margin-top:4px">For estimate ' + esc(estimate.upid || '—') +
+      '<div style="font-size:10pt;color:#555;margin-top:4px">For quote ' + esc(estimate.upid || '—') +
         (estimate.name ? ' &middot; ' + esc(estimate.name) : '') + '</div>' +
       '<div style="display:flex;justify-content:space-between;gap:16px;margin-top:14px;padding:9px 0;border-top:1px solid #e8e8e8;border-bottom:1px solid #e8e8e8;font-size:10.5pt">' +
-        '<span style="color:#555">Estimate total' + inc + '</span>' +
+        '<span style="color:#555">Quote total' + inc + '</span>' +
         '<span style="font-weight:700;color:#181818">' + fmt((estimate.totals || job).totalIncGst) + '</span></div>' +
     '</div>' +
     bookedDaysHtml(estimate) +
@@ -611,7 +622,7 @@ function buildAgreementHtml(sig) {
     ['Signed by', sig.full_name],
     ['Role', sig.role],
     ['Signed on', signedAtText(sig.signed_at)],
-    ['Estimate', (sig.upid ? sig.upid + ', ' : '') + 'version ' + sig.n],
+    ['Quote', (sig.upid ? sig.upid + ', ' : '') + 'version ' + sig.n],
     ['IP address', sig.ip || 'Not recorded'],
     ['Agreement SHA-256', sig.agreement_sha256],
   ];
@@ -633,7 +644,7 @@ function buildAgreementHtml(sig) {
 
 /** `Service Agreement - ABC-123 v2 - Priya Nair.pdf`, filesystem-safe. */
 function agreementFilename(sig) {
-  const base = 'Service Agreement - ' + (sig.upid || 'Estimate') + ' v' + sig.n + ' - ' + (sig.full_name || 'Signed');
+  const base = 'Service Agreement - ' + (sig.upid || 'Quote') + ' v' + sig.n + ' - ' + (sig.full_name || 'Signed');
   return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
 }
 
@@ -911,11 +922,12 @@ function costBreakdownFilename(estimate, invoice) {
   return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
 }
 
-/** Picks the quote or invoice template by the estimate's `docType`. */
-function buildEstimateHtml(estimate, pricing, settings) {
+/** Picks the quote or invoice template by the estimate's `docType`. `dates`
+    is the quote's (buildQuoteHtml); an old invoice-typed row prints its own. */
+function buildEstimateHtml(estimate, pricing, settings, dates) {
   return estimate.docType === 'invoice'
     ? buildInvoiceHtml(estimate, pricing, settings)
-    : buildQuoteHtml(estimate, pricing, (settings && settings.business) || {});
+    : buildQuoteHtml(estimate, pricing, (settings && settings.business) || {}, dates);
 }
 
 /**
@@ -940,7 +952,8 @@ function exportBlocker(estimate, settings) {
  */
 function exportFilename(estimate) {
   const isInvoice = estimate.docType === 'invoice';
-  const prefix = isInvoice ? (estimate.invoiceNumber || 'INV') : (estimate.upid || 'EST');
+  const upid = String(estimate.upid || '').trim();
+  const prefix = isInvoice ? (estimate.invoiceNumber || 'INV') : upid ? 'Quote ' + upid : 'Quote';
   const business = (estimate.client && estimate.client.businessName) || 'Client';
   const base = prefix + ' - ' + business + ' - ' + estimate.name;
   return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';

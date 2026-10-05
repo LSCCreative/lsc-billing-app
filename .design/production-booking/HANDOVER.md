@@ -1,7 +1,7 @@
 # Handover: Production Booking
 
 Read this first, then [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md) and [`DECISIONS.md`](DECISIONS.md) (the
-user’s answers, D1–D100; don’t re-ask), then
+user’s answers, D1–D103; don’t re-ask), then
 [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md) (routes, screens, data model). This track replaces
 `estimate-accuracy` task 8 (expected booking rate, scrapped) and task 11 (loadings, superseded). It
 sits on top of every earlier track, and those stay the authority for anything this one doesn't
@@ -201,9 +201,19 @@ email, then tick task 28. If the dialog is gone, delete that key in Resend and m
 
 **Tasks 28 and 32 ticked 2026-10-05** (the live test email arrived; the live end-to-end run on
 PVLSC01 passed, see task 32's note). PVLSC01 is a test project in live data: its deposit invoice
-was sent, so it must be voided before the project can be deleted. **Exact next item:** **task 33,
-the money-math and security review, then the design review.** Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
-the client pages' "contact us" needs it.
+was sent, so it must be voided before the project can be deleted. Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
+the client pages' "contact us" and (since C1) the quote PDF's sign-off need it.
+
+**Task 33 under way (2026-10-05).** The code review is done: 15 findings, listed as C1–C15 in
+`TASKS.md` task 33 with their buckets. **C1 fixed, not committed, not deployed:** the client now
+sees "Quote" everywhere (D103, which narrows D30), and the quote PDF is dated by its version and
+signed off from Settings. Server and web both changed (no migration, no new route); deploy NAS then
+Pages when asked. The live Settings texts are the user's and still say "estimate" where they do:
+Service agreement (and the gitignored `LSC-Service-Agreement.txt`, which renamed Quote to Estimate
+for D30) and, if it was ever saved, the estimate email message. Point the user at them; don't edit
+live data without asking. A quote's business details are frozen at send, so only quotes sent after
+Settings has an email show it. **Exact next item: C2** (Opus/high), then down the list; the design
+review follows once the code review fixes are resolved.
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the

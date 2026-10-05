@@ -1,6 +1,7 @@
 /**
  * The client's estimate and invoice pages (production-booking stage E,
- * D46, D50–D56).
+ * D46, D50–D56). The client is never shown the word "estimate": to them it
+ * is a quote (D103), on this page, its PDF and its emails.
  *
  * A separate page on the same Pages site: it loads none of the app's CSS or JS,
  * keeps nothing in localStorage and runs no analytics. The address is
@@ -90,7 +91,7 @@
 
   function gstNote(treatment, word) {
     if (treatment === 'taxable') return 'All prices are in AUD and include GST.';
-    if (treatment === 'free') return 'All prices are in AUD. This ' + (word || 'estimate') + ' is GST-free.';
+    if (treatment === 'free') return 'All prices are in AUD. This ' + (word || 'quote') + ' is GST-free.';
     return 'All prices are in AUD. No GST is charged.';
   }
 
@@ -106,7 +107,7 @@
   function masthead(e) {
     return '<header class="mast">' +
         '<p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p>' +
-        '<p class="kicker">Estimate' + (e.version > 1 ? ', version ' + esc(e.version) : '') + '</p>' +
+        '<p class="kicker">Quote' + (e.version > 1 ? ', version ' + esc(e.version) : '') + '</p>' +
       '</header>' +
       '<dl class="meta">' +
         metaRow('For', e.client && e.client.businessName) +
@@ -116,7 +117,7 @@
       '</dl>' +
       '<h1 class="title">' + esc(e.name) + '</h1>' +
       (e.state === 'open'
-        ? '<p class="lede">Here’s your estimate. If it looks right, press the Accept estimate button below.</p>'
+        ? '<p class="lede">Here’s your quote. If it looks right, press the Accept quote button below.</p>'
         : '');
   }
 
@@ -231,25 +232,25 @@
           '<h2 class="panel-title" id="h-accept">Ready to go ahead?</h2>' +
           '<p>Accepting opens our service agreement. Read it through, add your name and role, and sign. ' +
           'It takes a couple of minutes.</p>' +
-          '<button type="button" class="btn btn-primary" data-act="accept" id="accept-main">Accept estimate</button>' +
+          '<button type="button" class="btn btn-primary" data-act="accept" id="accept-main">Accept quote</button>' +
           (e.faqUrl ? '<p class="panel-aside"><a href="' + esc(e.faqUrl) + '" target="_blank" rel="noopener">Questions about the agreement? Read our FAQ<span class="visually-hidden"> (opens in a new tab)</span></a></p>' : '') +
         '</section>';
       case 'taken':
         return notice('Some proposed dates are no longer available',
-          'Another booking has taken one of the proposed dates, marked above. We’ll send you an updated estimate with new dates.');
+          'Another booking has taken one of the proposed dates, marked above. We’ll send you an updated quote with new dates.');
       case 'expired':
-        return notice('This estimate has expired',
+        return notice('This quote has expired',
           'It was valid until ' + esc(longDate(e.validUntil)) + '. Contact ' + contact + ' and we’ll send you an updated one.');
       case 'superseded':
         // No newer link means nothing newer has gone out yet: the project was
         // reopened, or is being reworked, and this version is off the table.
         return e.latestToken
-          ? notice('This estimate has been updated',
-            'We’ve sent a newer version. <a href="#e/' + esc(e.latestToken) + '">See the latest estimate</a>.')
-          : notice('We’re revising this estimate',
+          ? notice('This quote has been updated',
+            'We’ve sent a newer version. <a href="#e/' + esc(e.latestToken) + '">See the latest quote</a>.')
+          : notice('We’re revising this quote',
             'It’s no longer open to accept. We’ll send you the updated version when it’s ready. In the meantime, contact ' + contact + ' with any questions.');
       case 'declined':
-        return notice('This estimate was declined',
+        return notice('This quote was declined',
           'If that’s changed, contact ' + contact + ' and we’ll put together a new one.');
       case 'accepted':
         // An estimate accepted in the app was never signed here: no agreement
@@ -297,7 +298,7 @@
     const t = e.totals || {};
     return '<div class="dock" id="dock" inert>' +
         '<p class="dock-total"><span class="dock-label">Total</span><span class="dock-fig">' + money(t.total) + '</span></p>' +
-        '<button type="button" class="btn btn-primary dock-btn" data-act="accept">Accept estimate</button>' +
+        '<button type="button" class="btn btn-primary dock-btn" data-act="accept">Accept quote</button>' +
       '</div>';
   }
 
@@ -323,7 +324,7 @@
     current = e;
     doc.innerHTML = masthead(e) + deliverables(e) + days(e) + included(e) + investment(e) + action(e) + footer(e) + dock(e);
     doc.removeAttribute('aria-busy');
-    document.title = (e.name ? e.name + ' — ' : '') + 'Estimate — LSC Creative';
+    document.title = (e.name ? e.name + ' — ' : '') + 'Quote — LSC Creative';
     watchDock();
   }
 
@@ -389,7 +390,7 @@
   function depositSummary(v) {
     const d = v.deposit || {};
     return '<section class="block" aria-labelledby="h-dep">' + sectionHead('h-dep', 'Deposit') +
-      '<p class="block-text">' + esc((Math.round((Number(d.pct) || 0) * 100) / 100) + '% of the estimate total of ' +
+      '<p class="block-text">' + esc((Math.round((Number(d.pct) || 0) * 100) / 100) + '% of the quote total of ' +
         money(d.estimateTotal) + ', to secure your booking.') + '</p>' +
     '</section>';
   }
@@ -417,7 +418,7 @@
     const row = (label, value, cls) => '<div' + (cls ? ' class="' + cls + '"' : '') + '><dt>' + label + '</dt><dd class="fig">' + value + '</dd></div>';
     const rows = [];
     if (v.invoiceKind !== 'deposit' && (t.extras > 0 || t.lessDeposit)) {
-      rows.push(row('Estimate total' + inc, money(t.estimateTotal)));
+      rows.push(row('Quote total' + inc, money(t.estimateTotal)));
       if (t.extras > 0) {
         rows.push(row('Extras' + inc, money(t.extras)));
         rows.push(row('Total' + inc, money(t.total), 'sums-strong'));
@@ -510,7 +511,7 @@
   // ── Loading ───────────────────────────────────────────────────────────────
 
   /* `e` an estimate, `i` an invoice: which page, which route. */
-  const WORD = { e: 'estimate', i: 'invoice' };
+  const WORD = { e: 'quote', i: 'invoice' };
   const ROUTE = { e: '/public/estimates/', i: '/public/invoices/' };
   let kind = 'e';
   let token = '';
@@ -591,7 +592,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filenameOf(res.headers.get('Content-Disposition'), agreement ? 'Service Agreement.pdf' : kind === 'i' ? 'Invoice.pdf' : 'Estimate.pdf');
+      a.download = filenameOf(res.headers.get('Content-Disposition'), agreement ? 'Service Agreement.pdf' : kind === 'i' ? 'Invoice.pdf' : 'Quote.pdf');
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -716,7 +717,7 @@
     field('sg-submit').disabled = signing || missing.length > 0;
     field('sg-hint').textContent = signing ? '' : missing.length
       ? 'Still needed: ' + missing.slice(0, -1).join(', ') + (missing.length > 1 ? ' and ' : '') + missing[missing.length - 1] + '.'
-      : 'Signing accepts the estimate and confirms its dates.';
+      : 'Signing accepts the quote and confirms its dates.';
   }
 
   function showMsg(text, kind) {
@@ -727,7 +728,7 @@
 
   function openSigning(btn) {
     if (!current || current.state !== 'open' || !current.agreement) {
-      say('This estimate can’t be accepted just now. Reload the page to see why.');
+      say('This quote can’t be accepted just now. Reload the page to see why.');
       return;
     }
     if (!dlg) buildDialog();
@@ -825,8 +826,8 @@
       await load();
       doc.focus({ preventScroll: true });
       say(code === 'version_changed'
-        ? 'We’ve just sent a newer version of this estimate. Look it over before you sign.'
-        : 'This estimate changed while you were signing, so it wasn’t signed. The page now shows where it stands.');
+        ? 'We’ve just sent a newer version of this quote. Look it over before you sign.'
+        : 'This quote changed while you were signing, so it wasn’t signed. The page now shows where it stands.');
       return undefined;
     }
     if (res && res.status === 400) {

@@ -108,17 +108,39 @@ test('buildEstimateHtml: an unregistered invoice charges no GST and does not imp
 });
 
 test('buildEstimateHtml: a quote describes GST the same three ways', () => {
-  const taxed = buildEstimateHtml({ ...QUOTE, totals: TAXABLE_TOTALS }, PRICING, BUSINESS);
+  const dates = { issuedOn: '2026-10-05', validUntil: '2026-10-12', version: 1 };
+  const taxed = buildEstimateHtml({ ...QUOTE, totals: TAXABLE_TOTALS }, PRICING, BUSINESS, dates);
   assert.match(taxed, /Subtotal \(ex GST\).*GST.*Total Investment.*\$308\.00/s);
-  assert.match(taxed, /include GST\. Quote valid for 30 days/);
+  assert.match(taxed, /include GST\. Valid until 12 October 2026\./);
   assert.doesNotMatch(taxed, /INVOICE/);
 
-  const free = buildEstimateHtml({ ...QUOTE, gstFree: true, totals: UNTAXED_TOTALS }, PRICING, BUSINESS);
+  const free = buildEstimateHtml({ ...QUOTE, gstFree: true, totals: UNTAXED_TOTALS }, PRICING, BUSINESS, dates);
   assert.match(free, /no GST is payable on this quote/);
 
-  const none = buildEstimateHtml({ ...QUOTE, totals: UNTAXED_TOTALS }, PRICING, {});
-  assert.match(none, /No GST is charged\. Quote valid for 30 days/);
-  for (const html of [taxed, free, none]) assert.doesNotMatch(html, /GST not included/);
+  const none = buildEstimateHtml({ ...QUOTE, totals: UNTAXED_TOTALS }, PRICING, {}, dates);
+  assert.match(none, /No GST is charged\. Valid until 12 October 2026\./);
+  for (const html of [taxed, free, none]) assert.doesNotMatch(html, /GST not included|30 days/);
+});
+
+/* D103: the client's copy is a quote, dated as the client's page is, and
+   signed off with the business's own details from Settings. */
+test('buildEstimateHtml: a quote is headed QUOTE, carries its own issue and valid-until dates and the Settings contact', () => {
+  const settings = { business: { name: 'LSC Creative', abn: '51824753556', email: 'hello@lsc.example', phone: '0400 000 000' } };
+  const html = buildEstimateHtml(QUOTE, PRICING, settings, { issuedOn: '2026-10-05', validUntil: '2026-10-12', version: 2 });
+  assert.match(html, /QUOTE <span[^>]*>UP-042<\/span>/);
+  assert.match(html, /Version 2 · Issued 5 October 2026/);
+  assert.match(html, />Valid until 12 October 2026</);
+  assert.match(html, /chat through this quote/);
+  assert.match(html, /<strong>LSC Creative<\/strong><br>hello@lsc\.example<br>0400 000 000/);
+  assert.doesNotMatch(html, /estimate/i, 'the client is never shown the word "estimate"');
+  assert.doesNotMatch(html, /2026-09-08|creativelsc|Sullivan-Carey|04 12 710 836/, 'no editor date, no hard-coded contact');
+
+  // Version 1 says no version; no dates and no contact leave those lines out.
+  const v1 = buildEstimateHtml(QUOTE, PRICING, settings, { issuedOn: '2026-10-05', validUntil: '2026-10-12', version: 1 });
+  assert.match(v1, />Issued 5 October 2026</);
+  assert.doesNotMatch(v1, /Version/);
+  const bare = buildEstimateHtml(QUOTE, PRICING, {});
+  assert.doesNotMatch(bare, /Issued|Valid until|<br><br>/);
 });
 
 test('buildEstimateHtml: the invoice shows the client ABN when the snapshot has one', () => {
@@ -139,7 +161,9 @@ test('exportBlocker: only a GST-bearing invoice needs the ABN', () => {
 test('exportFilename: strips filesystem-unsafe characters', () => {
   const name = exportFilename({ ...QUOTE, name: 'Q3/Q4 Recap: "Highlights"' });
   assert.doesNotMatch(name, /[/\\:*?"<>|]/);
-  assert.match(name, /^UP-042 - Acme Pty Ltd - /);
+  assert.match(name, /^Quote UP-042 - Acme Pty Ltd - /);
+  assert.match(exportFilename({ ...QUOTE, upid: '' }), /^Quote - Acme Pty Ltd - Brand film\.pdf$/);
+  assert.match(exportFilename({ ...QUOTE, docType: 'invoice', invoiceNumber: 'INV-7' }), /^INV-7 - Acme Pty Ltd - /);
   assert.match(name, /\.pdf$/);
 });
 
@@ -234,7 +258,7 @@ test('client PDF: the proposed-dates disclaimer prints only on a quote with a pr
   const withProposed = ALL_ON_DAYS();
   assert.ok(buildEstimateHtml(withProposed, DAY_PRICING, {}).includes(PROPOSED_DISCLAIMER));
   assert.equal(PROPOSED_DISCLAIMER,
-    'The proposed dates are not locked in and other project bookings may happen before this estimate is agreed upon.');
+    'The proposed dates are not locked in and other project bookings may happen before this quote is agreed upon.');
   const none = bookedEstimate({ rows: { prod: [cap({ dayId: 'd_sat' })] }, days: [SAT, FRI] });
   assert.ok(!buildEstimateHtml(none, DAY_PRICING, {}).includes(PROPOSED_DISCLAIMER));
   // An invoice is past agreement: no disclaimer even with a proposed day.
@@ -421,7 +445,7 @@ test('POST /api/estimates/:id/pdf renders a real PDF and writes a copy to export
 
     const exported = fs.readdirSync(path.join(TMP, 'exports'));
     assert.equal(exported.length, 1);
-    assert.match(exported[0], /^UP-042 - Acme Pty Ltd - Brand film\.pdf$/);
+    assert.match(exported[0], /^Quote UP-042 - Acme Pty Ltd - Brand film\.pdf$/);
 
     // The Cost Breakdown: its own route and filename, for an estimate with a day.
     const booked = await api(`/api/estimates/${created.estimate.id}`, {
@@ -563,8 +587,8 @@ test('invoice PDF: the deposit is a summary — the %, the estimate total, the d
   assert.doesNotMatch(html, /Jo Bloggs/, 'the business, not its contact (B2B)');
   assert.match(html, /Issued 4 October 2026 · Due 18 October 2026/);
   assert.match(html, /Deposit &mdash; 50% to secure your booking/);
-  assert.match(html, /For estimate T20 &middot; Brand film/);
-  assert.match(html, /Estimate total \(inc\. GST\)<\/span><span[^>]*>\$2,772\.00/);
+  assert.match(html, /For quote T20 &middot; Brand film/);
+  assert.match(html, /Quote total \(inc\. GST\)<\/span><span[^>]*>\$2,772\.00/);
   // An invoice's estimate was accepted, so a dated day reads Confirmed
   // whatever the snapshot says (a signed estimate is billed as sent, when it
   // was pencilled); Date TBC stays as it was.
@@ -585,7 +609,7 @@ test('invoice PDF: the final is the job, plus extras, less the deposit paid, the
   assert.match(html, /Friday 2 October 2026.*Video Capture.*1 full day.*\$1,120\.00/s);
   assert.match(html, /What Goes Into This Project.*Video Editor — Offline/s);
   assert.match(html, /<div class="sh">Extras<\/div>.*Overtime — per hour <span[^>]*>&middot; 2 hours<\/span><\/span><span[^>]*>\$420\.00/s);
-  const order = ['Estimate total', '$2,772.00', 'Extras', '$462.00', 'Total', '$3,234.00',
+  const order = ['Quote total', '$2,772.00', 'Extras', '$462.00', 'Total', '$3,234.00',
     'Less deposit paid (INV-T20-D)', '&minus;$1,386.00', 'Subtotal (ex GST)', '$1,680.00', 'GST', '$168.00', 'Balance Due', '$1,848.00'];
   let at = html.indexOf('Invoice Total');
   for (const bit of order) {
@@ -613,10 +637,10 @@ test('invoice PDF: a single invoice is the job plus extras, all due; with no ext
   const { single, estimate } = t20Docs();
   const html = buildInvoiceDocHtml(single, DAY_PRICING, T20_SETTINGS);
   assert.match(html, /TAX INVOICE <span style="color:#B85444">INV-T20<\/span>/);
-  assert.match(html, /Estimate total.*\$2,772\.00.*Extras.*\$462\.00.*Subtotal \(ex GST\).*\$2,940\.00.*GST.*\$294\.00.*Total Due.*\$3,234\.00/s);
+  assert.match(html, /Quote total.*\$2,772\.00.*Extras.*\$462\.00.*Subtotal \(ex GST\).*\$2,940\.00.*GST.*\$294\.00.*Total Due.*\$3,234\.00/s);
   assert.doesNotMatch(html, /Less deposit/);
   const bare = buildInvoiceDocHtml({ ...single, extras: [], totals: singleInvoiceTotals(estimate.totals, null) }, DAY_PRICING, T20_SETTINGS);
-  assert.doesNotMatch(bare, /Estimate total|<div class="sh">Extras/);
+  assert.doesNotMatch(bare, /Quote total|<div class="sh">Extras/);
   assert.match(bare, /Subtotal \(ex GST\).*\$2,520\.00.*GST.*\$252\.00.*Total Due.*\$2,772\.00/s);
 });
 
