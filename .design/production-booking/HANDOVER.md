@@ -1,7 +1,7 @@
 # Handover: Production Booking
 
 Read this first, then [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md) and [`DECISIONS.md`](DECISIONS.md) (the
-user’s answers, D1–D103; don’t re-ask), then
+user’s answers, D1–D104; don’t re-ask), then
 [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md) (routes, screens, data model). This track replaces
 `estimate-accuracy` task 8 (expected booking rate, scrapped) and task 11 (loadings, superseded). It
 sits on top of every earlier track, and those stay the authority for anything this one doesn't
@@ -204,16 +204,36 @@ PVLSC01 passed, see task 32's note). PVLSC01 is a test project in live data: its
 was sent, so it must be voided before the project can be deleted. Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
 the client pages' "contact us" and (since C1) the quote PDF's sign-off need it.
 
-**Task 33 under way (2026-10-05).** The code review is done: 15 findings, listed as C1–C15 in
-`TASKS.md` task 33 with their buckets. **C1 fixed, not committed, not deployed:** the client now
-sees "Quote" everywhere (D103, which narrows D30), and the quote PDF is dated by its version and
-signed off from Settings. Server and web both changed (no migration, no new route); deploy NAS then
-Pages when asked. The live Settings texts are the user's and still say "estimate" where they do:
-Service agreement (and the gitignored `LSC-Service-Agreement.txt`, which renamed Quote to Estimate
-for D30) and, if it was ever saved, the estimate email message. Point the user at them; don't edit
-live data without asking. A quote's business details are frozen at send, so only quotes sent after
-Settings has an email show it. **Exact next item: C2** (Opus/high), then down the list; the design
-review follows once the code review fixes are resolved.
+**Task 33 code review fixes done (2026-10-05): C1–C15 all ticked in `TASKS.md`, each committed
+(`cbf6bdc` … `b5e8881`), none deployed.** 540 tests. What changed for the user:
+- **D104 (the user's answer at C2/C3):** a sent quote can't be changed without the client being
+  sent the change. Saving an edit the client would see opens "Save and send the update" and
+  emails a "Quote update: <project> (<UPID>)" to the same link (new version); owner-only edits
+  save as before. A replacement invoice's email is an "Invoice update". This closed C2 and C3.
+- C4 an invoice paid before it went out is dated; C5 the signed email names flagged clashes;
+  C6 a sent quote's taken proposed date shows on the card and folder; C7 a bad `APP_URL` stops
+  link emails; C8 failed emails can't go once the document moved on; C9 void dialog says the
+  client sees the reason; C10 extras charge GST as the job did (`calc.js jobGstSettings`); C11
+  editor banner on accepted estimates; C12 the signed copy greets the signer; C13 Mark sent
+  routes are test-only; C14 real due dates; C15 the owner's own look at a link isn't logged.
+
+**Deploy (when the user asks): NAS, then Pages.** No migration, no new table; server and web both
+changed (the editor needs the server's `resend_required`). Live `APP_URL` is already absolute.
+
+**For the user to decide (not blocking):** C9 the void reason could be hidden from the client
+instead; C12 signing could ask for the signer's email; D104's subject says "Quote update" where
+they wrote "Estimate/Invoice update" (D103). The live Settings texts the user wrote still say
+"estimate" (Service agreement, and the estimate email message if ever saved): point them at it.
+Live Settings' business email is blank (the client pages' "contact us" and the quote PDF's
+sign-off need it).
+
+**Traps:** `test-public.js` "a wrong, short or malformed link is the same 404" is timing-based and
+failed once under load (passes on rerun). Data saved before D104 could already differ from its
+sent version; live has no sent quote, so none. `api-scratch` was restored to its state before
+these checks (backup `scratch-before-c2.db` in that session's scratchpad only).
+
+**Exact next item: task 33's `/design-review`** (Opus/high, **Frontend task**) against the brief,
+both surfaces (owner app and `web/c/`), listing fixes under "Design review fixes" in `TASKS.md`.
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
