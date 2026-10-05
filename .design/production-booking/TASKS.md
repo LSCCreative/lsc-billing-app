@@ -1175,7 +1175,9 @@ Tasks 24–26 can be built with placeholders.
     Both Mark sent routes (`POST /api/projects/:id/sent`, `/api/invoices/:id/sent`) are registered
     only in test mode (`createApp` `markSentRoutes`, default `config.isTest`); the live server
     answers 404, and the app's own `/send` is untouched. Mutation: invoice route left on (1 fail).
-  - [ ] **C14. `sends.js` own `isYmd` accepts impossible due dates** (backend, Sonnet/high).
+  - [x] **C14. `sends.js` own `isYmd` accepts impossible due dates** (backend, Sonnet/high).
+    Now a real calendar date, as `routes/projects.js isYmd`. Route test: 30 Feb, month 13 and 31 Apr
+    refused with `due_at_invalid`, 28 Feb taken. Mutation: regex-only again (1 fail).
   - [ ] **C15. Owner previewing a copied link logs "client opened"** (backend, Sonnet/high).
 
 ## Not in this list (and why)

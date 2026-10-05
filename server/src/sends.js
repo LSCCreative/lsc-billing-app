@@ -212,7 +212,13 @@ function unscheduleInvoice(db, invoiceId, now) {
 }
 
 const dayMonth = (ymd) => new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-const isYmd = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+/* A real calendar date, as routes/projects.js isYmd (not required from there:
+   that file requires this one). '2026-02-30' is not one (C14). */
+const isYmd = (v) => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(v + 'T00:00:00Z');
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
 
 /**
  * Changes a scheduled send's time, message or recipient. Only while it's

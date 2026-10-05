@@ -475,3 +475,18 @@ test('Stage D’s Mark sent routes exist for the tests only: a server not in tes
   // The app's own send still works there.
   assert.equal((await send(est, { by: 'link', validUntil: dayIn(30) }, url)).status, 200);
 });
+
+test('changing a scheduled invoice email refuses a due date that isn’t a real day (C14)', async () => {
+  const dep = await deposit();
+  const r = await sendInvoice(dep, { by: 'email', to: 'priya@salt.example', scheduledFor: at(2), dueAt: dayIn(9) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const id = r.body.invoice.send.id;
+  const year = Number(dayIn(9).slice(0, 4)) + 1;
+  for (const dueAt of [`${year}-02-30`, `${year}-13-01`, `${year}-04-31`]) {
+    const bad = await put(`/api/sends/${id}`, { dueAt });
+    assert.deepEqual([bad.status, bad.body.error], [400, 'due_at_invalid'], dueAt);
+  }
+  assert.equal(invRow(dep.id).due_at, dayIn(9));
+  assert.equal((await put(`/api/sends/${id}`, { dueAt: `${year}-02-28` })).status, 200);
+  assert.equal(invRow(dep.id).due_at, `${year}-02-28`);
+});
