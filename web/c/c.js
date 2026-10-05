@@ -434,7 +434,7 @@
       rows.push(row('GST', money(due.gst)));
     }
     return '<section class="block" aria-labelledby="h-total">' +
-      sectionHead('h-total', v.invoiceKind === 'deposit' ? 'Amount due' : 'Invoice total') +
+      sectionHead('h-total', v.invoiceKind !== 'deposit' ? 'Invoice total' : v.state === 'paid' ? 'Amount paid' : 'Amount due') +
       (rows.length ? '<dl class="sums">' + rows.join('') + '</dl>' : '') +
       '<p class="total' + (v.state === 'void' ? ' is-void' : '') + '"><span class="total-label">' +
         esc(v.state === 'void' ? 'Total (void)' : (v.state === 'paid' ? PAID_LABEL : DUE_LABEL)[v.invoiceKind] || 'Total due') + '</span>' +

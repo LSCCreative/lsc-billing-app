@@ -239,8 +239,9 @@ const InvoiceView = (() => {
     const treatment = treatmentOf(inv, t);
     const taxable = treatment === 'taxable';
     const inc = taxable ? ' <span class="inv-q">inc. GST</span>' : '';
-    // A void invoice owes nothing: its last line is what it asked for, muted.
-    const owed = (word) => (inv.status === 'void' ? 'Was due' : word);
+    /* A void invoice owes nothing: its last line is what it asked for, muted.
+       A paid one says so, as the client page does (task 33 DR8). */
+    const owed = (word) => (inv.status === 'void' ? 'Was due' : inv.status === 'paid' ? word.replace(/ due$/, ' paid') : word);
     const dueCls = inv.status === 'void' ? 'is-due is-void' : 'is-due';
     if (inv.kind === 'deposit') {
       return '<dl class="inv-ledger" id="inv-ledger">' +
