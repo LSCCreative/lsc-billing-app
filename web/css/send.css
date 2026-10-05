@@ -154,6 +154,14 @@
 .sp-email-off[hidden] {
   display: none;
 }
+/* A date the client couldn't accept on (task 33 DR7): said before Confirm. */
+.sp-warn {
+  margin-top: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--err-text);
+}
 .sp-inline-link {
   display: inline;
   padding: 0;

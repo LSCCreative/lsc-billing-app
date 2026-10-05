@@ -746,6 +746,18 @@ const ProjectFolder = (() => {
     return { email: String(c.email || '').trim(), name: c.contactName || c.businessName || 'the client' };
   };
 
+  /* Proposed dates still on the estimate that another project has confirmed
+     (task 33 DR7): sending them would email a quote the client can't accept. */
+  function takenWarning(estimate, project) {
+    const proposed = new Set((estimate.days || []).filter((d) => d.status === 'proposed' && d.date).map((d) => d.date));
+    const taken = (project.takenDays || []).filter((t) => proposed.has(t.date));
+    if (!taken.length) return '';
+    return (taken.length === 1
+      ? C.shortDate(taken[0].date) + ' is taken.'
+      : taken.map((t) => C.shortDate(t.date)).join(', ') + ' are taken.') +
+      ' Move ' + (taken.length === 1 ? 'that day' : 'those days') + ' first, or your client still can’t accept.';
+  }
+
   /* The estimate's panel: v(N+1) of the lead, valid from the day it goes
      (D44, Settings' valid-for days). */
   function openSendEstimate(opener) {
@@ -769,6 +781,7 @@ const ProjectFolder = (() => {
         hint: (day, value) => (C.isDate(value) ? 'Reads as expired after ' + C.shortDate(value) + '.' : ''),
       },
       linkHint: 'Makes v' + v + ' live without an email, to send your own way.',
+      warning: takenWarning(estimate, project),
       send: (body) => LSCApi.post('/api/projects/' + encodeURIComponent(project.id) + '/send?today=' + LSCUtil.today(), body),
       tokenOf: (reply) => reply.sent.token,
       done: (reply, how) => {
@@ -860,9 +873,23 @@ const ProjectFolder = (() => {
     const estimate = lead();
     const accepting = action === 'accept';
     const totals = (estimate && estimate.totals) || {};
-    const dated = accepting && estimate
-      ? (estimate.days || []).filter((d) => d.date && d.status !== 'confirmed').length
-      : 0;
+    /* What turns confirmed, counted by status in real words ("2 proposed
+       days", "1 pencilled and 2 proposed days"; task 33 DR6). */
+    const turning = accepting && estimate
+      ? (estimate.days || []).filter((d) => d.date && d.status !== 'confirmed')
+      : [];
+    const counts = ['pencilled', 'proposed']
+      .map((st) => [st, turning.filter((d) => d.status === st).length])
+      .filter(([, n]) => n);
+    const turningText = counts.map(([st, n], i) =>
+      n + ' ' + st + (i === counts.length - 1 ? (turning.length === 1 ? ' day' : ' days') : '')).join(' and ');
+    // Dates another project has confirmed since the quote went: accepting confirms them anyway, flagged (D18).
+    const taken = accepting ? (project.takenDays || []) : [];
+    const takenNote = taken.length
+      ? '<p class="pf-hint pf-hint-alert pfd-taken" role="note">' + taken.map((t) =>
+        esc(C.shortDate(t.date)) + ' is already confirmed for ' + esc(t.upid || t.name || 'another project') + '.').join(' ') +
+        ' ' + (taken.length === 1 ? 'It' : 'They') + ' will be confirmed here too and flagged “clash, rebook”.</p>'
+      : '';
     const single = project.invoicing === 'single';
     const pct = project.depositPctDefault;
     const upid = project.upid ? esc(project.upid) : 'its UPID';
@@ -872,10 +899,10 @@ const ProjectFolder = (() => {
         '<p class="pfd-text" id="pfd-desc">' +
         (accepting
           ? 'Record that the client accepted the estimate. ' +
-            (dated ? 'Its ' + (dated === 1 ? 'pencilled or proposed day turns' : dated + ' pencilled and proposed days turn') +
+            (turning.length ? 'Its ' + turningText + (turning.length === 1 ? ' turns' : ' turn') +
               ' confirmed, and the' : 'The') + ' invoices are made, ready to send. Nothing goes to the client.'
           : 'This project was accepted before invoices were made here. Make them now, ready to send.') +
-        ' Invoice numbers carry the UPID, so ' + upid + ' is then fixed.</p>' +
+        ' Invoice numbers carry the UPID, so ' + upid + ' is then fixed.</p>' + takenNote +
         '<fieldset class="pfd-choice"><legend>Invoicing</legend>' +
         '<label><input type="radio" name="pfd-invoicing" value="pair"' + (single ? '' : ' checked') + '>' +
         '<span>Deposit + final</span></label>' +

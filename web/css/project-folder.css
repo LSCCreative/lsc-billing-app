@@ -379,6 +379,12 @@
 .pfd-pdf {
   margin: 14px 0 18px;
 }
+/* Mark accepted's taken dates (task 33 DR6), and the send panel's (DR7). */
+.pfd-taken {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .pf-dialog .field label {
   display: block;
   margin-bottom: 6px;

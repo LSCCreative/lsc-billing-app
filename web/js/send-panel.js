@@ -241,6 +241,8 @@ const SendPanel = (() => {
    *             a date counted from the day it goes; `fixed` (with
    *             `value`) shows it read-only instead
    *   linkHint  what Copy link does, said under it
+   *   warning   optional plain text, said just above the buttons (a taken
+   *             date the client can't accept on, task 33 DR7)
    *   send(body)     → Promise of the route's reply (rejects with LSCApi.ApiError)
    *   tokenOf(reply) → the document's link token in that reply
    *   done(reply, how)   redraws the screen; how is 'email' or 'link'; it
@@ -293,6 +295,7 @@ const SendPanel = (() => {
       '<p class="sp-hint" id="sp-msg-hint">Above the link in the email. The starting text is in Settings → Estimates &amp; invoices.</p></div></div>' +
       '</div>' +
       '<p class="sp-email-off" id="sp-email-off" role="note" hidden></p>' +
+      (!editing && o.warning ? '<p class="sp-warn" role="note">' + esc(o.warning) + '</p>' : '') +
       '<p class="sp-summary" id="sp-summary" aria-live="polite"></p>' +
       '<div class="pfd-error" id="sp-error" role="alert"></div>' +
       '<div class="modal-actions sp-actions">' +
