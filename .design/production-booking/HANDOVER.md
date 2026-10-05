@@ -200,8 +200,7 @@ email, then tick task 28. If the dialog is gone, delete that key in Resend and m
   The older "LSC Billing App SMTP" key is unused (its value was never kept): the user may delete it.
 
 **Tasks 28 and 32 ticked 2026-10-05** (the live test email arrived; the live end-to-end run on
-PVLSC01 passed, see task 32's note). PVLSC01 is a test project in live data: its deposit invoice
-was sent, so it must be voided before the project can be deleted. Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
+PVLSC01 passed, see task 32's note). PVLSC01 (live test project) was voided and **deleted 2026-10-05**. Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
 the client pages' "contact us" and (since C1) the quote PDF's sign-off need it.
 
 **Task 33 code review fixes done (2026-10-05): C1–C15 all ticked in `TASKS.md`, each committed
