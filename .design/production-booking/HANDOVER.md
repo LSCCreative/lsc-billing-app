@@ -232,8 +232,22 @@ failed once under load (passes on rerun). Data saved before D104 could already d
 sent version; live has no sent quote, so none. `api-scratch` was restored to its state before
 these checks (backup `scratch-before-c2.db` in that session's scratchpad only).
 
-**Exact next item: task 33's `/design-review`** (Opus/high, **Frontend task**) against the brief,
-both surfaces (owner app and `web/c/`), listing fixes under "Design review fixes" in `TASKS.md`.
+**Task 33's design review done (2026-10-05):** [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md), with 17
+findings DR1–DR17 listed under task 33 in `TASKS.md`. All are frontend, and none is built yet.
+The must-fix is DR1: Settings has no business Email or Phone field. Live's are blank, so client
+pages show no contact address. DR11 (retiring the editor's old Date field) is the user's call.
+Screenshots are in `screenshots/` (local only, not committed).
+
+**Scratch now holds a review dataset** (fictional): SEND-A (signed through the dialog), SEND-B
+(deposit overdue), NBK-014 (draft with deliverables, a post plan and a Lemac rental), FLW-002 (sent;
+Sun 11 Oct taken by HCC-031), HCC-031 (deposit paid, final scheduled 13 Oct), KTL-007 (single,
+paid), MRL-003 (declined) and RVR-011 (expired). The Rate Card has Capture ticks and two Deliverable
+Types; the agreement is placeholder text. The DB from before is
+`/tmp/lsc-billing-scratch/exports/scratch-before-review.db`. Use `api-scratch-mail`, so a send
+prints instead of going out.
+
+**Exact next item: DR1** (Opus/high, **Frontend task**), then DR2–DR11 in order. Deploy (NAS, then
+Pages) when the user asks: C1–C15 are still undeployed too.
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the

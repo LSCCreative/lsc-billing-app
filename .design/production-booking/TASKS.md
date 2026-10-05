@@ -1185,6 +1185,47 @@ Tasks 24–26 can be built with placeholders.
     hides their own open. Test: owner look unlogged, client look logged; mutation (1 fail).
     Browser: the signed-in pane opened SEND-A's link with `?owner=1`, no `opened` row added.
 
+  **Design review (2026-10-05, at `7385930`):** [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md) has the
+  evidence and screenshot names. 17 findings, numbered **DR** (D-numbers are decisions). All are
+  frontend (**F**), Opus/high. Work them in this order:
+
+  _Must fix_
+  - [ ] **DR1. Settings → Business has no Email or Phone field** (**F**). Client pages, their
+    notices and the quote PDF read `business.email` / `.phone`; live's are blank and only SQL can
+    set them. Add both fields (save already merges).
+
+  _Should fix_
+  - [ ] **DR2. Proposed tiles cut their UPID** (**F**): "FLW…" on the month grid at 1280 (29px for
+    a 39–41px code); half-width week tiles cut time, code and name. Keep the code whole.
+  - [ ] **DR3. The menu's closed groups show an open chevron at ≥768** (**F**):
+    `booking.css:41` rotates every `.bb-chevron` in an open booking block. Scope it to the
+    block's own head.
+  - [ ] **DR4. Holidays aren't marked on any calendar** (**F**): shade them like weekends, and add
+    the name to the date's label and list (Home reads `GET /api/holidays`).
+  - [ ] **DR5. Rentals crowd Home** (**F**): on Home, bars in the quieter `.is-faded` style; lists
+    show a rental on its out and back days, not as a card for every day on hire.
+  - [ ] **DR6. Mark accepted… doesn't name a taken date** (**F**): list `takenDays` in the dialog
+    and what happens to them; "2 proposed days", not "2 pencilled and proposed".
+  - [ ] **DR7. The send panel doesn't warn about a taken date** (**F**): one line saying to move
+    the day first.
+  - [ ] **DR8. Paid invoices still say "due"** (**F**): the client page's "Amount due" heading
+    (`c.js:437`) and the owner ledger's `owed()` (`invoice.js:243`) for paid invoices.
+  - [ ] **DR9. Accent used as text** (**F**): `.onset-gtotal` is 3.71:1; also two `settings.css`
+    hovers. Use `--accent-text`.
+  - [ ] **DR10. Stale Settings copy** (**F**): delete "Sending from the app arrives with client
+    pages."
+  - [ ] **DR11. The old Date field in the editor header** (**F**, **the user's call**): nothing the
+    client sees reads it any more, so hide it on estimates with booked days (or on new ones).
+
+  _Could improve_
+  - [ ] **DR12.** Phone day-card heads wrap to three lines; put Duplicate day on its own row (**F**).
+  - [ ] **DR13.** The folder's total is 13px; use Delight at about 22px (**F**).
+  - [ ] **DR14.** The accepted client page keeps "Valid until" and "we'll be in touch to confirm"
+    (**F**).
+  - [ ] **DR15.** "Deposit paid" and "Deposit overdue" share the terra mark (**F**).
+  - [ ] **DR16.** The Settings fill-in list runs about 900px below the agreement box (**F**).
+  - [ ] **DR17.** Surcharge-box rows are as heavy as their total (**F**).
+
 ## Not in this list (and why)
 
 - **`estimate-accuracy` tasks 9, 10, 12–14** stay in that track and are un-grilled. When grilled,
