@@ -32,6 +32,8 @@ function main() {
   // send fails visibly instead of waiting silently.
   app.locals.outbox.start();
   console.log(`[mail] ${config.smtp.pass && config.mailFrom ? `connected as ${config.mailFrom}` : 'not set up (no SMTP key / MAIL_FROM)'}`);
+  // Without it every email with a link fails with no_app_url (C7): say so at boot.
+  if (!config.appUrl) console.log(`[mail] APP_URL ${process.env.APP_URL ? 'is not an http(s) address' : 'is not set'}: emails with a link will fail until it is`);
 
   // Top up the public-holiday list in the background. Not awaited and never
   // throws: a source being down must not hold up or stop the server.

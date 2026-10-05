@@ -1139,7 +1139,10 @@ Tasks 24–26 can be built with placeholders.
     <UPID>". Tests: folder, list, the other project's own folder, and the warning clearing when the
     taker declines (a mutation keeping declined takers fails 1); card wording for 1 and 2 dates.
     Browser: SEND-A against a scratch confirmed day on SEND-B, at phone width.
-  - [ ] **C7. Blank `APP_URL` becomes `/`: `no_app_url` guard dead, relative links emailed** (backend, Sonnet/high).
+  - [x] **C7. Blank `APP_URL` becomes `/`: `no_app_url` guard dead, relative links emailed** (backend, Sonnet/high).
+    `config.js appUrlOf`: an absolute http(s) address with one trailing slash, else `''`; the
+    outbox normalises again, so `''` and `/` both fail the send with `no_app_url`. Boot logs
+    when it's missing or unusable. Mutation: outbox not normalising (1 fail).
   - [ ] **C8. Failed sends survive accept/paid/expiry and can be retried** (backend, Sonnet/high).
   - [ ] **C9. Void reason shown on the client's invoice page; dialog doesn't say so** (Opus/high, **F**).
   - [ ] **C10. Extras priced with today's GST settings, not the job's** (money, Opus/high).

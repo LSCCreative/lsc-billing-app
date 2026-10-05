@@ -10,6 +10,23 @@ function bool(value, fallback) {
   return value === '1' || value.toLowerCase() === 'true';
 }
 
+/* APP_URL as the emails use it: an absolute http(s) address with one trailing
+   slash, or '' when it's unset or unusable (C7). '' is what keeps a link-bearing
+   email from going: sends.js fails it with `no_app_url` rather than mailing a
+   client a relative link that opens nothing. */
+function appUrlOf(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (_) {
+    return '';
+  }
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || !url.host) return '';
+  return raw.replace(/\/*$/, '/');
+}
+
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
 
 const config = {
@@ -47,7 +64,7 @@ const config = {
   // Where the app and the client pages are served (GitHub Pages), with the
   // trailing slash: emails link to `${appUrl}c/#e/<token>` and
   // `${appUrl}#/projects/<id>`.
-  appUrl: (process.env.APP_URL || '').replace(/\/*$/, '/'),
+  appUrl: appUrlOf(process.env.APP_URL),
   isTest: process.env.NODE_ENV === 'test',
 };
 
@@ -59,4 +76,4 @@ function ensureDataDirs() {
   }
 }
 
-module.exports = { config, ensureDataDirs };
+module.exports = { config, ensureDataDirs, appUrlOf };

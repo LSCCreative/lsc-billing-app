@@ -322,3 +322,22 @@ test('queue: an invoice email makes its link the first time and keeps it; a void
   assert.match(sends.getSend(db, voided.id).error, /voided/);
   assert.equal(db.prepare("SELECT public_token FROM invoices WHERE id = 'inv_m2'").get().public_token, null, 'no link made for a refused one');
 });
+
+test('APP_URL: only an absolute http(s) address counts; blank or relative fails the send with no_app_url (C7)', async () => {
+  const { appUrlOf } = require('../src/config');
+  assert.equal(appUrlOf('https://lsc.github.io/billing'), 'https://lsc.github.io/billing/');
+  assert.equal(appUrlOf(' https://lsc.github.io/billing/// '), 'https://lsc.github.io/billing/');
+  assert.equal(appUrlOf('http://localhost:5173'), 'http://localhost:5173/');
+  for (const bad of [undefined, '', '   ', '/', 'lsc.github.io/billing', 'javascript:alert(1)', 'ftp://x.example/']) {
+    assert.equal(appUrlOf(bad), '', String(bad));
+  }
+  for (const appUrl of ['', '/']) {
+    const p = seedProject();
+    const transport = stub();
+    const box = outboxFor(transport, { appUrl });
+    const row = sends.addSend(db, { docKind: 'estimate', docId: p.eid, versionId: p.vid, toEmail: 'a@b.co', scheduledFor: iso(T0) }, iso(T0));
+    assert.deepEqual(await box.runDue(), { sent: 0, failed: 1 }, JSON.stringify(appUrl));
+    assert.match(sends.getSend(db, row.id).error, /APP_URL/);
+    assert.equal(transport.sent.length, 0, 'nothing mailed with a relative link');
+  }
+});

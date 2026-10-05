@@ -42,6 +42,7 @@ const { newToken, signatureRow, signaturePdf } = require('./public');
 const { readSettings } = require('./ratecard');
 const { documentEmail, ownerSignedEmail, signedCopyEmail, isEmail } = require('./mail');
 const { agreementFilename } = require('./pdf');
+const { appUrlOf } = require('./config');
 
 /* The business's date for an instant, as routes/projects.js localToday (not
    required from there: that file requires this one). */
@@ -430,7 +431,8 @@ async function buildMail(db, row, ctx) {
  */
 function createOutbox(db, mailer, opts = {}) {
   const now = opts.now || nowIso;
-  const ctx = { appUrl: opts.appUrl || '', render: opts.render };
+  // Normalised again here, so a caller passing it straight in can't bring a relative one back (C7).
+  const ctx = { appUrl: appUrlOf(opts.appUrl), render: opts.render };
   let timer = null;
   let running = Promise.resolve();
 
