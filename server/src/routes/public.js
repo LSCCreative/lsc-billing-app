@@ -117,6 +117,10 @@ function registerPublicRoutes(app, db, opts = {}) {
     // The agreement to sign (task 27) comes only while Accept is on offer.
     reply.agreement = reply.state === 'open' ? agreementOffer(db, req.params.token, today()) : null;
     res.json({ estimate: reply });
+    // The owner's own look (C15): the client page says so when the app has
+    // marked its browser as the owner's. Nothing else rides on it, so a
+    // client sending it only leaves their own open unlogged.
+    if (req.query.owner === '1') return;
     // After the reply has gone, so a found link answers no slower than a
     // wrong one, and a failed log can't cost the client their page.
     try {

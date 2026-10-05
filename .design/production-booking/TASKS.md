@@ -1178,7 +1178,12 @@ Tasks 24–26 can be built with placeholders.
   - [x] **C14. `sends.js` own `isYmd` accepts impossible due dates** (backend, Sonnet/high).
     Now a real calendar date, as `routes/projects.js isYmd`. Route test: 30 Feb, month 13 and 31 Apr
     refused with `due_at_invalid`, 28 Feb taken. Mutation: regex-only again (1 fail).
-  - [ ] **C15. Owner previewing a copied link logs "client opened"** (backend, Sonnet/high).
+  - [x] **C15. Owner previewing a copied link logs "client opened"** (backend, Sonnet/high).
+    Client pages send no cookies (by design), so the app marks its browser instead: `app.js` sets
+    `localStorage['lsc-owner-browser']` on sign-in (cleared on sign-out), `c/c.js` (same origin)
+    then asks with `?owner=1`, and the public GET skips `logOpened`. A client sending it only
+    hides their own open. Test: owner look unlogged, client look logged; mutation (1 fail).
+    Browser: the signed-in pane opened SEND-A's link with `?owner=1`, no `opened` row added.
 
 ## Not in this list (and why)
 

@@ -107,12 +107,27 @@
     main.innerHTML = '';
     LSCData.clear();
     setUser(null);
+    markOwner(false);
     window.scrollTo(0, 0);
     showLogin();
   }
 
+  /* This browser is the owner's (task 33 C15): the client pages (../c/) are on
+     this same origin, read it, and ask the server not to log the owner's own
+     look at a link as "client opened". Kept until a deliberate sign-out. */
+  const OWNER_MARK = 'lsc-owner-browser';
+  function markOwner(on) {
+    try {
+      if (on) localStorage.setItem(OWNER_MARK, '1');
+      else localStorage.removeItem(OWNER_MARK);
+    } catch (_) {
+      // Storage refused (private mode): a preview then logs as an open, as before.
+    }
+  }
+
   async function showApp(session) {
     setUser(session);
+    markOwner(true);
     loginView.hidden = true;
     loginView.innerHTML = '';
     appView.hidden = false;

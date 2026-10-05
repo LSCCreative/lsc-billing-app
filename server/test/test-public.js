@@ -396,6 +396,21 @@ test('the owner\'s quote PDF is dated as the client\'s link while that version s
   assert.deepEqual(quoteDates(db, est.id, '2026-10-04', 7), { issuedOn: '2026-10-04', validUntil: '2026-10-11', version: null });
 });
 
+test('the owner looking at their own link isn’t logged as the client opening it (C15)', async () => {
+  const url = await start({ publicLimits: { all: { max: 10000, windowMs: 60000 }, pdf: { max: 10000, windowMs: 60000 } } });
+  const est = await shoot();
+  const { token } = await sent(est);
+  const count = () => db.prepare("SELECT COUNT(*) AS c FROM activity WHERE project_id = ? AND kind = 'opened'").get(est.projectId).c;
+  const r = await fetch(`${url}/public/estimates/${token}?owner=1`);
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).estimate.state, 'open', 'the same page');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(count(), 0);
+  await pub(token, url);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(count(), 1, 'the client’s own open still counts');
+});
+
 test('opening the link logs "opened" once a day per version, and Home shows it (task 26, D52)', async () => {
   let clock = '2026-10-05T01:00:00.000Z';
   const url = await start({ now: () => clock, publicLimits: { all: { max: 10000, windowMs: 60000 }, pdf: { max: 10000, windowMs: 60000 } } });

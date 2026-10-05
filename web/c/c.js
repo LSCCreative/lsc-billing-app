@@ -513,6 +513,17 @@
   /* `e` an estimate, `i` an invoice: which page, which route. */
   const WORD = { e: 'quote', i: 'invoice' };
   const ROUTE = { e: '/public/estimates/', i: '/public/invoices/' };
+
+  /* The owner looking at their own link (task 33 C15): the app, on this same
+     origin, marks the browser it's signed in on, and the server then doesn't
+     log the look as "client opened". */
+  function ownerBrowser() {
+    try {
+      return localStorage.getItem('lsc-owner-browser') === '1';
+    } catch (_) {
+      return false;
+    }
+  }
   let kind = 'e';
   let token = '';
   let ticket = 0;
@@ -533,7 +544,7 @@
     let res;
     let body = null;
     try {
-      res = await fetch(API + ROUTE[kind] + encodeURIComponent(token), {
+      res = await fetch(API + ROUTE[kind] + encodeURIComponent(token) + (ownerBrowser() ? '?owner=1' : ''), {
         credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' },
       });
       body = await res.json().catch(() => null);
