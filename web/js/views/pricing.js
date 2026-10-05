@@ -147,7 +147,8 @@
  *     out of the list. Only this block re-renders on a holiday change, so a
  *     half-edited card above it is never touched.
  *   - PRODUCTION IS ON SET (D24): the `prod` section can be renamed but has no
- *     delete control; an "On set" tag stands in its place. A card without the
+ *     delete control; an "On set" tag stands in its place. `post` is kept the
+ *     same way, with a "Post" tag (2026-10-05, the user's call). A card without the
  *     `additional` section (every card saved before this task) offers
  *     "+ Add Additional work", which makes it under that id, empty: moving
  *     Overtime into it is the user's call (D14).
@@ -815,14 +816,21 @@ const PricingView = (() => {
       '<div class="pricing-section"><div class="pricing-sec-head">' +
       '<input class="pricing-sec-label-inp" type="text" value="' + esc(sec.label) +
       '" placeholder="Category name" aria-label="Category name" data-si="' + si + '" data-field="label"' +
-      (sec.id === ON_SET_ID ? ' aria-describedby="pricing-on-set"' : '') + '>' +
+      (sec.id === ON_SET_ID ? ' aria-describedby="pricing-on-set"' : '') +
+      (sec.id === POST_ID ? ' aria-describedby="pricing-post"' : '') + '>' +
       /* Production is the one section on set (D24): renamable, never
-         deleted, since surcharges price exactly its items. */
+         deleted, since surcharges price exactly its items. Post-Production
+         is kept the same way, since Deliverable Types and the planner read
+         exactly its items: a deleted and re-added one gets a new id
+         (newSectionId) that neither finds. */
       (sec.id === ON_SET_ID
         ? '<span class="pricing-sec-tag" id="pricing-on-set" title="Surcharges apply to this category’s items. It can be renamed, not deleted.">' +
           'On set<span class="sr-only">: surcharges apply to this category’s items. It can be renamed, not deleted.</span></span>'
-        : '<button type="button" class="del-btn" title="Delete this category"' +
-          ' aria-label="Delete the ' + esc(sec.label) + ' category" data-del-sec="' + si + '">×</button>') +
+        : sec.id === POST_ID
+          ? '<span class="pricing-sec-tag" id="pricing-post" title="Deliverable Types take their services from this category. It can be renamed, not deleted.">' +
+            'Post<span class="sr-only">: Deliverable Types take their services from this category. It can be renamed, not deleted.</span></span>'
+          : '<button type="button" class="del-btn" title="Delete this category"' +
+            ' aria-label="Delete the ' + esc(sec.label) + ' category" data-del-sec="' + si + '">×</button>') +
       '</div>' +
       /* What Capture means, where a phone can read it (the column head, and
          its ⓘ, are hidden below 768), and every tick's description. */
@@ -2024,15 +2032,13 @@ const PricingView = (() => {
       btn.addEventListener('click', () => {
         const si = parseInt(btn.dataset.delSec, 10);
         const sec = card.labourSections[si];
-        // Production is on set and never deleted (D24); it has no button.
-        if (!sec || sec.id === ON_SET_ID) return;
+        // Production (D24) and Post-Production are never deleted; they have
+        // no button.
+        if (!sec || sec.id === ON_SET_ID || sec.id === POST_ID) return;
         const count = sec.rows.length;
         const confirmed = window.confirm(
           'Delete the “' + sec.label + '” category and its ' + count + ' service' +
-            (count === 1 ? '' : 's') + '?' + usedNote(countUsingSection(sec.id)) +
-            (sec.id === POST_ID
-              ? typesNote(typesListing(sec.rows.map(svcName)), true)
-              : '')
+            (count === 1 ? '' : 's') + '?' + usedNote(countUsingSection(sec.id))
         );
         if (!confirmed) return;
         card.labourSections.splice(si, 1);

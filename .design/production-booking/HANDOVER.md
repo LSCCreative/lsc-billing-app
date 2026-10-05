@@ -249,6 +249,16 @@ Types; the agreement is placeholder text. The DB from before is
 `/tmp/lsc-billing-scratch/exports/scratch-before-review.db`. Use `api-scratch-mail`, so a send
 prints instead of going out.
 
+**Live Rate Card section ids fixed (2026-10-05).** The user's live card had built its own
+categories (`cat1`/`cat2`/`cat3`), so nothing keyed to `prod` (Capture column, day-card Production
+menu, surcharges, ON SET) or `post` (Deliverable Types' services, the planner) found them. Renamed
+over SSH to `preprod`/`prod`/`post` on the card and the one live (test) estimate; labels, services
+and prices untouched, invoice snapshot left frozen. Backup `data/exports/pre-section-ids-20261005.db`.
+**Trap:** any section the app keys on must keep its id; a deleted-and-re-added one gets `catN`.
+So **`post` is now undeletable too** (the user's call; a "Post" tag like ON SET; Rate Card screen
+only, as `prod` is), committed, **not deployed** (Pages only). The user still has to tick Capture
+and add post services to their five Deliverable Types.
+
 **Exact next item: nothing queued; C1–C15 + DR1–DR17 are live.** Open items: Stripe (task 31, held, D101) and a VoiceOver pass by a person.
 
 **Scratch after the DR checks:** Settings' business ABN is now a valid example (`51824753556`),
