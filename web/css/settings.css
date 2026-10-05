@@ -177,7 +177,7 @@
   cursor: pointer;
 }
 .set-link:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .set-link[hidden] {
   display: none;
@@ -239,7 +239,7 @@
 }
 .set-field-code:hover code {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .set-faq {

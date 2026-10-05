@@ -703,7 +703,7 @@
 }
 .onset-gtotal {
   margin-left: auto;
-  color: var(--accent);
+  color: var(--accent-text);
   font-variant-numeric: tabular-nums;
 }
 .onset-lines {
