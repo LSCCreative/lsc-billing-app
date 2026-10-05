@@ -483,9 +483,11 @@
   left: calc(100% * var(--s) / 7 + var(--il));
   width: calc(100% * (var(--e) - var(--s) + 1) / 7 - var(--il) - var(--ir));
   overflow: hidden;
-  background: var(--cal-rental);
-  color: var(--cal-ink);
-  border: 0 solid var(--cal-rental-cap);
+  /* Outlined in the blue with its words muted, as the month's quiet bars
+     (task 33 DR5): gear is logistics and must not outshout the bookings. */
+  background: var(--cal-rental-wash);
+  color: var(--muted);
+  border: 1px solid var(--cal-rental);
   border-left-width: 2px;
   border-right-width: 2px;
 }
@@ -501,8 +503,8 @@
   display: block;
   padding: 0 6px;
   font-size: 10px;
-  line-height: 16px;
-  font-weight: 600;
+  line-height: 14px;
+  font-weight: 400;
   letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;

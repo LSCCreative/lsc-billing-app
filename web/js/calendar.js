@@ -15,6 +15,7 @@
  *     onRangeChange({ from, to }),  // the six weeks on show: fetch them
  *     onDateActivate(date, { trigger }),
  *     onTileActivate(day, { trigger }),
+ *     quietGear: false,             // Home: every bar outlined, lists name gear on its ends (DR5)
  *   });
  *   cal.setDays(days); cal.setRentals(rentals); cal.setEmphasis(id); cal.goTo('2026-10-04');
  *   cal.setHolidays(holidays);    // GET /api/holidays' list: { date, name, hidden }
@@ -63,6 +64,13 @@
  * rentalActionable(rental) says so (default: whenever onRentalActivate is
  * given); otherwise it is text that can take focus. In dots mode a bar is a
  * thin line under each covered date, too thin to aim at: a tap is the date's.
+ *
+ * QUIET GEAR (task 33 DR5)
+ * On Home, where every booking is at full strength, a solid blue bar was the
+ * loudest thing on the board. `quietGear` draws every bar in the outlined
+ * style other projects' get in the editor, and the date list gives a rental a
+ * full entry only on its out and back days; between, it is one muted
+ * "On hire" line (gearSplit, onHireLine; the week view uses them too).
  *
  * PUBLIC HOLIDAYS (task 33 DR4)
  * A holiday prices like a weekend, so it is shaded like one, and its name is
@@ -243,6 +251,21 @@ const LSCCalendar = (() => {
     return end('Out', r.outDate, r.outMethod) + (spoken ? '; ' : ' — ') + end('Back', r.backDate, r.backMethod);
   }
 
+  /* A date's rentals split for a list (DR5): `ends`, going out or coming back
+     that day, get a full entry; `onHire` are only out on hire. */
+  function gearSplit(rentals, ymd) {
+    const ends = [];
+    const onHire = [];
+    (rentals || []).forEach((r) => (rentalRole(r, ymd) === 'on hire' ? onHire : ends).push(r));
+    return { ends, onHire };
+  }
+  // "On hire: CameraHire Co (HCC-031), Lemac (NBK-014)", or '' for none.
+  function onHireLine(rentals) {
+    if (!rentals.length) return '';
+    return '<p class="cal-onhire">On hire: ' +
+      esc(joinAnd(rentals.map((r) => r.vendor + ' (' + upidOf(r) + ')'))) + '</p>';
+  }
+
   /**
    * The status chip: the word, always, in the status colour, hatched when
    * pencilled. Shared with the day cards (task 6) and Coming up (task 12).
@@ -270,6 +293,7 @@ const LSCCalendar = (() => {
         onTileActivate: null,
         onRentalActivate: null,
         rentalActionable: null,
+        quietGear: false,
       },
       options || {}
     );
@@ -369,7 +393,7 @@ const LSCCalendar = (() => {
       const keep = over ? MAX_LANES - 1 : MAX_LANES;
       let html = segs.filter((g) => g.lane < keep).map((g) => {
         const cls = ['cal-rbar'];
-        if (isFaded(g.r)) cls.push('is-faded');
+        if (o.quietGear || isFaded(g.r)) cls.push('is-faded');
         if (g.contL) cls.push('is-cont-l');
         if (g.contR) cls.push('is-cont-r');
         return '<span class="' + cls.join(' ') + '" data-rental-id="' + esc(g.r.id) + '"' +
@@ -487,7 +511,8 @@ const LSCCalendar = (() => {
     function renderList() {
       if (!o.showList) return;
       const days = daysOn(st.active);
-      const gear = rentalsOn(st.active);
+      const split = o.quietGear ? gearSplit(rentalsOn(st.active), st.active) : { ends: rentalsOn(st.active), onHire: [] };
+      const gear = split.ends;
       const holiday = st.holidays.get(st.active);
       els.listTitle.textContent = (st.active === today ? 'Today, ' : '') + longDate(st.active, today) +
         (holiday ? ' · ' + holiday : '');
@@ -511,7 +536,8 @@ const LSCCalendar = (() => {
         (gear.length
           // Each line's chip says "Gear", so the list needs no visible heading of its own.
           ? '<ul class="cal-entries cal-gear" aria-label="Gear rentals">' + gear.map(rentalEntryMarkup).join('') + '</ul>'
-          : '');
+          : '') +
+        onHireLine(split.onHire);
     }
 
     function render(slide) {
@@ -709,6 +735,6 @@ const LSCCalendar = (() => {
      booking or a rental reads the same in every view. */
   return {
     mount, statusChip, describeDate, timeText, gridRange, longDate, shortDate, addDays, addMonths, isDate,
-    weekday, normRental, rentalRole, rentalDates, upidOf, holidayMap, STATUS_WORD, MONTHS, DAY_SHORT,
+    weekday, normRental, rentalRole, rentalDates, gearSplit, onHireLine, upidOf, holidayMap, STATUS_WORD, MONTHS, DAY_SHORT,
   };
 })();

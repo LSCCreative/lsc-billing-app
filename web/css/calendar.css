@@ -696,6 +696,19 @@
 .cal-entries + .cal-gear {
   margin-top: 6px;
 }
+/* Gear only out on hire that day (quietGear, DR5): one muted line, not a card each. */
+.cal-onhire {
+  margin-top: 6px;
+  padding-left: 9px;
+  border-left: 2px solid var(--cal-rental);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--muted);
+}
+.cal-entries + .cal-onhire,
+.cal-empty + .cal-onhire {
+  margin-top: 8px;
+}
 div.cal-rentry {
   cursor: default;
 }

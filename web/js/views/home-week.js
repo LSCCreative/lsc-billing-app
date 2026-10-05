@@ -257,7 +257,8 @@ const HomeWeek = (() => {
     function listMarkup() {
       return '<ol class="wk-list">' + dates().map((date) => {
         const days = daysOn(date);
-        const gear = rentalsOn(date);
+        // A rental is a full entry on its out and back days only; between, one muted line (DR5).
+        const { ends: gear, onHire } = C.gearSplit(rentalsOn(date), date);
         const holiday = st.holidays.get(date);
         return '<li class="wk-lday' + (date === today ? ' is-today' : '') + '">' +
           '<h3 class="wk-lhead">' + esc(C.shortDate(date)) +
@@ -284,6 +285,7 @@ const HomeWeek = (() => {
                 '<span class="cal-entry-note">' + esc(C.rentalDates(r)) + '</span></div></li>';
             }).join('') + '</ul>'
             : '') +
+          C.onHireLine(onHire) +
           '</li>';
       }).join('') + '</ol>';
     }

@@ -219,6 +219,7 @@ const HomeView = (() => {
         id: 'home-cal',
         label: 'Production calendar',
         emphasis: null, // every estimate at equal strength
+        quietGear: true, // gear is logistics: outlined bars, listed on its ends (DR5)
         today,
         selected: anchor || today,
         onRangeChange: (range) => loadRange(range, target, 'this month'),
