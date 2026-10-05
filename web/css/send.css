@@ -116,7 +116,7 @@
 }
 .sp-seg input:checked + span {
   background: var(--accent);
-  color: #fff;
+  color: var(--color-text-on-accent);
   font-weight: 600;
 }
 .sp-seg label:hover input:not(:checked) + span {
@@ -146,7 +146,7 @@
   margin-top: 18px;
   padding: 10px 12px;
   border-left: 2px solid var(--accent);
-  background: rgba(184, 84, 68, 0.08);
+  background: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
   font-size: 12px;
   line-height: 1.6;
   color: var(--text);
@@ -319,8 +319,8 @@
   border-color: var(--ok);
 }
 .send-status.is-late .send-status-text::before {
-  background: var(--cal-pencilled, #c9a443);
-  border-color: var(--cal-pencilled, #c9a443);
+  background: var(--cal-pencilled);
+  border-color: var(--cal-pencilled);
 }
 .send-status.is-err .send-status-text {
   color: var(--err-text);

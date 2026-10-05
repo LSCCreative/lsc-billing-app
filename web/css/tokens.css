@@ -1,0 +1,316 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   LSC Billing: design tokens (ui-clarity track, .design/ui-clarity/).
+
+   Philosophy: functionalist, LSC-warm (U17). Dieter Rams discipline inside
+   LSC's warm dark: one accent, a 4px spacing base, one type scale, layers
+   rather than lines. References: Linear, Stripe Dashboard, Frame.io (U18).
+
+   Loaded FIRST, before app.css. Every later stylesheet reads these; nothing
+   below should need a raw colour, size or font name again.
+
+   THEMES
+   The app is dark (U6), so dark is the :root default. The light palette below
+   is the client pages' and emails' (lsccreative.studio's own tokens). It is
+   defined for reference and future use but NOT switched on by
+   prefers-color-scheme: the app stays dark on a light-mode Mac. A screen opts
+   in only with [data-theme="light"].
+
+   CONTRAST (WCAG 2.1, sRGB relative luminance), dark theme:
+     text-1  #F0EDE8   16.2 page · 15.0 panel · 13.7 inset · 12.7 float
+     text-2  #B8B0A6    8.8 page ·  8.2 panel ·  7.5 inset ·  6.9 float
+     text-3  #958D84    5.8 page ·  5.4 panel ·  4.9 inset ·  4.5 float
+     accent-text #E08B68  7.2 page · 6.7 panel · 6.2 inset · 5.7 float
+     white on accent #B4532F   4.98 (button text, 4.5 needed)
+     accent #B4532F vs page    3.79 (non-text, 3 needed)
+     border-strong #736A62     3.3 panel · 3.0 inset (form-field edges, 1.4.11)
+   Status text colours all clear 6:1 on every surface.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Fonts (U19) ─────────────────────────────────────────────────────────────
+   Metro Sans: reading text, form fields, buttons. Its files go in ../fonts/
+   only once its licence allows web embedding (the repo is public); until then
+   the stack falls back to the system UI face. The face is named 'LSC Metro
+   Sans', not 'Metro Sans': when a web font's file is missing, Chrome falls
+   back to an INSTALLED font of the same family name, and a Fontspring demo
+   copy (glyphs swapped for ±) is installed on the studio Mac. A private name
+   can only ever match these files. Metro Sans has NO tabular
+   figures, so money uses --font-figures (CS Felice Mono) in tables and rows,
+   and Delight for headline totals. */
+@font-face{font-family:'LSC Metro Sans';src:url('../fonts/MetroSans-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'LSC Metro Sans';src:url('../fonts/MetroSans-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'LSC Metro Sans';src:url('../fonts/MetroSans-600.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:'CS Felice Mono';src:url('../fonts/CSFeliceMono-Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+
+:root {
+  color-scheme: dark;
+
+  /* ── Colour: surfaces, three levels plus floating (U2) ───────────────────
+     Warm near-black, nudged from the site's --lsc-black #0E0E0E. Each step
+     is ~+9 in lightness: visible as a layer, never as a box. */
+  --color-bg-page:      #121110;  /* level 0: the page itself */
+  --color-bg-panel:     #1B1917;  /* level 1: a section panel */
+  --color-bg-inset:     #24211E;  /* level 2: inputs, wells, a hovered row, panel heads when distinct */
+  --color-bg-float:     #2B2724;  /* menus, sheets, dialogs, the sticky bar */
+  --color-bg-inverse:   #F0EDE8;
+  --color-bg-hover:     rgba(240, 237, 232, 0.04);
+  --color-bg-selected:  rgba(224, 139, 104, 0.10);  /* a chosen menu item, a drop target */
+  --color-surface-overlay: rgba(8, 7, 6, 0.72);     /* behind dialogs and sheets */
+
+  /* ── Colour: text ─────────────────────────────────────────────────────── */
+  --color-text-primary:   #F0EDE8;  /* --lsc-white */
+  --color-text-secondary: #B8B0A6;  /* meta lines, labels, table heads */
+  --color-text-tertiary:  #958D84;  /* placeholders, disabled, "None" */
+  --color-text-inverse:   #121110;
+  --color-text-link:      #E08B68;
+  --color-text-on-accent: #FFFFFF;
+
+  /* ── Colour: lines. Hairlines separate; borders contain (sparingly) ───── */
+  --color-border-hairline: rgba(240, 237, 232, 0.07);  /* rows inside a panel */
+  --color-border-subtle:   rgba(240, 237, 232, 0.11);  /* a panel's edge, a panel head's rule */
+  --color-border-strong:   #736A62;                    /* form fields: must hold 3:1 */
+  --color-border-focus:    #E08B68;
+
+  /* ── Colour: the one accent (U17: terracotta marks the next action only) ─ */
+  --color-accent-primary:        #B4532F;  /* button fill: white text 4.98:1 */
+  --color-accent-primary-hover:  #9E4A2C;
+  --color-accent-primary-active: #8C4832;  /* --lsc-terra-dk */
+  --color-accent-mark:           #C0603C;  /* --lsc-terra: rules, nav underline, drag line (non-text) */
+  --color-accent-text:           #E08B68;  /* terracotta as text on any dark surface */
+  --color-accent-secondary:      #2B2724;  /* a secondary button: a raised fill, no colour */
+
+  /* ── Colour: status. Each pairs with a shape somewhere (DR15) ─────────── */
+  --color-status-success:      #5F9A6D;  /* confirmed day, paid */
+  --color-status-success-text: #8DC49A;
+  --color-status-warning:      #C9A443;  /* pencilled, due soon */
+  --color-status-warning-text: #D9B45A;
+  --color-status-error:        #D2584A;  /* overdue, clash, danger fill */
+  --color-status-error-text:   #F08A7E;
+  --color-status-info:         #6E93C4;  /* sent, gear rental */
+  --color-status-info-text:    #93ADD0;
+  --color-status-neutral:      #8D939C;  /* proposed, draft */
+  --color-status-neutral-text: #A9AFB7;
+  --color-on-status:           #121110;  /* ink on a filled chip: 5.7–8.0:1 on all four */
+
+  /* ── Typography (U19) ──────────────────────────────────────────────────── */
+  --font-family-display: 'Delight', Georgia, 'Times New Roman', serif;
+  --font-family-body:    'LSC Metro Sans', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+  --font-family-mono:    'CS Felice Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-figures:        var(--font-family-mono);  /* money in tables and rows: digits align */
+
+  /* One scale, 4px-friendly. Mono never below --font-size-xs (11px). */
+  --font-size-xs:   11px;  /* mono eyebrows, chips, refs */
+  --font-size-sm:   12px;  /* meta lines, table heads */
+  --font-size-base: 14px;  /* body, buttons, table cells */
+  --font-size-md:   16px;  /* inputs on a phone (no iOS zoom), lead text */
+  --font-size-lg:   18px;  /* panel titles */
+  --font-size-xl:   22px;  /* section titles, a row's big amount */
+  --font-size-2xl:  28px;  /* headline figure (Balance due, Client total) */
+  --font-size-3xl:  32px;  /* page title */
+  --font-size-4xl:  40px;  /* page title at ≥1100px */
+
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;  /* Delight only */
+
+  --line-height-tight:   1.15;  /* Delight titles and figures */
+  --line-height-snug:    1.35;  /* single-line UI: buttons, rows */
+  --line-height-normal:  1.5;   /* body */
+  --line-height-relaxed: 1.65;  /* the agreement text */
+
+  --letter-spacing-tight:  -0.01em;  /* Delight titles */
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide:   0.08em;   /* mono caps: eyebrows, chips, nav (U4) */
+
+  /* ── Spacing: 4px base, 8px rhythm ─────────────────────────────────────── */
+  --space-0:  0;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  12px;
+  --space-6:  16px;
+  --space-7:  24px;
+  --space-8:  32px;
+  --space-9:  48px;
+  --space-10: 64px;
+  --space-11: 96px;
+  --space-12: 128px;
+
+  /* Semantic spacing the components share */
+  --panel-pad-x:   var(--space-6);   /* 16 on a phone… */
+  --panel-pad-y:   var(--space-6);
+  --panel-gap:     var(--space-6);   /* between stacked panels */
+  --row-pad-y:     var(--space-5);   /* a document or table row */
+  --control-h:     36px;             /* buttons and inputs, desktop */
+  --control-h-sm:  28px;
+  --touch-min:     44px;             /* every target below 768px */
+
+  /* ── Layout ────────────────────────────────────────────────────────────── */
+  --max-width-content: 68ch;     /* agreement text, long notes */
+  --max-width-wide:    1080px;   /* today's #main */
+  --max-width-page:    1240px;   /* editor with its rail */
+  --rail-width:        184px;
+
+  --radius-sm:   4px;     /* chips, inputs, small buttons */
+  --radius-md:   8px;     /* buttons, panels, cards (the site's 8) */
+  --radius-lg:   16px;    /* bottom sheets, dialogs (the site's 16) */
+  --radius-full: 999px;
+
+  /* Dark-mode shadows: deep and soft, only on things that float. Panels have none. */
+  --shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-md:    0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--color-border-subtle);
+  --shadow-lg:    0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--color-border-subtle);
+  --shadow-bar:   0 -8px 24px rgba(0, 0, 0, 0.45);  /* the sticky bottom bar */
+  --shadow-focus: 0 0 0 2px var(--color-bg-page), 0 0 0 4px var(--color-border-focus);
+
+  /* ── Motion: functional only ───────────────────────────────────────────── */
+  --duration-instant: 50ms;
+  --duration-fast:    120ms;  /* hover, press */
+  --duration-normal:  180ms;  /* menu open, panel expand */
+  --duration-slow:    240ms;  /* sheet slide, drag settle */
+  --duration-slower:  400ms;  /* reserved; nothing uses it yet */
+  --easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-in:      cubic-bezier(0.4, 0, 1, 1);
+  --easing-out:     cubic-bezier(0, 0, 0.2, 1);
+  --easing-bounce:  cubic-bezier(0.34, 1.56, 0.64, 1);  /* defined for completeness: not used (Rams) */
+
+  /* ── Breakpoints (reference only: custom properties can't drive @media) ──
+     Mobile-first, min-width: 375 base · 768 tablet · 1100 desktop (the
+     app's long-standing desktop line) · 1280 wide. */
+  --breakpoint-sm:  375px;
+  --breakpoint-md:  768px;
+  --breakpoint-lg:  1100px;
+  --breakpoint-xl:  1280px;
+  --breakpoint-2xl: 1536px;
+
+  /* ── Component tokens ──────────────────────────────────────────────────── */
+  --panel-bg:        var(--color-bg-panel);
+  --panel-border:    var(--color-border-subtle);
+  --panel-radius:    var(--radius-md);
+  --panel-head-gap:  var(--space-5);
+
+  --btn-radius:      var(--radius-md);
+  --btn-pad-x:       var(--space-6);
+  --btn-font:        var(--font-weight-medium) var(--font-size-base)/var(--line-height-snug) var(--font-family-body);
+
+  --input-bg:        var(--color-bg-inset);
+  --input-border:    var(--color-border-strong);
+  --input-radius:    var(--radius-sm);
+
+  --menu-bg:         var(--color-bg-float);
+  --menu-radius:     var(--radius-md);
+  --menu-item-h:     36px;    /* 48px in the phone sheet */
+  --menu-shadow:     var(--shadow-md);
+
+  --chip-font:       var(--font-weight-normal) var(--font-size-xs)/1 var(--font-family-mono);
+  --chip-radius:     var(--radius-sm);
+  --chip-pad:        var(--space-1) var(--space-3);
+
+  --eyebrow-font:    var(--font-weight-normal) var(--font-size-xs)/1.2 var(--font-family-mono);
+  --eyebrow-color:   var(--color-accent-text);
+
+  --clause-num-font: var(--font-weight-normal) var(--font-size-sm)/1 var(--font-family-mono);
+}
+
+/* Panels breathe more once there's room. */
+@media (min-width: 768px) {
+  :root {
+    --panel-pad-x: var(--space-7);  /* 24 */
+    --panel-pad-y: var(--space-6);
+    --panel-gap:   var(--space-7);
+  }
+}
+
+/* Phones: 16px inputs (no iOS zoom), 44px targets, roomier menu rows. */
+@media (max-width: 767px) {
+  :root {
+    --control-h:    var(--touch-min);
+    --control-h-sm: var(--touch-min);
+    --menu-item-h:  48px;
+  }
+}
+
+/* ── Light palette: the client pages' and emails' (lsccreative.studio) ───────
+   Opt-in only. Not tied to prefers-color-scheme (U6). Contrast on paper:
+   ink 16.5, secondary #625C58 5.6, tertiary #655F5A 5.3 (4.8 on inset),
+   accent-text #8C4832 5.8; white on the button #8C4832 6.8. Status texts 5.1–5.6. */
+[data-theme="light"] {
+  color-scheme: light;
+  --color-bg-page:      #F0EDE8;  /* --lsc-white, "paper" */
+  --color-bg-panel:     #FFFFFF;
+  --color-bg-inset:     #E8E2D9;  /* --lsc-surface-lt */
+  --color-bg-float:     #FFFFFF;
+  --color-bg-inverse:   #0E0E0E;
+  --color-bg-hover:     rgba(14, 14, 14, 0.04);
+  --color-bg-selected:  rgba(192, 96, 60, 0.10);
+  --color-surface-overlay: rgba(14, 14, 14, 0.45);
+
+  --color-text-primary:   #0E0E0E;  /* --lsc-black */
+  --color-text-secondary: #625C58;
+  --color-text-tertiary:  #655F5A;
+  --color-text-inverse:   #F0EDE8;
+  --color-text-link:      #8C4832;
+
+  --color-border-hairline: rgba(14, 14, 14, 0.08);
+  --color-border-subtle:   rgba(14, 14, 14, 0.16);
+  --color-border-strong:   #8A837D;
+  --color-border-focus:    #8C4832;
+
+  --color-accent-primary:        #8C4832;
+  --color-accent-primary-hover:  #763C2A;
+  --color-accent-primary-active: #643323;
+  --color-accent-mark:           #C0603C;
+  --color-accent-text:           #8C4832;
+  --color-accent-secondary:      #E8E2D9;
+
+  --color-status-success-text: #3F6E4A;
+  --color-status-warning-text: #7A5E14;
+  --color-status-error-text:   #A63A2E;
+  --color-status-info-text:    #3D5F8C;
+  --color-status-neutral-text: #5A5F66;
+
+  --shadow-sm: 0 1px 2px rgba(14, 14, 14, 0.08);
+  --shadow-md: 0 8px 24px rgba(14, 14, 14, 0.12), 0 0 0 1px var(--color-border-subtle);
+  --shadow-lg: 0 18px 48px rgba(14, 14, 14, 0.16), 0 0 0 1px var(--color-border-subtle);
+  --shadow-focus: 0 0 0 2px var(--color-bg-page), 0 0 0 4px var(--color-border-focus);
+}
+
+/* ── Reduced motion: no slides, no settles ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast:    0ms;
+    --duration-normal:  0ms;
+    --duration-slow:    0ms;
+    --duration-slower:  0ms;
+  }
+}
+
+/* ── Legacy aliases ──────────────────────────────────────────────────────────
+   The names app.css and every screen file already use, pointed at the new
+   system so the whole app moves at once (the system-level change, U1). They
+   take effect when task 1 deletes app.css's and a11y.css's own :root values
+   (the Desktop Preservation Law is retired, U16). New CSS uses the
+   --color-* / --space-* names, never these. */
+:root {
+  --bg:          var(--color-bg-page);
+  --surface:     var(--color-bg-panel);
+  --border:      var(--color-border-subtle);
+  --text:        var(--color-text-primary);
+  --muted:       var(--color-text-secondary);
+  --muted2:      var(--color-border-hairline);  /* was a non-text mark only */
+  --accent:      var(--color-accent-primary);
+  --ah:          var(--color-accent-primary-hover);
+  --accent-text: var(--color-accent-text);
+  --row-hover:   var(--color-bg-hover);
+  --ok:          var(--color-status-success-text);
+  --err-text:    var(--color-status-error-text);
+  --err-border:  var(--color-status-error);
+  --err-bg:      rgba(210, 88, 74, 0.10);
+  --cal-confirmed: var(--color-status-success);
+  --cal-pencilled: var(--color-status-warning);
+  --cal-proposed:  var(--color-status-neutral);
+  --cal-rental:    var(--color-status-info);
+  --cal-ink:       var(--color-on-status);
+}

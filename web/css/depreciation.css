@@ -274,7 +274,7 @@
   font-size: 11px;
   line-height: 1.6;
   color: var(--muted);
-  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  border-top: 1px solid var(--color-border-hairline);
 }
 .dep-sched-foot {
   padding: 2px 0 0;

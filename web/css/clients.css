@@ -16,7 +16,7 @@
   max-height: 264px;
   overflow-y: auto;
   list-style: none;
-  background: #1e2228;
+  background: var(--color-bg-float);
   border: 1px solid var(--accent);
   border-top: none;
 }
@@ -26,14 +26,14 @@
   gap: 2px;
   padding: 8px 12px;
   cursor: pointer;
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  border-bottom: 1px solid var(--color-border-hairline);
 }
 .typeahead-list li:last-child {
   border-bottom: none;
 }
 .typeahead-list li:hover,
 .typeahead-list li[aria-selected='true'] {
-  background: rgba(184, 84, 68, 0.12);
+  background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
 }
 .ta-name {
   font-size: 13px;

@@ -218,7 +218,7 @@
   border-style: dashed;
 }
 .up-row .status-chip {
-  min-width: 76px;
+  min-width: 84px;
   text-align: center;
 }
 .up-main {
@@ -360,7 +360,7 @@
   border-top: 1px solid var(--cal-rule);
 }
 .wk-lday.is-today {
-  background: rgba(184, 84, 68, 0.06);
+  background: color-mix(in srgb, var(--color-accent-primary) 6%, transparent);
 }
 .wk-lhead {
   display: flex;
@@ -415,7 +415,7 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  background: #111;
+  background: var(--color-bg-panel);
   border-bottom: 1px solid var(--border);
 }
 .wk-dow {
@@ -544,7 +544,7 @@
   background-image: none;
 }
 .wk-day.is-today .wk-timed {
-  background-color: rgba(184, 84, 68, 0.05);
+  background-color: color-mix(in srgb, var(--color-accent-primary) 5%, transparent);
 }
 .wk-hour {
   position: absolute;
@@ -624,7 +624,7 @@
    own time, code and name), and reads as not yet a booking by a dashed edge
    inside the grey, as Coming up's proposed rows do. */
 .wk-tile.is-proposed {
-  border: 1px dashed rgba(18, 18, 18, 0.6);
+  border: 1px dashed color-mix(in srgb, var(--color-on-status) 60%, transparent);
 }
 /* Sharing the column: the code is the line kept; the time and name are in the
    tile's label and title. */
@@ -686,7 +686,7 @@
 .hd-upid {
   display: block;
   margin-bottom: 4px;
-  font-family: 'Funnel Sans', 'FunnelSans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;

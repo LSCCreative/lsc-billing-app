@@ -7,9 +7,10 @@ bundler and no dependencies — plain HTML, CSS and scripts, served as-is.
 
 ```
 index.html               app shell: the login view and the app view
-css/app.css              base stylesheet, ported VERBATIM from the Electron
-                         index.html. Do not edit — see the Desktop
-                         Preservation Law note at the top of the file.
+css/tokens.css           design tokens (ui-clarity): colour, type, spacing,
+                         radii, motion, plus the legacy aliases. Loaded FIRST
+css/app.css              base stylesheet. Began as the Electron app's; the
+                         Desktop Preservation Law is retired (ui-clarity U16)
 css/login.css            login screen, additive
 css/connection.css       connection-lost banner, additive
 css/estimates.css        estimate screens, additive
@@ -22,9 +23,10 @@ css/overhead.css         the Overhead screen: summary card, expense table,
 css/goals.css            the Goals form, additive
 css/responsive.css       the responsive bands (tablet 768-1099, mobile
                          <768). Every rule is inside a media query
-css/a11y.css             accessibility pass: --muted contrast override,
-                         global focus-visible rings. Loaded LAST of all
-fonts/*.woff2          Delight 400/700 (from the old app) + Funnel Sans variable (OFL, Google Fonts)
+css/a11y.css             accessibility pass: global focus-visible rings,
+                         placeholders, field errors. Loaded LAST of all
+fonts/*.woff2          Delight 400/700 (from the old app) + CS Felice Mono. Metro
+                         Sans joins them once its web licence is confirmed
 js/config.js             the API address. Gitignored — copy from
                          config.example.js
 js/api.js                the only place that calls fetch; classifies failures.
@@ -176,11 +178,10 @@ cd server && DATA_DIR=/tmp/lsc-billing-scratch ADMIN_USERNAME=dev ADMIN_PASSWORD
   boot-time snapshot and a merge is only as good as what it merges onto. This
   matters most for `gst`, which `calc.js` reads on every estimate: losing it
   changes the money without going near a screen that mentions money.
-- **Responsive rules go in `css/responsive.css`, never in `app.css`.** That file is the desktop
-  stylesheet byte for byte and the preservation check depends on it staying that way, so the
-  breakpoints are additive like every screen's stylesheet. It is linked last, so it wins ties on
-  equal specificity, and **every rule in it sits inside a media query** — the >=1100px layout must
-  come out of it untouched. Both bands are built: tablet 768–1099px, mobile <768px. The one
+- **Responsive rules for the older screens live in `css/responsive.css`.** It was written while
+  `app.css` was frozen (the Desktop Preservation Law, retired by ui-clarity U16), so its bands are
+  additive: linked late, it wins ties on equal specificity, and every rule in it sits inside a
+  media query. New CSS is mobile-first in its own file, from `tokens.css` names. Both bands are built: tablet 768–1099px, mobile <768px. The one
   `min-width` rule hides `#nav-menu-btn`, which is markup no desktop layout has. Three things
   learned building them: `@media` matched `innerWidth` rather than the 15px-narrower client width
   when the window was resized (and `clientWidth` under mobile emulation), so check a band's edges

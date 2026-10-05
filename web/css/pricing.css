@@ -135,10 +135,10 @@
 /* The same chrome as the table's inputs (app.css), at the hint's size so the
    control sits in the line rather than above it. */
 .pricing-unit-sel {
-  background: #1a1c20;
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: var(--text);
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 10.5px;
   padding: 2px 4px;
   outline: none;
@@ -332,9 +332,9 @@
    screen, whose phone rules live in responsive.css: these classes are new,
    and nothing above 1100px has a look to preserve.
 
-   The language is the editor's .billing-block (a #111 head with a Delight
+   The language is the editor's .billing-block (a panel-layer head with a Delight
    label and a tag) and the Rate Card's own: hairline rules between rows,
-   hints at 11px muted, fields in the #1a1c20 well. */
+   hints at 11px muted, fields in the inset well. */
 
 /* responsive.css gives every .billing-block head a 660px floor from 1099px
    down, and lets the block scroll sideways, so the editor's money grids can't
@@ -383,7 +383,7 @@
   display: grid;
   gap: 12px;
   padding: 14px 16px;
-  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  border-top: 1px solid var(--color-border-hairline);
 }
 .surch-name {
   font-size: 12px;
@@ -420,10 +420,10 @@
 /* 16px and 44px tall on a phone: smaller text makes iOS zoom on focus. */
 .surch-inp,
 .hol-field input {
-  background: #1a1c20;
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: var(--text);
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 16px;
   padding: 6px 10px;
   min-height: 44px;
@@ -533,7 +533,7 @@
    figures rather than of wordings. */
 .surch-modes {
   border: 0;
-  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  border-top: 1px solid var(--color-border-hairline);
   margin: 0;
   padding: 14px 16px 16px;
   min-width: 0;
@@ -559,7 +559,7 @@
   gap: 10px;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid rgba(61, 74, 92, 0.6);
+  border: 1px solid var(--color-border-subtle);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
@@ -616,7 +616,7 @@
   margin: 0 16px 14px;
   padding: 8px 12px;
   border-left: 2px solid var(--accent);
-  background: rgba(61, 74, 92, 0.12);
+  background: var(--color-bg-panel);
   font-size: 11px;
   line-height: 1.6;
   color: var(--text);
@@ -641,7 +641,7 @@
   margin-bottom: 4px;
 }
 .hol-count {
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-weight: 400;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -661,7 +661,7 @@
   row-gap: 2px;
   min-height: 44px;
   padding: 4px 0;
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  border-bottom: 1px solid var(--color-border-hairline);
   font-size: 12px;
 }
 .hol-item:last-child {
@@ -733,7 +733,7 @@
   gap: 10px 12px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
-  background: rgba(61, 74, 92, 0.12);
+  background: var(--color-bg-panel);
 }
 .hol-field {
   display: flex;
@@ -862,8 +862,8 @@
    rather than the 48px the Custom/Direct heads hold.
 
    The Deliverable Types block speaks the Surcharges block's language: a
-   .billing-block with a #111 head, hairline rules between rows, fields in
-   the #1a1c20 well, 16px and 44px on a phone. Phone first, as above. */
+   .billing-block with a panel-layer head, hairline rules between rows, fields in
+   the inset well, 16px and 44px on a phone. Phone first, as above. */
 
 .pricing-table th.pricing-capture-th {
   width: auto;
@@ -911,7 +911,7 @@
 }
 .dtype-list {
   list-style: none;
-  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  border-top: 1px solid var(--color-border-hairline);
 }
 
 /* Phone: one type is a stack, label above field, × in the corner. */
@@ -920,7 +920,7 @@
   display: grid;
   gap: 14px;
   padding: 14px 16px 16px;
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  border-bottom: 1px solid var(--color-border-hairline);
 }
 .dtype-row:last-child {
   border-bottom: 0;
@@ -955,10 +955,10 @@
 
 .dtype-inp,
 .dtype-add {
-  background: #1a1c20;
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: var(--text);
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 16px;
   padding: 6px 10px;
   min-height: 44px;
@@ -997,7 +997,7 @@
   border-style: dashed;
 }
 .dtype-add option {
-  background: #1e2228;
+  background: var(--color-bg-float);
   color: var(--text);
 }
 
@@ -1017,7 +1017,7 @@
   min-height: 44px;
   padding-left: 10px;
   border: 1px solid var(--border);
-  background: rgba(61, 74, 92, 0.18);
+  background: var(--color-bg-panel);
   font-size: 12px;
   color: var(--text);
 }
@@ -1051,7 +1051,7 @@
   transition: color 0.15s;
 }
 .dtype-chip-x:hover {
-  color: #e06060;
+  color: var(--color-status-error-text);
 }
 .dtype-chip-x:focus-visible {
   outline: 2px solid var(--accent);
@@ -1108,7 +1108,7 @@
 
 .dtype-empty {
   padding: 14px 16px;
-  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  border-top: 1px solid var(--color-border-hairline);
   font-size: 11px;
   font-style: italic;
   line-height: 1.6;
@@ -1121,7 +1121,7 @@
   gap: 12px;
   padding: 9px 14px;
   border-top: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--color-bg-hover);
 }
 .dtype-foot .btn {
   justify-content: center;
@@ -1225,7 +1225,7 @@
   .dtype-head {
     padding-top: 7px;
     padding-bottom: 7px;
-    border-top: 1px solid rgba(61, 74, 92, 0.4);
+    border-top: 1px solid var(--color-border-hairline);
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;

@@ -15,27 +15,21 @@
    about the device, not the space. */
 
 :root {
-  /* Status fills. Each clears 3:1 against --bg and --surface (measured with
-     the WCAG formula: confirmed 5.35 / 4.04, pencilled 7.50 / 5.67, hatch
-     stripe 5.77 / 4.13 against --bg / --surface, proposed 5.74 / 4.34), and --cal-ink on any of them
-     clears 4.5:1 (5.65 at the lowest, on confirmed). */
-  --cal-confirmed: #5f9a6d;
-  --cal-pencilled: #c9a443;
-  --cal-pencilled-hatch: #ad8a35;
-  --cal-proposed: #8d939c;
-  --cal-ink: #121212;
-  --cal-rule: rgba(61, 74, 92, 0.55);
+  /* Status fills: --cal-confirmed, --cal-pencilled, --cal-proposed,
+     --cal-rental and --cal-ink are tokens.css's aliases of --color-status-*
+     and --color-on-status (the ink clears 4.5:1 on every fill). The hatch's
+     second stripe is the pencilled fill darkened toward the ink. */
+  --cal-pencilled-hatch: color-mix(in srgb, var(--color-status-warning) 85%, var(--color-on-status));
+  --cal-rule: var(--color-border-subtle);
   --cal-hatch: repeating-linear-gradient(135deg, var(--cal-pencilled) 0 5px, var(--cal-pencilled-hatch) 5px 7px);
   /* "Go to date" washes its date in the accent: a highlight, not a ring, so it
      never reads as the focus ring (also accent) sitting on another cell. */
-  --cal-target: rgba(184, 84, 68, 0.2);
-  /* Gear rentals (B2-8): a cool steel blue, no status's colour and not the
-     accent, because a rental is logistics, not a booking. --cal-ink on it is
-     5.92:1, and it is 5.61 / 4.24 against --bg / --surface. The cap marks the out
-     and back ends. */
-  --cal-rental: #6e93c4;
-  --cal-rental-cap: #3d5f8c;
-  --cal-rental-wash: rgba(110, 147, 196, 0.1);
+  --cal-target: color-mix(in srgb, var(--color-accent-mark) 20%, transparent);
+  /* Gear rentals (B2-8): the info blue, no booking status's colour and not the
+     accent, because a rental is logistics, not a booking. The cap marks the
+     out and back ends. */
+  --cal-rental-cap: color-mix(in srgb, var(--color-status-info) 60%, var(--color-on-status));
+  --cal-rental-wash: color-mix(in srgb, var(--color-status-info) 10%, transparent);
 }
 
 .cal {
@@ -110,8 +104,8 @@
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  background: #1a1c20;
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: var(--text);
   color-scheme: dark;
   font-size: 16px; /* under 16px, iOS zooms the page on focus */
@@ -159,7 +153,7 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 .cal-head {
-  background: #111;
+  background: var(--color-bg-panel);
   border-bottom: 1px solid var(--border);
 }
 .cal-colhead {
@@ -364,7 +358,7 @@
   box-shadow: inset 0 0 0 1px var(--cal-confirmed);
 }
 .cal-tile.is-faded.is-pencilled {
-  background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(201, 164, 67, 0.22) 5px 7px);
+  background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--color-status-warning) 22%, transparent) 5px 7px);
   box-shadow: inset 0 0 0 1px var(--cal-pencilled);
 }
 .cal-tile.is-faded.is-proposed {
@@ -437,7 +431,7 @@
   border: 1px solid var(--border);
   border-top: none;
   padding: 12px 12px 14px;
-  background: rgba(61, 74, 92, 0.12);
+  background: var(--color-bg-panel);
 }
 .cal-list-title {
   font-size: 10px;
@@ -536,16 +530,17 @@
 
 /* ── The status chip (shared: day cards, Coming up, this list) ─────────────── */
 
+/* Mono caps on a status fill (ui-clarity U19): the ink clears 4.5:1 on every
+   fill, and the word, not the colour, carries the meaning. */
 .status-chip {
   display: inline-block;
-  padding: 2px 7px;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 13px;
+  padding: var(--chip-pad);
+  font: var(--chip-font);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--cal-ink);
   background: var(--cal-confirmed);
+  border-radius: var(--chip-radius);
   white-space: nowrap;
 }
 .status-chip.is-pencilled {

@@ -216,7 +216,7 @@
 .oh-chart-tick,
 .oh-chart-date {
   fill: var(--muted);
-  font-family: 'Funnel Sans', 'FunnelSans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 11px;
   letter-spacing: 0.04em;
 }
@@ -378,7 +378,7 @@
    .card-gross-label), not a new smaller one invented for the hole. */
 .oh-donut-total-label {
   fill: var(--muted);
-  font-family: 'Funnel Sans', 'FunnelSans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 10px;
   letter-spacing: 0.16em;
 }
@@ -414,7 +414,7 @@
   gap: 10px;
   max-width: 340px;
   padding: 7px 0;
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  border-bottom: 1px solid var(--color-border-hairline);
   font-size: 12px;
 }
 .oh-legend-row:last-child {

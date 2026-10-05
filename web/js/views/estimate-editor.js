@@ -2182,7 +2182,7 @@ const EstimateEditor = (() => {
          the mobile band stacks this bar into one column, and an inline
          grid-column would have needed !important to undo — which would then be
          undoable by nothing. Identical at every other width. */
-      '<div class="sum-item sum-span2" style="background:rgba(184,84,68,0.08);border:1px solid rgba(184,84,68,0.3)">' +
+      '<div class="sum-item sum-span2" style="background:color-mix(in srgb,var(--color-accent-primary) 10%,transparent);border:1px solid color-mix(in srgb,var(--color-accent-primary) 35%,transparent)">' +
       '<div class="sum-label sum-label-strong">Total (inc GST)</div>' +
       '<div class="sum-value accent tot-main" id="s-total">$0.00</div></div>' +
       '<div class="sum-item"><div class="sum-label">Tax Set-Aside</div>' +

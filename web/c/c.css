@@ -1,7 +1,7 @@
 /* The client pages (production-booking stage E, D46, D50, D54, D57).
  *
- * A document on warm paper, in lsccreative.studio's own tokens; nothing from
- * the app's CSS. The estimate's one bold move is the production days, set like
+ * A document on warm paper, in lsccreative.studio's own tokens, which are
+ * tokens.css's light palette; nothing else from the app's CSS. The estimate's one bold move is the production days, set like
  * a call sheet: each date hangs in a left gutter, drawn large. The invoice's
  * is the payment slip: the bank details behind a tear-off rule, as on a paper
  * invoice, set large enough to type from. Everything else stays quiet:
@@ -35,20 +35,22 @@
 }
 
 :root {
-  --paper: #F0EDE8;      /* --lsc-white */
-  --panel: #E8E2D9;      /* --lsc-surface-lt */
-  --ink: #0E0E0E;        /* --lsc-black */
-  --muted: #625C58;      /* --lsc-mid, darkened to pass 4.5:1 */
-  --terra: #C0603C;      /* --lsc-terra: fills and rules only */
-  --terra-dk: #8C4832;   /* --lsc-terra-dk: accent as text, and the button */
-  --hair: rgba(14, 14, 14, 0.16);
+  /* tokens.css's light palette (<html data-theme="light">), which is
+     lsccreative.studio's own; these names are the page's shorthand for it. */
+  --paper: var(--color-bg-page);         /* --lsc-white */
+  --panel: var(--color-bg-inset);        /* --lsc-surface-lt */
+  --ink: var(--color-text-primary);      /* --lsc-black */
+  --muted: var(--color-text-secondary);  /* --lsc-mid, darkened to pass 4.5:1 */
+  --terra: var(--color-accent-mark);     /* --lsc-terra: fills and rules only */
+  --terra-dk: var(--color-accent-text);  /* --lsc-terra-dk: accent as text, and the button */
+  --hair: var(--color-border-subtle);
 
-  --serif: 'Delight', Georgia, 'Times New Roman', serif;
-  --mono: 'CS Felice Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --serif: var(--font-family-display);
+  --mono: var(--font-family-mono);
 
   --measure: 680px;
   --gutter: 76px;        /* the date column */
-  --radius: 8px;
+  --radius: var(--radius-md);
 }
 
 *, *::before, *::after { box-sizing: border-box; }

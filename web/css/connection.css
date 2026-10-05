@@ -17,8 +17,8 @@
   z-index: 99;
 
   /* Opaque, not an alpha tint: content scrolls underneath a sticky element.
-     This is #181818 with the accent at 12%, resolved against --bg. */
-  background: #2B1F1D;
+     The accent at 12%, mixed into the page colour. */
+  background: color-mix(in srgb, var(--color-accent-primary) 12%, var(--color-bg-page));
 }
 #connection-banner.show { display: flex; }
 

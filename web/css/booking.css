@@ -130,7 +130,7 @@
 .day-card {
   position: relative;
   padding: 10px 12px 12px 16px;
-  background: rgba(61, 74, 92, 0.12);
+  background: var(--color-bg-panel);
   border: 1px solid var(--border);
 }
 .day-card::before {
@@ -446,7 +446,7 @@
 /* D26: a hint, not a price. */
 .day-hours {
   padding: 8px 16px 10px;
-  border-top: 1px solid rgba(61, 74, 92, 0.4);
+  border-top: 1px solid var(--color-border-hairline);
   font-size: 11px;
   color: var(--muted);
 }
@@ -532,7 +532,7 @@
   text-transform: none;
   letter-spacing: 0;
   color: var(--text);
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  border-bottom: 1px solid var(--color-border-hairline);
 }
 .est-day-head th > * {
   margin-right: 10px;
@@ -668,7 +668,7 @@
 }
 .onset-group {
   padding: 8px 16px 10px;
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  border-bottom: 1px solid var(--color-border-hairline);
 }
 .onset-group:last-child {
   border-bottom: none;
@@ -785,7 +785,7 @@
 }
 .day-menu {
   border: 1px solid var(--border);
-  background: rgba(61, 74, 92, 0.12);
+  background: var(--color-bg-panel);
   padding: 10px 14px 12px;
 }
 /* Brought into view under the sticky page header (52px), not behind it: the
@@ -843,7 +843,7 @@
   background: none;
   border: none;
   color: var(--muted);
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -870,7 +870,7 @@
   justify-content: space-between;
   gap: 6px 12px;
   padding: 5px 0;
-  border-bottom: 1px solid rgba(61, 74, 92, 0.4);
+  border-bottom: 1px solid var(--color-border-hairline);
 }
 .dm-row:last-of-type {
   border-bottom: none;
@@ -887,10 +887,10 @@
   gap: 4px;
 }
 .dm-unit {
-  background: #1a1c20;
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: var(--text);
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 11px;
   padding: 4px 8px;
   cursor: pointer;
@@ -973,10 +973,10 @@
   border-color: var(--border);
 }
 .line-move {
-  background: #1a1c20;
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: var(--text);
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 10.5px;
   padding: 2px 6px;
   cursor: pointer;
@@ -1031,14 +1031,14 @@
   background: none;
   border: none;
   color: var(--text);
-  font-family: 'Funnel Sans', sans-serif;
+  font-family: var(--font-family-body);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
 .move-pop [role='menuitem']:hover,
 .move-pop [role='menuitem']:focus {
-  background: rgba(184, 84, 68, 0.18);
+  background: color-mix(in srgb, var(--color-accent-primary) 18%, transparent);
   outline: none;
 }
 .move-pop [role='menuitem']:focus-visible {
@@ -1071,7 +1071,7 @@
 .drag-crew .day-group[data-group='crew'] .gt-body,
 .drag-equip .day-group[data-group='equip'] .gt-body {
   min-height: 30px;
-  outline: 1px dashed rgba(184, 84, 68, 0.7);
+  outline: 1px dashed color-mix(in srgb, var(--color-accent-primary) 70%, transparent);
   outline-offset: -1px;
 }
 .drop-rule {
