@@ -2275,8 +2275,14 @@ const EstimateEditor = (() => {
       '</div>' +
       '<div class="field"><label for="f-name">Project Name *</label>' +
       '<input id="f-name" type="text" value="' + esc(estimate ? estimate.name : '') + '"></div>' +
-      '<div class="field"><label for="f-date">Date</label>' +
-      '<input id="f-date" type="date" value="' + esc(estimate ? estimate.date : today()) + '"></div>' +
+      /* The old free Date field (task 33 DR11, the user's call): nothing the
+         client sees reads it now (the booked days are the dates), and beside
+         them it read as "the shoot date". New estimates don't get it; one that
+         already has a date keeps the field, and the value, as it was. */
+      (estimate && estimate.date
+        ? '<div class="field"><label for="f-date">Date</label>' +
+          '<input id="f-date" type="date" value="' + esc(estimate.date) + '"></div>'
+        : '') +
       '<div class="field client-field"><label for="f-business">Business Name</label>' +
       '<input id="f-business" type="text" value="' + esc(client.businessName || '') + '">' +
       '<div class="client-link-status">' +
@@ -3295,7 +3301,7 @@ const EstimateEditor = (() => {
     const body = {
       upid: $('f-upid').value.trim(),
       name: $('f-name').value.trim(),
-      date: $('f-date').value,
+      date: $('f-date') ? $('f-date').value : '',
       notes: $('f-notes').value.trim(),
       clientId: linkedClientId(),
       // The server treats an omitted gstFree as false, so it is always sent

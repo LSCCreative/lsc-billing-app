@@ -36,7 +36,10 @@ const EstimateDetail = (() => {
     return (
       '<div class="est-header"><div>' +
       '<div class="est-upid">' + esc(estimate.upid || '—') + invoiceBadge + '</div>' +
-      '<div style="color:var(--muted);font-size:11px;margin-bottom:4px">' + esc(estimate.date || '') + '</div>' +
+      // Only older estimates have the free Date (DR11); it reads as a date, not ISO.
+      (LSCCalendar.isDate(estimate.date)
+        ? '<div style="color:var(--muted);font-size:11px;margin-bottom:4px">' + esc(LSCCalendar.longDate(estimate.date, LSCUtil.today())) + '</div>'
+        : estimate.date ? '<div style="color:var(--muted);font-size:11px;margin-bottom:4px">' + esc(estimate.date) + '</div>' : '') +
       '<h1 class="est-name">' + esc(estimate.name) + '</h1>' +
       (client.businessName ? '<div class="est-client">' + esc(client.businessName) + '</div>' : '') +
       (client.contactName
