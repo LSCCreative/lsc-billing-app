@@ -436,6 +436,31 @@
     grid-template-columns: minmax(0, 1fr) 230px;
     gap: 28px;
   }
+  /* The list is as tall as the agreement beside it and scrolls inside that
+     (task 33 DR16): at its full length it ran ~900px past the box and left
+     the text's column empty. Absolutely placed, so it never sets the row. */
+  .set-fields {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .set-field-box {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 240px;
+  }
+  .set-field-list {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 6px 28px 0;
+    border-bottom: 1px solid var(--border);
+    /* A fade at the foot says there's more below; the padding lets the last
+       field scroll clear of it. */
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+  }
 }
 
 /* ── Desktop: the rail ────────────────────────────────────────────────────── */

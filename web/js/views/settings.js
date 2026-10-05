@@ -240,7 +240,7 @@ const SettingsView = (() => {
         '<div class="set-fields">' +
           '<h3 class="set-group-head" id="set-fields-head">Fill-in fields</h3>' +
           '<p class="set-hint set-hint-lead">Click one to put it where the cursor is.</p>' +
-          '<ul class="set-field-list" aria-labelledby="set-fields-head">' + fields + '</ul>' +
+          '<div class="set-field-box"><ul class="set-field-list" aria-labelledby="set-fields-head">' + fields + '</ul></div>' +
         '</div>' +
       '</div>' +
       '<div class="set-faq">' +
