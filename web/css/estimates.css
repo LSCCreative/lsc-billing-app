@@ -730,6 +730,13 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* A row's figure is plain body type, so the total under it is the one that
+   reads bold (task 33 DR17: "+$320.00" was the same weight twice). */
+.sur-box-row .sur-box-amt {
+  font-family: inherit;
+  font-weight: 400;
+  font-size: 12px;
+}
 .sur-box-total {
   margin: 8px 0 0;
   padding-top: 10px;
