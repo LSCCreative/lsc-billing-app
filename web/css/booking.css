@@ -38,7 +38,9 @@
   color: var(--text);
   cursor: pointer;
 }
-.booking-block.is-open .bb-chevron {
+/* The block's own head only: the service menu's group heads inside it have
+   chevrons of their own, turned by aria-expanded (task 33 DR3). */
+.booking-block.is-open > .booking-head .bb-chevron {
   transform: rotate(90deg);
 }
 .booking-head .bb-sum {
