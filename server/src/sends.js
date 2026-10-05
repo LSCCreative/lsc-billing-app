@@ -396,6 +396,7 @@ async function buildMail(db, row, ctx) {
         upid: doc.upid,
         projectName: doc.projectName,
         invoiceProblem: detail.invoiceProblem,
+        rebook: detail.rebook,
         link: `${appUrl}#/projects/${sigRow.project_id}`,
       }),
     };

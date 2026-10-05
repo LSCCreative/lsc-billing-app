@@ -780,6 +780,26 @@ test('signing queues the owner’s notice and the client’s signed copy (PDF at
   assert.equal(db.prepare('SELECT COUNT(*) AS c FROM sends WHERE doc_id = ?').get(est.id).c, 2);
 });
 
+test('the owner’s notice names a pencilled day another project had confirmed, flagged rather than confirmed (C5)', async () => {
+  const url = await mailServer();
+  const est = await shoot();
+  const sat = est.days[0].date;
+  const other = await shoot({ days: [day('d_c5_other', sat, 'confirmed')], activeRows: { prod: [capture('d_c5_other')] } });
+  const { token } = await sent(est);
+  outbox.length = 0;
+  const e = (await pub(token, url)).body.estimate;
+  const r = await fetch(`${url}/public/estimates/${token}/accept`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ fullName: 'Priya Nair', role: 'Director', agree: true, version: e.version, key: e.agreement.key }),
+  }).then(json);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await settle(() => outbox.some((m) => m.to === 'owner@example.com'));
+  const owner = outbox.find((m) => m.to === 'owner@example.com');
+  const shown = new Date(sat + 'T00:00:00Z').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  assert.match(owner.text, new RegExp(`but ${shown} was already confirmed by another project`));
+  await act(other.projectId, 'decline');
+});
+
 test('signing still counts when email is down: the signature and accept stand, the sends are failed rows', async () => {
   const dead = { async sendMail() { throw new Error('connect ECONNREFUSED'); } };
   const url = await start({ renderPdf: fakeRender, publicLimits: LIMITS, appUrl: 'https://pages.example/app/', mailer: createMailer(MAIL_CFG, { transport: dead }) });

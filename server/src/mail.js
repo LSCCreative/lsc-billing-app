@@ -191,20 +191,35 @@ function updateEmail(v) {
   return { subject, text, html };
 }
 
+/* "4 Oct" from 'YYYY-MM-DD'. */
+const shortDay = (ymd) => new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+/* What signing did to the days (D18): all confirmed, or which were flagged
+   because another project had confirmed that date first (C5). */
+function daysLine(rebook) {
+  const dates = (Array.isArray(rebook) ? rebook : []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d)));
+  if (!dates.length) return 'The days are confirmed.';
+  const list = dates.map(shortDay);
+  const named = list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+  return `The days are confirmed, but ${named} ${dates.length === 1 ? 'was' : 'were'} already confirmed by another project: ` +
+    `${dates.length === 1 ? 'it’s' : 'they’re'} flagged “clash, rebook”. Sort ${dates.length === 1 ? 'it' : 'them'} out with the client.`;
+}
+
 /**
  * The owner's notice that a client signed (D41).
  *
  * @param {{clientName:string, signedBy:string, role:string, upid:string,
- *          projectName:string, link:string, invoiceProblem?:string}} v
+ *          projectName:string, link:string, invoiceProblem?:string,
+ *          rebook?:string[]}} v  `rebook`: the dates flagged as clashes
  */
 function ownerSignedEmail(v) {
   const who = v.clientName || v.signedBy;
   const subject = `${who} signed ${v.upid || 'an estimate'}${v.projectName ? `: ${v.projectName}` : ''}`;
   const lines = [
     `${v.signedBy}${v.role ? `, ${v.role},` : ''} signed and accepted the estimate for ${v.projectName || v.upid}.`,
-    v.invoiceProblem
+    daysLine(v.rebook) + ' ' + (v.invoiceProblem
       ? 'The invoices weren’t made (the project needs a UPID or its invoice numbers are taken). Open the project and use Create invoices.'
-      : 'The days are confirmed and the invoices are made.',
+      : 'The invoices are made.'),
   ];
   const html = shell({
     heading: `${who} signed the estimate`,

@@ -142,7 +142,13 @@ test('templates: the owner’s notice links to the project, and says when the in
   const ok = ownerSignedEmail({ clientName: 'Saltwater Co.', signedBy: 'Priya Nair', role: 'Director', upid: 'AUD-B', projectName: 'Harbour', link: 'https://p/app/#/projects/prj_1' });
   assert.equal(ok.subject, 'Saltwater Co. signed AUD-B: Harbour');
   assert.match(ok.text, /Priya Nair, Director, signed and accepted/);
-  assert.match(ok.text, /the invoices are made/);
+  assert.match(ok.text, /The days are confirmed\. The invoices are made\./);
+  // A day flagged as a clash isn't called confirmed and left at that (C5).
+  const one = ownerSignedEmail({ clientName: 'S', signedBy: 'P', role: 'R', upid: 'A', projectName: 'H', link: 'l', rebook: ['2026-10-16'] });
+  assert.match(one.text, /The days are confirmed, but 16 Oct was already confirmed by another project: it’s flagged “clash, rebook”\. Sort it out with the client\./);
+  const two = ownerSignedEmail({ clientName: 'S', signedBy: 'P', role: 'R', upid: 'A', projectName: 'H', link: 'l', rebook: ['2026-10-16', '2026-10-17', '2026-11-02'] });
+  assert.match(two.text, /but 16 Oct, 17 Oct and 2 Nov were already confirmed by another project: they’re flagged/);
+  assert.match(two.html, /16 Oct, 17 Oct and 2 Nov/);
   assert.match(ok.text, /#\/projects\/prj_1/);
   const bad = ownerSignedEmail({ clientName: '', signedBy: 'Priya Nair', role: 'Director', upid: '', projectName: 'Harbour', invoiceProblem: 'upid_required', link: 'https://p/' });
   assert.match(bad.text, /Create invoices/);

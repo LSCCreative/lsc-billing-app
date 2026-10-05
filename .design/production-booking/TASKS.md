@@ -1127,7 +1127,10 @@ Tasks 24–26 can be built with placeholders.
     it was paid (and an issue date after the payment moves back to it); a draft with no due date
     is due that day too. A sent invoice keeps its dates. Mutations: no unsent rule (2 fail), every
     invoice redated (1).
-  - [ ] **C5. Owner's "signed" email says days confirmed even when a clash was flagged** (backend, Sonnet/high).
+  - [x] **C5. Owner's "signed" email says days confirmed even when a clash was flagged** (backend, Sonnet/high).
+    `mail.js ownerSignedEmail` takes the `signed` activity's `rebook` and says "The days are
+    confirmed, but 16 Oct was already confirmed by another project: it's flagged “clash,
+    rebook”." Tests: template (one date, three) and signing end to end; dropping the wiring fails 1.
   - [ ] **C6. Owner never told a sent quote's proposed date was taken** (Opus/high, **F**).
   - [ ] **C7. Blank `APP_URL` becomes `/`: `no_app_url` guard dead, relative links emailed** (backend, Sonnet/high).
   - [ ] **C8. Failed sends survive accept/paid/expiry and can be retried** (backend, Sonnet/high).
