@@ -1149,7 +1149,10 @@ Tasks 24–26 can be built with placeholders.
     valid-until; an invoice email only while the invoice is `scheduled`. Checked by `retrySend`
     (409 `doc_moved_on` / `doc_expired`) and again as the outbox builds the email. Mutations: cancel
     leaving failed (1), retry unchecked (1), send unchecked (1).
-  - [ ] **C9. Void reason shown on the client's invoice page; dialog doesn't say so** (Opus/high, **F**).
+  - [x] **C9. Void reason shown on the client's invoice page; dialog doesn't say so** (Opus/high, **F**).
+    Kept visible to the client (it explains the replacement); the void dialog's hint now says the
+    client sees it and to write it for them. Checked in the browser on INV-SEND-B-D (dialog closed
+    unvoided). **The user may prefer it hidden:** a one-line change in `public.js invoiceView`.
   - [ ] **C10. Extras priced with today's GST settings, not the job's** (money, Opus/high).
   - [ ] **C11. No warning when editing an accepted, invoiced estimate** (Opus/high, **F**).
   - [ ] **C12. Signed copy greets/sends to the contact on file, not the signer** (backend, Sonnet/high).

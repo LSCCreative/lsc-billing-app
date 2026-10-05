@@ -845,7 +845,7 @@ const InvoiceView = (() => {
         (inv.kind === 'deposit' ? ' A final invoice not yet sent takes off the replacement instead.' : '') + '</p>' +
         '<div class="field"><label for="pfd-reason">Why it’s being voided</label>' +
         '<textarea id="pfd-reason" rows="3" maxlength="500" aria-describedby="pfd-reason-hint"></textarea>' +
-        '<p class="pfd-hint" id="pfd-reason-hint">Printed on the void copy, for the record.</p></div>',
+        '<p class="pfd-hint" id="pfd-reason-hint">Your client sees this: it’s on the old invoice’s page, which points them to the replacement, and printed on the void copy. Write it for them.</p></div>',
       describe: true,
       confirm: 'Void and make replacement',
       danger: true,
