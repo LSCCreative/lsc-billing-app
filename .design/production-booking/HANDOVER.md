@@ -195,11 +195,11 @@ email, then tick task 28. If the dialog is gone, delete that key in Resend and m
   signing, the info block above the title) and the phone Accept bar. The user approved.
 
 - **Stage E deployed 2026-10-05** (NAS v14, then Pages, `main` `1cf0ded`; record in task 32's
-  note). The NAS `.env` has every mail setting **except `SMTP_PASS`**, which the user adds
-  themselves (the key never goes through chat); until then the app says "Email isn't set up".
+  note). `SMTP_PASS` is the Resend key **"LSC Billing App (NAS)"** (Sending access,
+  `lsccreative.studio` only), set 2026-10-05; boot log `[mail] connected as admin@lsccreative.studio`.
+  The older "LSC Billing App SMTP" key is unused (its value was never kept): the user may delete it.
 
-**Exact next item:** once `SMTP_PASS` is in and the container recreated, Settings → Email → Send a
-test email (then tick task 28), then **task 32's end-to-end run with the user** (a real estimate to
+**Exact next item:** live Settings → Email → Send a test email (then tick task 28), then **task 32's end-to-end run with the user** (a real estimate to
 their own address, signed, the emails, the invoices, the calendar, the signed PDF), then tick 32.
 Then task 33 (review). Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
 the client pages' "contact us" needs it.
