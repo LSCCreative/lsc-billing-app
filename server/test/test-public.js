@@ -803,3 +803,172 @@ test('the owner’s send routes: list, edit, cancel and retry', async () => {
   assert.equal(retry.status, 200);
   assert.equal((await fetch(`${base}/api/sends/${row.id}/cancel`, { method: 'POST' })).status, 401, 'owner only');
 });
+
+/* ── The client invoice page (task 30, D46) ─────────────────────────────── */
+
+const { sydneyDate } = require('../src/sends');
+const realDay = (k) => sydneyDate(new Date(Date.now() + k * 86400e3).toISOString());
+const pubInv = (token, url = base) => fetch(`${url}/public/invoices/${token}`).then(json);
+const owner = (p, b) => api(`${p}${p.includes('?') ? '&' : '?'}today=${realDay(0)}`, { method: 'POST', body: JSON.stringify(b || {}) }).then(json);
+const INV_SETTINGS = {
+  business: { name: 'LSC Creative', abn: '12345678901', email: 'hello@lsc.example', phone: '0412 000 000' },
+  payment: { bankName: 'Big Bank', accountName: 'LSC Creative', bsb: '123-456', accountNumber: '00001111', terms: 'Net 14' },
+  gst: { registered: true, rate: 0.1 },
+};
+
+/* An accepted shoot's invoices: a 40% pair, or a single. */
+async function invoiced(invoicing = 'pair') {
+  const est = await shoot();
+  const r = await owner(`/api/projects/${est.projectId}/accept`, invoicing === 'pair' ? { invoicing, depositPct: 40 } : { invoicing });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const of = (kind) => r.body.invoices.find((i) => i.kind === kind);
+  return { est, deposit: of('deposit'), final: of('final'), single: of('single') };
+}
+/* "Copy link": sent now, with its link. */
+async function live(inv, dueAt = realDay(14)) {
+  const r = await owner(`/api/invoices/${inv.id}/send`, { by: 'link', dueAt });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  return r.body.invoice.publicToken;
+}
+
+test('invoice page: each kind, from the stored figures, and nothing owner-only in it (D35, D37, D46)', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify(INV_SETTINGS) });
+  const { deposit, final } = await invoiced('pair');
+  const depToken = await live(deposit);
+  const dep = (await pubInv(depToken)).body.invoice;
+  const stored = (id) => JSON.parse(db.prepare('SELECT totals_json FROM invoices WHERE id = ?').get(id).totals_json);
+  const dt = stored(deposit.id);
+  assert.deepEqual([dep.kind, dep.invoiceKind, dep.number, dep.state, dep.taxInvoice], ['invoice', 'deposit', deposit.number, 'due', true]);
+  assert.deepEqual(dep.deposit.pct, 40);
+  assert.deepEqual(dep.totals.due, { exGst: dt.clientPriceExGst, gst: dt.gst, total: dt.totalIncGst });
+  assert.equal(dep.amountDue, dt.totalIncGst);
+  assert.deepEqual([dep.issuedOn, dep.dueOn, dep.paidOn], [realDay(0), realDay(14), '']);
+  assert.deepEqual(dep.payment, INV_SETTINGS.payment);
+  assert.deepEqual([dep.client.businessName, dep.client.abn], ['Saltwater Co.', '51824753556']);
+  // A summary: the days booked with no items, no deliverables, no extras.
+  assert.equal(dep.days.length, 2);
+  assert.ok(dep.days.every((d) => d.items.length === 0));
+  assert.deepEqual([dep.deliverables, dep.sections, dep.extras], [[], [], []]);
+
+  // The final, with an extra added before it goes: every item, the extras,
+  // the deposit taken off (invoiced, not yet paid), the balance.
+  const put = await api(`/api/invoices/${final.id}?today=${realDay(0)}`, {
+    method: 'PUT', body: JSON.stringify({ extras: [{ name: 'Overtime', qty: 2, mu: 150, hoursPerUnit: 1 }] }),
+  }).then(json);
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  // A signed estimate is billed as it was sent (task 27), so its snapshot
+  // can still say pencilled; the page reads every dated day as Confirmed.
+  const snap = JSON.parse(db.prepare('SELECT estimate_snapshot_json AS j FROM invoices WHERE id = ?').get(final.id).j);
+  snap.days.forEach((d) => { d.status = 'pencilled'; });
+  db.prepare('UPDATE invoices SET estimate_snapshot_json = ? WHERE id = ?').run(JSON.stringify(snap), final.id);
+  const fin = (await pubInv(await live(final))).body.invoice;
+  const ft = stored(final.id);
+  assert.equal(fin.invoiceKind, 'final');
+  assert.deepEqual(fin.extras, [{ name: 'Overtime', qty: '2 hours', price: 300 }]);
+  assert.deepEqual([fin.totals.estimateTotal, fin.totals.extras, fin.totals.total],
+    [ft.job.totalIncGst, ft.extras.totalIncGst, ft.total.totalIncGst]);
+  assert.deepEqual(fin.totals.lessDeposit, { number: deposit.number, paid: false, amount: dt.totalIncGst });
+  assert.deepEqual(fin.totals.due, { exGst: ft.balance.clientPriceExGst, gst: ft.balance.gst, total: ft.balance.totalIncGst });
+  assert.equal(fin.amountDue, ft.balanceDue);
+  assert.equal(fin.deliverables[0].name, 'Brand film');
+  assert.ok(fin.days.some((d) => d.items.length > 0), 'a final lists each day’s items');
+  assert.ok(fin.sections.length > 0);
+  // Accepted, so the dated days read Confirmed.
+  assert.ok(fin.days.every((d) => !d.date || d.status === 'confirmed'));
+
+  const { single } = await invoiced('single');
+  const one = (await pubInv(await live(single))).body.invoice;
+  const st = stored(single.id);
+  assert.deepEqual([one.invoiceKind, one.totals.lessDeposit, one.amountDue], ['single', null, st.balanceDue]);
+  assert.deepEqual(one.totals.due, { exGst: st.total.clientPriceExGst, gst: st.total.gst, total: st.total.totalIncGst });
+
+  // The leak test, on every kind: the shoot carries a surcharge and the
+  // snapshot every internal figure; none of it, nor a line's price snapshot
+  // or the snapshot itself, reaches the reply.
+  for (const inv of [dep, fin, one]) {
+    const keys = keysOf(inv);
+    assert.deepEqual(keys.filter((k) => FORBIDDEN.test(k)), []);
+    assert.deepEqual(keys.filter((k) => ['mu', 'estimate', 'snapshot', 'hoursPerUnit', 'rate', 'cost'].includes(k)), []);
+    assert.doesNotMatch(JSON.stringify(inv), FORBIDDEN);
+  }
+});
+
+test('invoice page: a draft, an old-way invoice or a wrong link is the same 404', async () => {
+  const { deposit } = await invoiced('pair');
+  // A draft holding a link, as a cancelled email leaves one (test-send.js).
+  const token = 'd'.repeat(43);
+  db.prepare('UPDATE invoices SET public_token = ? WHERE id = ?').run(token, deposit.id);
+  assert.equal(db.prepare('SELECT status FROM invoices WHERE id = ?').get(deposit.id).status, 'draft');
+  const drafted = await pubInv(token);
+  assert.deepEqual([drafted.status, drafted.body], [404, { error: 'not_found' }]);
+  assert.equal((await fetch(`${base}/public/invoices/${token}/pdf`)).status, 404);
+
+  db.prepare("UPDATE invoices SET kind = 'legacy', status = 'sent' WHERE id = ?").run(deposit.id);
+  assert.equal((await pubInv(token)).status, 404, 'an old-way invoice has no page');
+  db.prepare("UPDATE invoices SET kind = 'deposit', status = 'draft' WHERE id = ?").run(deposit.id);
+
+  assert.deepEqual((await pubInv('x'.repeat(43))).body, { error: 'not_found' });
+  assert.equal((await pubInv('short')).status, 404);
+  // An estimate's link isn't an invoice's.
+  const { token: estToken } = await sent(await shoot());
+  assert.equal((await pubInv(estToken)).status, 404);
+});
+
+test('invoice page: due, overdue, paid on a date, void with its replacement (D46, D100)', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify(INV_SETTINGS) });
+  const { deposit } = await invoiced('pair');
+  const token = await live(deposit, realDay(14));
+  const was = today;
+  try {
+    today = realDay(14);
+    assert.equal((await pubInv(token)).body.invoice.state, 'due', 'due on its due date');
+    today = realDay(15);
+    const late = (await pubInv(token)).body.invoice;
+    assert.equal(late.state, 'overdue');
+    assert.ok(late.payment, 'overdue still shows how to pay');
+  } finally {
+    today = was;
+  }
+
+  const paid = await owner(`/api/invoices/${deposit.id}/paid`, { paidAt: realDay(0), via: 'bank' });
+  assert.equal(paid.status, 200, JSON.stringify(paid.body));
+  const p = (await pubInv(token)).body.invoice;
+  assert.deepEqual([p.state, p.paidOn, p.payment], ['paid', realDay(0), null]);
+
+  // Void: the record stays readable, nothing to pay, and the replacement is
+  // offered only once it has gone out itself.
+  const { final } = await invoiced('pair');
+  const fToken = await live(final);
+  const voided = await owner(`/api/invoices/${final.id}/void`, { reason: 'Wrong extras' });
+  assert.equal(voided.status, 200, JSON.stringify(voided.body));
+  const v = (await pubInv(fToken)).body.invoice;
+  assert.deepEqual([v.state, v.payment, v.void.on, v.void.reason], ['void', null, realDay(0), 'Wrong extras']);
+  assert.deepEqual(v.void.replacement, { number: final.number + '2', token: null });
+  // Even holding a link (a cancelled email leaves one), a draft isn't offered.
+  db.prepare('UPDATE invoices SET public_token = ? WHERE id = ?').run('r'.repeat(43), voided.body.invoice.id);
+  assert.equal((await pubInv(fToken)).body.invoice.void.replacement.token, null);
+  db.prepare('UPDATE invoices SET public_token = NULL WHERE id = ?').run(voided.body.invoice.id);
+  const nextToken = await live({ id: voided.body.invoice.id });
+  assert.equal((await pubInv(fToken)).body.invoice.void.replacement.token, nextToken);
+  assert.equal((await pubInv(nextToken)).body.invoice.state, 'due');
+});
+
+test('invoice page: the PDF is the owner’s, by link; refused while a tax invoice has no ABN', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify(INV_SETTINGS) });
+  const url = await start({ renderPdf: fakeRender, publicLimits: LIMITS });
+  const { deposit } = await invoiced('pair');
+  const token = await live(deposit);
+  const res = await fetch(`${url}/public/invoices/${token}/pdf`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), new RegExp(`${deposit.number} - Saltwater Co\\. - Harbour`));
+  assert.equal(res.headers.get('access-control-allow-credentials'), null);
+  const html = (await res.text()).replace('%PDF-fake\n', '');
+  assert.match(html, /TAX INVOICE/);
+  assert.match(html, /Payment Details.*Big Bank/s);
+  assert.doesNotMatch(html, /Pencilled|Proposed &middot;/, 'its dated days read Confirmed');
+
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...INV_SETTINGS, business: { name: 'LSC Creative' } }) });
+  const blocked = await fetch(`${url}/public/invoices/${token}/pdf`);
+  assert.deepEqual([blocked.status, await blocked.json()], [503, { error: 'pdf_unavailable' }]);
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify({}) });
+});

@@ -977,12 +977,50 @@ Tasks 24–26 can be built with placeholders.
     set up (stubbed status), Escape returning focus. 375: full-screen, actions pinned, no overflow,
     no target under 44px, 16px inputs. Dispatched clicks, plus real clicks on Copy link and Retry.
 
-- [ ] **30. The client invoice page** (frontend — Opus/high). _Depends on: 20, 24, 25._
+- [x] **30. The client invoice page** (frontend — Opus/high). _Depends on: 20, 24, 25._
   - **`GET /public/invoices/:token[/pdf]`**, through the serializer.
   - **`c/#i/<token>`:** the invoice by kind, amount due, bank details, "Download PDF", and "Paid
     on …" once paid (D46).
 
   **Done when** the leak test covers invoices too, and each kind renders correctly.
+
+  **Done 2026-10-05** (commit below, not deployed: new routes, NAS before Pages with stage E at
+  task 32). `npm test` 523/523 (4 new in `test-public.js`). Mutations caught 12 of 12 (draft or
+  legacy served, overdue a day early, bank details when paid/void, a final billed its whole job,
+  a draft replacement offered, days as sent on the page or the PDF, the snapshot in the reply,
+  raw extra lines, the deposit said paid, no ABN blocker).
+  - **The serializer** (`public.js invoiceView`) is an allow-list worked out live (a sent invoice
+    can't change, D100), read from `invoiceJson` only as the PDF prints it. `invoiceOfLink` serves
+    `scheduled | sent | paid | void` of kind deposit/final/single; a draft (a cancelled send
+    leaves its link) and a legacy invoice are the same 404 as a wrong link. `state` is `due`,
+    `overdue` (Sydney's today after `due_at`), `paid` or `void`. `payment` (the bank details) is
+    sent only while due or overdue, as on the PDF. Void carries the date, reason and the
+    replacement's number, and its link only once the replacement is itself live.
+  - **Shared readers:** `clientDeliverables` / `clientDays` / `clientSections` / `clientBusiness`
+    were pulled out of `clientView` (estimate replies unchanged). `pdf.js` now exports
+    `extraItems` (the PDF's extras, used by both), `invoiceTreatment` and `acceptedEstimate`.
+  - **Dated days read Confirmed on every invoice, page and PDF** (`acceptedEstimate`): a signed
+    estimate is billed from the version as sent, whose days still said Pencilled/Proposed. The
+    same rule as the accepted estimate page (the user, 2026-10-05). One `test-pdf.js` pin changed.
+  - **The PDF** is the owner's (`buildInvoiceDocHtml`, live business and bank details). A tax
+    invoice with no ABN in Settings answers 503 `pdf_unavailable` (the client page says it
+    couldn't make the PDF).
+  - **The page:** the same document as the estimate. Its bold move is the **payment slip** after
+    the total: a dashed tear-off rule, "How to pay", then Bank / Account name / BSB / Account
+    number / Reference (the invoice number) / Amount in large mono, each but the bank with a
+    **Copy** button ("Copied" for 2s; if the clipboard is refused, the value is selected and a
+    screen reader is told). The lede says what it is and where it stands ("Please pay $X by …",
+    "Payment of $X was due on …. If you've already paid, thank you.", "It was paid on …").
+    Deposit: one line (N% of the estimate total) and the days booked. Final/single: deliverables,
+    days with items, also included, extras, then the PDF's sums (estimate, extras, total, less
+    deposit paid/invoiced, GST) and the bar (Deposit/Balance/Total due, "… paid" once paid,
+    struck through when void). ABNs print grouped. `c.js` routes `#e/` and `#i/`; `index.html`
+    is kind-neutral. "Opened" isn't logged for invoices (not in this task).
+  - Checked in the browser against `api-scratch-mail` (SEND-B, with placeholder business and
+    bank settings) at 375 / 800 / 1280: deposit due, overdue, paid; final due with the deposit
+    invoiced and paid; void with the replacement link loading in place; a wrong link; Copy (and
+    the refused-clipboard fallback); Download PDF (real Chrome render). No overflow, no target
+    under 44px. The scratch DB was restored from a backup afterwards.
 
 - [ ] **31. Stripe card payment — ON HOLD (D101), don't build.** (auth/security + money — Opus/high). _Depends on: 30._
   - **A per-invoice "Card payment on/off"** in the invoice screen.

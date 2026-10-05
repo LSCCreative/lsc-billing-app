@@ -11,7 +11,7 @@ short ones now; older build logs were deleted — `git log -p -- <file>` recover
 
 | Track | State | Notes |
 |---|---|---|
-| [`production-booking/`](.design/production-booking/) | **Active.** Branch `production-booking`. Stages A+B, B2, C and D are built and **deployed** (D: NAS v13 then Pages, `main` at `2c7131b`). Stage E tasks 24–29 (client page, sent versions v14, the wired estimate page, signing, email queue, send panel) built, not deployed; task 28 waits on the Resend key in `.env`. **Next: TASKS.md task 30, the client invoice page.** | Surcharges, day-based estimate editor, post-production planner, Home calendar; next projects/invoices, then public client pages, e-signing, Stripe. Decisions D1–D100 in its `DECISIONS.md` are the user's; don't re-ask. Opus, effort high. |
+| [`production-booking/`](.design/production-booking/) | **Active.** Branch `production-booking`. Stages A+B, B2, C and D are built and **deployed** (D: NAS v13 then Pages, `main` at `2c7131b`). Stage E tasks 24–30 (client page, sent versions v14, the wired estimate page, signing, email queue, send panel, client invoice page) built, not deployed; task 28 waits on the Resend key in `.env`; task 31 (Stripe) held. **Next: TASKS.md task 32, E polish and deploy.** | Surcharges, day-based estimate editor, post-production planner, Home calendar; next projects/invoices, then public client pages, e-signing, Stripe. Decisions D1–D100 in its `DECISIONS.md` are the user's; don't re-ask. Opus, effort high. |
 | [`estimate-accuracy/`](.design/estimate-accuracy/) | Tasks 1–3, 5(a), 6 done and deployed (schema v10). Open: 5(b) waits on the user; `/grill-me` first on 9, 10, 12–14 (each has an open decision); 15 deploy, 16 review. Task 8 scrapped, 11 superseded by production-booking. | Opus/high for money-math tasks. |
 | [`hubspot-crm-sync/`](.design/hubspot-crm-sync/) | Design complete, **no code, no HubSpot credential yet.** Two-way sync with HubSpot Companies + Contacts; ABN stays local-only. | Opus/high. Never create anything in the user's HubSpot without asking. |
 | [`price-calculator/`](.design/price-calculator/) | Built, reviewed, live. Open: a VoiceOver pass by a person. | Finance & Price area (Dashboard, Capacity, Depreciation, Profit Goals). Settled: 48-week year retired; Finance renamed and restructured; see its HANDOVER decisions 1–9. |
@@ -31,7 +31,10 @@ leave a title + commit + one-line outcome, and record only decisions, traps and 
 ## Handover discipline
 
 1. **Before starting a task**, state which model/effort bucket it falls into (below) and pause for the
-   user to switch if the session isn't already running at that setting.
+   user to switch if the session isn't already running at that setting. **Whenever you name the
+   model/effort of a task (this one or the next), say plainly if it's a frontend task** (it builds or
+   changes anything a person looks at, whatever its bucket tag) with a bold **Frontend task** flag, so
+   the user can load the design skills (e.g. `/frontend-design`) before starting it.
 2. **When you finish a task or a session ends**, update that feature's `HANDOVER.md`: tick `TASKS.md`,
    note decisions/open seams, name the exact next unchecked item. Keep it short; a fresh agent should
    be able to read one file and know where things stand.

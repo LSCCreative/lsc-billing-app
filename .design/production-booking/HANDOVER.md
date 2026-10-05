@@ -185,13 +185,15 @@ email, then tick task 28. If the dialog is gone, delete that key in Resend and m
   v4) and SEND-B (accepted 40%, both invoices emailed). A backup from before is in this session's
   scratchpad only.
 
-**Exact next item:** **task 30, the client invoice page** (Opus/high): `GET
-/public/invoices/:token[/pdf]` and `c/#i/<token>`. Invoice links already exist (task 29 makes
-the token when an invoice is first sent, and Copy link / the email point at `c/#i/<token>`, which
-reads "couldn't find" until 30 lands). Its serializer must refuse a `draft` invoice (a cancelled
-send leaves its token on a draft) and never send `invoiceJson` whole. Task 28 still needs the
-Resend key (above) before it can be ticked. The user should also try the live site once (sign
-in, open a project).
+- **E, task 30** (the client invoice page: `GET /public/invoices/:token[/pdf]`, `c/#i/<token>`
+  with the payment slip and Copy buttons). 2026-10-05, committed, **not deployed** (with stage E at
+  task 32). Its decisions are in its note in `TASKS.md`. Invoices (page and PDF) now read dated
+  days as Confirmed. `api-scratch` is as it was (restored from a backup).
+
+**Exact next item:** **task 32, E polish and deploy** (Opus/high, **frontend task**, for the
+polish; then Sonnet/medium for the deploy). Task 31 (Stripe) is held (D101). Task 28 still needs
+the Resend key (above) before it can be ticked, and the deploy needs it in the NAS `.env`. The
+user should also try the live site once (sign in, open a project).
 
 **Seams left for later tasks:**
 - **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
@@ -224,8 +226,9 @@ in, open a project).
   client PDF's fields, never send it whole.
 - **Stage E's client events** (opened since task 26, signed since 27) are in `HOME_KINDS`
   (`routes/projects.js`) and `ProjectCard.activityText`; a new one needs both.
-- **An invoice's public page** prints through `pdf.js` `buildInvoiceDocHtml`'s fields, never
-  `invoiceJson` whole (its `estimate` is the owner-only snapshot).
+- **An invoice's public page** (task 30) reads `invoiceJson` only through `public.js
+  invoiceView`'s allow-list; `invoiceJson` itself goes only to `buildInvoiceDocHtml` (its
+  `estimate` is the owner-only snapshot). A new field on an invoice must reach both.
 - **Activity says what the owner confirmed, not what the queue did** (task 29): `sent` is logged on
   Confirm ("Scheduled v1 to email …"), and a later change or cancel of that email isn't logged; the
   row's email line is the truth. An invoice's `invoice_sent` is logged when its email actually goes.

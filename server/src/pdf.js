@@ -433,12 +433,19 @@ function extraPrice(line) {
   return round2(override || (parseFloat(line.qty) || 0) * (parseFloat(line.mu) || 0));
 }
 
+/* An invoice's extras as they print: name, quantity, unit and price, with
+   any line that bills nothing left off. The PDF and the client page
+   (public.js) both read this. */
+function extraItems(lines) {
+  return (lines || []).map((line) => ({
+    name: line.name, qty: line.qty, unit: unitOfLine(line, line), price: extraPrice(line),
+  })).filter((it) => (parseFloat(it.qty) || 0) > 0 || it.price > 0);
+}
+
 /* Extras (D35): the Additional work added after the shoot, each with its
    quantity and price, under the estimate's own items. */
 function extrasHtml(lines) {
-  const items = (lines || []).map((line) => ({
-    name: line.name, qty: line.qty, unit: unitOfLine(line, line), price: extraPrice(line),
-  })).filter((it) => (parseFloat(it.qty) || 0) > 0 || it.price > 0);
+  const items = extraItems(lines);
   if (!items.length) return '';
   return '<div style="margin-bottom:28px"><div class="sh">Extras</div>' +
     '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0">' +
@@ -537,7 +544,22 @@ function voidBannerHtml(doc) {
       replaced + ' Nothing is owed on this invoice.</div></div>';
 }
 
+/**
+ * The estimate an invoice bills, with every dated day read as Confirmed. An
+ * invoice exists only once its estimate was accepted, which confirms the
+ * dated days (D18), but a signed estimate is billed from the version as sent
+ * (task 27), whose days still carry the status they were sent with. Date TBC
+ * days stay as they were. The same rule as an accepted estimate's client
+ * page (the user, 2026-10-05).
+ */
+function acceptedEstimate(estimate) {
+  const e = estimate || {};
+  if (!Array.isArray(e.days)) return e;
+  return { ...e, days: e.days.map((d) => (d && d.date ? { ...d, status: 'confirmed' } : d)) };
+}
+
 function buildInvoiceDocHtml(doc, pricing, settings) {
+  doc = { ...doc, estimate: acceptedEstimate(doc.estimate) };
   const estimate = doc.estimate || {};
   const business = (settings && settings.business) || {};
   const treatment = invoiceTreatment(doc);
@@ -983,6 +1005,9 @@ module.exports = {
   PROPOSED_DISCLAIMER,
   buildInvoiceDocHtml,
   invoiceFilename,
+  invoiceTreatment,
+  extraItems,
+  acceptedEstimate,
   buildAgreementHtml,
   agreementFilename,
   invoiceBlocker,

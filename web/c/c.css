@@ -1,9 +1,11 @@
-/* The client pages (production-booking stage E, D50, D54, D57).
+/* The client pages (production-booking stage E, D46, D50, D54, D57).
  *
  * A document on warm paper, in lsccreative.studio's own tokens; nothing from
- * the app's CSS. The one bold move is the production days, set like a call
- * sheet: each date hangs in a left gutter, drawn large. Everything else stays
- * quiet: sentence-case headings over a rule, figures in mono on the right, terra
+ * the app's CSS. The estimate's one bold move is the production days, set like
+ * a call sheet: each date hangs in a left gutter, drawn large. The invoice's
+ * is the payment slip: the bank details behind a tear-off rule, as on a paper
+ * invoice, set large enough to type from. Everything else stays quiet:
+ * sentence-case headings over a rule, figures in mono on the right, terra
  * spent once on the masthead rule and once on the button.
  *
  * Contrast on paper #F0EDE8 / panel #E8E2D9 (checked at build, task 24):
@@ -167,6 +169,12 @@ a:hover { color: var(--ink); }
   margin-top: 2px;
   font-size: 17px;
 }
+.meta-sub {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
 @media (min-width: 640px) {
   .meta { grid-template-columns: repeat(4, auto); justify-content: start; column-gap: 40px; }
 }
@@ -184,6 +192,8 @@ a:hover { color: var(--ink); }
   letter-spacing: -0.005em;
   margin-bottom: 4px;
 }
+
+.block-text { margin-top: 10px; max-width: 34em; }
 
 .fig {
   font-family: var(--mono);
@@ -376,6 +386,9 @@ a:hover { color: var(--ink); }
   border-bottom: 1px solid var(--hair);
 }
 .sums dt { color: var(--muted); }
+.sums-q { font-size: 14px; }
+.sums-strong dt { color: var(--ink); font-weight: 700; }
+.sums-strong dd { font-weight: 700; }
 
 .total {
   display: flex;
@@ -395,10 +408,88 @@ a:hover { color: var(--ink); }
   font-variant-numeric: tabular-nums lining-nums;
 }
 
+/* A void invoice's total is a record, not a request. */
+.total.is-void .total-fig {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
 .fine {
   margin-top: 12px;
   font-size: 14px;
   color: var(--muted);
+}
+
+/* ── How to pay: the slip ─────────────────────────────────────────────────── */
+
+/* The tear-off line. */
+.perf {
+  margin: 56px 0 0;
+  border: 0;
+  border-top: 2px dashed var(--ink);
+}
+
+.slip { padding-top: 22px; }
+.slip-title {
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.slip-how { margin-top: 8px; max-width: 34em; }
+.slip-rows { margin-top: 18px; }
+.slip-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding: 10px 0;
+  border-bottom: 1px dotted var(--hair);
+}
+.slip-row:first-child { border-top: 1px solid var(--ink); }
+.slip-row dt {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+.slip-row dd {
+  display: flex;
+  align-items: center;
+  min-height: 44px;   /* a row with no Copy button keeps the rhythm */
+  justify-content: space-between;
+  gap: 16px;
+}
+/* Big enough to read off the screen while typing it into a bank's app. */
+.slip-val {
+  font-family: var(--mono);
+  font-size: 21px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.copy {
+  flex: none;
+  min-width: 84px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  cursor: pointer;
+}
+.copy:hover { background: var(--ink); color: var(--paper); }
+.copy.is-copied { background: var(--ink); color: var(--paper); }
+.copy:focus-visible { outline-color: var(--ink); }
+.slip-terms {
+  margin-top: 14px;
+  font-size: 15px;
+  color: var(--muted);
+  max-width: 36em;
+}
+@media (min-width: 560px) {
+  .slip-row { grid-template-columns: 160px 1fr; align-items: center; column-gap: 16px; }
 }
 
 /* ── Accept, or the notice in its place ───────────────────────────────────── */
@@ -659,6 +750,7 @@ a:hover { color: var(--ink); }
   .day { column-gap: 20px; }
   .day-num { font-size: 64px; }
   .panel { padding: 32px 32px 30px; }
+  .perf { margin-top: 72px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -666,6 +758,6 @@ a:hover { color: var(--ink); }
 }
 
 @media print {
-  .panel, .skip, .foot .btn, .sign { display: none; }
+  .panel, .skip, .foot .btn, .sign, .copy { display: none; }
   #doc { padding: 0; }
 }

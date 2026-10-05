@@ -563,7 +563,10 @@ test('invoice PDF: the deposit is a summary — the %, the estimate total, the d
   assert.match(html, /Deposit &mdash; 50% to secure your booking/);
   assert.match(html, /For estimate T20 &middot; Brand film/);
   assert.match(html, /Estimate total \(inc\. GST\)<\/span><span[^>]*>\$2,772\.00/);
-  assert.match(html, /Production Days Booked.*Friday 2 October 2026.*Pencilled &middot; 9:00am–7:00pm.*Day 2 — date TBC.*Proposed/s);
+  // An invoice's estimate was accepted, so a dated day reads Confirmed
+  // whatever the snapshot says (a signed estimate is billed as sent, when it
+  // was pencilled); Date TBC stays as it was.
+  assert.match(html, /Production Days Booked.*Friday 2 October 2026.*Confirmed &middot; 9:00am–7:00pm.*Day 2 — date TBC.*Proposed/s);
   assert.match(html, /Subtotal \(ex GST\).*\$1,260\.00.*GST.*\$126\.00.*Deposit Due.*\$1,386\.00/s);
   // No itemised lines: the accepted estimate is the itemised document.
   assert.doesNotMatch(html, /Video Capture|Video Editor|Extras|Less deposit/);

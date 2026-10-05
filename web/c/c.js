@@ -1,10 +1,11 @@
 /**
- * The client's estimate page (production-booking stage E, D50–D56).
+ * The client's estimate and invoice pages (production-booking stage E,
+ * D46, D50–D56).
  *
  * A separate page on the same Pages site: it loads none of the app's CSS or JS,
  * keeps nothing in localStorage and runs no analytics. The address is
- * `c/#e/<token>`; the token stays in the fragment so it never reaches a server
- * log or a Referer header.
+ * `c/#e/<token>` for an estimate and `c/#i/<token>` for an invoice; the token
+ * stays in the fragment so it never reaches a server log or a Referer header.
  *
  * It reads GET /public/estimates/:token (task 25's client view, with a live
  * state) from the API named in ../js/config.js, without credentials: the
@@ -79,11 +80,17 @@
     return '';
   }
 
+  /* "51 824 753 556", as the PDF prints an ABN; anything else as typed. */
+  const abnText = (abn) => {
+    const d = String(abn || '').replace(/\s+/g, '');
+    return /^\d{11}$/.test(d) ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3 $4') : String(abn || '');
+  };
+
   const money = (n) => '$' + (Number(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
-  function gstNote(treatment) {
+  function gstNote(treatment, word) {
     if (treatment === 'taxable') return 'All prices are in AUD and include GST.';
-    if (treatment === 'free') return 'All prices are in AUD. This estimate is GST-free.';
+    if (treatment === 'free') return 'All prices are in AUD. This ' + (word || 'estimate') + ' is GST-free.';
     return 'All prices are in AUD. No GST is charged.';
   }
 
@@ -149,11 +156,11 @@
       }).join('') + '</ul></section>';
   }
 
-  function days(e) {
+  function days(e, heading) {
     const list = e.days || [];
     if (!list.length) return '';
     const anyProposed = list.some((d) => d.status === 'proposed');
-    return '<section class="block" aria-labelledby="h-days">' + sectionHead('h-days', 'Production days') +
+    return '<section class="block" aria-labelledby="h-days">' + sectionHead('h-days', heading || 'Production days') +
       list.map((d, i) => {
         const id = 'day-' + i;
         const times = dayTimes(d);
@@ -275,7 +282,7 @@
       '</p>' +
       '<button type="button" class="btn btn-quiet" data-act="pdf">Download PDF</button>' +
       '<p class="foot-msg" id="pdf-msg" role="status"></p>' +
-      '<p class="foot-legal">' + [b.name, b.abn ? 'ABN ' + b.abn : ''].filter(Boolean).map((x) => '<span>' + esc(x) + '</span>').join('') + '</p>' +
+      '<p class="foot-legal">' + [b.name, b.abn ? 'ABN ' + abnText(b.abn) : ''].filter(Boolean).map((x) => '<span>' + esc(x) + '</span>').join('') + '</p>' +
     '</footer>';
   }
 
@@ -288,6 +295,173 @@
     document.title = (e.name ? e.name + ' — ' : '') + 'Estimate — LSC Creative';
   }
 
+  // ── The invoice (task 30, D35–D37, D46) ───────────────────────────────────
+
+  const KIND_WORD = { deposit: 'deposit invoice', final: 'final invoice', single: 'invoice' };
+  const DUE_LABEL = { deposit: 'Deposit due', final: 'Balance due', single: 'Total due' };
+  const PAID_LABEL = { deposit: 'Deposit paid', final: 'Balance paid', single: 'Total paid' };
+  const firstName = (v) => String((v.client && v.client.contactName) || '').trim().split(/\s+/)[0];
+
+  /* What the invoice is and where it stands, in one or two plain sentences. */
+  function invoiceLede(v) {
+    if (v.state === 'void') return '';
+    const first = firstName(v);
+    const what = v.invoiceKind === 'deposit'
+      ? 'Here’s the deposit invoice to secure your booking'
+      : 'Here’s the ' + (v.invoiceKind === 'final' ? 'final invoice' : 'invoice') + ' for the job';
+    const amount = money(v.amountDue);
+    let then = '';
+    if (v.state === 'paid') then = 'It was paid' + (v.paidOn ? ' on ' + longDate(v.paidOn) : '') + '. Thank you.';
+    else if (v.state === 'overdue') then = 'Payment of ' + amount + ' was due on ' + dayDate(v.dueOn) + '. If you’ve already paid, thank you.';
+    else if (v.dueOn) then = 'Please pay ' + amount + ' by ' + dayDate(v.dueOn) + '.';
+    else then = 'The amount due is ' + amount + '.';
+    return '<p class="lede">' + esc(what + (first ? ', ' + first : '') + '. ' + then) + '</p>';
+  }
+
+  function invoiceHead(v) {
+    const c = v.client || {};
+    return '<header class="mast">' +
+        '<p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p>' +
+        '<p class="kicker">' + (v.taxInvoice ? 'Tax invoice' : 'Invoice') + '</p>' +
+      '</header>' +
+      '<h1 class="title">' + esc(v.name || 'Invoice') + '</h1>' +
+      invoiceLede(v) +
+      '<dl class="meta">' +
+        (c.businessName
+          ? '<div><dt>For</dt><dd>' + esc(c.businessName) +
+            (c.abn ? '<span class="meta-sub">ABN ' + esc(abnText(c.abn)) + '</span>' : '') + '</dd></div>'
+          : '') +
+        metaRow('Invoice number', v.number) +
+        metaRow('Issued', longDate(v.issuedOn)) +
+        (v.state === 'paid' ? metaRow('Paid', longDate(v.paidOn)) : metaRow('Due', longDate(v.dueOn))) +
+      '</dl>';
+  }
+
+  /* A void invoice stays readable as a record, with the notice first (D100). */
+  function voidNotice(v) {
+    if (v.state !== 'void') return '';
+    const x = v.void || {};
+    const r = x.replacement;
+    const contact = v.business && v.business.email
+      ? '<a href="mailto:' + esc(v.business.email) + '">' + esc(v.business.email) + '</a>'
+      : 'us';
+    const next = r && r.token
+      ? ' <a href="#i/' + esc(r.token) + '">See the replacement invoice' + (r.number ? ', ' + esc(r.number) : '') + '</a>.'
+      : r && r.number
+        ? ' We’ll send you its replacement, ' + esc(r.number) + '.'
+        : ' Contact ' + contact + ' with any questions.';
+    return notice('This invoice was voided',
+      (x.on ? 'It was voided on ' + esc(longDate(x.on)) + (x.reason ? ': ' + esc(x.reason) : '') + '. ' : '') +
+      'Nothing is owed on it.' + next);
+  }
+
+  /* A deposit is a summary (D37): what it's a share of, then the days it secures. */
+  function depositSummary(v) {
+    const d = v.deposit || {};
+    return '<section class="block" aria-labelledby="h-dep">' + sectionHead('h-dep', 'Deposit') +
+      '<p class="block-text">' + esc((Math.round((Number(d.pct) || 0) * 100) / 100) + '% of the estimate total of ' +
+        money(d.estimateTotal) + ', to secure your booking.') + '</p>' +
+    '</section>';
+  }
+
+  function extras(v) {
+    const list = v.extras || [];
+    if (!list.length) return '';
+    return '<section class="block" aria-labelledby="h-extras">' + sectionHead('h-extras', 'Extras') +
+      '<table class="lines"><caption class="visually-hidden">Extras</caption>' +
+      '<thead class="visually-hidden"><tr><th scope="col">Item</th><th scope="col">Price</th></tr></thead><tbody>' +
+      list.map((it) =>
+        '<tr><th scope="row"><span class="line-name">' + esc(it.name) + '</span>' +
+        (it.qty ? '<span class="line-qty">' + esc(it.qty) + '</span>' : '') + '</th>' +
+        '<td class="fig">' + money(it.price) + '</td></tr>').join('') +
+      '</tbody></table></section>';
+  }
+
+  /* The sum, as the PDF's totals box: the estimate, the extras and the
+     deposit taken off (a final or single), then GST, then the bar. */
+  function invoiceTotal(v) {
+    const t = v.totals || {};
+    const due = t.due || {};
+    const taxed = t.treatment === 'taxable' && due.gst > 0;
+    const inc = t.treatment === 'taxable' ? ' <span class="sums-q">inc. GST</span>' : '';
+    const row = (label, value, cls) => '<div' + (cls ? ' class="' + cls + '"' : '') + '><dt>' + label + '</dt><dd class="fig">' + value + '</dd></div>';
+    const rows = [];
+    if (v.invoiceKind !== 'deposit' && (t.extras > 0 || t.lessDeposit)) {
+      rows.push(row('Estimate total' + inc, money(t.estimateTotal)));
+      if (t.extras > 0) {
+        rows.push(row('Extras' + inc, money(t.extras)));
+        rows.push(row('Total' + inc, money(t.total), 'sums-strong'));
+      }
+      if (t.lessDeposit) {
+        const l = t.lessDeposit;
+        rows.push(row((l.paid ? 'Less deposit paid' : 'Less deposit invoiced') + (l.number ? ' (' + esc(l.number) + ')' : ''),
+          '−' + money(l.amount)));
+      }
+    }
+    if (taxed) {
+      rows.push(row('Subtotal (ex GST)', money(due.exGst)));
+      rows.push(row('GST', money(due.gst)));
+    }
+    return '<section class="block" aria-labelledby="h-total">' +
+      sectionHead('h-total', v.invoiceKind === 'deposit' ? 'Amount due' : 'Invoice total') +
+      (rows.length ? '<dl class="sums">' + rows.join('') + '</dl>' : '') +
+      '<p class="total' + (v.state === 'void' ? ' is-void' : '') + '"><span class="total-label">' +
+        esc(v.state === 'void' ? 'Total (void)' : (v.state === 'paid' ? PAID_LABEL : DUE_LABEL)[v.invoiceKind] || 'Total due') + '</span>' +
+        '<span class="total-fig">' + money(due.total) + '</span></p>' +
+      '<p class="fine">' + esc(gstNote(t.treatment, 'invoice')) + '</p>' +
+    '</section>';
+  }
+
+  /* The payment slip: the bank details to type into a banking app, each one
+     copyable, behind a tear-off rule as on a paper invoice. Only while
+     there's something to pay (the server sends `payment` only then). */
+  function slip(v) {
+    const p = v.payment;
+    if (!p) return '';
+    const amount = money(v.amountDue);
+    const rows = [
+      ['Bank', p.bankName, ''],
+      ['Account name', p.accountName, p.accountName],
+      ['BSB', p.bsb, p.bsb],
+      ['Account number', p.accountNumber, p.accountNumber],
+      ['Reference', v.number, v.number],
+      ['Amount', amount, (Number(v.amountDue) || 0).toFixed(2)],
+    ].filter((r) => r[1]);
+    const contact = v.business && v.business.email
+      ? '<a href="mailto:' + esc(v.business.email) + '">' + esc(v.business.email) + '</a>'
+      : 'us';
+    const banked = p.accountName || p.bsb || p.accountNumber;
+    return '<hr class="perf">' +
+      '<section class="slip" aria-labelledby="h-pay">' +
+        '<h2 class="slip-title" id="h-pay">How to pay</h2>' +
+        (banked
+          ? '<p class="slip-how">' + esc('Transfer ' + amount + (v.dueOn && v.state !== 'overdue' ? ' by ' + longDate(v.dueOn) : '') +
+              ', with ' + (v.number || 'the invoice number') + ' as the reference.') + '</p>' +
+            '<dl class="slip-rows">' + rows.map(([label, shown, copy]) =>
+              '<div class="slip-row"><dt>' + esc(label) + '</dt>' +
+              '<dd><span class="slip-val">' + esc(shown) + '</span>' +
+              (copy
+                ? '<button type="button" class="copy" data-copy="' + esc(copy) + '" data-label="' + esc(label) + '">Copy<span class="visually-hidden"> ' +
+                  esc(label === 'BSB' ? label : label.toLowerCase()) + '</span></button>'
+                : '') + '</dd></div>'
+            ).join('') + '</dl>'
+          : '<p class="slip-how">Contact ' + contact + ' for our bank details.</p>') +
+        (p.terms ? '<p class="slip-terms">' + esc(p.terms) + '</p>' : '') +
+      '</section>';
+  }
+
+  function renderInvoice(v) {
+    current = v;
+    const bill = v.invoiceKind !== 'deposit';
+    doc.innerHTML = invoiceHead(v) + voidNotice(v) +
+      (bill
+        ? deliverables(v) + days(v) + included(v) + extras(v)
+        : depositSummary(v) + days(v, 'Production days booked')) +
+      invoiceTotal(v) + slip(v) + footer(v);
+    doc.removeAttribute('aria-busy');
+    document.title = (v.number ? v.number + ' — ' : '') + (v.taxInvoice ? 'Tax invoice' : 'Invoice') + ' — LSC Creative';
+  }
+
   /* A page with no estimate on it: a bad link, or the server out of reach. */
   function renderNotice(title, body, retry) {
     doc.innerHTML = '<header class="mast"><p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p></header>' +
@@ -298,29 +472,35 @@
     document.title = title + ' — LSC Creative';
   }
 
-  const renderMissing = () => renderNotice('We couldn’t find this estimate',
+  const renderMissing = () => renderNotice('We couldn’t find this ' + WORD[kind],
     'The link may be incomplete. Check it against the email we sent, or ask us for a new one.');
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
+  /* `e` an estimate, `i` an invoice: which page, which route. */
+  const WORD = { e: 'estimate', i: 'invoice' };
+  const ROUTE = { e: '/public/estimates/', i: '/public/invoices/' };
+  let kind = 'e';
   let token = '';
   let ticket = 0;
 
-  function tokenOf(hash) {
-    const m = /^#e\/([A-Za-z0-9_-]+)$/.exec(hash);
-    return m ? m[1] : '';
+  function linkOf(hash) {
+    const m = /^#([ei])\/([A-Za-z0-9_-]+)$/.exec(hash);
+    return m ? { kind: m[1], token: m[2] } : { kind: /^#i\//.test(hash) ? 'i' : 'e', token: '' };
   }
 
   async function load() {
     const mine = ++ticket;
-    token = tokenOf(location.hash);
+    ({ kind, token } = linkOf(location.hash));
+    document.querySelector('.skip').textContent = 'Skip to the ' + WORD[kind];
     if (!token || !API) return renderMissing();
-    if (!doc.querySelector('.loading')) doc.innerHTML = '<p class="loading">Loading your estimate…</p>';
+    if (!doc.querySelector('.loading')) doc.innerHTML = '<p class="loading">Loading…</p>';
+    doc.querySelector('.loading').textContent = 'Loading your ' + WORD[kind] + '…';
     doc.setAttribute('aria-busy', 'true');
     let res;
     let body = null;
     try {
-      res = await fetch(API + '/public/estimates/' + encodeURIComponent(token), {
+      res = await fetch(API + ROUTE[kind] + encodeURIComponent(token), {
         credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' },
       });
       body = await res.json().catch(() => null);
@@ -328,8 +508,12 @@
       res = null;
     }
     if (mine !== ticket) return undefined;  // the address changed while this was on its way
-    if (res && res.ok && body && body.estimate) {
+    if (res && res.ok && body && kind === 'e' && body.estimate) {
       render(body.estimate);
+      return undefined;
+    }
+    if (res && res.ok && body && kind === 'i' && body.invoice) {
+      renderInvoice(body.invoice);
       return undefined;
     }
     if (res && res.status === 404) return renderMissing();
@@ -337,7 +521,7 @@
       return renderNotice('Please wait a moment',
         'This page has been opened a lot in the last few minutes. Wait a minute, then try again.', true);
     }
-    return renderNotice('We couldn’t load your estimate',
+    return renderNotice('We couldn’t load your ' + WORD[kind],
       res ? 'Something went wrong on our side. Try again in a moment.' : 'Check your connection, then try again.', true);
   }
 
@@ -354,8 +538,8 @@
     return plain ? plain[1] : fallback;
   }
 
-  /* The estimate's PDF (`/pdf`, status in #pdf-msg) or, once signed, the
-     signed agreement (`/agreement`, status in #ag-msg). */
+  /* The estimate's or invoice's PDF (`/pdf`, status in #pdf-msg) or, once
+     signed, the signed agreement (`/agreement`, status in #ag-msg). */
   async function downloadPdf(btn, what) {
     const agreement = what === 'agreement';
     const msg = document.getElementById(agreement ? 'ag-msg' : 'pdf-msg');
@@ -368,14 +552,14 @@
     btn.textContent = 'Preparing PDF…';
     show('');
     try {
-      const res = await fetch(API + '/public/estimates/' + encodeURIComponent(token) + (agreement ? '/agreement' : '/pdf'),
+      const res = await fetch(API + ROUTE[kind] + encodeURIComponent(token) + (agreement ? '/agreement' : '/pdf'),
         { credentials: 'omit', cache: 'no-store' });
       if (!res.ok) throw res.status;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filenameOf(res.headers.get('Content-Disposition'), agreement ? 'Service Agreement.pdf' : 'Estimate.pdf');
+      a.download = filenameOf(res.headers.get('Content-Disposition'), agreement ? 'Service Agreement.pdf' : kind === 'i' ? 'Invoice.pdf' : 'Estimate.pdf');
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -385,7 +569,7 @@
       show(status === 429
         ? 'That’s a lot of downloads in a short time. Try again in a few minutes.'
         : status === 404
-          ? (agreement ? 'We couldn’t find the signed agreement. Ask us for a copy.' : 'This estimate is no longer available. Ask us for a copy.')
+          ? (agreement ? 'We couldn’t find the signed agreement. Ask us for a copy.' : 'This ' + WORD[kind] + ' is no longer available. Ask us for a copy.')
           : typeof status === 'number'
             ? 'We couldn’t make the PDF just now. Try again shortly, or ask us for a copy.'
             : 'Check your connection, then try again.');
@@ -624,6 +808,49 @@
     return undefined;
   }
 
+  // ── Copying a bank detail (the payment slip) ──────────────────────────────
+
+  /* Selects the value on screen, so it can be copied by hand when the
+     clipboard is refused. */
+  function selectValue(btn) {
+    const val = btn.parentNode.querySelector('.slip-val');
+    const range = document.createRange();
+    range.selectNodeContents(val);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  async function copyDetail(btn) {
+    const text = btn.dataset.copy;
+    const label = btn.dataset.label;
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch (_err) {
+      ok = false;
+    }
+    if (!ok) {
+      selectValue(btn);
+      say(label + ' selected. Copy it from your device’s menu.');
+      return;
+    }
+    // The button says so for a moment; a screen reader hears it once.
+    doc.querySelectorAll('.copy.is-copied').forEach((b) => {
+      b.classList.remove('is-copied');
+      b.firstChild.textContent = 'Copy';
+    });
+    btn.classList.add('is-copied');
+    btn.firstChild.textContent = 'Copied';
+    say(label + ' copied.');
+    clearTimeout(btn._reset);
+    btn._reset = setTimeout(() => {
+      btn.classList.remove('is-copied');
+      btn.firstChild.textContent = 'Copy';
+    }, 2000);
+  }
+
   // ── Wiring ────────────────────────────────────────────────────────────────
 
   doc.addEventListener('click', (ev) => {
@@ -636,10 +863,14 @@
     if (act === 'accept') return void openSigning(btn);
     return undefined;
   });
+  doc.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button.copy');
+    if (btn) copyDetail(btn);
+  });
 
   window.addEventListener('hashchange', () => {
-    // A link to the newer version: start at the top of it, with a screen
-    // reader's focus there too.
+    // A link to the newer version (or a void invoice's replacement): start
+    // at the top of it, with a screen reader's focus there too.
     window.scrollTo(0, 0);
     load().then(() => doc.focus({ preventScroll: true }));
   });

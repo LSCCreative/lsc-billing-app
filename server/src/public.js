@@ -26,9 +26,10 @@ const { readDays } = require('./days');
 const { readRentals } = require('./rentals');
 const { readPricing, readSettings } = require('./ratecard');
 const { docSettings } = require('./documents');
+const { invoiceJson } = require('./invoices');
 const {
   serviceGroups, daysWithItems, qtyText, dayIdsOf, hasProposedDay, PROPOSED_DISCLAIMER,
-  buildAgreementHtml, renderPdfBuffer,
+  buildAgreementHtml, renderPdfBuffer, invoiceTreatment, extraItems, acceptedEstimate,
 } = require('./pdf');
 
 /* 32 random bytes, base64url: 43 characters, 256 bits. It travels in the
@@ -51,11 +52,38 @@ const money = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
  * @param {object} business  settings.business as sent
  * @param {{n:number, issuedOn:string, validUntil:string}} sent
  */
+/* The pieces an estimate and an invoice page share, each an allow-list. */
+const clientBusiness = (b) => ({ name: str(b && b.name), abn: str(b && b.abn), email: str(b && b.email), phone: str(b && b.phone) });
+
+function clientDeliverables(rows) {
+  return (Array.isArray(rows && rows.deliverables) ? rows.deliverables : [])
+    .filter((d) => d && str(d.name).trim())
+    .map((d) => ({
+      name: str(d.name).trim(),
+      format: str(d.format),
+      duration: str(d.duration),
+      qty: Number.isInteger(Number(d.qty)) && Number(d.qty) > 0 ? Number(d.qty) : 1,
+    }));
+}
+
+const clientDay = (day, items) => ({
+  date: day.date || null,
+  status: ['confirmed', 'pencilled', 'proposed'].includes(day.status) ? day.status : 'proposed',
+  startTime: day.startTime || null,
+  endTime: day.endTime || null,
+  items: items.map((it) => ({ name: str(it.name), qty: qtyText(it.qty, it.unit), price: money(it.price) })),
+});
+
+const clientDays = (estimate, pricing) => daysWithItems(estimate, pricing).map(({ day, items }) => clientDay(day, items));
+
+function clientSections(estimate, pricing) {
+  return serviceGroups(estimate.activeRows || {}, (pricing && pricing.labourSections) || [], estimate.sectionLabels, dayIdsOf(estimate))
+    .map((g) => ({ label: str(g.label), items: g.items.map((it) => ({ name: str(it.name), tag: str(it.tag) })) }));
+}
+
 function clientView(estimate, pricing, business, sent) {
   const client = estimate.client || {};
   const totals = estimate.totals || {};
-  const rows = estimate.activeRows || {};
-  const b = business || {};
   return {
     kind: 'estimate',
     version: sent.n,
@@ -64,24 +92,10 @@ function clientView(estimate, pricing, business, sent) {
     client: { businessName: str(client.businessName), contactName: str(client.contactName) },
     issuedOn: str(sent.issuedOn),
     validUntil: str(sent.validUntil),
-    business: { name: str(b.name), abn: str(b.abn), email: str(b.email), phone: str(b.phone) },
-    deliverables: (Array.isArray(rows.deliverables) ? rows.deliverables : [])
-      .filter((d) => d && str(d.name).trim())
-      .map((d) => ({
-        name: str(d.name).trim(),
-        format: str(d.format),
-        duration: str(d.duration),
-        qty: Number.isInteger(Number(d.qty)) && Number(d.qty) > 0 ? Number(d.qty) : 1,
-      })),
-    days: daysWithItems(estimate, pricing).map(({ day, items }) => ({
-      date: day.date || null,
-      status: ['confirmed', 'pencilled', 'proposed'].includes(day.status) ? day.status : 'proposed',
-      startTime: day.startTime || null,
-      endTime: day.endTime || null,
-      items: items.map((it) => ({ name: str(it.name), qty: qtyText(it.qty, it.unit), price: money(it.price) })),
-    })),
-    sections: serviceGroups(rows, (pricing && pricing.labourSections) || [], estimate.sectionLabels, dayIdsOf(estimate))
-      .map((g) => ({ label: str(g.label), items: g.items.map((it) => ({ name: str(it.name), tag: str(it.tag) })) })),
+    business: clientBusiness(business),
+    deliverables: clientDeliverables(estimate.activeRows),
+    days: clientDays(estimate, pricing),
+    sections: clientSections(estimate, pricing),
     totals: {
       treatment: gstTreatment(totals, estimate),
       exGst: money(totals.clientPriceExGst),
@@ -316,7 +330,126 @@ async function signaturePdf(db, sig, render = renderPdfBuffer) {
   return buffer;
 }
 
+/* ── Invoices (task 30, D46, IA "Client invoice page") ──────────────────────
+   An invoice's page is worked out live, not frozen: an invoice can't change
+   once it's sent (D100: it is voided and replaced instead), so its stored
+   snapshot and totals are already fixed. What does change is whether it's
+   paid, overdue or void.
+
+   THE SNAPSHOT IS OWNER-ONLY. invoiceJson's `estimate` is the whole estimate
+   as accepted, its internal totals included; `invoiceView` reads from it only
+   what the invoice PDF prints (buildInvoiceDocHtml), field by field. */
+
+const INVOICE_KINDS = ['deposit', 'final', 'single'];
+const INVOICE_LIVE = ['scheduled', 'sent', 'paid', 'void'];
+
+/* The invoice behind a link, or null. A draft (a cancelled send leaves its
+   link on one) and an old-way invoice have no page. Looked up as given, like
+   an estimate's link, so a malformed token takes the same path. */
+function invoiceOfLink(db, token) {
+  const row = db.prepare('SELECT * FROM invoices WHERE public_token = ?').get(String(token));
+  if (!row || !INVOICE_KINDS.includes(row.kind) || !INVOICE_LIVE.includes(row.status)) return null;
+  return row;
+}
+
+const three = (t) => ({ exGst: money(t && t.clientPriceExGst), gst: money(t && t.gst), total: money(t && t.totalIncGst) });
+
+/**
+ * What the client page shows for one invoice. Every field is named.
+ *
+ * `state`: `paid`, `void`, `overdue` (past its due date, unpaid) or `due`.
+ * `due` is the block the invoice asks for (a deposit's own totals, a final's
+ * balance, a single's total), as the PDF's dark bar prints it. The bank
+ * details go only while there's something to pay, as on the PDF.
+ */
+function invoiceView(db, row, today) {
+  const doc = invoiceJson(db, row);
+  const estimate = acceptedEstimate(doc.estimate || {});
+  const settings = readSettings(db);
+  const client = estimate.client || {};
+  const t = doc.totals || {};
+  const kind = doc.kind;
+  const bill = kind !== 'deposit';
+  const treatment = invoiceTreatment(doc);
+
+  let state = 'due';
+  if (doc.status === 'paid') state = 'paid';
+  else if (doc.status === 'void') state = 'void';
+  else if (doc.dueAt && today > doc.dueAt) state = 'overdue';
+
+  let replacement = null;
+  if (state === 'void' && doc.replacedBy) {
+    const next = db.prepare('SELECT number, status, public_token FROM invoices WHERE id = ?').get(doc.replacedBy.id);
+    replacement = {
+      number: str(next && next.number),
+      // Only a replacement the client can open: a draft has no page yet.
+      token: next && next.public_token && INVOICE_LIVE.includes(next.status) ? next.public_token : null,
+    };
+  }
+
+  const p = settings.payment || {};
+  const payable = state === 'due' || state === 'overdue';
+  const less = kind === 'final' && t.deposit
+    ? { number: str(doc.less && doc.less.number), paid: Boolean(doc.less && doc.less.status === 'paid'), amount: money(t.deposit.totalIncGst) }
+    : null;
+
+  return {
+    kind: 'invoice',
+    invoiceKind: kind,
+    number: str(doc.number),
+    taxInvoice: treatment === 'taxable',
+    state,
+    upid: str(estimate.upid),
+    name: str(estimate.name),
+    client: { businessName: str(client.businessName), contactName: str(client.contactName), abn: str(client.abn) },
+    issuedOn: str(doc.issuedAt),
+    dueOn: str(doc.dueAt),
+    paidOn: state === 'paid' ? str(doc.paidAt) : '',
+    business: clientBusiness(settings.business),
+    payment: payable
+      ? { bankName: str(p.bankName), accountName: str(p.accountName), bsb: str(p.bsb), accountNumber: str(p.accountNumber), terms: str(p.terms) }
+      : null,
+    // A deposit is a summary (D37): its %, the estimate's total and the days
+    // booked, with no items. A final or single bills every item (D35).
+    deposit: kind === 'deposit'
+      ? { pct: Number(doc.pct) || 0, estimateTotal: money((estimate.totals || t.job || {}).totalIncGst) }
+      : null,
+    deliverables: bill ? clientDeliverables(estimate.activeRows) : [],
+    days: bill
+      ? clientDays(estimate, readPricing(db))
+      : (estimate.days || []).filter((d) => d && d.id).map((d) => clientDay(d, [])),
+    sections: bill ? clientSections(estimate, readPricing(db)) : [],
+    extras: bill ? extraItems(doc.extras).map((it) => ({ name: str(it.name), qty: qtyText(it.qty, it.unit), price: money(it.price) })) : [],
+    totals: {
+      treatment,
+      estimateTotal: bill ? money((t.job || {}).totalIncGst) : 0,
+      extras: bill ? money((t.extras || {}).totalIncGst) : 0,
+      total: bill ? money((t.total || {}).totalIncGst) : 0,
+      lessDeposit: less,
+      due: three(kind === 'deposit' ? t : kind === 'final' ? t.balance : t.total),
+    },
+    amountDue: money(doc.amountDue),
+    void: state === 'void'
+      ? { on: str(doc.voidedAt), reason: str(doc.voidReason), replacement }
+      : null,
+  };
+}
+
+/** The client's reply for an invoice link, or null when it has no page. */
+function publicInvoice(db, token, today) {
+  const row = invoiceOfLink(db, token);
+  return row ? invoiceView(db, row, today) : null;
+}
+
+/** The invoice a link's PDF prints (invoiceJson, owner-only: it goes only to
+    buildInvoiceDocHtml, never into a reply), or null. */
+function publicInvoicePdfSource(db, token) {
+  const row = invoiceOfLink(db, token);
+  return row ? invoiceJson(db, row) : null;
+}
+
 module.exports = {
+  publicInvoice, publicInvoicePdfSource, invoiceOfLink,
   newToken, clientView, freezeVersion, versionsOf, publicEstimate, publicPdfSource, logOpened, OPENED_EVERY_MS,
   signatureRow, signatureOfLink, signaturePdf,
 };

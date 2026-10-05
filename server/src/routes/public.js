@@ -13,9 +13,15 @@
  */
 
 const { config } = require('../config');
-const { buildEstimateHtml, exportFilename, renderPdfBuffer, agreementFilename } = require('../pdf');
+const {
+  buildEstimateHtml, exportFilename, renderPdfBuffer, agreementFilename,
+  buildInvoiceDocHtml, invoiceFilename, invoiceBlocker,
+} = require('../pdf');
 const { nowIso } = require('../db');
-const { publicEstimate, publicPdfSource, logOpened, signatureOfLink, signaturePdf } = require('../public');
+const { readPricing, readSettings } = require('../ratecard');
+const {
+  publicEstimate, publicPdfSource, logOpened, signatureOfLink, signaturePdf, publicInvoice, publicInvoicePdfSource,
+} = require('../public');
 const { signEstimate, agreementOffer } = require('../signing');
 const { localToday } = require('./projects');
 
@@ -169,6 +175,35 @@ function registerPublicRoutes(app, db, opts = {}) {
       return next(err);
     }
     res.attachment(agreementFilename(sig));
+    res.type('application/pdf');
+    return res.send(buffer);
+  });
+
+  /* An invoice's page (task 30, D46). A draft or old-way invoice is a 404
+     like any wrong link. */
+  app.get('/public/invoices/:token', (req, res) => {
+    const reply = publicInvoice(db, req.params.token, today());
+    if (!reply) return notFound(res);
+    return res.json({ invoice: reply });
+  });
+
+  /* The invoice's PDF: the owner's, from the same stored figures and today's
+     business and bank details (routes/invoices.js). */
+  app.get('/public/invoices/:token/pdf', rateLimit(limits.pdf), async (req, res, next) => {
+    const doc = publicInvoicePdfSource(db, req.params.token);
+    if (!doc) return notFound(res);
+    const settings = readSettings(db);
+    // A tax invoice without the seller's ABN isn't one: the owner has to fix
+    // Settings first. The client is told only that the PDF isn't ready.
+    if (invoiceBlocker(doc, settings)) return res.status(503).json({ error: 'pdf_unavailable' });
+    let buffer;
+    try {
+      buffer = await render(buildInvoiceDocHtml(doc, readPricing(db), settings));
+    } catch (err) {
+      if (err.code === 'pdf_unavailable') return res.status(503).json({ error: 'pdf_unavailable' });
+      return next(err);
+    }
+    res.attachment(invoiceFilename(doc));
     res.type('application/pdf');
     return res.send(buffer);
   });
