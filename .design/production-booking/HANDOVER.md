@@ -256,7 +256,7 @@ over SSH to `preprod`/`prod`/`post` on the card and the one live (test) estimate
 and prices untouched, invoice snapshot left frozen. Backup `data/exports/pre-section-ids-20261005.db`.
 **Trap:** any section the app keys on must keep its id; a deleted-and-re-added one gets `catN`.
 So **`post` is now undeletable too** (the user's call; a "Post" tag like ON SET; Rate Card screen
-only, as `prod` is), committed, **not deployed** (Pages only). The user still has to tick Capture
+only, as `prod` is), **deployed 2026-10-05** (Pages, `main` `137b98f`, run 37298681866). The user still has to tick Capture
 and add post services to their five Deliverable Types.
 
 **Exact next item: nothing queued; C1–C15 + DR1–DR17 are live.** Open items: Stripe (task 31, held, D101) and a VoiceOver pass by a person.
