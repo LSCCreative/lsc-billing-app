@@ -171,8 +171,11 @@
 .stage-line.is-accepted {
   --stage-mark: var(--cal-pencilled);
 }
-.stage-line.is-invoiced {
-  --stage-mark: var(--accent);
+/* Invoiced and healthy: half filled in the paid green, on its way to paid
+   (task 33 DR15: it shared terra with "overdue"). */
+.stage-line.is-invoiced::before {
+  background: linear-gradient(to top, var(--ok) 50%, transparent 50%);
+  border-color: var(--ok);
 }
 .stage-line.is-paid {
   --stage-mark: var(--ok);
@@ -183,10 +186,16 @@
 .stage-line.is-declined .stage-word {
   color: var(--muted);
 }
-/* Expired or overdue: the owner has something to do. */
+/* Expired, overdue or a date taken: the owner has something to do. Its mark
+   is a red diamond, set apart from every healthy square by shape too. */
 .stage-line.is-alert .stage-word,
 .stage-line.is-alert .stage-note {
   color: var(--err-text);
+}
+.stage-line.is-alert::before {
+  background: var(--err-text);
+  border-color: var(--err-text);
+  transform: rotate(45deg) scale(0.9);
 }
 
 .card-next {
