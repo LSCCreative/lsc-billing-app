@@ -73,3 +73,123 @@
    form's, so the first thing that ever goes wrong looks like every later one.
    The card's focus rings come from a11y.css's site-wide rule; this file used to
    carry its own copy from before that existed. */
+
+/* ── Getting back in (account-recovery) ─────────────────────────────────────
+   Forgot, sent, new password and an expired link are the same card asking a
+   different question: same wordmark, same width, the line under the wordmark
+   naming the state. Nothing here reaches past #login-view. */
+
+/* "Forgot password?" sits on the Password label's line, where the eye already
+   is when the password won't come. */
+.login-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* A text button: quiet until pointed at. Its box is padded out to a 44px
+   touch target and pulled back with negative margins so the label row keeps
+   its height. */
+.login-link {
+  background: none;
+  border: 0;
+  padding: 14px 6px;
+  margin: -14px -6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: color .15s, text-decoration-color .15s;
+}
+.login-link:hover,
+.login-link:focus-visible { color: var(--accent-text, var(--accent)); text-decoration-color: currentColor; }
+
+/* The way back sits centred under the main button, at a distance that makes
+   it plainly the second choice. */
+.login-back {
+  display: block;
+  margin: 18px auto -6px;
+}
+
+.login-intro {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  padding-top: 22px;
+}
+.login-intro strong { font-weight: 600; }
+.login-intro + .login-intro { padding-top: 10px; }
+.login-quiet { color: var(--muted); font-size: 12px; }
+
+.login-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.login-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  min-height: 32px;
+}
+.login-check input { width: auto; accent-color: var(--accent); }
+
+.login-card .login-wide {
+  width: 100%;
+  justify-content: center;
+  padding: 11px 18px;
+  margin-top: 24px;
+}
+
+/* "Check your email": a short accent rule, the card's one decoration, marks
+   that something has happened rather than something being asked. */
+.login-sent { position: relative; }
+.login-sent-mark {
+  display: block;
+  width: 28px;
+  height: 2px;
+  background: var(--accent);
+  margin-top: 24px;
+}
+.login-sent .login-intro:first-of-type { padding-top: 14px; }
+
+.login-checking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.login-checking .spinner { display: inline-block; }
+
+/* Good news (a password just changed) in the error box's shape, so the two
+   read as one family; green rule rather than a green box. */
+#login-notice {
+  display: none;
+  margin-top: 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--ok);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+#login-notice.show { display: block; }
+
+/* Below 768px the phone keyboard zooms anything under 16px; the login card is
+   the first thing a phone sees. */
+@media (max-width: 767px) {
+  .login-card input { font-size: 16px; }
+  .login-card { padding: 32px 22px 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-link { transition: none; }
+}

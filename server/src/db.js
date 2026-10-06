@@ -782,6 +782,28 @@ const MIGRATIONS = [
       // so whoever picks Stripe up adds it in its own migration.
     },
   },
+  {
+    version: 15,
+    name: 'account email and password reset links',
+    up(db) {
+      // .design/account-recovery/. Additive only. The account's email is where
+      // a "forgot password" link goes; '' means none is set, and then no link
+      // can be sent. A reset link's token is stored as its HMAC, as a
+      // session's is, so a copy of billing.db holds no usable link.
+      const has = db.prepare('PRAGMA table_info(account)').all().some((c) => c.name === 'email');
+      if (!has) db.exec("ALTER TABLE account ADD COLUMN email TEXT NOT NULL DEFAULT '';");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS password_resets (
+          id         TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at    TEXT,
+          ip         TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_resets_expires ON password_resets (expires_at);
+      `);
+    },
+  },
 ];
 
 /**

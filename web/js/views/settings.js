@@ -3,12 +3,16 @@
 /* Settings, #/settings (production-booking task 21; D65, IA "Settings").
  *
  * Until task 21 this was the Invoice Settings pop-up, opened over whatever was
- * on #main. It is a screen now, with six sections, each linkable as
+ * on #main. It is a screen now, with seven sections, each linkable as
  * #/settings/<section>: Business, Payment, Estimates & invoices, Service
- * agreement, Email and Card payments. A rail beside them from 1100px, a jump
+ * agreement, Email, Card payments and Account. A rail beside them from 1100px, a jump
  * list above them below that. Card payments reads "Not set up yet" (held, D101).
  * Email shows whether the server's SMTP key is connected and sends a test
  * (task 28); the key itself is set on the server, never typed in here.
+ * Account (.design/account-recovery/) is the login itself: username, the
+ * email a "forgot password" link goes to, and the password. It saves on its
+ * own, through PUT /api/account with the current password, never with Save
+ * Settings: those fields aren't in `form`, so they don't make the page dirty.
  *
  * WHAT MOVED OVER UNCHANGED
  * The pop-up's fields, their checks and the shape they are stored in:
@@ -57,6 +61,7 @@ const SettingsView = (() => {
     ['agreement', 'Service agreement'],
     ['email', 'Email'],
     ['cards', 'Card payments'],
+    ['account', 'Account'],
   ];
   const MESSAGE_LABELS = { estimate: 'Estimate', deposit: 'Deposit invoice', final: 'Final invoice', single: 'Single invoice' };
 
@@ -271,6 +276,44 @@ const SettingsView = (() => {
       '<p class="set-hint" id="set-email-result" role="status" aria-live="polite"></p>');
   }
 
+  /* Account (account-recovery). A <form> of its own so Enter saves it and a
+     password manager sees a username beside a new-password field. Filled by
+     AccountPanel once GET /api/account answers. */
+  function accountMarkup() {
+    return section('account', 'Account',
+      'How you sign in, and where a “Forgot password?” link is emailed. These save on their own with the ' +
+      'Update Account button, not with Save Settings, and any change needs your current password.',
+      '<form id="set-acct-form" novalidate>' +
+        '<div class="form-grid">' +
+          field('set-acct-username', 'Username', '', { attrs: ' autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"' }) +
+          field('set-acct-email', 'Email', '', {
+            type: 'email',
+            attrs: ' inputmode="email" autocomplete="email" aria-describedby="set-acct-email-hint"',
+            hint: 'Where a reset link goes from the sign-in screen. You can sign in with it as well as your username.',
+          }) +
+        '</div>' +
+        '<h3 class="set-group-head">Change password</h3>' +
+        '<div class="form-grid">' +
+          field('set-acct-new', 'New password', '', {
+            type: 'password',
+            attrs: ' autocomplete="new-password" aria-describedby="set-acct-new-hint"',
+            hint: 'Leave both blank to keep your password. At least 12 characters. Changing it signs out every other browser.',
+          }) +
+          field('set-acct-confirm', 'Type it again', '', { type: 'password', attrs: ' autocomplete="new-password"' }) +
+        '</div>' +
+        '<h3 class="set-group-head">Confirm it’s you</h3>' +
+        '<div class="form-grid">' +
+          field('set-acct-current', 'Current password', '', { type: 'password', attrs: ' autocomplete="current-password"' }) +
+        '</div>' +
+        '<div id="set-acct-error" role="alert"></div>' +
+        '<div class="set-acct-actions">' +
+          '<button type="submit" class="btn btn-accent" id="set-acct-save" data-write disabled>' +
+          '<span class="spinner" id="set-acct-spin"></span><span id="set-acct-label">Update Account</span></button>' +
+          '<p class="set-hint" id="set-acct-state" role="status" aria-live="polite">Loading…</p>' +
+        '</div>' +
+      '</form>');
+  }
+
   function screenMarkup(f, active) {
     return head +
       '<div class="set-shell">' + railMarkup(active) +
@@ -282,6 +325,7 @@ const SettingsView = (() => {
         emailMarkup() +
         pendingMarkup('cards', 'Card payments',
           'Paying an invoice by card through Stripe, with the card fee passed on to the client, is on hold. Clients pay by bank transfer, as the invoices say.') +
+        accountMarkup() +
         '<div id="settings-error" role="alert"></div>' +
         '<div class="pricing-save-bar set-save-bar">' +
           '<p id="set-save-state" aria-live="polite">No unsaved changes.</p>' +
@@ -638,6 +682,124 @@ const SettingsView = (() => {
     return { load, sendTest, reset() { mail = null; } };
   })();
 
+  // ── Account: the login's own details ───────────────────────────────────────
+
+  const AccountPanel = (() => {
+    let account = null; // { username, email } as the server last gave them
+    let busy = false;
+
+    const box = () => $('set-acct-error');
+    const state = (text) => { if ($('set-acct-state')) $('set-acct-state').textContent = text; };
+
+    function fill() {
+      $('set-acct-username').value = account.username;
+      $('set-acct-email').value = account.email;
+      ['set-acct-new', 'set-acct-confirm', 'set-acct-current'].forEach((id) => { $(id).value = ''; });
+      $('set-acct-save').disabled = false;
+      state(account.email ? '' : 'No email yet: “Forgot password?” can’t send you a link until one is saved.');
+    }
+
+    async function load(ticket) {
+      try {
+        account = await LSCApi.get('/api/account');
+      } catch (err) {
+        if (!LSCRouter.isCurrent(ticket)) return;
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        if (err.kind === 'auth') { handlers.onAuthLost(); return; }
+        account = null;
+        state(err.kind === 'network' ? 'Couldn’t reach the server to load your account.' : 'Couldn’t load your account: ' + (err.message || 'the server refused.'));
+        return;
+      }
+      if (LSCRouter.isCurrent(ticket) && $('set-acct-form')) fill();
+    }
+
+    function setBusy(next) {
+      busy = next;
+      $('set-acct-save').disabled = next;
+      $('set-acct-spin').style.display = next ? 'inline-block' : 'none';
+      $('set-acct-label').textContent = next ? 'Updating…' : 'Update Account';
+    }
+
+    async function save(event) {
+      event.preventDefault();
+      if (busy || !account) return;
+      LSCUtil.clearFieldErrors(box());
+      const username = $('set-acct-username').value.trim();
+      const email = $('set-acct-email').value.trim();
+      const fresh = $('set-acct-new').value;
+      const again = $('set-acct-confirm').value;
+      const current = $('set-acct-current').value;
+
+      const found = [];
+      if (username.length < 2) found.push({ msg: 'A username needs at least 2 characters.', field: $('set-acct-username') });
+      else if (username.includes('@')) found.push({ msg: 'A username can’t contain @.', field: $('set-acct-username') });
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        found.push({ msg: 'That email doesn’t look right. It should read like name@example.com.', field: $('set-acct-email') });
+      }
+      if (fresh || again) {
+        if (fresh.length < 12) found.push({ msg: 'A new password needs at least 12 characters.', field: $('set-acct-new') });
+        else if (fresh !== again) found.push({ msg: 'The two new passwords don’t match.', field: $('set-acct-confirm') });
+      }
+      const changed = username !== account.username || email !== account.email || Boolean(fresh);
+      if (!found.length && !changed) {
+        state('Nothing has changed.');
+        return;
+      }
+      if (!found.length && !current) found.push({ msg: 'Type your current password to save these changes.', field: $('set-acct-current') });
+      if (found.length) {
+        LSCUtil.showFieldErrors(box(), found);
+        return;
+      }
+
+      setBusy(true);
+      state('');
+      let reply;
+      try {
+        reply = await LSCApi.put('/api/account', {
+          username, email, currentPassword: current, ...(fresh ? { newPassword: fresh } : {}),
+        });
+      } catch (err) {
+        if (!$('set-acct-form')) return;
+        setBusy(false);
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        if (err.kind === 'auth') { handlers.onAuthLost({ keepScreen: true }); return; }
+        const fields = (err.data && err.data.fields) || {};
+        const ids = { username: 'set-acct-username', email: 'set-acct-email', newPassword: 'set-acct-new', currentPassword: 'set-acct-current' };
+        const named = Object.keys(fields).filter((k) => ids[k]).map((k) => ({ msg: fields[k], field: $(ids[k]) }));
+        if (err.code === 'wrong_password') $('set-acct-current').value = '';
+        if (named.length) LSCUtil.showFieldErrors(box(), named);
+        else {
+          box().textContent = err.kind === 'network'
+            ? 'Couldn’t update: the server is unreachable. Try again once it’s back.'
+            : err.kind === 'throttled'
+              ? 'Too many wrong passwords. Wait a minute, then try again.'
+              : 'Couldn’t update: ' + (err.message || 'the server refused the request.');
+          box().classList.add('show');
+        }
+        return;
+      }
+      if (!$('set-acct-form')) return;
+      account = { username: reply.username, email: reply.email };
+      setBusy(false);
+      fill();
+      // The header's "Signed in as …" names the login.
+      const out = document.getElementById('nav-sign-out');
+      if (out) out.title = 'Signed in as ' + reply.username;
+      const others = reply.signedOutOthers;
+      const said = reply.passwordChanged
+        ? 'Account updated, password changed' + (others ? '; ' + others + (others === 1 ? ' other browser was' : ' other browsers were') + ' signed out.' : '.')
+        : 'Account updated.';
+      state(said);
+      Toast.ok(said);
+    }
+
+    return {
+      load,
+      bind() { $('set-acct-form').addEventListener('submit', save); },
+      reset() { account = null; busy = false; },
+    };
+  })();
+
   // ── Showing ───────────────────────────────────────────────────────────────
 
   async function draw(sectionId) {
@@ -646,6 +808,7 @@ const SettingsView = (() => {
     form = null;
     Preview.reset();
     EmailPanel.reset();
+    AccountPanel.reset();
     root.innerHTML = head + '<div class="empty-state"><h3>Loading…</h3></div>';
     let settings;
     try {
@@ -670,6 +833,8 @@ const SettingsView = (() => {
     bind();
     $('set-email-send').addEventListener('click', EmailPanel.sendTest);
     EmailPanel.load(ticket);
+    AccountPanel.bind();
+    AccountPanel.load(ticket);
     LSCUtil.landFocus(root);
     LSCUnsaved.watch('settings', { label: 'your settings', onScreen, dirty });
     window.removeEventListener('scroll', onScroll);

@@ -213,8 +213,11 @@ function registerAuthRoutes(app, db) {
       }
 
       // Verify the password even when the username is wrong, so both failures
-      // take the same time and look identical from outside.
-      const userOk = username.toLowerCase() === account.username.toLowerCase();
+      // take the same time and look identical from outside. The account's
+      // email signs in as well as its username (account-recovery).
+      const login = username.toLowerCase();
+      const userOk = login === account.username.toLowerCase() ||
+        Boolean(account.email && login === account.email.toLowerCase());
       const passOk = await verifyPassword(account.password_hash, password);
 
       if (!userOk || !passOk) {
@@ -263,6 +266,11 @@ module.exports = {
   COOKIE_NAME,
   hashPassword,
   verifyPassword,
+  hashToken,
+  clientKey,
+  throttleCheck,
+  recordFailure,
+  clearFailures,
   requireAuth,
   registerAuthRoutes,
   purgeExpiredSessions,

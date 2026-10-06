@@ -816,8 +816,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v14', () => {
-  assert.equal(LATEST_VERSION, 14);
+test('the schema knows it is at v15', () => {
+  assert.equal(LATEST_VERSION, 15);
 });
 
 /**
@@ -1242,7 +1242,7 @@ test('v14 adds the version, signature and send tables and an unset link, changin
   const tables = ['projects', 'estimates', 'invoices', 'activity', 'production_days', 'rentals'];
   const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 14 });
   assert.deepEqual([result.from, result.to, result.applied], [13, 14, 1]);
   const after = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
   for (const t of ['estimates', 'invoices']) {
@@ -1255,7 +1255,7 @@ test('v14 adds the version, signature and send tables and an unset link, changin
 
   // Run again: nothing moves, and no column is added twice.
   db.prepare('DELETE FROM schema_version WHERE version >= 14').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 14 }).applied, 1);
   assert.deepEqual(dump(db, 'estimates'), after.estimates);
 
   // A link is unique; a version is unique per estimate and goes with it.
@@ -1275,5 +1275,30 @@ test('v14 adds the version, signature and send tables and an unset link, changin
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM estimate_versions').get().n, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM signatures').get().n, 0);
   assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+/**
+ * MIGRATION v15 — the account's email and password reset links
+ * (.design/account-recovery/). Additive: the account keeps its login and reads
+ * its email as unset, and running it again changes nothing.
+ */
+test('v15 gives the account an unset email and an empty reset table, changing nothing else', () => {
+  const db = v12Fixture();
+  migrate(db, { to: 14 });
+  db.prepare(`INSERT INTO account (id, username, password_hash, created_at, updated_at)
+              VALUES (1, 'lachlan', 'hash', 'x', 'x')`).run();
+  const before = dump(db, 'account');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [14, 15, 1]);
+  const after = dump(db, 'account');
+  assert.equal(after[0].email, '');
+  assert.deepEqual(after.map(({ email: _e, ...rest }) => rest), before);
+  assert.deepEqual(dump(db, 'password_resets'), []);
+
+  db.prepare('DELETE FROM schema_version WHERE version >= 15').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(dump(db, 'account'), after);
   db.close();
 });

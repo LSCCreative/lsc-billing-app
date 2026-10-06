@@ -283,6 +283,39 @@
   display: block;
 }
 
+/* ── Account (account-recovery) ───────────────────────────────────────────── */
+
+/* Its own error box and button: the section saves apart from the page. */
+#set-acct-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#set-acct-error.show {
+  display: block;
+}
+#set-acct-form .form-grid {
+  margin-bottom: 0;
+}
+.set-acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 22px;
+}
+.set-acct-actions .set-hint {
+  margin: 0;
+}
+#set-acct-spin {
+  display: none;
+}
+
 /* Sticky at the foot of the window, so Save is in reach from any section of
    a long page. The background is the bar's own surface, so fields scrolling
    under it don't show through. */
