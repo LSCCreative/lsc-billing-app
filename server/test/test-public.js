@@ -490,11 +490,19 @@ async function offer(token) {
 }
 /* The agreement as the page shows it: each gap filled with what's typed. */
 const fill = (a, name, role) => a.parts.reduce((t, part, i) => t + (i ? (a.slots[i - 1] === 'name' ? name : role) : '') + part, '');
-const AGREEMENT = 'SERVICE AGREEMENT\nClient: {client_business} (ABN {client_abn})\nSignatory: {client_contact}, {signatory_role}\n' +
-  'Total {total}. Deposit ({deposit_pct}): {deposit_amount}. Balance {balance_amount}, due {due_days} days.\nDays:\n{production_days}\n' +
-  'Signed as {signatory_role} on {date}.';
-const setAgreement = (text, extra = {}) => api('/api/settings', {
-  method: 'PUT', body: JSON.stringify({ business: { name: 'LSC Creative', abn: '12345678901' }, agreement: { text }, ...extra }),
+/* An agreement as Settings stores it (ui-clarity task 4): an intro and
+   clauses, which documents.js agreementText renders under the fixed header. */
+const AGREEMENT = {
+  intro: 'Signatory: {client_contact}, {signatory_role}',
+  clauses: [
+    { id: 't1', title: 'Money', subs: [],
+      body: 'Total {total}. Deposit ({deposit_pct}): {deposit_amount}. Balance {balance_amount}, due {due_days} days.\n\nDays:\n{production_days}' },
+    { id: 't2', title: 'Acceptance', subs: [], body: 'Signed as {signatory_role} on {date}.' },
+  ],
+};
+/* No agreement → the settings document has none, and reads as the defaults. */
+const setAgreement = (agreement, extra = {}) => api('/api/settings', {
+  method: 'PUT', body: JSON.stringify({ business: { name: 'LSC Creative', abn: '12345678901' }, agreement, ...extra }),
 });
 
 test('signing: the agreement is offered while open, signed as shown, and accepts the estimate (D39, D40, D18)', async () => {
@@ -508,11 +516,13 @@ test('signing: the agreement is offered while open, signed as shown, and accepts
   assert.equal(e.state, 'open');
   assert.equal(e.signed, false);
   const { parts, slots, key } = e.agreement;
-  assert.deepEqual(slots, ['name', 'role', 'role'], 'a gap for the signer\'s name, two for the role');
+  // The intro's name and role, clause 2's role, and the signing line's two.
+  assert.deepEqual(slots, ['name', 'role', 'role', 'name', 'role'], 'gaps for the signer\'s name and role');
   assert.doesNotMatch(parts.join(''), /Priya/, 'the contact on file isn\'t assumed to be who signs');
   const shown = fill(e.agreement, body.fullName, body.role);
-  assert.match(shown, /Signatory: Priya Nair, Marketing lead\n/);
-  assert.match(shown, /Client: Saltwater Co\. \(ABN 51 824 753 556\)/);
+  assert.match(shown, /\n\nSignatory: Priya Nair, Marketing lead\n\nPROJECT\n/);
+  assert.match(shown, /\nSaltwater Co\. \(ABN 51 824 753 556\) \(the "Client"\)\n/);
+  assert.match(shown, /\n\nTERMS\n\n1\. Money\nTotal /);
   assert.match(shown, /Deposit \(40%\): \$[\d,]+\.\d\d\. Balance \$[\d,]+\.\d\d, due 14 days/);
   assert.match(shown, /Signed as Marketing lead on 4 October 2026\./);
   assert.match(key, /^[0-9a-f]{64}$/);
@@ -573,7 +583,7 @@ test('signing: the agreement is offered while open, signed as shown, and accepts
   assert.equal(client.status, 200);
   assert.deepEqual(Buffer.from(await client.arrayBuffer()), Buffer.from(await owner.arrayBuffer()));
   assert.equal((await api(`/api/projects/${est.projectId}x/agreements/${s[0].id}/pdf`)).status, 404, 'only under its own project');
-  await setAgreement('');
+  await setAgreement();
 });
 
 test('signing: two submits at once make one signature and one set of invoices', async () => {
@@ -652,10 +662,11 @@ test('signing: what must be typed, and a changed version or agreement asks for a
 
   // The owner edits the agreement while the client reads it: the client gets
   // the new text to read, and its key signs.
-  await setAgreement('New terms for {client_business}, signed by {signatory_role}.');
+  await setAgreement({ intro: '', clauses: [{ id: 'n1', title: 'New terms', body: 'For {client_business}, signed by {signatory_role}.' }] });
   const r = await sign(token, body);
   assert.deepEqual([r.status, r.body.error], [409, 'agreement_changed']);
-  assert.deepEqual([r.body.agreement.parts, r.body.agreement.slots], [['New terms for Saltwater Co., signed by ', '.'], ['role']]);
+  assert.deepEqual(r.body.agreement.slots, ['role', 'name', 'role']);
+  assert.match(r.body.agreement.parts.join('|'), /\nTERMS\n\n1\. New terms\nFor Saltwater Co\., signed by \|\.\n\nSigned for Saltwater Co\. by \|, \|, on 4 October 2026\.$/);
   assert.notEqual(r.body.agreement.key, e.agreement.key);
   // A re-send while they read: a new version to look at first.
   await sent(est, '2026-11-21');
@@ -666,12 +677,81 @@ test('signing: what must be typed, and a changed version or agreement asks for a
   const ok = await sign(token, { ...fresh.body, fullName: ' Priya \u0000 Nair\n', role: 'Head\tof  brand' });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   const s = db.prepare(`SELECT s.full_name, s.role, s.agreement_text FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id);
-  assert.deepEqual(s, { full_name: 'Priya Nair', role: 'Head of brand', agreement_text: 'New terms for Saltwater Co., signed by Head of brand.' });
-  await setAgreement('');
+  assert.deepEqual([s.full_name, s.role], ['Priya Nair', 'Head of brand']);
+  assert.equal(s.agreement_text, fill(fresh.e.agreement, 'Priya Nair', 'Head of brand'));
+  assert.match(s.agreement_text, /1\. New terms\nFor Saltwater Co\., signed by Head of brand\.\n\nSigned for Saltwater Co\. by Priya Nair, Head of brand, on 4 October 2026\.$/);
+  await setAgreement();
 });
 
-test('signing: with no agreement written, the client accepts the quote itself; nothing internal leaks', async () => {
-  await api('/api/settings', { method: 'PUT', body: JSON.stringify({}) });
+test('signing: settings never written offer the LSC default clauses; the GET\'s text is what is stored, with its SHA-256', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify({ business: { name: 'LSC Creative', abn: '12345678901', signer: 'Lachlan Sullivan-Carey' } }) });
+  const est = await shoot();
+  const { token } = await sent(est);
+  const { e, body } = await offer(token);
+  const shown = fill(e.agreement, body.fullName, body.role);
+  assert.match(shown, /^SERVICE AGREEMENT\n\nPARTIES\nLSC Creative \(ABN 12 345 678 901\), represented by Lachlan Sullivan-Carey \(the "Business"\)\n/);
+  assert.match(shown, /\n\nTERMS\n\n1\. Services and Deliverables\n/);
+  assert.match(shown, /\n\n12\. Acceptance\n/);
+  assert.match(shown, /\(c\) Portfolio use\. The Business may use/);
+  assert.match(shown, /standard hourly rate of AUD \$63\.00 following/);
+  const r = await sign(token, body);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const s = db.prepare(`SELECT s.agreement_text, s.agreement_sha256 FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id);
+  assert.equal(s.agreement_text, shown, 'the text offered is the text stored');
+  assert.equal(s.agreement_sha256, sha(shown));
+  await setAgreement();
+});
+
+test('signing: clauses reordered while the client reads → agreement_changed, and the new order is what they read', async () => {
+  await setAgreement();
+  const est = await shoot();
+  const { token } = await sent(est);
+  const { e, body } = await offer(token);
+  assert.match(fill(e.agreement, 'x', 'y'), /\n\n2\. Payment\n[\s\S]*\n\n4\. Intellectual Property and Usage Rights\n/);
+  // The owner drags clause 4 to position 2 and saves.
+  const { docSettings } = require('../src/documents');
+  const clauses = docSettings({}).agreement.clauses;
+  clauses.splice(1, 0, clauses.splice(3, 1)[0]);
+  await setAgreement({ clauses });
+  const r = await sign(token, body);
+  assert.deepEqual([r.status, r.body.error], [409, 'agreement_changed']);
+  const now = fill(r.body.agreement, 'x', 'y');
+  assert.match(now, /\n\n2\. Intellectual Property and Usage Rights\n\(a\) Raw materials\.[\s\S]*\n\n3\. Payment\n[\s\S]*\n\n4\. Revisions\n/);
+  assert.equal(db.prepare(`SELECT COUNT(*) AS c FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id).c, 0);
+  const ok = await sign(token, { ...body, key: r.body.agreement.key });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const stored = db.prepare(`SELECT s.agreement_text FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id).agreement_text;
+  assert.equal(stored, fill(r.body.agreement, body.fullName, body.role));
+  await setAgreement();
+});
+
+test('signing: a signature made before the clauses (free text) is byte-identical after them, never re-rendered', async () => {
+  const est = await shoot();
+  const { token } = await sent(est);
+  // As production-booking's signing stored it: the owner's free text, filled.
+  const old = 'SERVICE AGREEMENT\n\nThis agreement is between LSC Creative ("we") and Saltwater Co. ("you").\n\n' +
+    '1. Scope. We will deliver the work described in the quote.\n\nSigned for Saltwater Co. by Priya Nair, Director, on 4 October 2026.';
+  const version = db.prepare(`SELECT v.id FROM estimate_versions v WHERE v.estimate_id = ?`).get(est.id).id;
+  db.prepare(`INSERT INTO signatures (id, version_id, full_name, role, ip, user_agent, signed_at, agreement_text, agreement_sha256, pdf_blob)
+    VALUES ('sig_old', ?, 'Priya Nair', 'Director', '127.0.0.1', 'Old/1', ?, ?, ?, NULL)`).run(version, nowIso(), old, sha(old));
+  // Settings now hold clauses, reordered even: none of it reaches the old one.
+  await setAgreement(AGREEMENT);
+  renders = 0;
+  // The client's download, through the stand-in renderer (no PDF kept yet).
+  const pdf = await fetch(`${await signer()}/public/estimates/${token}/agreement`);
+  assert.equal(pdf.status, 200);
+  const printed = Buffer.from(await pdf.arrayBuffer()).toString();
+  assert.ok(printed.includes('1. Scope. We will deliver the work described in the quote.'), 'the PDF prints the stored text');
+  assert.ok(printed.includes(sha(old)), 'and its original hash');
+  assert.doesNotMatch(printed, /TERMS|Money/, 'nothing from the clauses');
+  const row = db.prepare(`SELECT agreement_text, agreement_sha256 FROM signatures WHERE id = 'sig_old'`).get();
+  assert.deepEqual([row.agreement_text, row.agreement_sha256], [old, sha(old)]);
+  assert.ok(Buffer.from(old, 'utf8').equals(Buffer.from(row.agreement_text, 'utf8')));
+  await setAgreement();
+});
+
+test('signing: with every clause removed, the client accepts the quote itself; nothing internal leaks', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify({ agreement: { clauses: [] } }) });
   const est = await shoot();
   const { token } = await sent(est);
   const raw = await (await fetch(`${await signer()}/public/estimates/${token}`)).text();

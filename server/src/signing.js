@@ -9,8 +9,9 @@
  * given. The server stores the signature and accepts the estimate in one
  * transaction, through the same acceptEstimate the owner's Mark accepted uses.
  *
- * WHAT IS SIGNED IS WHAT WAS SHOWN. The agreement is the Settings text filled
- * (documents.js, the same call the Settings preview makes) from the FROZEN
+ * WHAT IS SIGNED IS WHAT WAS SHOWN. The agreement is Settings' clauses
+ * rendered and filled by documents.js agreementText (ui-clarity task 4, the
+ * same call the Settings preview makes) from the FROZEN
  * version the client is looking at, never the estimate as edited since. The
  * two fields the client fills while reading, {client_contact} (the name they
  * sign with: the client is a business, and the contact on file may not be
@@ -30,14 +31,14 @@ const crypto = require('crypto');
 const { newId } = require('./db');
 const { depositAmount, finalInvoiceTotals } = require('./calc');
 const { readSettings } = require('./ratecard');
-const { docSettings, agreementValues, fillAgreement } = require('./documents');
+const { docSettings, agreementValues, agreementText, FALLBACK_TEXT } = require('./documents');
 const { buildAgreementHtml, renderPdfBuffer } = require('./pdf');
 const { publicEstimate } = require('./public');
 const { acceptEstimate, depositPctFor, invoiceNumbers, cannotInvoice } = require('./routes/projects');
 const { queueSigningEmails } = require('./sends');
 
 /* Where the role goes until it's typed. NUL can't come from a typed role or a
-   Settings text (both are stripped of it), so it can't be confused with one. */
+   Settings clause (both are stripped of it), so it can't be confused with one. */
 const ROLE_SLOT = '\u0000signatory_role\u0000';
 const NAME_SLOT = '\u0000client_contact\u0000';
 const SLOT_OF = { [ROLE_SLOT]: 'role', [NAME_SLOT]: 'name' };
@@ -47,13 +48,6 @@ function joinAgreement(agreement, fill) {
   return agreement.parts.reduce((text, part, i) =>
     text + (i > 0 ? fill[agreement.slots[i - 1]] : '') + part, '');
 }
-
-/* What a client agrees to when the owner hasn't written an agreement yet
-   (Settings → Service agreement left empty): only the quote itself. The
-   client's word for an estimate is "quote" (D103). */
-const FALLBACK_TEXT = 'ACCEPTANCE OF QUOTE\n\n' +
-  '{client_business} accepts quote {upid}, {project_name}, for {total}, as set out in the quote.\n\n' +
-  'Signed for {client_business} by {client_contact}, {signatory_role}, on {date}.';
 
 const NAME_MAX = 100;
 
@@ -109,12 +103,13 @@ function agreementOf(db, link, today) {
     signatoryRole: '',
     days: estimate.days,
     business: snap.business,
+    hourlyRate: settings.agreement.hourlyRate,
     today,
   });
   values.signatory_role = ROLE_SLOT;
   values.client_contact = NAME_SLOT;
-  const template = (settings.agreementText.trim() ? settings.agreementText : FALLBACK_TEXT).replace(/\u0000/g, '');
-  const pieces = fillAgreement(template, values).text.split(/(\u0000(?:signatory_role|client_contact)\u0000)/);
+  const text = agreementText(settings.agreement, values, { single: choice.invoicing === 'single' }).text;
+  const pieces = text.split(/(\u0000(?:signatory_role|client_contact)\u0000)/);
   const parts = pieces.filter((_, i) => i % 2 === 0);
   const slots = pieces.filter((_, i) => i % 2 === 1).map((slot) => SLOT_OF[slot]);
   return { parts, slots, key: sha256(JSON.stringify([link.version.n, parts, slots])), choice, frozen: estimate };

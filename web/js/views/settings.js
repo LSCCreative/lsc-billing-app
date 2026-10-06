@@ -122,7 +122,9 @@ const SettingsView = (() => {
       depositRaw: String(docs.depositPct),
       validRaw: String(docs.validDays),
       dueRaw: String(docs.dueDays),
-      agreementText: docs.agreementText,
+      // Retired by ui-clarity task 4 (clauses are rendered by agreementText);
+      // read raw only so this box keeps working until task 5 replaces it.
+      agreementText: typeof (settings.agreement || {}).text === 'string' ? settings.agreement.text : '',
       faqUrl: docs.faqUrl,
     };
     D.MESSAGE_KINDS.forEach((k) => {
@@ -775,6 +777,7 @@ const SettingsView = (() => {
         notes('<p class="set-pv-warn">This project has no estimate to fill the agreement from.</p>');
         return;
       }
+      const docs = D.docSettings(loaded).agreement;
       const ownPct = typeof project.depositPct === 'number' ? project.depositPct : null;
       // A single invoice has no deposit. Otherwise the project's own %, or the
       // one on this screen.
@@ -793,10 +796,14 @@ const SettingsView = (() => {
         balanceTotal: LSCCalc.finalInvoiceTotals(totals, null, deposit).balanceDue,
         dueDays: wholeIn(form.dueRaw, 0),
         days: estimate.days,
-        business: { name: form.businessName, abn: abnDigits(form.abn) },
+        business: Object.assign({}, loaded.business, {
+          name: form.businessName, abn: abnDigits(form.abn), email: form.businessEmail, phone: form.businessPhone,
+        }),
+        hourlyRate: docs.hourlyRate,
         today: LSCUtil.today(),
       });
-      const filled = D.fillAgreement(form.agreementText, values);
+      // The one render signing uses (ui-clarity task 4), from the saved clauses.
+      const filled = D.agreementText(docs, values, { single: project.invoicing === 'single' });
       out.textContent = filled.text;
       const bits = [];
       if (filled.unknown.length) {
@@ -837,9 +844,7 @@ const SettingsView = (() => {
       overlay = document.getElementById('modal-agreement-preview');
       opener = from || null;
       overlay.innerHTML = shell(
-        form.agreementText.trim()
-          ? '<div id="set-pv-main"><p class="set-hint set-hint-lead">Loading projects…</p></div>'
-          : '<p class="set-hint set-hint-lead">The agreement is empty. Paste your text in first, then preview it here.</p>');
+        '<div id="set-pv-main"><p class="set-hint set-hint-lead">Loading projects…</p></div>');
       overlay.classList.add('open');
       document.addEventListener('keydown', onKeydown);
       overlay.addEventListener('click', onBackdrop);
