@@ -265,7 +265,33 @@ function testEmail({ businessName } = {}) {
   };
 }
 
+/**
+ * "Forgot password" (.design/account-recovery/): the one-time link to the
+ * billing app's reset page. Says who asked, how long the link lasts, and that
+ * ignoring it changes nothing.
+ *
+ * @param {{username:string, link:string, minutes:number, businessName?:string}} v
+ */
+function passwordResetEmail(v) {
+  const business = v.businessName || 'LSC Creative';
+  const lines = [
+    `Someone asked to reset the password for ${v.username ? `“${v.username}”` : 'your account'} on the billing app.`,
+    `The button below lets you choose a new one. It works once, for the next ${v.minutes} minutes.`,
+    'If you didn’t ask for this, ignore this email: your password stays as it is.',
+  ];
+  return {
+    subject: `Reset your billing app password · ${business}`,
+    text: `${lines.join('\n\n')}\n\nReset your password: ${v.link}\n\n${business}`,
+    html: shell({
+      heading: 'Reset your password',
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
+      button: { label: 'Reset your password', url: v.link },
+      footer: business,
+    }),
+  };
+}
+
 module.exports = {
   createMailer, isEmail, NOT_CONFIGURED,
-  documentEmail, ownerSignedEmail, signedCopyEmail, testEmail,
+  documentEmail, ownerSignedEmail, signedCopyEmail, testEmail, passwordResetEmail,
 };

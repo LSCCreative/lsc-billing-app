@@ -21,6 +21,7 @@ const { registerProjectRoutes } = require('./routes/projects');
 const { registerInvoiceRoutes } = require('./routes/invoices');
 const { registerPublicRoutes } = require('./routes/public');
 const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
+const { registerRecoveryRoutes, registerAccountRoutes } = require('./routes/account');
 const { createMailer } = require('./mail');
 const { createOutbox } = require('./sends');
 
@@ -97,9 +98,14 @@ function createApp(db, opts = {}) {
   // outside /api so no owner route can be reached through them.
   registerPublicRoutes(app, db, { ...opts, outbox, ownerEmail: mailer.replyTo });
 
-  // ── Auth. /api/login, /api/logout and /api/session handle their own session
-  // state and must be registered before the gate below.
+  // ── Auth. /api/login, /api/logout, /api/session and /api/password/* handle
+  // their own session state and must be registered before the gate below.
   registerAuthRoutes(app, db);
+  // "Forgot password" and the reset link: no session, by definition.
+  registerRecoveryRoutes(app, db, {
+    mailer,
+    appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
+  });
 
   // ── Everything under /api from here down requires a valid session. New API
   // routes mount after this line and inherit the gate for free.
@@ -113,6 +119,7 @@ function createApp(db, opts = {}) {
 
   app.use('/api', preWriteBackup(db, config.backupDir));
 
+  registerAccountRoutes(app, db);
   registerEstimateRoutes(app, db);
   registerClientRoutes(app, db);
   registerPricingRoutes(app, db);

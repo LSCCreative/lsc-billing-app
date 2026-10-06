@@ -31,7 +31,25 @@
   // sign-in un-hides it as it was instead of drawing the address's route afresh.
   let resumeOnSignIn = false;
 
-  function showLogin(initialError) {
+  /* An emailed reset link, #/reset/<token> (account-recovery). Not a route:
+     it is answered on the login card, before and without a session. */
+  function resetToken() {
+    const m = /^#\/reset\/([A-Za-z0-9_-]{20,200})$/.exec(location.hash);
+    return m ? m[1] : null;
+  }
+
+  /* The token leaves the address as soon as the card moves on from it, so a
+     reload or Back can't bring a spent link back. */
+  function forgetResetLink() {
+    if (resetToken()) history.replaceState(null, '', location.pathname + location.search);
+  }
+
+  function showReset(token) {
+    showLogin(null, { token });
+    document.title = 'Reset Password — LSC Billing';
+  }
+
+  function showLogin(initialError, extra) {
     // The login screen reports its own failures inline, and does it better than
     // the banner can — it distinguishes a bad password from a throttle.
     ConnectionBanner.disable();
@@ -43,10 +61,11 @@
     appView.hidden = true;
     loginView.hidden = false;
     document.title = 'Sign In — LSC Billing';
-    LoginView.mount(loginView, {
+    LoginView.mount(loginView, Object.assign({
       onSuccess: (session) => showApp(session),
       initialError: initialError || null,
-    });
+      onLeaveReset: forgetResetLink,
+    }, extra || {}));
   }
 
   /* A 401 from anywhere in the app lands here.
@@ -355,6 +374,18 @@
     LSCRouter.init(renderRoute);
     bindNav();
     bindCompactNav();
+    // A reset link pasted into a tab already on the login card arrives as a
+    // hashchange (the router is stopped there, so nothing else answers it).
+    window.addEventListener('hashchange', () => {
+      const token = resetToken();
+      if (token && appView.hidden) showReset(token);
+    });
+    const token = resetToken();
+    if (token) {
+      // Whoever is signed in here, the link is the question being asked.
+      showReset(token);
+      return;
+    }
     try {
       showApp(await LSCApi.get('/api/session'));
     } catch (err) {

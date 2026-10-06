@@ -43,8 +43,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
 - **Metro Sans is live** (its licence is free, with web embedding and redistribution allowed):
   `web/fonts/MetroSans-{400,500,600}.woff2`.
 - **Account recovery is live on `main` (2026-10-07, schema v15)** and must survive every task:
-  the login card's five states, `#/reset/<token>`, and Settings → Account. Merge `main` into
-  this branch before task 5 (see HANDOVER's ⚠ section). Never deploy a `server/` tree without v15.
+  the login card's five states, `#/reset/<token>`, and Settings → Account. Merged into this
+  branch 2026-10-07 (see HANDOVER). Never deploy a `server/` tree without v15.
 - **Commits** are named `UI clarity: <task>`. When a task finishes, tick it and leave its title,
   commit and a one-line outcome; decisions and traps go to HANDOVER (root `CLAUDE.md`).
 
@@ -160,7 +160,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
     - At 375 the drag works by touch and the ⋯ menu offers Move up/down.
   - _Depends on: 3, 4. Modifies: `settings.js`, `settings.css`, `toast.js`. New: `sortable.js`._
   - Settings now has a seventh section, **Account** (account recovery). Keep it, its own form
-    and its Update Account button outside Save Settings.
+    and its Update account button outside Save settings.
 
 - [ ] **6. Sub-clauses and reset** (frontend — Opus/high) **Frontend**
   - Inside an open card, add a **Sub-clauses** list. Each row has a handle, an auto letter, an
@@ -191,7 +191,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 4. Modifies: `web/c/c.js`, `web/c/c.css`, `server/src/pdf.js`, `test-pdf.js`._
 
 - [ ] **8. Deploy system + D3** (deploy — Sonnet/medium)
-  - **Merged `main` first?** The server tree must contain schema **v15** (`db.js`) and
+  - **Fetch and merge `origin/main` first.** The server tree must contain schema **v15** (`db.js`) and
     `routes/account.js`; one without them won't boot on the live database. Back up as
     `pre-<task>-<date>.db`; the boot log should show no migration (already v15).
   - **NAS before Pages:** the old server reads `agreement.text`, and a new Settings page saves
