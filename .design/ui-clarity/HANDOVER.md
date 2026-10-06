@@ -14,6 +14,37 @@ There are three requests from the user, built as one track:
 
 The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.**
 
+## ⚠ Before the next task: merge `main` (account recovery is live)
+
+On 2026-10-07 another session built **account recovery** and deployed it (NAS **v15**, then Pages,
+`main` `a728420`). It isn't on this branch. Its record is `.design/account-recovery/HANDOVER.md`
+(on `main`). It adds:
+
+- "Forgot password?" on the sign-in card, which emails a reset link through Resend. The link,
+  `#/reset/<token>`, opens a new-password page; `app.js` answers it before the session check.
+  `login.js` is now one card with five states (sign in, forgot, sent, new password, link expired).
+- Sign-in takes the username **or** the account's email.
+- **Settings → Account**, a seventh section after Card payments, with its own `<form>` and
+  **Update Account** button. Its fields are deliberately *not* in `form`, so they don't touch
+  Save Settings or the unsaved-edit check.
+- Server: `routes/account.js` (`/api/password/*` before the gate, `/api/account` behind it),
+  schema **v15** (`account.email`, `password_resets`), `mail.js passwordResetEmail`, and
+  `npm run set-email`.
+
+**First step, before task 5:** `git merge main` into `ui-clarity`. A dry run shows two conflicts:
+- `web/js/views/login.js`: take `main`'s whole file, then apply this branch's sentence case to
+  its button labels ("Sign In" → "Sign in", "Signing In…" → "Signing in…", "Email Me a Reset
+  Link", "Set New Password", "Back to Sign In", "Send a New Link").
+- `CLAUDE.md`: keep both tables' rows.
+
+`login.css`, `settings.css` and `settings.js` auto-merge. The new CSS uses the legacy names
+(`--muted`, `--accent`, `--ok`, `--err-*`), which `tokens.css` still aliases, so don't delete
+those aliases. Then run `npm test` (548+ passing, including `test-account.js`).
+
+**Why it matters:** this branch's `server/` only knows schema v14, and `db.js` refuses to start on
+a newer database. Deploying it (tasks 8, 15, 17) without merging would **take the live API down**
+and drop the recovery routes.
+
 ## State as of 2026-10-06
 
 - **Phase 1** (Grill Me): done. The answers are in DECISIONS.md.

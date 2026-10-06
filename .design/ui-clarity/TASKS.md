@@ -42,6 +42,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - A change while the client reads → `agreement_changed`.
 - **Metro Sans is live** (its licence is free, with web embedding and redistribution allowed):
   `web/fonts/MetroSans-{400,500,600}.woff2`.
+- **Account recovery is live on `main` (2026-10-07, schema v15)** and must survive every task:
+  the login card's five states, `#/reset/<token>`, and Settings → Account. Merge `main` into
+  this branch before task 5 (see HANDOVER's ⚠ section). Never deploy a `server/` tree without v15.
 - **Commits** are named `UI clarity: <task>`. When a task finishes, tick it and leave its title,
   commit and a one-line outcome; decisions and traps go to HANDOVER (root `CLAUDE.md`).
 
@@ -156,6 +159,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
     - Keyboard-only reorder works.
     - At 375 the drag works by touch and the ⋯ menu offers Move up/down.
   - _Depends on: 3, 4. Modifies: `settings.js`, `settings.css`, `toast.js`. New: `sortable.js`._
+  - Settings now has a seventh section, **Account** (account recovery). Keep it, its own form
+    and its Update Account button outside Save Settings.
 
 - [ ] **6. Sub-clauses and reset** (frontend — Opus/high) **Frontend**
   - Inside an open card, add a **Sub-clauses** list. Each row has a handle, an auto letter, an
@@ -186,6 +191,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 4. Modifies: `web/c/c.js`, `web/c/c.css`, `server/src/pdf.js`, `test-pdf.js`._
 
 - [ ] **8. Deploy system + D3** (deploy — Sonnet/medium)
+  - **Merged `main` first?** The server tree must contain schema **v15** (`db.js`) and
+    `routes/account.js`; one without them won't boot on the live database. Back up as
+    `pre-<task>-<date>.db`; the boot log should show no migration (already v15).
   - **NAS before Pages:** the old server reads `agreement.text`, and a new Settings page saves
     clauses, which it would ignore and fall back to `FALLBACK_TEXT`.
   - Back up the live DB (it keeps the old agreement text).
@@ -266,7 +274,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
 
 - [ ] **13. System sweep of the other screens** (frontend — Opus/high) **Frontend**
   - Home, Projects list and cards, Clients, Estimate view, Finance (Dashboard, Capacity,
-    Depreciation, Goals), Rate Card, the rest of Settings, Login and the setup screens:
+    Depreciation, Goals), Rate Card, the rest of Settings (including **Account**), Login (all
+    five states: sign in, forgot, sent, new password, link expired, via `#/reset/<token>`) and
+    the setup screens:
     - Fix anything tasks 1–3 left misaligned.
     - Move remaining caps buttons to sentence case.
     - Put each screen's sections on `.panel` where the markup already groups them.
@@ -288,7 +298,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 9–12._
 
 - [ ] **15. Deploy D1** (deploy — Sonnet/medium)
-  - Pages only (no server change since task 8). Ask first. Check the live Project page, Invoice
+  - Pages only (no server change since task 8). Ask first. `git fetch` and fast-forward onto
+    `origin/main` first: other sessions push `main` too. Check the live Project page, Invoice
     and Editor on one real project.
   - _Depends on: 9–14._
 
@@ -308,6 +319,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
     - The URL printed below the button.
     - A footer with the business name · ABN · email · phone · lsccreative.studio.
   - Table-based, with inline styles only, and readable at 320px and with images off.
+  - `passwordResetEmail` (account recovery) uses `shell()` too, so it's a seventh template. Keep
+    its link, its 30-minute wording and its plain text, and give it the owner variant (no client
+    footer).
   - Pass the business details into all six templates from their callers (`sends.js`,
     `signing.js`, the test route). The owner notices use the shell without the client footer.
     The plain-text versions are unchanged.
