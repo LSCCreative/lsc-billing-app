@@ -40,8 +40,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - The SHA-256 is of that text.
   - Signed agreements are never re-rendered from clauses.
   - A change while the client reads → `agreement_changed`.
-- **Metro Sans licence gate.** Don't commit Metro Sans files to `web/fonts/` until the user
-  confirms web embedding is allowed. Until then the stack falls back to the system sans.
+- **Metro Sans is live** (its licence is free, with web embedding and redistribution allowed):
+  `web/fonts/MetroSans-{400,500,600}.woff2`.
 - **Commits** are named `UI clarity: <task>`. When a task finishes, tick it and leave its title,
   commit and a one-line outcome; decisions and traps go to HANDOVER (root `CLAUDE.md`).
 
@@ -49,6 +49,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
 
 - [x] **1. Tokens live, palette and type across the app** (frontend — Opus/high) **Frontend**
   - **Done** `07df49a`: every screen warm at 1280 and 375, no old colours left (computed-style scan), no overflow; screenshots `screenshots/task1-*`.
+  - **Metro Sans added** once the licence arrived: all three weights load on every app screen at 1280/375, no overflow, no font errors; screenshots `screenshots/font-*`.
   - Load `tokens.css` first in `web/index.html`, and in `web/c/index.html` for the shared primitives
     only (the client pages stay light, via `[data-theme="light"]` or their own `c.css`).
   - Delete the `:root` values in `app.css` and `a11y.css` that the legacy aliases now supply, and
@@ -187,7 +188,6 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - Copy the code by tar over ssh (`DEPLOYMENT.md`). Confirm the boot log, then that
     `/public/estimates/:token` offers the default clauses for an open link, if one exists.
   - Then push `main` for Pages.
-  - Copy Metro Sans into `web/fonts/` **only if the licence is confirmed**.
   - **Ask the user before deploying.**
   - **After deploying:** the user fills Settings → Business email, phone and Signs for the
     business, and checks the 12 clauses.
@@ -291,7 +291,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
 ## D2: branded emails
 
 - [ ] **16. The branded email shell** (frontend — Opus/high) **Frontend**
-  - **Waits on the user's logo file.**
+  - **The logo:** `Visual Design/CS-Felice-Mono-Monospaced-Font/LogoDark_ No Text.png` (dark heads,
+    for the paper background; `Logo Light_ No Text.png` is for dark grounds). Each is 2000×2000 with a
+    wide empty margin, so trim it to the mark before scaling.
   - Host it as a 2× PNG at `web/email/logo.png` (Pages), referenced by absolute URL from the
     Pages base. Gmail and Outlook block SVG and embedded images (U7).
   - Rebuild `mail.js shell()` (U8):

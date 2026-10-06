@@ -52,9 +52,10 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
 
 ## Waiting on the user
 
-- **The logo file** (for D2), PNG or SVG.
-- **The Metro Sans licence:** confirm that web embedding is allowed (the repo is public), and that
-  it's a bought licence: the installed copy is a Fontspring demo, which is never licensed for web.
+Nothing. The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
+for light grounds, `Logo Light_ No Text.png` for dark; 2000×2000, trim the margin) for task 16.
+Metro Sans's licence (`Visual Design/Metro-Sans---Full-Family/Metro Sans License.pdf`) is free:
+commercial use, web embedding and redistribution are all allowed, so it is live in `web/fonts/`.
 
 ## Decisions made in the build (tell the user)
 
@@ -88,8 +89,9 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
 - `.sum-label` is the mono caps figure label now; `.tax-setting .sum-label` scopes it back to a
   sentence-case title (Rate Card, Goals reuse it as a setting name).
 - Metro Sans has **no tabular figures**: money uses `--font-figures` (mono), U24.
-- `tokens.css` declares Metro Sans at `../fonts/MetroSans-{400,500,600}.woff2`. Copy and rename them from
-  `Visual Design/Metro-Sans---Full-Family/Metrosans * Webfont/` only once the licence is confirmed.
-  Until then the browser logs a font error and falls back to the system sans.
+- Metro Sans: `web/fonts/MetroSans-{400,500,600}.woff2` are the Regular, Medium and Semi Bold
+  webfonts from `Visual Design/Metro-Sans---Full-Family/`. A 700 request uses 600 (no synthetic
+  bold). It lacks `▾ ⋯ ← → ↑ ↓ ✓ ±`, which come from the system face. The client pages don't use
+  it (Delight + mono, by design).
 - The Desktop Preservation Law in `app.css` is retired (U16). Rewrite that header comment when
   tokens land.

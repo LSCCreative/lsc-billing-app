@@ -27,9 +27,11 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 /* ── Fonts (U19) ─────────────────────────────────────────────────────────────
-   Metro Sans: reading text, form fields, buttons. Its files go in ../fonts/
-   only once its licence allows web embedding (the repo is public); until then
-   the stack falls back to the system UI face. The face is named 'LSC Metro
+   Metro Sans: reading text, form fields, buttons. Free licence, web embedding
+   and redistribution allowed (Visual Design/Metro-Sans---Full-Family/Metro
+   Sans License.pdf). 400 Regular, 500 Medium, 600 Semi Bold; a 700 request
+   resolves to 600 (bold is Delight's). It has no ▾ ⋯ arrows ✓ ±, which fall
+   through to the system face. The face is named 'LSC Metro
    Sans', not 'Metro Sans': when a web font's file is missing, Chrome falls
    back to an INSTALLED font of the same family name, and a Fontspring demo
    copy (glyphs swapped for ±) is installed on the studio Mac. A private name
