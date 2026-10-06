@@ -691,7 +691,8 @@ test('signing: settings never written offer the LSC default clauses; the GET\'s 
   const shown = fill(e.agreement, body.fullName, body.role);
   assert.match(shown, /^SERVICE AGREEMENT\n\nPARTIES\nLSC Creative \(ABN 12 345 678 901\), represented by Lachlan Sullivan-Carey \(the "Business"\)\n/);
   assert.match(shown, /\n\nTERMS\n\n1\. Services and Deliverables\n/);
-  assert.match(shown, /\n\n12\. Acceptance\n/);
+  assert.match(shown, /\n\n2\. Deposit\nA non-refundable deposit of 50% is required/);
+  assert.match(shown, /\n\n13\. Acceptance\n/);
   assert.match(shown, /\(c\) Portfolio use\. The Business may use/);
   assert.match(shown, /standard hourly rate of AUD \$63\.00 following/);
   const r = await sign(token, body);
@@ -707,16 +708,16 @@ test('signing: clauses reordered while the client reads → agreement_changed, a
   const est = await shoot();
   const { token } = await sent(est);
   const { e, body } = await offer(token);
-  assert.match(fill(e.agreement, 'x', 'y'), /\n\n2\. Payment\n[\s\S]*\n\n4\. Intellectual Property and Usage Rights\n/);
-  // The owner drags clause 4 to position 2 and saves.
+  assert.match(fill(e.agreement, 'x', 'y'), /\n\n2\. Deposit\n[\s\S]*\n\n5\. Intellectual Property and Usage Rights\n/);
+  // The owner drags clause 5 to position 2 and saves.
   const { docSettings } = require('../src/documents');
   const clauses = docSettings({}).agreement.clauses;
-  clauses.splice(1, 0, clauses.splice(3, 1)[0]);
+  clauses.splice(1, 0, clauses.splice(4, 1)[0]);
   await setAgreement({ clauses });
   const r = await sign(token, body);
   assert.deepEqual([r.status, r.body.error], [409, 'agreement_changed']);
   const now = fill(r.body.agreement, 'x', 'y');
-  assert.match(now, /\n\n2\. Intellectual Property and Usage Rights\n\(a\) Raw materials\.[\s\S]*\n\n3\. Payment\n[\s\S]*\n\n4\. Revisions\n/);
+  assert.match(now, /\n\n2\. Intellectual Property and Usage Rights\n\(a\) Raw materials\.[\s\S]*\n\n3\. Deposit\n[\s\S]*\n\n4\. Payment\n[\s\S]*\n\n5\. Revisions\n/);
   assert.equal(db.prepare(`SELECT COUNT(*) AS c FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(est.id).c, 0);
   const ok = await sign(token, { ...body, key: r.body.agreement.key });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));

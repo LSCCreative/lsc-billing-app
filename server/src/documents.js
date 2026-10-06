@@ -48,45 +48,48 @@
     hourlyRate: 63, // {hourly_rate}, the $63.00 in the user's Revisions clause (U13)
   });
 
-  /* The user's 12 clauses (U13), verbatim but for two changes: the typed
-     "a." / "(i)" prefixes are now sub-clauses, which the render letters, and
-     "$63.00" is {hourly_rate}. test-documents.js turns these back into the
-     user's original text and compares them, so an edit here is caught. None is
-     deposit-only: clause 2 also holds the GST and late-payment terms, which a
-     single invoice needs too. */
+  /* The user's 12 clauses (U13), verbatim but for three changes: the typed
+     "a." / "(i)" prefixes are now sub-clauses, which the render letters;
+     "$63.00" is {hourly_rate}; and their Payment clause is split in two (the
+     user, 2026-10-06), so a single invoice leaves out the deposit and
+     final-invoice sentences (Deposit, deposit-only) and keeps the GST and
+     late-payment terms (Payment). test-documents.js turns these back into the
+     user's original text and compares them, so an edit here is caught. */
   const sub = (id, heading, text, indent) => ({ id, heading, text, indent: indent ? 1 : 0 });
   const DEFAULT_CLAUSES = [
     { id: 'c01', title: 'Services and Deliverables', subs: [],
       body: 'The Business will provide the services and deliverables described in the Quote. Where this Agreement and the Quote conflict, this Agreement prevails, except that the Quote governs scope line items and pricing.' },
-    { id: 'c02', title: 'Payment', subs: [],
-      body: 'A non-refundable deposit of {deposit_pct} is required before the Business commences capture. The balance is due on the date shown on the final invoice. All amounts are in Australian Dollars (AUD). LSC Creative is not currently registered for GST and no GST is charged on this Agreement.\n\nLate payment. Overdue amounts attract interest at 10% per annum from 40 days after the due date. While any amount is overdue, the Business may suspend further work and withhold deliverables. The Client must pay the Business\'s reasonable costs of recovering overdue amounts, including debt-recovery agency and legal costs.' },
-    { id: 'c03', title: 'Revisions', subs: [],
+    { id: 'c02', title: 'Deposit', subs: [], depositOnly: true,
+      body: 'A non-refundable deposit of {deposit_pct} is required before the Business commences capture. The balance is due on the date shown on the final invoice.' },
+    { id: 'c03', title: 'Payment', subs: [],
+      body: 'All amounts are in Australian Dollars (AUD). LSC Creative is not currently registered for GST and no GST is charged on this Agreement.\n\nLate payment. Overdue amounts attract interest at 10% per annum from 40 days after the due date. While any amount is overdue, the Business may suspend further work and withhold deliverables. The Client must pay the Business\'s reasonable costs of recovering overdue amounts, including debt-recovery agency and legal costs.' },
+    { id: 'c04', title: 'Revisions', subs: [],
       body: 'The Client is entitled to two (2) rounds of minor revisions to the draft video(s). Each round is one consolidated list of changes. Further rounds, or changes that materially alter the agreed scope, are charged at the Business\'s standard hourly rate of AUD {hourly_rate} following Client approval of a quote. Deliverables are deemed approved if no revision request is received within 14 business days of delivery.' },
-    { id: 'c04', title: 'Intellectual Property and Usage Rights', body: '', subs: [
-      sub('c04a', 'Raw materials', 'All raw footage, project files and other original creative work remain the exclusive property of the Business. They may be supplied on request for a separately agreed fee. The Business retains raw materials for 6 months from final delivery, after which they may be deleted without further notice.'),
-      sub('c04b', 'Client licence', 'From the date of delivery the Client may use the final deliverables for its promotional, marketing and internal communication purposes across online platforms, social media, websites and presentations. If the balance is not paid in full within 30 days of delivery, this licence automatically expires and any continued use is unlicensed. On receipt of payment in full the licence becomes perpetual, non-exclusive and irrevocable. It does not include the right to sell the deliverables to third parties.'),
-      sub('c04c', 'Portfolio use', 'The Business may use the final video(s), excerpts and behind-the-scenes material for its own archival, portfolio and promotional purposes, including its website, social media and award submissions, unless otherwise agreed in writing before services commence.'),
+    { id: 'c05', title: 'Intellectual Property and Usage Rights', body: '', subs: [
+      sub('c05a', 'Raw materials', 'All raw footage, project files and other original creative work remain the exclusive property of the Business. They may be supplied on request for a separately agreed fee. The Business retains raw materials for 6 months from final delivery, after which they may be deleted without further notice.'),
+      sub('c05b', 'Client licence', 'From the date of delivery the Client may use the final deliverables for its promotional, marketing and internal communication purposes across online platforms, social media, websites and presentations. If the balance is not paid in full within 30 days of delivery, this licence automatically expires and any continued use is unlicensed. On receipt of payment in full the licence becomes perpetual, non-exclusive and irrevocable. It does not include the right to sell the deliverables to third parties.'),
+      sub('c05c', 'Portfolio use', 'The Business may use the final video(s), excerpts and behind-the-scenes material for its own archival, portfolio and promotional purposes, including its website, social media and award submissions, unless otherwise agreed in writing before services commence.'),
     ] },
-    { id: 'c05', title: 'Client Materials, Releases and Music', subs: [],
+    { id: 'c06', title: 'Client Materials, Releases and Music', subs: [],
       body: 'The Client warrants that all materials it supplies (including logos, music, brand assets and brand messaging) are cleared for the intended use. The Client assumes full responsibility for all content, statements, and brand messaging included in the final media deliverables, and fully indemnifies the Business against any legal claims (including public liability, defamation, or regulatory action) arising from what is said or depicted in the media. Unless the Quote states otherwise, the Client is responsible for location access, permits and location fees, and for obtaining talent and property releases for its people and premises. Licensed music is cleared only for the specified use and not for reuse in other productions.' },
-    { id: 'c06', title: 'Delays, Weather and Force Majeure', subs: [],
+    { id: 'c07', title: 'Delays, Weather and Force Majeure', subs: [],
       body: 'Where the Client, its talent or its locations are unavailable through no fault of the Business, standby time, crew waiting time and reshoots may be charged at the Business\'s standard rates. Neither party is liable for delay caused by events beyond its reasonable control, including severe weather. Outdoor and on-water shoots may be rescheduled on a weather call without penalty to either party.' },
-    { id: 'c07', title: 'Cancellation and Postponement', body: '', subs: [
-      sub('c07a', 'By the Client', ''),
-      sub('c07a1', '', 'If the Client cancels after signing but before capture begins, the deposit is forfeited to cover administrative and pre-production work.', 1),
-      sub('c07a2', '', 'If the Client cancels after capture has begun, the full contract price is payable.', 1),
-      sub('c07b', 'Postponement', 'The Client must give at least 1 day\'s notice to postpone a shoot. The Business will make reasonable efforts to offer a new date, subject to availability.'),
-      sub('c07c', 'By the Business', 'If the Business must cancel due to unforeseen circumstances (for example illness, equipment failure or force majeure), it will notify the Client as soon as reasonably possible and offer either a full refund of monies paid or rescheduling at the earliest mutually convenient date without penalty. The Business has no further liability in that case.'),
+    { id: 'c08', title: 'Cancellation and Postponement', body: '', subs: [
+      sub('c08a', 'By the Client', ''),
+      sub('c08a1', '', 'If the Client cancels after signing but before capture begins, the deposit is forfeited to cover administrative and pre-production work.', 1),
+      sub('c08a2', '', 'If the Client cancels after capture has begun, the full contract price is payable.', 1),
+      sub('c08b', 'Postponement', 'The Client must give at least 1 day\'s notice to postpone a shoot. The Business will make reasonable efforts to offer a new date, subject to availability.'),
+      sub('c08c', 'By the Business', 'If the Business must cancel due to unforeseen circumstances (for example illness, equipment failure or force majeure), it will notify the Client as soon as reasonably possible and offer either a full refund of monies paid or rescheduling at the earliest mutually convenient date without penalty. The Business has no further liability in that case.'),
     ] },
-    { id: 'c08', title: 'Limitation of Liability', subs: [],
+    { id: 'c09', title: 'Limitation of Liability', subs: [],
       body: 'To the extent permitted by law, the Business\'s total liability under this Agreement is limited to the total fees paid by the Client under it. The Business is not liable for indirect or consequential loss.\n\nAustralian Consumer Law. Where the Client is a "consumer" under the Australian Consumer Law, the consumer guarantees that cannot be excluded apply, and nothing in this Agreement limits them.' },
-    { id: 'c09', title: 'Confidentiality', subs: [],
+    { id: 'c10', title: 'Confidentiality', subs: [],
       body: 'Each party must keep the other\'s non-public business information confidential and use it only for this project, except where disclosure is required by law.' },
-    { id: 'c10', title: 'Variation and Entire Agreement', subs: [],
+    { id: 'c11', title: 'Variation and Entire Agreement', subs: [],
       body: 'Changes to scope or fee must be agreed in writing; verbal changes are not binding. This Agreement and the Quote are the entire agreement between the parties on this subject.' },
-    { id: 'c11', title: 'Governing Law', subs: [],
+    { id: 'c12', title: 'Governing Law', subs: [],
       body: 'This Agreement is governed by the laws of the State of New South Wales, Australia, and each party submits to the non-exclusive jurisdiction of the courts of that State.' },
-    { id: 'c12', title: 'Acceptance', subs: [],
+    { id: 'c13', title: 'Acceptance', subs: [],
       body: 'By signing, the Client confirms it has read, understood and agrees to the terms of this Agreement and the Quote. This Agreement may be signed electronically or in hard copy; electronic signatures count as originals for all purposes.' },
   ].map((c) => Object.assign({ depositOnly: false }, c));
 

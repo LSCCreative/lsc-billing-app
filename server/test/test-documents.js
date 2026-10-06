@@ -232,27 +232,33 @@ test('stored clauses are cleaned, never trusted: bad entries dropped, ids kept, 
     { id: 'clause1', title: 'No id', body: '', subs: [], depositOnly: false },
     { id: 'clause2', title: 'Same id', body: '', subs: [], depositOnly: false },
   ]);
-  assert.ok(docSettings({}).agreement.clauses.every((c) => c.depositOnly === false), 'no default clause is deposit-only');
+  assert.deepEqual(docSettings({}).agreement.clauses.filter((c) => c.depositOnly).map((c) => c.id), ['c02']);
   // An empty list is a choice (the fallback text), not a gap.
   assert.deepEqual(docSettings({ agreement: { clauses: [] } }).agreement.clauses, []);
-  assert.equal(docSettings({ agreement: { clauses: 'x' } }).agreement.clauses.length, 12);
+  assert.equal(docSettings({ agreement: { clauses: 'x' } }).agreement.clauses.length, 13);
 });
 
 test('the defaults are a fresh copy each time', () => {
   const a = docSettings({}).agreement;
   a.clauses[0].title = 'Changed';
-  a.clauses[3].subs.pop();
+  a.clauses[4].subs.pop();
   const b = docSettings({}).agreement;
   assert.equal(b.clauses[0].title, 'Services and Deliverables');
-  assert.equal(b.clauses[3].subs.length, 3);
+  assert.equal(b.clauses[4].subs.length, 3);
 });
 
-test('the default clauses are the user\'s 12, verbatim (U13)', () => {
+test('the default clauses are the user\'s 12, verbatim (U13), with Payment split in two', () => {
   // test/fixtures/agreement-seed.json is the JSON the user gave (2026-10-05).
   // Put back the way it was typed: sub-clauses as "a. Heading. Text", an
-  // indented one inline after its parent as "(i) Text", {hourly_rate} as $63.00.
+  // indented one inline after its parent as "(i) Text", {hourly_rate} as $63.00,
+  // and the deposit-only Deposit clause rejoined to the start of Payment.
   const seed = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'agreement-seed.json'), 'utf8'));
-  const typed = DEFAULT_CLAUSES.map((c) => {
+  const [deposit, payment] = [DEFAULT_CLAUSES[1], DEFAULT_CLAUSES[2]];
+  assert.deepEqual([deposit.title, deposit.depositOnly, payment.title, payment.depositOnly], ['Deposit', true, 'Payment', false]);
+  assert.deepEqual(DEFAULT_CLAUSES.filter((c) => c.depositOnly), [deposit], 'only Deposit is deposit-only');
+  const rejoined = DEFAULT_CLAUSES.filter((c) => c !== deposit)
+    .map((c) => (c === payment ? Object.assign({}, c, { body: deposit.body + ' ' + c.body }) : c));
+  const typed = rejoined.map((c) => {
     const lettered = [];
     let roman = 0;
     c.subs.forEach((x) => {
@@ -267,7 +273,7 @@ test('the default clauses are the user\'s 12, verbatim (U13)', () => {
     return { title: c.title, body: [c.body].concat(lettered).filter(Boolean).join('\n\n').replace('{hourly_rate}', '$63.00') };
   });
   assert.deepEqual(typed, seed);
-  assert.deepEqual(DEFAULT_CLAUSES.map((c) => c.id), ['c01', 'c02', 'c03', 'c04', 'c05', 'c06', 'c07', 'c08', 'c09', 'c10', 'c11', 'c12']);
+  assert.deepEqual(DEFAULT_CLAUSES.map((c) => c.id), ['c01', 'c02', 'c03', 'c04', 'c05', 'c06', 'c07', 'c08', 'c09', 'c10', 'c11', 'c12', 'c13']);
 });
 
 // ── agreementText: the one render ───────────────────────────────────────────
@@ -323,11 +329,11 @@ test('sub-clauses letter (a)(b)(c), indent to (i)(ii) under the one above, and r
   assert.deepEqual(romans, ['(i) R', '(ii) R', '(iii) R', '(iv) R', '(v) R', '(vi) R', '(vii) R', '(viii) R', '(ix) R']);
 });
 
-test('the default clause 4 reads (a) Raw materials, (b) Client licence, (c) Portfolio use; clause 7 nests (a)(i)', () => {
+test('the default clause 5 reads (a) Raw materials, (b) Client licence, (c) Portfolio use; clause 8 nests (a)(i)', () => {
   const text = agreementText(docSettings({}).agreement, VALUES).text;
-  assert.match(text, /\n\n4\. Intellectual Property and Usage Rights\n\(a\) Raw materials\. All raw footage[^\n]*\n\n\(b\) Client licence\. From the date[^\n]*\n\n\(c\) Portfolio use\. The Business may use[^\n]*\n\n5\. Client Materials/);
-  assert.match(text, /\n\n7\. Cancellation and Postponement\n\(a\) By the Client\.\n\n\(i\) If the Client cancels after signing[^\n]*\n\n\(ii\) If the Client cancels after capture[^\n]*\n\n\(b\) Postponement\./);
-  assert.match(text, /\n\n12\. Acceptance\nBy signing,[^\n]*\n\nSigned for Acme Pty Ltd by Sam Lee, Director, on 4 October 2026\.$/);
+  assert.match(text, /\n\n5\. Intellectual Property and Usage Rights\n\(a\) Raw materials\. All raw footage[^\n]*\n\n\(b\) Client licence\. From the date[^\n]*\n\n\(c\) Portfolio use\. The Business may use[^\n]*\n\n6\. Client Materials/);
+  assert.match(text, /\n\n8\. Cancellation and Postponement\n\(a\) By the Client\.\n\n\(i\) If the Client cancels after signing[^\n]*\n\n\(ii\) If the Client cancels after capture[^\n]*\n\n\(b\) Postponement\./);
+  assert.match(text, /\n\n13\. Acceptance\nBy signing,[^\n]*\n\nSigned for Acme Pty Ltd by Sam Lee, Director, on 4 October 2026\.$/);
 });
 
 test('the header: parties, intro, project, payment, scope and days, with empty parts dropped (U10, U22)', () => {
@@ -367,6 +373,16 @@ test('a single invoice has no Deposit or Balance row; a pair has both', () => {
   const pair = agreementText(agreement, VALUES).text;
   assert.match(pair, /\nDeposit \(40%\): \$4,938\.24\nBalance: \$7,407\.36\n/);
   assert.doesNotMatch(pair, /single invoice/);
+});
+
+test('the defaults on a single invoice: Deposit is left out, Payment becomes 2, and 13 clauses are 12', () => {
+  const single = agreementValues(Object.assign({}, PROJECT, { depositPct: null, depositTotal: null }));
+  const one = agreementText(docSettings({}).agreement, single, { single: true }).text;
+  assert.doesNotMatch(one, /deposit of|final invoice|\n\d+\. Deposit\n/);
+  assert.match(one, /\n\n2\. Payment\nAll amounts are in Australian Dollars \(AUD\)\.[^\n]*\n\nLate payment\.[^\n]*\n\n3\. Revisions\n/);
+  assert.match(one, /\n\n12\. Acceptance\n/);
+  const pair = agreementText(docSettings({}).agreement, VALUES).text;
+  assert.match(pair, /\n\n2\. Deposit\nA non-refundable deposit of 40% is required before the Business commences capture\. The balance is due on the date shown on the final invoice\.\n\n3\. Payment\nAll amounts/);
 });
 
 test('a deposit-only clause is left out of a single invoice\'s agreement, and the rest renumber', () => {

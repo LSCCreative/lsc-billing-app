@@ -97,7 +97,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
 ## D3: the service agreement builder
 
 - [x] **4. Agreement clauses and the one render** (signing — Opus/high)
-  - **Follow-up** (user, 2026-10-06): a per-clause **deposit-only** switch (`depositOnly`), left out and not numbered on a single-invoice project; no default clause has it. 556 green; both mutations caught.
+  - **Follow-up** (user, 2026-10-06): a per-clause **deposit-only** switch (`depositOnly`), left out and not numbered on a single-invoice project (`72f1a68`, both mutations caught). Then the user's Payment clause split into **2. Deposit** (deposit-only: the deposit and final-invoice sentences) and **3. Payment** (GST, late payment), so the defaults are 13 clauses (12 on a single invoice). 557 green.
   - **Done** `cc92530`: 554 tests green, drift test passes; the three mutations (number from a stored field, broken letter sequence, single branch dropped) each fail tests; RVR-011's open link on a scratch copy offers the 12 defaults under the new header.
   - **Shapes** (IA "Data Shape"):
     - `documents.js` gains the default clauses: the user's 12, verbatim, with `a.` / `(i)` turned
@@ -143,7 +143,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
       single-invoice agreement.
     - **Reorder:** by pointer drag (mouse and touch: placeholder line, `--color-accent-mark`), by
       Alt+↑/↓ on the handle, and from the ⋯ menu. Every card renumbers on drop, and one polite
-      live region says "Payment moved to clause 2 of 12".
+      live region says "Payment moved to clause 2 of 13".
     - **Add and delete:** + Add clause opens a new card with focus in its title. Delete shows a
       toast with **Undo** (`toast.js` gains an optional action) and confirms first only if the
       clause has text.
@@ -166,9 +166,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - The Clauses panel's ⋯ gets **Reset to LSC default clauses…**, with a confirm naming how many
     clauses will be replaced.
   - **Done when:**
-    - Clause 4 in the default set shows (a) Raw materials, (b) Client licence, (c) Portfolio use.
+    - Clause 5 in the default set shows (a) Raw materials, (b) Client licence, (c) Portfolio use.
     - Indenting a new row under (b) makes it (b)(i) in the card and in the preview.
-    - Reset restores the 12 defaults.
+    - Reset restores the 13 defaults.
     - Keyboard and 375 checks as in task 5.
   - _Depends on: 5. Reuses: `sortable.js`, `menu.js`._
 
@@ -194,7 +194,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - Then push `main` for Pages.
   - **Ask the user before deploying.**
   - **After deploying:** the user fills Settings → Business email, phone and Signs for the
-    business, and checks the 12 clauses.
+    business, and checks the 13 clauses.
   - _Depends on: 1–7._
 
 ## D1: the busy screens

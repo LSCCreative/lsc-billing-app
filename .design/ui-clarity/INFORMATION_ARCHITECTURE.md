@@ -184,8 +184,8 @@ Decline… is present only while there's no live invoice. Delete… follows its 
    - Otherwise it saves.
 
 ### Reorder and edit the agreement (Settings)
-1. The owner goes to Settings → Service agreement. The 12 clause cards are closed:
-   "1 Services and Deliverables" … "12 Acceptance".
+1. The owner goes to Settings → Service agreement. The 13 clause cards are closed:
+   "1 Services and Deliverables" … "13 Acceptance".
 2. They drag **Cancellation and Postponement** (7) above **Payment** (2). On drop, it becomes 2,
    and Payment and everything after it renumber. The change is announced.
    - **Keyboard:** focus the handle, then Alt+↑ five times, or ⋯ → Move up.
