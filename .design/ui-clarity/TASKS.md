@@ -96,7 +96,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
 
 ## D3: the service agreement builder
 
-- [ ] **4. Agreement clauses and the one render** (signing — Opus/high)
+- [x] **4. Agreement clauses and the one render** (signing — Opus/high)
+  - **Done** `cc92530`: 554 tests green, drift test passes; the three mutations (number from a stored field, broken letter sequence, single branch dropped) each fail tests; RVR-011's open link on a scratch copy offers the 12 defaults under the new header.
   - **Shapes** (IA "Data Shape"):
     - `documents.js` gains the default clauses: the user's 12, verbatim, with `a.` / `(i)` turned
       into `subs`, and `$63.00` → `{hourly_rate}` (U13).

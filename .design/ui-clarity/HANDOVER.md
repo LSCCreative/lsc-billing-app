@@ -47,12 +47,20 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
     `{ text, hint, danger, href, download, attrs }`, `'-'` or falsy; danger items are moved last
     below a divider automatically. `LSCMenu.open(opener, { label, items, onSelect, empty })` is for
     lists built on the spot (the editor's Move to and Add to a day use it; `.move-pop` is gone).
-- **Next: task 4, "Agreement clauses and the one render"** (signing — Opus/high). Not a frontend
-  task (server + `documents.js` + tests); task 5 after it is **Frontend**.
+  - [x] Task 4, agreement clauses and the one render (`cc92530`). `documents.js` exports
+    `DEFAULT_CLAUSES` (the user's 12, ids `c01`–`c12`), `agreementText(agreement, values, { single })`
+    → `{ text, unknown, blank }`, `FALLBACK_TEXT`, `AGREEMENT_TITLE` and `AGREEMENT_HEADS` (task 7
+    styles those lines as heads). `docSettings().agreement` is `{ intro, clauses, hourlyRate }`;
+    `agreementText` and `agreement.text` are gone. The seed JSON the user gave is
+    `server/test/fixtures/agreement-seed.json`, and a test turns the defaults back into it.
+- **Next: task 5, "The builder: header and clause cards"** (frontend — Opus/high). **Frontend task.**
 
 ## Waiting on the user
 
-Nothing. The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
+- **Task 4's header wording** (below): to read and approve, or reword, before task 8 deploys it.
+- **Clause 2 on a single-invoice project** reads "A non-refundable deposit of  is required"
+  (`{deposit_pct}` is blank with no deposit). The header is right; the clause's wording is the
+  user's to change (or task 5/6 could add a per-clause "pair only" switch; not built). The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
 for light grounds, `Logo Light_ No Text.png` for dark; 2000×2000, trim the margin) for task 16.
 Metro Sans's licence (`Visual Design/Metro-Sans---Full-Family/Metro Sans License.pdf`) is free:
 commercial use, web embedding and redistribution are all allowed, so it is live in `web/fonts/`.
@@ -67,7 +75,33 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
 
+## Decisions made in task 4 (tell the user)
+
+- **Header wording** (none was specified): `SERVICE AGREEMENT`; `PARTIES` (business name (ABN),
+  "represented by" the signer, (the "Business"), email · phone; then the client the same way);
+  the Intro; `PROJECT` ("…, as set out in quote X (the "Quote")", which defines "Quote" for the
+  clauses); `PAYMENT SCHEDULE` (Total, Deposit (%), Balance, "Invoices are due N days after each
+  is issued"; single: "Total: $X, on a single invoice, due N days after it is issued");
+  `SCOPE AND PRODUCTION DAYS`; `TERMS`; the clauses; then
+  "Signed for {client} by {name}, {role}, on {date}." The default Intro is the user's own line
+  from their Blue Harvest agreement, with "your accepted quote" made "the Quote".
+- `hourlyRate` defaults to 63; `null` stored = cleared on purpose (the field is then blank).
+- Blank sub-clauses and empty clauses are skipped and take no letter or number. An indented
+  first sub-clause is lettered (and stored as indent 0).
+
 ## Traps
+
+- **Agreement business details come from the version's frozen snapshot** (`snap.business`), as
+  name and ABN always did. A link sent before Settings → Business email, phone and signer are
+  filled offers a header without them, until it is re-sent.
+- **`(i)` is ambiguous in the text:** the 9th letter and roman one look alike. Task 7's
+  presentation must tell them apart by context (a roman one follows a lettered line or another
+  roman one; a letter `(i)` follows `(h)`), or a clause with 9+ sub-clauses indents wrongly.
+- **Settings' agreement text box is interim** until task 5: it still edits the retired
+  `agreement.text` (nothing reads it); the save merges `loaded.agreement`, so stored clauses
+  survive a save. Its Preview already uses `agreementText` from the *saved* clauses.
+- The owner's agreement PDF route (`routes/projects.js`) always uses the real renderer and ignores
+  `opts.renderPdf`; tests read a PDF through the client's `/public/estimates/:token/agreement`.
 
 - **Menus (task 3):** an open list is moved into `<body>`, and a chosen declarative item is put
   back and `.click()`ed in place, so a screen's delegated `data-act` handler must listen on a
