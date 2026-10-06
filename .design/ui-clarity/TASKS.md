@@ -97,7 +97,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
 ## D3: the service agreement builder
 
 - [x] **4. Agreement clauses and the one render** (signing — Opus/high)
-  - **Follow-up** (user, 2026-10-06): a per-clause **deposit-only** switch (`depositOnly`), left out and not numbered on a single-invoice project (`72f1a68`, both mutations caught). Then the user's Payment clause split into **2. Deposit** (deposit-only: the deposit and final-invoice sentences) and **3. Payment** (GST, late payment), so the defaults are 13 clauses (12 on a single invoice). 557 green.
+  - **Follow-up** (user, 2026-10-06): a per-clause **deposit-only** switch (`depositOnly`), left out and not numbered on a single-invoice project (`72f1a68`, both mutations caught). Then the user's Payment clause split into **2. Deposit** (deposit-only: the deposit and final-invoice sentences) and **3. Payment** (GST, late payment), so the defaults are 13 clauses (12 on a single invoice) (`898c5ec`, 557 green).
   - **Done** `cc92530`: 554 tests green, drift test passes; the three mutations (number from a stored field, broken letter sequence, single branch dropped) each fail tests; RVR-011's open link on a scratch copy offers the 12 defaults under the new header.
   - **Shapes** (IA "Data Shape"):
     - `documents.js` gains the default clauses: the user's 12, verbatim, with `a.` / `(i)` turned

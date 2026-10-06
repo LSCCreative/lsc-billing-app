@@ -48,7 +48,7 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
     below a divider automatically. `LSCMenu.open(opener, { label, items, onSelect, empty })` is for
     lists built on the spot (the editor's Move to and Add to a day use it; `.move-pop` is gone).
   - [x] Task 4, agreement clauses and the one render (`cc92530`). `documents.js` exports
-    `DEFAULT_CLAUSES` (the user's 12, ids `c01`–`c12`), `agreementText(agreement, values, { single })`
+    `DEFAULT_CLAUSES` (the user's 12 with Payment split in two, so 13: ids `c01`–`c13`; `c02` Deposit is deposit-only), `agreementText(agreement, values, { single })`
     → `{ text, unknown, blank }`, `FALLBACK_TEXT`, `AGREEMENT_TITLE` and `AGREEMENT_HEADS` (task 7
     styles those lines as heads). `docSettings().agreement` is `{ intro, clauses, hourlyRate }`;
     `agreementText` and `agreement.text` are gone. The seed JSON the user gave is
@@ -58,10 +58,8 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
 ## Waiting on the user
 
 - **Task 4's header wording** (below): to read and approve, or reword, before task 8 deploys it.
-- **Clause 2 on a single-invoice project** still reads "A non-refundable deposit of  is required".
-  The deposit-only switch is built (below), but clause 2 also holds the GST and late-payment terms,
-  so it isn't flagged. The fix is the user's wording: move the deposit sentence into its own
-  clause and tick Deposit projects only on it (in the builder, task 5). The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
+
+The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
 for light grounds, `Logo Light_ No Text.png` for dark; 2000×2000, trim the margin) for task 16.
 Metro Sans's licence (`Visual Design/Metro-Sans---Full-Family/Metro Sans License.pdf`) is free:
 commercial use, web embedding and redistribution are all allowed, so it is live in `web/fonts/`.
@@ -90,6 +88,10 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
   unnumbered, when `agreementText` gets `{ single: true }` (signing passes the project's
   invoicing; the Settings preview passes the previewed project's). Only a real `true` counts.
   If every clause is deposit-only, a single invoice gets `FALLBACK_TEXT`.
+- **Payment split (user, 2026-10-06):** the defaults' 2. Deposit (deposit-only) holds "A
+  non-refundable deposit of {deposit_pct}… The balance is due on the date shown on the final
+  invoice."; 3. Payment keeps the AUD/GST line and Late payment. A single invoice reads 12 clauses
+  with Payment as 2; the header's payment row says when its one invoice is due.
 - `hourlyRate` defaults to 63; `null` stored = cleared on purpose (the field is then blank).
 - Blank sub-clauses and empty clauses are skipped and take no letter or number. An indented
   first sub-clause is lettered (and stored as indent 0).
