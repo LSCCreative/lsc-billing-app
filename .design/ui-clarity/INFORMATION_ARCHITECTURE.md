@@ -212,7 +212,8 @@ agreement: {
   intro:  string,                  // the editable header paragraph
   clauses: [                       // order = numbering; never stored numbered
     { id, title, body,             // body: optional intro text, paragraphs by blank line
-      subs: [ { id, heading, text, indent: 0|1 } ] }
+      subs: [ { id, heading, text, indent: 0|1 } ],
+      depositOnly: boolean }       // left out (and not numbered) on a single-invoice project
   ],
   hourlyRate: number|null,         // {hourly_rate}
   faqUrl: string,                  // unchanged

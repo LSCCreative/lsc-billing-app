@@ -73,7 +73,7 @@ test('stored values win, and a cleared message or FAQ link stays cleared', () =>
   assert.equal(d.messages.deposit, ''); // a choice, not a gap
   assert.equal(d.messages.final, DOC_DEFAULTS.messages.final);
   assert.equal(d.faqUrl, ''); // D55: the button hides
-  assert.deepEqual(d.agreement, { intro: '', hourlyRate: 80, clauses: [{ id: 'x', title: 'Only', body: 'B', subs: [] }] });
+  assert.deepEqual(d.agreement, { intro: '', hourlyRate: 80, clauses: [{ id: 'x', title: 'Only', body: 'B', subs: [], depositOnly: false }] });
   // A rate cleared on purpose stays cleared; an unusable one is the default.
   assert.equal(docSettings({ agreement: { hourlyRate: null } }).agreement.hourlyRate, null);
   for (const bad of ['63', -1, NaN, Infinity]) assert.equal(docSettings({ agreement: { hourlyRate: bad } }).agreement.hourlyRate, 63);
@@ -219,19 +219,20 @@ test('the deposit and balance amounts agree with the invoices calc.js makes', ()
 test('stored clauses are cleaned, never trusted: bad entries dropped, ids kept, a first sub never indented', () => {
   const { clauses } = docSettings({ agreement: { clauses: [
     null, 'text', [1],
-    { id: 'keep', title: 'A', body: 7, subs: [null, { id: 's1', heading: 'H', text: 'T', indent: 1 }, { text: 'two', indent: 1 }, { id: 's3', indent: 2 }] },
-    { title: 'No id' },
-    { id: 'keep', title: 'Same id' },
+    { id: 'keep', title: 'A', body: 7, depositOnly: true, subs: [null, { id: 's1', heading: 'H', text: 'T', indent: 1 }, { text: 'two', indent: 1 }, { id: 's3', indent: 2 }] },
+    { title: 'No id', depositOnly: 'yes' },
+    { id: 'keep', title: 'Same id', depositOnly: 1 },
   ] } }).agreement;
   assert.deepEqual(clauses, [
     { id: 'keep', title: 'A', body: '', subs: [
       { id: 's1', heading: 'H', text: 'T', indent: 0 },
       { id: 'sub1', heading: '', text: 'two', indent: 1 },
       { id: 's3', heading: '', text: '', indent: 0 },
-    ] },
-    { id: 'clause1', title: 'No id', body: '', subs: [] },
-    { id: 'clause2', title: 'Same id', body: '', subs: [] },
+    ], depositOnly: true },
+    { id: 'clause1', title: 'No id', body: '', subs: [], depositOnly: false },
+    { id: 'clause2', title: 'Same id', body: '', subs: [], depositOnly: false },
   ]);
+  assert.ok(docSettings({}).agreement.clauses.every((c) => c.depositOnly === false), 'no default clause is deposit-only');
   // An empty list is a choice (the fallback text), not a gap.
   assert.deepEqual(docSettings({ agreement: { clauses: [] } }).agreement.clauses, []);
   assert.equal(docSettings({ agreement: { clauses: 'x' } }).agreement.clauses.length, 12);
@@ -366,6 +367,26 @@ test('a single invoice has no Deposit or Balance row; a pair has both', () => {
   const pair = agreementText(agreement, VALUES).text;
   assert.match(pair, /\nDeposit \(40%\): \$4,938\.24\nBalance: \$7,407\.36\n/);
   assert.doesNotMatch(pair, /single invoice/);
+});
+
+test('a deposit-only clause is left out of a single invoice\'s agreement, and the rest renumber', () => {
+  const clauses = [
+    clause('a', 'Services', 'x'),
+    Object.assign(clause('b', 'Deposit', 'A deposit of {deposit_pct} is required.'), { depositOnly: true }),
+    clause('c', 'Payment', 'Late payment terms.'),
+  ];
+  assert.equal(termsOf(agreementText({ clauses }, VALUES).text),
+    '1. Services\nx\n\n2. Deposit\nA deposit of 40% is required.\n\n3. Payment\nLate payment terms.');
+  const single = agreementValues(Object.assign({}, PROJECT, { depositPct: null, depositTotal: null }));
+  const r = agreementText({ clauses }, single, { single: true });
+  assert.equal(termsOf(r.text), '1. Services\nx\n\n2. Payment\nLate payment terms.');
+  assert.deepEqual(r.blank, [], 'the hidden clause\'s blank {deposit_pct} isn\'t reported');
+  // Only a real true counts; and every clause deposit-only on a single invoice
+  // leaves none, so the client accepts the quote itself.
+  const loose = [Object.assign(clause('d', 'D', 'y'), { depositOnly: 'true' })];
+  assert.match(agreementText({ clauses: loose }, single, { single: true }).text, /\n\n1\. D\ny\n\n/);
+  const all = [Object.assign(clause('d', 'D', 'y'), { depositOnly: true })];
+  assert.equal(agreementText({ clauses: all }, single, { single: true }).text, fillAgreement(FALLBACK_TEXT, single).text);
 });
 
 test('{fields} fill in the intro, titles, bodies and sub-clauses; an unknown one is left and reported', () => {

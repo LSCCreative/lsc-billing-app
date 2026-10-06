@@ -58,9 +58,10 @@ The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.
 ## Waiting on the user
 
 - **Task 4's header wording** (below): to read and approve, or reword, before task 8 deploys it.
-- **Clause 2 on a single-invoice project** reads "A non-refundable deposit of  is required"
-  (`{deposit_pct}` is blank with no deposit). The header is right; the clause's wording is the
-  user's to change (or task 5/6 could add a per-clause "pair only" switch; not built). The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
+- **Clause 2 on a single-invoice project** still reads "A non-refundable deposit of  is required".
+  The deposit-only switch is built (below), but clause 2 also holds the GST and late-payment terms,
+  so it isn't flagged. The fix is the user's wording: move the deposit sentence into its own
+  clause and tick Deposit projects only on it (in the builder, task 5). The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
 for light grounds, `Logo Light_ No Text.png` for dark; 2000×2000, trim the margin) for task 16.
 Metro Sans's licence (`Visual Design/Metro-Sans---Full-Family/Metro Sans License.pdf`) is free:
 commercial use, web embedding and redistribution are all allowed, so it is live in `web/fonts/`.
@@ -85,6 +86,10 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
   `SCOPE AND PRODUCTION DAYS`; `TERMS`; the clauses; then
   "Signed for {client} by {name}, {role}, on {date}." The default Intro is the user's own line
   from their Blue Harvest agreement, with "your accepted quote" made "the Quote".
+- **Deposit-only clauses** (user's request): `clause.depositOnly === true` leaves the clause out,
+  unnumbered, when `agreementText` gets `{ single: true }` (signing passes the project's
+  invoicing; the Settings preview passes the previewed project's). Only a real `true` counts.
+  If every clause is deposit-only, a single invoice gets `FALLBACK_TEXT`.
 - `hourlyRate` defaults to 63; `null` stored = cleared on purpose (the field is then blank).
 - Blank sub-clauses and empty clauses are skipped and take no letter or number. An indented
   first sub-clause is lettered (and stored as indent 0).

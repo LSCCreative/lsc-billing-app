@@ -51,7 +51,9 @@
   /* The user's 12 clauses (U13), verbatim but for two changes: the typed
      "a." / "(i)" prefixes are now sub-clauses, which the render letters, and
      "$63.00" is {hourly_rate}. test-documents.js turns these back into the
-     user's original text and compares them, so an edit here is caught. */
+     user's original text and compares them, so an edit here is caught. None is
+     deposit-only: clause 2 also holds the GST and late-payment terms, which a
+     single invoice needs too. */
   const sub = (id, heading, text, indent) => ({ id, heading, text, indent: indent ? 1 : 0 });
   const DEFAULT_CLAUSES = [
     { id: 'c01', title: 'Services and Deliverables', subs: [],
@@ -86,7 +88,7 @@
       body: 'This Agreement is governed by the laws of the State of New South Wales, Australia, and each party submits to the non-exclusive jurisdiction of the courts of that State.' },
     { id: 'c12', title: 'Acceptance', subs: [],
       body: 'By signing, the Client confirms it has read, understood and agrees to the terms of this Agreement and the Quote. This Agreement may be signed electronically or in hard copy; electronic signatures count as originals for all purposes.' },
-  ];
+  ].map((c) => Object.assign({ depositOnly: false }, c));
 
   /** The four documents a message is written for (D43), in the order shown. */
   const MESSAGE_KINDS = ['estimate', 'deposit', 'final', 'single'];
@@ -143,7 +145,8 @@
   /* A clause list as stored, made safe to render and edit: entries that aren't
      objects are dropped, missing strings are '', ids are kept (and a missing or
      repeated one is given a stable stand-in, so the builder can still key it),
-     and a first sub-clause can't be indented, having nothing to sit under.
+     a first sub-clause can't be indented, having nothing to sit under, and
+     only a real `true` makes a clause deposit-only.
      Always a fresh copy: nothing a caller does to it reaches the defaults. */
   function cleanClauses(list) {
     const used = {};
@@ -160,7 +163,7 @@
         text: strOf(x.text),
         indent: x.indent === 1 && i > 0 ? 1 : 0,
       }));
-      return { id: idFor(c.id, 'clause'), title: strOf(c.title), body: strOf(c.body), subs };
+      return { id: idFor(c.id, 'clause'), title: strOf(c.title), body: strOf(c.body), subs, depositOnly: c.depositOnly === true };
     });
   }
 
@@ -407,13 +410,15 @@
    *   N. Title          then the clause's body paragraphs
    *   (a) Heading. Text a sub-clause; a blank one is skipped and takes no letter
    *   (i) Text          an indented one, under the lettered one above it
-   * A clause with no title, body or sub-clauses is skipped and takes no number.
+   * A clause with no title, body or sub-clauses is skipped and takes no number,
+   * and so is a deposit-only clause on a single invoice, which has no deposit.
    * No clauses at all → FALLBACK_TEXT.
    *
    * @param {{intro:string, clauses:Array}} agreement  docSettings().agreement
    * @param {Object<string,string>} values  agreementValues()'s result
    * @param {{single?:boolean}} [opts]  single: the project is billed on one
-   *        invoice, so the payment schedule has no Deposit or Balance rows
+   *        invoice, so the payment schedule has no Deposit or Balance rows and
+   *        deposit-only clauses are left out
    * @returns {{text:string, unknown:string[], blank:string[]}}
    */
   function agreementText(agreement, values, opts) {
@@ -431,7 +436,7 @@
 
     const clauses = [];
     (Array.isArray(a.clauses) ? a.clauses : []).forEach((c) => {
-      if (!c || typeof c !== 'object') return;
+      if (!c || typeof c !== 'object' || (single && c.depositOnly === true)) return;
       const title = fill(tidy(c.title)).trim();
       const blocks = paragraphs(c.body).map(fill);
       let letter = -1;

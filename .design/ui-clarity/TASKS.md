@@ -97,6 +97,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
 ## D3: the service agreement builder
 
 - [x] **4. Agreement clauses and the one render** (signing — Opus/high)
+  - **Follow-up** (user, 2026-10-06): a per-clause **deposit-only** switch (`depositOnly`), left out and not numbered on a single-invoice project; no default clause has it. 556 green; both mutations caught.
   - **Done** `cc92530`: 554 tests green, drift test passes; the three mutations (number from a stored field, broken letter sequence, single branch dropped) each fail tests; RVR-011's open link on a scratch copy offers the 12 defaults under the new header.
   - **Shapes** (IA "Data Shape"):
     - `documents.js` gains the default clauses: the user's 12, verbatim, with `a.` / `(i)` turned
@@ -137,7 +138,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
     - **Client page:** the FAQ URL.
   - Settings → Business gains **Signs for the business**.
   - **Clause cards:**
-    - **Open and edit:** a card opens to edit its title and body.
+    - **Open and edit:** a card opens to edit its title and body, and a **Deposit projects only**
+      checkbox (`depositOnly`, task 4 follow-up), with a hint that it's left out of a
+      single-invoice agreement.
     - **Reorder:** by pointer drag (mouse and touch: placeholder line, `--color-accent-mark`), by
       Alt+↑/↓ on the handle, and from the ⋯ menu. Every card renumbers on drop, and one polite
       live region says "Payment moved to clause 2 of 12".

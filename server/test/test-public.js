@@ -725,6 +725,32 @@ test('signing: clauses reordered while the client reads → agreement_changed, a
   await setAgreement();
 });
 
+test('signing: a single-invoice project is offered no deposit-only clause; a pair is', async () => {
+  await setAgreement({ clauses: [
+    { id: 'a', title: 'Services', body: 'As quoted.' },
+    { id: 'b', title: 'Deposit', body: 'A deposit of {deposit_pct} is required.', depositOnly: true },
+    { id: 'c', title: 'Payment', body: 'Late payment terms.' },
+  ] });
+  const pair = await shoot();
+  const { token: pairToken } = await sent(pair);
+  const p = fill((await offer(pairToken)).e.agreement, 'x', 'y');
+  assert.match(p, /\n\n2\. Deposit\nA deposit of 50% is required\.\n\n3\. Payment\n/);
+
+  const one = await shoot();
+  const { token } = await sent(one);
+  db.prepare("UPDATE projects SET invoicing = 'single' WHERE id = ?").run(one.projectId);
+  const { e, body } = await offer(token);
+  const shown = fill(e.agreement, body.fullName, body.role);
+  assert.match(shown, /\nTotal: \$[\d,.]+, on a single invoice, due 14 days after it is issued\n/);
+  assert.match(shown, /\n\nTERMS\n\n1\. Services\nAs quoted\.\n\n2\. Payment\nLate payment terms\.\n\nSigned /);
+  assert.doesNotMatch(shown, /Deposit/);
+  const r = await sign(token, body);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const stored = db.prepare(`SELECT s.agreement_text FROM signatures s JOIN estimate_versions v ON v.id = s.version_id WHERE v.estimate_id = ?`).get(one.id).agreement_text;
+  assert.equal(stored, shown);
+  await setAgreement();
+});
+
 test('signing: a signature made before the clauses (free text) is byte-identical after them, never re-rendered', async () => {
   const est = await shoot();
   const { token } = await sent(est);
