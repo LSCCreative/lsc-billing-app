@@ -335,18 +335,94 @@
   color: var(--text);
 }
 
-/* The filled text, as the client would read it: their line breaks kept. */
+/* The filled text, laid out as the client's sign dialog and the agreement PDF
+   set it (documents.js agreementLayout; c.css "The agreement as it reads",
+   here on the app's dark tokens). The characters are the text's own: no
+   generated content, no text-transform (the heads are capitals in the text).
+   Each block keeps its own line ends; the box doesn't, so the blank lines
+   between blocks become the space below.
+     title    SERVICE AGREEMENT, Delight, tracked
+     head     PARTIES … TERMS, mono over a hairline
+     clause   "3. Payment", Delight, the number quieter than its title
+     sub      (a) at one hang, (i) a hang further in, each hanging from its
+              mark; a second paragraph of either keeps its depth
+     signed   the signing line, set off below a hairline */
 .set-pv-text {
+  --ag-hang: 2.4em;
   max-height: 55vh;
   overflow-y: auto;
-  padding: 16px 18px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--text);
-  white-space: pre-wrap;
+  padding: var(--space-6) var(--space-6);
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border-subtle);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-primary);
   overflow-wrap: anywhere;
+}
+.set-pv-text > * {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.set-pv-text > * + * {
+  margin-top: var(--space-5);
+}
+.set-pv-text > .ag-title {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0.06em;
+}
+.set-pv-text > .ag-head {
+  margin-top: var(--space-7);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-text-secondary);
+}
+.set-pv-text > .ag-clause {
+  margin-top: var(--space-7);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
+}
+.set-pv-text .ag-num {
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-secondary);
+}
+.set-pv-text > .ag-head + *,
+.set-pv-text > .ag-clause + * {
+  margin-top: var(--space-2);
+}
+.set-pv-text > .ag-sub {
+  padding-left: var(--ag-hang);
+  text-indent: calc(-1 * var(--ag-hang));
+}
+.set-pv-text .ag-mark {
+  display: inline-block;
+  min-width: var(--ag-hang);
+  text-indent: 0;
+  white-space: pre;      /* its space counts, so a long mark never touches its text */
+  color: var(--color-text-secondary);
+}
+.set-pv-text > .ag-l2 {
+  margin-left: var(--ag-hang);
+}
+.set-pv-text > .ag-p.ag-l1,
+.set-pv-text > .ag-p.ag-l2 {
+  padding-left: var(--ag-hang);
+}
+.set-pv-text > .ag-signed {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-subtle);
 }
 .set-pv-text:empty {
   display: none;

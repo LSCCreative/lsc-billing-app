@@ -1743,6 +1743,34 @@ const SettingsView = (() => {
       q('set-pv-notes').innerHTML = html;
     }
 
+    /* The agreement as the client's sign dialog and the PDF set it
+       (documents.js agreementLayout, as c.js showAgreement draws it, minus the
+       name/role slots). Text nodes only, and `before`/`tail` go in as text
+       between the blocks, so out.textContent is the filled text exactly. */
+    const AGREEMENT_TAG = { title: 'h3', head: 'h4', clause: 'h5', p: 'p', sub: 'p', signed: 'p' };
+    function drawAgreement(box, text) {
+      box.textContent = '';
+      const layout = D.agreementLayout(text);
+      const add = (into, s) => { if (s) into.appendChild(document.createTextNode(s)); };
+      layout.items.forEach((it) => {
+        add(box, it.before);
+        const el = document.createElement(AGREEMENT_TAG[it.type] || 'p');
+        el.className = 'ag-' + it.type + (it.level ? ' ag-l' + it.level : '');
+        it.parts.forEach((p) => {
+          if (p.role) {
+            const span = document.createElement('span');
+            span.className = 'ag-' + p.role;
+            add(span, p.text);
+            el.appendChild(span);
+          } else {
+            add(el, p.text);
+          }
+        });
+        box.appendChild(el);
+      });
+      add(box, layout.tail);
+    }
+
     function failure(err) {
       return err.kind === 'network'
         ? 'Couldn’t reach the server. Try again once it’s back.'
@@ -1807,7 +1835,7 @@ const SettingsView = (() => {
       });
       // The one render signing uses (ui-clarity task 4).
       const filled = D.agreementText(docs, values, { single: project.invoicing === 'single' });
-      out.textContent = filled.text;
+      drawAgreement(out, filled.text);
       const bits = [];
       if (filled.unknown.length) {
         bits.push('<p class="set-pv-warn"><strong>Not a field, left as typed:</strong> ' +

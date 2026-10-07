@@ -151,8 +151,9 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
   (it loses its extra indent; the words are unchanged).
 - Sub-clause headings aren't bolded: the text can't tell "Heading." from a first sentence.
 - PDF heads are tracked only .06em: wider, and PDF readers copy "PARTIES" as "PA R T I E S".
-- **The Settings preview is still plain text.** It could draw with `agreementLayout` too
-  (a small follow-up, not in any task).
+- **The Settings preview draws with `agreementLayout` too** (settings.js `drawAgreement`, no
+  slots; settings.css ports c.css's styles onto the dark tokens). Its `textContent` is still
+  `filled.text` exactly.
 
 ## Decisions made in task 5 (tell the user)
 
