@@ -1,187 +1,178 @@
-/* The invoice screen (production-booking task 20; js/views/invoice.js).
-   New classes only. Reuses the folder's head, actions, facts, section heads
-   and dialog (project-folder.css), the editor's billing block and line grid
-   for Extras (app.css, estimates.css), the detail's tables for the accepted
-   estimate, and .status-chip (calendar.css).
+/* The Invoice screen (production-booking task 20, reworked in ui-clarity
+   task 10; js/views/invoice.js). Reuses .panel and its collapsible toggle
+   (app.css), .eyebrow / .ref / .fig, the menu button (menu.css), the Project
+   page's .pf-chip, .pf-facts, .pf-notice(s), .pf-action-error, .pf-hint and
+   its dialog (project-folder.css), the editor's line grid and picker for
+   Extras (.billing-block, app.css, responsive.css), the detail's blocks for
+   the accepted estimate, and .status-chip (calendar.css).
 
-   The screen is a statement, so it is set like one: the amount due is the
-   one big figure, in the head where the eye lands; the ledger at the foot
-   runs top to bottom like a printed invoice's sum, hairlines between rows
-   and a heavy rule over the line that is owed.
+   The header sits on the page; everything below it is a panel (U2). The
+   amount due is the screen's one big figure, in Delight, where the eye
+   lands. One terracotta button: the header's primary (Send…, Mark paid…),
+   or Save extras while the extras are unsaved, which takes it over.
 
-   Phone first:
-     - under 768px: one column; the amount due under the overview; the
-       ledger full width;
-     - 768 and up: the amount due beside the overview; the ledger narrows to
-       the right, under the lines it sums. */
+   Written phone first:
+     - under 768px: one column; the amount due under the overview, then the
+       primary full width with Actions ▾ and Documents ▾ beside it; the
+       panels stacked, the sum last;
+     - 768–1099: the amount due and the actions on the right of the
+       overview, as the Project page's header;
+     - 1100 and up: the panels the wide main column and the sum beside them,
+       held in view while the extras are edited. */
 
-.inv-screen {
-  --inv-mark: transparent;
-}
-
-/* ── The head ─────────────────────────────────────────────────────────────── */
+/* ── The header ───────────────────────────────────────────────────────────── */
 
 .inv-head {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin-bottom: 18px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'over'
+    'due'
+    'acts';
+  gap: var(--space-7);
+  margin-bottom: var(--space-7);
 }
 .inv-overview {
+  grid-area: over;
   min-width: 0;
+}
+.inv-number {
+  margin-bottom: var(--space-4);
+}
+.inv-title {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-3xl);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--color-text-primary);
+}
+.inv-client {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
 }
 .inv-status {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  margin-top: 12px;
-  font-size: 13px;
-}
-/* The status word with its square, as the stage line marks a stage
-   (projects.css): the word says it, the colour only repeats it. */
-.inv-pill {
-  font-weight: 600;
-  color: var(--text);
-}
-.inv-pill::before {
-  content: '';
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 8px;
-  vertical-align: 1px;
-  background: var(--inv-mark);
-  border: 1px solid var(--inv-mark, var(--muted));
-}
-.inv-pill.is-draft {
-  --inv-mark: transparent;
-}
-.inv-pill.is-draft::before {
-  border-color: var(--muted);
-}
-.inv-pill.is-scheduled,
-.inv-pill.is-sent {
-  --inv-mark: var(--accent);
-}
-.inv-pill.is-paid {
-  --inv-mark: var(--ok);
-}
-.inv-pill.is-void {
-  --inv-mark: var(--muted);
-  color: var(--muted);
-}
-.inv-pill.is-overdue {
-  --inv-mark: var(--err-text);
-  color: var(--err-text);
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-5);
 }
 .inv-status-note {
-  color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+.inv-status-note.is-alert {
+  color: var(--color-status-error-text);
+}
+.inv-overview .send-status {
+  margin-top: var(--space-3);
 }
 
+/* The amount due: a mono caps label over the figure. */
 .inv-due {
+  grid-area: due;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-top: 2px solid var(--accent);
-  background: var(--surface);
+  gap: var(--space-3);
 }
 .inv-due-label {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--letter-spacing-wide);
-  color: var(--muted);
+  color: var(--color-text-secondary);
 }
 .inv-due-figure {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 700;
-  font-size: 34px;
-  line-height: 1.1;
-  letter-spacing: 0.01em;
-  color: var(--accent-text);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+  color: var(--color-accent-text);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .inv-due-note {
-  font-size: 11px;
-  color: var(--muted);
-}
-.inv-due.is-void {
-  border-top-color: var(--muted);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 .inv-due.is-void .inv-due-figure {
-  color: var(--muted);
+  color: var(--color-text-tertiary);
   text-decoration: line-through;
   text-decoration-thickness: 2px;
 }
 
+/* The primary, then Actions ▾ and Documents ▾. On a phone the primary has
+   the full width and the menus share the row under it. */
+.inv-acts {
+  grid-area: acts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-self: start;
+}
+.inv-acts > .btn {
+  flex: 1 1 100%;
+  justify-content: center;
+}
+.inv-acts > .menu {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.inv-acts > .menu > .menu-btn {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
 @media (min-width: 768px) {
   .inv-head {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
-  }
-  .inv-overview {
-    flex: 1 1 auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'over due'
+      'over acts';
+    column-gap: var(--space-8);
+    row-gap: var(--space-6);
+    align-items: start;
   }
   .inv-due {
-    flex: 0 0 auto;
-    min-width: 240px;
     align-items: flex-end;
     text-align: right;
   }
-}
-
-/* The actions sit on their own row under the head here (the folder puts
-   them beside it): the head's right side is the amount due. */
-.inv-screen > .pf-actions {
-  margin-bottom: 22px;
-}
-@media (min-width: 768px) {
-  .inv-screen > .pf-actions {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
+  .inv-acts {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
   }
-  .inv-screen > .pf-actions .pf-actions-main {
-    justify-content: flex-start;
+  .inv-acts > .btn,
+  .inv-acts > .menu,
+  .inv-acts > .menu > .menu-btn {
+    flex: 0 0 auto;
+  }
+}
+@media (min-width: 1100px) {
+  .inv-title {
+    font-size: var(--font-size-4xl);
+  }
+  .inv-due-figure {
+    font-size: var(--font-size-3xl);
   }
 }
 
 /* ── Notices ──────────────────────────────────────────────────────────────── */
 
+/* Void, with the way to its replacement beside the words. */
 .inv-notice {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 16px;
-  margin-bottom: 22px;
-  padding: 12px 16px;
-  border: 1px solid var(--err-border);
-  background: var(--err-bg);
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text);
+  gap: var(--space-4) var(--space-6);
 }
-.inv-notice strong {
-  color: var(--err-text);
+.inv-screen .pf-notice strong {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
-.inv-notice.is-void {
-  border-color: var(--border);
-  border-left: 2px solid var(--accent);
-  background: transparent;
-}
-.inv-notice.is-void strong {
-  color: var(--text);
-}
-.inv-notice .btn {
-  min-height: 44px;
+.inv-screen .pf-notice.is-alert strong {
+  color: inherit;
 }
 .inv-link {
   display: inline;
@@ -189,291 +180,266 @@
   border: 0;
   background: none;
   font: inherit;
-  color: var(--accent-text);
+  color: var(--color-text-link);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
 }
 .inv-link:hover {
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 .inv-link:focus-visible {
+  border-radius: var(--radius-sm);
   outline: 2px solid transparent;
   outline-offset: 2px;
   box-shadow: var(--shadow-focus);
 }
 
-/* ── Sections ─────────────────────────────────────────────────────────────── */
+/* ── The panels ───────────────────────────────────────────────────────────── */
 
-.inv-section {
-  margin-bottom: 30px;
+.inv-body,
+.inv-main,
+.inv-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--panel-gap);
+  align-items: start;
 }
-.inv-h3 {
-  margin: 18px 0 8px;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--muted);
+@media (min-width: 1100px) {
+  .inv-body.has-side {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  /* The sum stays in view while a long list of extras is edited. */
+  .inv-side {
+    position: sticky;
+    top: var(--space-7);
+  }
 }
 
-/* The deposit's %, while it can still change. */
+/* A panel body that holds prose and fields, not rows. */
+.inv-panel-body {
+  padding-top: var(--panel-pad-y);
+  padding-bottom: var(--panel-pad-y);
+}
+.inv-panel-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── Deposit ──────────────────────────────────────────────────────────────── */
+
+/* The %, while it can still change. */
 .inv-pct {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px 12px;
-  margin: 6px 0 4px;
+  gap: var(--space-4) var(--space-5);
+  margin-top: var(--space-6);
 }
 .inv-pct .field {
-  width: 120px;
+  inline-size: 8rem;
 }
-.inv-pct .btn {
-  min-height: 40px;
+.inv-pct .field label {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.inv-pct .field input {
+  width: 100%;
 }
 .inv-pct .pfd-hint {
   flex-basis: 100%;
   margin-top: 0;
 }
 
+/* The days booked: one row each, hairlines between. */
 .inv-days {
   list-style: none;
-  display: grid;
-  gap: 6px;
 }
 .inv-days li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  font-size: 12px;
+  gap: var(--space-2) var(--space-5);
+  padding: var(--row-pad-y) var(--panel-pad-x);
+  font-size: var(--font-size-sm);
+}
+.inv-days li + li {
+  border-top: 1px solid var(--color-border-hairline);
 }
 .inv-day-date {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
 .inv-day-time {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-figures);
+  color: var(--color-text-secondary);
 }
 
 /* ── The accepted estimate, folded ────────────────────────────────────────── */
 
-.inv-estimate {
-  margin-bottom: 18px;
-  border: 1px solid var(--border);
+.inv-est-panel .panel-sum .ref {
+  font-size: var(--font-size-sm);
 }
-.inv-estimate summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 48px;
-  padding: 10px 16px;
-  background: var(--color-bg-panel);
-  cursor: pointer;
-  list-style: none;
+/* The detail's own blocks sit one layer in (U2: page, panel, inset). */
+.inv-est-body .est-block {
+  background: var(--color-bg-inset);
+  border-color: transparent;
+  margin-bottom: var(--space-5);
 }
-.inv-estimate summary::-webkit-details-marker {
-  display: none;
-}
-.inv-estimate summary:focus-visible {
-  outline: 2px solid transparent;
-  outline-offset: -2px;
-  box-shadow: inset 0 0 0 2px var(--color-border-focus);
-}
-.inv-est-title {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--text);
-}
-.inv-est-sum {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-/* A chevron drawn with borders, turned when open. */
-.inv-est-toggle {
-  width: 8px;
-  height: 8px;
-  border-right: 1.5px solid var(--muted);
-  border-bottom: 1.5px solid var(--muted);
-  transform: rotate(45deg) translate(-2px, -2px);
-  transition: transform 0.15s;
-}
-.inv-estimate[open] .inv-est-toggle {
-  transform: rotate(-135deg) translate(-2px, -2px);
-}
-.inv-est-body {
-  padding: 14px 16px 4px;
-  border-top: 1px solid var(--border);
-}
-.inv-est-body > .pf-hint {
-  margin-bottom: 14px;
+.inv-est-body .est-block:last-child {
+  margin-bottom: 0;
 }
 
 /* ── Extras ───────────────────────────────────────────────────────────────── */
 
-.inv-extras {
-  margin-bottom: 10px;
+.inv-extras.billing-block {
+  margin-bottom: 0;
+}
+.inv-extras .panel-head {
+  flex-wrap: wrap;
+}
+.inv-extras .panel-title {
+  align-items: center;
+}
+/* The grid's first column starts on the panel's own edge, under its title. */
+@media (min-width: 768px) {
+  .inv-extras .gt-head > div:first-child,
+  .inv-extras .gt-row > div:first-child {
+    padding-left: var(--panel-pad-x);
+  }
 }
 .inv-extras .custom-bill-inp {
-  margin-top: 4px;
+  margin-top: var(--space-2);
 }
 .inv-empty-card {
-  padding: 12px 16px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
+  padding: var(--space-5) var(--panel-pad-x);
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* The foot: what the extras are, then Save extras. */
+.inv-extras-foot {
+  justify-content: space-between;
+}
+.inv-extras-hint {
+  flex: 1 1 18rem;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
 }
 .inv-save {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px 14px;
-}
-.inv-save .btn {
-  min-height: 44px;
-  justify-content: center;
+  gap: var(--space-4) var(--space-5);
 }
 .inv-save-state {
-  font-size: 12px;
-  color: var(--accent-text);
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-text);
 }
 .inv-save-state:empty {
   display: none;
 }
-.inv-extras-hint {
-  margin-top: 8px;
-}
 @media (max-width: 767px) {
+  .inv-save {
+    flex: 1 1 100%;
+  }
   .inv-save .btn {
     flex: 1 1 100%;
   }
 }
 
-/* ── The ledger ───────────────────────────────────────────────────────────── */
+/* ── The sum ──────────────────────────────────────────────────────────────── */
 
-.inv-sum-section .pf-section-head {
-  justify-content: space-between;
-}
+/* A printed invoice's sum, top to bottom: hairlines between the rows and a
+   heavy rule over the line that is owed. */
 .inv-preview {
   font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--accent-text);
+  color: var(--color-accent-text);
 }
-.inv-ledger {
-  margin-top: 12px;
-  font-variant-numeric: tabular-nums;
+.inv-sum-panel .panel-body {
+  padding-top: var(--space-3);
+  padding-bottom: var(--panel-pad-y);
 }
 .inv-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: 16px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--cal-rule, var(--border));
-  font-size: 13px;
+  gap: var(--space-6);
+  padding: var(--space-4) 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+}
+.inv-row + .inv-row {
+  border-top: 1px solid var(--color-border-hairline);
 }
 .inv-row dt {
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 .inv-row dd {
+  font-family: var(--font-figures);
+  font-variant-numeric: tabular-nums;
   text-align: right;
-  font-weight: 600;
-  color: var(--text);
   white-space: nowrap;
+  color: var(--color-text-primary);
 }
 .inv-q {
-  margin-left: 4px;
-  font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--muted);
+  margin-left: var(--space-2);
+  color: var(--color-text-secondary);
 }
 .inv-num {
-  margin-left: 4px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  display: inline-block;
+  margin-left: var(--space-2);
+  white-space: nowrap;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
 }
-.inv-row.is-strong dt,
-.inv-row.is-strong dd {
-  font-weight: 700;
+.inv-row.is-strong dt {
+  font-weight: var(--font-weight-semibold);
 }
 .inv-row.is-less dd {
-  color: var(--accent-text);
+  color: var(--color-accent-text);
 }
 .inv-row.is-sub {
-  padding: 6px 0 6px 14px;
-  font-size: 12px;
+  padding: var(--space-3) 0 var(--space-3) var(--space-6);
+  font-size: var(--font-size-xs);
 }
 .inv-row.is-sub dt,
 .inv-row.is-sub dd {
-  color: var(--muted);
-  font-weight: 400;
+  color: var(--color-text-secondary);
 }
-/* What is owed: under a heavy rule, as on paper. */
 .inv-row.is-due {
-  margin-top: 6px;
-  padding-top: 12px;
-  border-top: 2px solid var(--text);
-  border-bottom: 0;
+  margin-top: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: 2px solid var(--color-border-strong);
 }
 .inv-row.is-due dt {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-normal);
-  text-transform: uppercase;
+  font: var(--eyebrow-font);
   letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
 }
 .inv-row.is-due dd {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 700;
-  font-size: 22px;
-  color: var(--accent-text);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  color: var(--color-accent-text);
 }
-
 .inv-row.is-due.is-void dd {
-  color: var(--muted);
+  color: var(--color-text-tertiary);
   text-decoration: line-through;
 }
 
-@media (min-width: 768px) {
-  .inv-ledger {
-    max-width: 460px;
-    margin-left: auto;
-  }
-}
+/* ── The dialogs (Mark paid, Void and remake) ─────────────────────────────── */
 
-/* ── The folder's rows, and the dialogs ───────────────────────────────────── */
-
-.pf-doc.is-void .pf-doc-name,
-.pf-doc.is-void .pf-doc-amount {
-  color: var(--muted);
-}
-.pfd-dates {
-  display: grid;
-  gap: 12px;
-}
-@media (min-width: 480px) {
-  .pfd-dates {
-    grid-template-columns: 1fr 1fr;
-  }
-}
 .pf-dialog .field textarea {
   width: 100%;
 }
 .pf-dialog .field + .pfd-choice {
-  margin-top: 18px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .inv-est-toggle {
-    transition: none;
-  }
+  margin-top: var(--space-6);
 }

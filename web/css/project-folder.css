@@ -17,9 +17,8 @@
      - 1100 and up: Documents the wide main column, the days and Activity
        beside it (U20).
 
-   The Invoice screen still borrows .pf-actions, .pf-facts, .pf-notice,
-   .pf-section-head, .pf-hint and the dialog's classes (until ui-clarity
-   task 10), so those are kept below, marked. */
+   The Invoice screen (invoice.css) shares .pf-chip, .pf-facts,
+   .pf-notice(s), .pf-action-error, .pf-hint and the dialog's classes. */
 
 /* ── The header ───────────────────────────────────────────────────────────── */
 
@@ -158,7 +157,7 @@
 }
 
 /* A note on arrival, not an alert: a raised layer with a quiet rule. Shared
-   with the Invoice screen, which stacks them with their own margin. */
+   with the Invoice screen; both stack them in .pf-notices. */
 .pf-notice {
   margin-bottom: var(--space-7);
   padding: var(--space-5) var(--space-6);
@@ -476,50 +475,6 @@
 /* Its words line up with the rows' left edge. */
 .pf-activity-foot .btn {
   margin-left: calc(-1 * var(--space-4));
-}
-
-/* ── Kept for the Invoice screen until ui-clarity task 10 ─────────────────── */
-
-.pf-actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-.pf-actions-main,
-.pf-actions-quiet {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-.pf-actions .btn {
-  justify-content: center;
-}
-@media (min-width: 768px) {
-  .pf-actions {
-    flex: 0 0 auto;
-    align-items: flex-end;
-  }
-  .pf-actions-main,
-  .pf-actions-quiet {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-}
-.pf-section-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  padding-bottom: var(--space-4);
-  margin-bottom: var(--space-4);
-  border-bottom: 1px solid var(--color-border-hairline);
-}
-.pf-h2 {
-  font-family: var(--font-family-display);
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-lg);
-  line-height: var(--line-height-tight);
-  color: var(--color-text-primary);
 }
 
 /* ── The dialog (Mark accepted, Decline, Delete; the Invoice screen's too) ── */

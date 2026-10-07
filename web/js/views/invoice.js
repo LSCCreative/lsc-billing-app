@@ -1,18 +1,23 @@
 'use strict';
 
 /* #/projects/<id>/invoices/<invoiceId> — one invoice (production-booking
- * task 20; IA "Invoice", D35–D37, D100).
+ * task 20; IA "Invoice", D35–D37, D100; reworked in ui-clarity task 10).
  *
- *   Head      number, kind, client, status, dates, and the amount due as the
- *             screen's one big figure; the actions under it.
- *   Body      by kind:
- *               deposit  a fixed summary (D37): the %, the estimate total,
- *                        the days booked, the deposit due. Its % edits while
- *                        it is a draft and its final hasn't gone out.
- *               final    the accepted estimate, read-only; the Extras block
- *                        (Additional work, D14, D35), editable while a
- *                        draft; then the ledger: estimate, extras, total,
- *                        less the deposit, the balance due.
+ *   Header    the number as a mono eyebrow, the kind, project · client, the
+ *             status chip, dates; the amount due as the screen's one big
+ *             figure; then one primary button, Actions ▾ and Documents ▾
+ *             (IA "Invoice row and Invoice screen"). Paid and void have no
+ *             primary: there is nothing left to do but read and download.
+ *   Notices   void, replaces, a voided deposit, legacy.
+ *   Panels    by kind (U2):
+ *               deposit  Deposit (D37: the %, editable while it is a draft
+ *                        and its final hasn't gone out) and Production days
+ *                        booked; the sum beside them.
+ *               final    The accepted estimate (collapsed), Extras
+ *                        (Additional work, D14, D35; editable while a draft,
+ *                        Save extras in its foot); the Balance beside them:
+ *                        estimate, extras, total, less the deposit, the
+ *                        balance due.
  *               single   the same, with nothing taken off.
  *               legacy   read-only, "made the old way" (D62).
  *
@@ -57,6 +62,7 @@ const InvoiceView = (() => {
   let busy = false;
   let following = null; // the follow-up look while its email goes (SendPanel.follow)
   let tries = 0;
+  let estimateOpen = false; // The accepted estimate's panel, kept open across redraws of one invoice
 
   const $ = (id) => root.querySelector('#' + id);
   const onScreen = () => Boolean(root && root.querySelector('#invoice-screen'));
@@ -115,21 +121,82 @@ const InvoiceView = (() => {
   const treatmentOf = (inv, totals) =>
     LSCCalc.gstTreatment(inv.kind === 'deposit' ? totals : (totals || {}).total, inv.estimate || {});
 
-  /* ── Head ──────────────────────────────────────────────────────────────── */
+  /* ── Header ────────────────────────────────────────────────────────────── */
+
+  /* The chip's tone, as the Project page's rows: the word carries the
+     meaning, the tint only echoes it. */
+  const TONE = { draft: 'neutral', scheduled: 'info', sent: 'info', paid: 'ok', void: 'void', overdue: 'alert', legacy: 'neutral' };
 
   function statusMarkup(inv) {
     const s = inv.status;
+    const overdue = s === 'sent' && inv.dueAt && inv.dueAt < today();
     let note = '';
-    if (s === 'paid') note = inv.paidAt ? when(inv.paidAt) + (inv.paidVia ? ', by ' + VIA_WORD[inv.paidVia] : '') : '';
-    else if (s === 'void') note = inv.voidedAt ? 'since ' + when(inv.voidedAt) : '';
-    else if (s === 'sent' && inv.dueAt) note = (inv.dueAt < today() ? 'overdue, was due ' : 'due ') + when(inv.dueAt);
+    if (s === 'paid') note = inv.paidAt ? 'paid ' + when(inv.paidAt) + (inv.paidVia ? ', by ' + VIA_WORD[inv.paidVia] : '') : '';
+    else if (s === 'void') note = inv.voidedAt ? 'voided ' + when(inv.voidedAt) : '';
+    else if (s === 'sent' && inv.dueAt) note = (overdue ? 'was due ' : 'due ') + when(inv.dueAt);
     else if (s === 'scheduled' && inv.dueAt) note = 'due ' + when(inv.dueAt);
     else if (s === 'draft' && inv.kind === 'final') note = 'add any extras, then send it';
-    const overdue = s === 'sent' && inv.dueAt && inv.dueAt < today();
-    const word = inv.kind === 'legacy' ? (s === 'paid' ? 'Paid' : 'Made the old way') : STATUS_WORD[s] || s;
-    return '<p class="inv-status"><span class="inv-pill is-' + esc(overdue ? 'overdue' : s) + '">' + esc(word) + '</span>' +
-      (note ? '<span class="inv-status-note">' + esc(note) + '</span>' : '') + '</p>' +
+    if (inv.kind === 'legacy' && s !== 'paid') note = 'made the old way';
+    const word = inv.kind === 'legacy' && s !== 'paid' ? 'Legacy' : overdue ? 'Overdue' : STATUS_WORD[s] || s;
+    const tone = inv.kind === 'legacy' && s !== 'paid' ? 'legacy' : overdue ? 'overdue' : s;
+    return '<p class="inv-status"><span class="pf-chip is-' + (TONE[tone] || 'neutral') + '">' + esc(word) + '</span>' +
+      (note ? '<span class="inv-status-note' + (overdue ? ' is-alert' : '') + '">' + esc(note) + '</span>' : '') + '</p>' +
       (inv.kind === 'legacy' ? '' : SendPanel.statusMarkup(inv.send, inv.number || 'this invoice'));
+  }
+
+  /* The header's one primary, Actions ▾ and Documents ▾ (IA "Invoice row and
+     Invoice screen", the Invoice-screen column). What each state offers is
+     today's rule; the menus only hold it. Paid and void have no primary. */
+  function actionsFor(inv) {
+    const unpaid = inv.status !== 'paid' && inv.status !== 'void';
+    const out = inv.status === 'sent' || inv.status === 'scheduled';
+    if (inv.kind === 'legacy') {
+      return {
+        primary: unpaid ? { id: 'paid', label: 'Mark paid…', write: true } : null,
+        actions: [],
+        // An old invoice prints from the estimate it was made as.
+        files: [inv.estimateId ? { id: 'legacy-pdf', label: 'Invoice PDF', hint: 'From its estimate' } : null],
+      };
+    }
+    return {
+      primary: inv.status === 'draft' ? { id: 'send', label: 'Send…', write: true }
+        : out ? { id: 'paid', label: 'Mark paid…', write: true } : null,
+      actions: [
+        inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status) ? { id: 'copy', label: 'Copy link' } : null,
+        inv.status === 'draft' ? { id: 'paid', label: 'Mark paid…', write: true } : null,
+        inv.status === 'void' && inv.replacedBy
+          ? { go: inv.replacedBy.id, label: 'Open the replacement', hint: inv.replacedBy.number || '' } : null,
+        out ? { id: 'void', label: 'Void and remake…', danger: true, write: true } : null,
+      ],
+      files: [
+        { id: 'pdf', label: 'Invoice PDF' },
+        inv.status !== 'void' ? { id: 'breakdown', label: 'Cost Breakdown', hint: 'For you only' } : null,
+      ],
+    };
+  }
+
+  /* An action as a menu item: the same data-act a button carries, so
+     runAction can't tell them apart. */
+  function menuItem(a) {
+    if (!a) return null;
+    const attrs = a.go ? { 'data-go': a.go } : { 'data-act': a.id };
+    if (a.write) attrs['data-write'] = '';
+    return { text: a.label, hint: a.hint, danger: a.danger, attrs };
+  }
+
+  function actionsMarkup(inv) {
+    const { primary, actions, files } = actionsFor(inv);
+    const named = inv.number || 'this invoice';
+    return (
+      '<div class="inv-acts">' +
+      (primary
+        ? '<button type="button" class="btn btn-primary" id="inv-primary" data-act="' + primary.id + '"' +
+          (primary.write ? ' data-write' : '') + '><span class="spinner"></span>' + esc(primary.label) + '</button>'
+        : '') +
+      LSCMenu.markup({ id: 'inv-menu-act', label: 'Actions', ariaLabel: 'Actions for ' + named, btnClass: 'btn', items: actions.map(menuItem) }) +
+      LSCMenu.markup({ id: 'inv-menu-doc', label: 'Documents', ariaLabel: 'Documents for ' + named, btnClass: 'btn', items: files.map(menuItem) }) +
+      '</div>'
+    );
   }
 
   function headMarkup(inv, project, totals) {
@@ -143,50 +210,22 @@ const InvoiceView = (() => {
     const label = inv.status === 'paid' ? 'Paid' : inv.status === 'void' ? 'Was due' : inv.kind === 'final' ? 'Balance due' : 'Amount due';
     const treatment = inv.kind === 'legacy' ? null : treatmentOf(inv, totals);
     return (
+      '<header class="inv-head" aria-label="Invoice ' + esc(inv.number || '') + '">' +
       '<div class="inv-overview">' +
-      '<div class="est-upid">' + esc(inv.number || 'No number') + '</div>' +
-      '<h1 class="est-name">' + esc(KIND_TITLE[inv.kind] || 'Invoice') + '</h1>' +
-      '<div class="est-client">' + esc([project.name || 'Untitled', client.businessName].filter(Boolean).join(' · ')) + '</div>' +
+      '<p class="eyebrow inv-number">' + esc(inv.number || 'No number') + '</p>' +
+      '<h1 class="inv-title">' + esc(KIND_TITLE[inv.kind] || 'Invoice') + '</h1>' +
+      '<p class="inv-client">' + esc([project.name || 'Untitled', client.businessName].filter(Boolean).join(' · ')) + '</p>' +
       statusMarkup(inv) +
-      (facts.length ? '<dl class="pf-facts">' + facts.map(([k, v]) => '<div><dt>' + k + '</dt><dd>' + v + '</dd></div>').join('') + '</dl>' : '') +
+      (facts.length ? '<dl class="pf-facts">' + facts.map(([k, v]) => '<div><dt>' + k + '</dt><dd>' + esc(v) + '</dd></div>').join('') + '</dl>' : '') +
       '</div>' +
       '<div class="inv-due' + (inv.status === 'void' ? ' is-void' : '') + '" id="inv-due">' +
-      '<span class="inv-due-label">' + label + '</span>' +
+      '<span class="eyebrow inv-due-label">' + label + '</span>' +
       '<span class="inv-due-figure" id="inv-due-figure">' + fmt(due) + '</span>' +
-      '<span class="inv-due-note">' + (treatment === 'taxable' ? 'inc. GST' : treatment === 'free' ? 'GST-free' : '&nbsp;') + '</span>' +
-      '</div>'
-    );
-  }
-
-  function actionsFor(inv) {
-    const open = inv.status !== 'paid' && inv.status !== 'void';
-    const main = [];
-    const quiet = [];
-    if (inv.kind === 'legacy') {
-      if (open) main.push({ id: 'paid', label: 'Mark paid…', primary: true });
-      if (inv.estimateId) main.push({ id: 'legacy-pdf', label: '↓ PDF' });
-      return { main, quiet };
-    }
-    if (inv.status === 'draft') main.push({ id: 'send', label: 'Send…', primary: true });
-    if (inv.status === 'sent' || inv.status === 'scheduled') main.push({ id: 'paid', label: 'Mark paid…', primary: true });
-    if (inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status)) main.push({ id: 'copy', label: 'Copy link' });
-    main.push({ id: 'pdf', label: '↓ PDF' });
-    if (inv.status !== 'void') main.push({ id: 'breakdown', label: '↓ Cost Breakdown' });
-    if (inv.status === 'draft') quiet.push({ id: 'paid', label: 'Mark paid…' });
-    if (inv.status === 'sent' || inv.status === 'scheduled') quiet.push({ id: 'void', label: 'Void and remake…', danger: true });
-    return { main, quiet };
-  }
-
-  function actionsMarkup(inv) {
-    const { main, quiet } = actionsFor(inv);
-    const btn = (a, cls) =>
-      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '"' + (a.primary ? ' data-primary' : '') + (a.id === 'pdf' || a.id === 'breakdown' || a.id === 'legacy-pdf' || a.id === 'copy' ? '' : ' data-write') + '>' +
-      '<span class="spinner"></span>' + esc(a.label) + '</button>';
-    return (
-      '<div class="pf-actions">' +
-      '<div class="pf-actions-main">' + main.map((a) => btn(a, a.primary ? 'btn-accent' : 'btn-ghost')).join('') + '</div>' +
-      (quiet.length ? '<div class="pf-actions-quiet">' + quiet.map((a) => btn(a, (a.danger ? 'btn-danger' : 'btn-ghost') + ' btn-sm')).join('') + '</div>' : '') +
-      '</div>'
+      (treatment === 'taxable' || treatment === 'free'
+        ? '<span class="inv-due-note">' + (treatment === 'taxable' ? 'inc. GST' : 'GST-free') + '</span>' : '') +
+      '</div>' +
+      actionsMarkup(inv) +
+      '</header>'
     );
   }
 
@@ -195,7 +234,7 @@ const InvoiceView = (() => {
   function noticesMarkup(inv) {
     let html = '';
     if (inv.status === 'void') {
-      html += '<div class="inv-notice is-void" role="note"><p><strong>Void' +
+      html += '<div class="pf-notice inv-notice" role="note"><p><strong>Void' +
         (inv.voidedAt ? ' since ' + esc(when(inv.voidedAt)) : '') + '.</strong> ' +
         (inv.voidReason ? esc(inv.voidReason) + '. ' : '') + 'Nothing is owed on it; it stays here for the record.</p>' +
         (inv.replacedBy ? '<button type="button" class="btn btn-sm" data-go="' + esc(inv.replacedBy.id) + '">Open ' + esc(inv.replacedBy.number || 'the replacement') + ' →</button>' : '') +
@@ -206,16 +245,16 @@ const InvoiceView = (() => {
         esc(inv.replaces.number || 'a voided invoice') + '</button>, which was voided.</p>';
     }
     if (inv.kind === 'final' && inv.less && inv.less.status === 'void' && inv.status !== 'void') {
-      html += '<div class="inv-notice" role="note"><p><strong>The deposit this takes off, ' + esc(inv.less.number || '') +
+      html += '<p class="pf-notice is-alert" role="note"><strong>The deposit this takes off, ' + esc(inv.less.number || '') +
         ', was voided.</strong> ' + (inv.status === 'draft'
         ? 'Reopen the folder to see the deposit that stands now.'
-        : 'Void this final and make a replacement: the replacement takes off the deposit that stands now.') + '</p></div>';
+        : 'Void this final and make a replacement: the replacement takes off the deposit that stands now.') + '</p>';
     }
     if (inv.kind === 'legacy') {
       html += '<p class="pf-notice">Made the old way, before projects: its PDF prints from the estimate it was made as, and nothing ' +
-        'about it can change here. Mark it paid when the money is in.</p>';
+        'about it can change here.' + (inv.status === 'paid' ? '' : ' Mark it paid when the money is in.') + '</p>';
     }
-    return html;
+    return html ? '<div class="pf-notices">' + html + '</div>' : '';
   }
 
   /* ── The ledger ────────────────────────────────────────────────────────── */
@@ -266,13 +305,15 @@ const InvoiceView = (() => {
 
   function daysMarkup(estimate) {
     const days = (estimate.days || []).filter((d) => d && d.id);
-    if (!days.length) return '<p class="pf-empty">No production days booked.</p>';
-    return '<ol class="inv-days">' + days.map((d, i) => {
+    const head = '<div class="panel-head"><h2 class="panel-title" id="inv-days-h">Production days booked' +
+      (days.length ? '<span class="panel-count">' + days.length + '</span>' : '') + '</h2></div>';
+    if (!days.length) return head + '<div class="panel-body"><p class="pf-empty">No production days booked.</p></div>';
+    return head + '<div class="panel-body is-flush"><ol class="inv-days">' + days.map((d, i) => {
       const date = C.isDate(d.date) ? C.longDate(d.date, today()) : 'Day ' + (i + 1) + ' — date TBC';
       const times = d.startTime || d.endTime ? C.timeText(d) : '';
       return '<li>' + C.statusChip(d.status) + '<span class="inv-day-date">' + esc(date) + '</span>' +
         (times ? '<span class="inv-day-time">' + esc(times) + '</span>' : '') + '</li>';
-    }).join('') + '</ol>';
+    }).join('') + '</ol></div>';
   }
 
   /* What a deposit % comes to, worked out as the server will (calc.js
@@ -285,6 +326,17 @@ const InvoiceView = (() => {
       'it’s fixed once either is sent.';
   }
 
+  /* The sum, beside the panels it adds up (U2): Balance, Total or Amount. */
+  function sumMarkup(inv, totals, title) {
+    return (
+      '<section class="panel inv-sum-panel" aria-labelledby="inv-sum-h">' +
+      '<div class="panel-head"><h2 class="panel-title" id="inv-sum-h">' + title + '</h2>' +
+      '<span class="inv-preview" id="inv-preview" hidden>Preview, not saved</span></div>' +
+      '<div class="panel-body">' + ledgerMarkup(inv, totals) + '</div>' +
+      '</section>'
+    );
+  }
+
   function depositMarkup(inv, totals) {
     const estimate = inv.estimate || {};
     const pctField = inv.depositEditable
@@ -292,35 +344,44 @@ const InvoiceView = (() => {
         '<div class="field"><label for="inv-pct">Deposit %</label>' +
         '<input id="inv-pct" type="number" inputmode="decimal" min="1" max="100" step="any" value="' + esc(String(inv.pct)) + '"' +
         ' aria-describedby="inv-pct-hint"></div>' +
-        '<button type="button" class="btn btn-ghost btn-sm" id="inv-pct-save" data-write><span class="spinner"></span>Save %</button>' +
+        '<button type="button" class="btn" id="inv-pct-save" data-write><span class="spinner"></span>Save %</button>' +
         '<p class="pfd-hint" id="inv-pct-hint" aria-live="polite">' + pctHint(inv, inv.pct) + '</p>' +
         '</div>'
       : '';
-    return (
-      '<section class="inv-section" aria-labelledby="inv-dep-h">' +
-      '<div class="pf-section-head"><h2 class="pf-h2" id="inv-dep-h">Deposit — ' + esc(String(inv.pct)) + '% to secure your booking</h2></div>' +
-      '<p class="pf-hint">For estimate ' + esc(estimate.upid || '—') + (estimate.name ? ' · ' + esc(estimate.name) : '') +
-      '. A summary, not an itemised bill: the accepted estimate is the itemised document.</p>' +
-      pctField +
-      '<h3 class="inv-h3">Production days booked</h3>' + daysMarkup(estimate) +
-      ledgerMarkup(inv, totals) +
-      '</section>'
-    );
+    return {
+      main:
+        '<section class="panel" aria-labelledby="inv-dep-h">' +
+        '<div class="panel-head"><h2 class="panel-title" id="inv-dep-h">Deposit<span class="panel-count">' + esc(String(inv.pct)) + '%</span></h2></div>' +
+        '<div class="panel-body inv-panel-body">' +
+        '<p class="pf-hint">' + esc(String(inv.pct)) + '% to secure your booking, for estimate ' + esc(estimate.upid || '—') +
+        (estimate.name ? ' · ' + esc(estimate.name) : '') +
+        '. A summary, not an itemised bill: the accepted estimate is the itemised document.</p>' +
+        pctField +
+        '</div></section>' +
+        '<section class="panel" aria-labelledby="inv-days-h">' + daysMarkup(estimate) + '</section>',
+      side: sumMarkup(inv, totals, 'Amount'),
+    };
   }
 
   /* ── Final and single: the estimate, then the Extras ──────────────────── */
 
+  /* Collapsed on arrival (IA); open stays open while this invoice redraws. */
   function estimateMarkup(inv) {
     const estimate = inv.estimate || {};
+    const open = estimateOpen;
     return (
-      '<details class="inv-estimate">' +
-      '<summary><span class="inv-est-title">The accepted estimate</span>' +
-      '<span class="inv-est-sum">' + esc(estimate.upid || '') + ' · ' + fmt((estimate.totals || {}).totalIncGst) + '</span>' +
-      '<span class="inv-est-toggle" aria-hidden="true"></span></summary>' +
-      '<div class="inv-est-body">' +
+      '<section class="panel inv-est-panel' + (open ? '' : ' is-collapsed') + '" id="inv-est-panel" aria-labelledby="inv-est-h">' +
+      '<div class="panel-head"><h2 class="panel-title" id="inv-est-h">' +
+      '<button type="button" class="panel-toggle" aria-expanded="' + open + '" aria-controls="inv-est-body">' +
+      '<span class="panel-chev" aria-hidden="true"></span>' +
+      '<span class="panel-name">The accepted estimate</span>' +
+      '<span class="panel-sum">' + (estimate.upid ? '<span class="ref">' + esc(estimate.upid) + '</span> · ' : '') +
+      '<span class="fig">' + fmt((estimate.totals || {}).totalIncGst) + '</span></span>' +
+      '</button></h2></div>' +
+      '<div class="panel-body inv-panel-body inv-est-body" id="inv-est-body"' + (open ? '' : ' hidden') + '>' +
       '<p class="pf-hint">As the client accepted it. Editing the estimate now changes no invoice.</p>' +
       EstimateDetail.itemsMarkup(estimate, LSCData.pricing()) +
-      '</div></details>'
+      '</div></section>'
     );
   }
 
@@ -357,8 +418,8 @@ const InvoiceView = (() => {
       '<div class="gt-row labour-grid" data-line="' + i + '">' +
       '<div data-label="Service" class="lab-svc">' + name + '<div class="lab-unit">' + esc(unitText(line)) + '</div></div>' +
       '<div class="right" data-label="' + qtyLabel + '">' + qty + '</div>' +
-      '<div class="right muted-td" data-label="Price">' + fmt(line.mu) + '</div>' +
-      '<div class="right" data-label="Bill"><span class="bill-cell" data-bill="' + i + '">' + fmt(billOf(line)) + '</span>' + custom + '</div>' +
+      '<div class="right muted-td" data-label="Price"><span class="fig">' + fmt(line.mu) + '</span></div>' +
+      '<div class="right" data-label="Bill"><span class="bill-cell fig" data-bill="' + i + '">' + fmt(billOf(line)) + '</span>' + custom + '</div>' +
       '<div class="del-cell">' + (editable
         ? '<button type="button" class="del-btn" data-del="' + i + '" title="Remove ' + name + '" aria-label="Remove ' + name + '">×</button>'
         : '') + '</div>' +
@@ -375,42 +436,46 @@ const InvoiceView = (() => {
     return lines.map((l, i) => lineMarkup(l, i, editable)).join('');
   }
 
+  /* The Extras panel: Save extras in its foot (IA). It keeps .billing-block
+     for the editor's line grid: the tablet floor and the phone's stacked
+     label/value rows (responsive.css). */
   function extrasMarkup(inv) {
     const editable = inv.editable;
     const subtotal = lines.reduce((sum, l) => sum + billOf(l), 0);
     return (
-      '<section class="inv-section" aria-labelledby="inv-extras-h">' +
-      '<div class="billing-block inv-extras">' +
-      '<div class="bb-head"><div><h2 class="bb-label" id="inv-extras-h">Extras</h2><span class="bb-label-tag">Additional work</span></div>' +
-      '<span class="bb-sum">Subtotal <b id="inv-extras-sum">' + fmt(subtotal) + '</b></span></div>' +
+      '<section class="panel billing-block inv-extras" aria-labelledby="inv-extras-h">' +
+      '<div class="panel-head"><h2 class="panel-title" id="inv-extras-h">Extras<span class="bb-label-tag">Additional work</span></h2>' +
+      '<span class="panel-sum">Subtotal <span class="fig" id="inv-extras-sum">' + fmt(subtotal) + '</span></span></div>' +
       (editable ? pickerMarkup() : '') +
       '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
       '<div class="right">Price</div><div class="right">Bill</div><div></div></div>' +
       '<div class="gt-body" id="inv-extras-body">' + extrasRowsMarkup(editable) + '</div>' +
-      '</div>' +
+      '<div class="panel-foot inv-extras-foot">' +
+      '<p class="inv-extras-hint">' + (editable
+        ? 'Billed at the standard rate: no day or time rate applies to extras. Editable until the invoice is sent.'
+        : inv.status === 'void' ? 'This invoice is void.' : 'Sent invoices don’t change. To correct one, void it and make a replacement.') + '</p>' +
       (editable
         ? '<div class="inv-save"><span class="inv-save-state" id="inv-save-state" aria-live="polite"></span>' +
           '<button type="button" class="btn" id="inv-save" data-write disabled><span class="spinner"></span>Save extras</button></div>'
         : '') +
-      '<p class="pf-hint inv-extras-hint">' + (editable
-        ? 'Billed at the standard rate: no day or time rate applies to extras. Editable until the invoice is sent.'
-        : inv.status === 'void' ? 'This invoice is void.' : 'Sent invoices don’t change. To correct one, void it and make a replacement.') + '</p>' +
-      '</section>'
+      '</div></section>'
     );
   }
 
   function billMarkup(inv, totals) {
-    return estimateMarkup(inv) + extrasMarkup(inv) +
-      '<section class="inv-section inv-sum-section" aria-labelledby="inv-sum-h">' +
-      '<div class="pf-section-head"><h2 class="pf-h2" id="inv-sum-h">' + (inv.kind === 'final' ? 'Balance' : 'Total') + '</h2>' +
-      '<span class="inv-preview" id="inv-preview" hidden>Preview — not saved</span></div>' +
-      ledgerMarkup(inv, totals) +
-      '</section>';
+    return {
+      main: estimateMarkup(inv) + extrasMarkup(inv),
+      side: sumMarkup(inv, totals, inv.kind === 'final' ? 'Balance' : 'Total'),
+    };
   }
 
   function legacyMarkup(inv) {
-    return '<section class="inv-section" aria-label="Amount"><dl class="inv-ledger">' +
-      ledgerRow('Total', fmt(inv.amountDue), 'is-due') + '</dl></section>';
+    return {
+      main: '<section class="panel inv-sum-panel" aria-labelledby="inv-sum-h">' +
+        '<div class="panel-head"><h2 class="panel-title" id="inv-sum-h">Amount</h2></div>' +
+        '<div class="panel-body"><dl class="inv-ledger">' + ledgerRow('Total', fmt(inv.amountDue), 'is-due') + '</dl></div></section>',
+      side: '',
+    };
   }
 
   // ── The screen ──────────────────────────────────────────────────────────
@@ -419,15 +484,17 @@ const InvoiceView = (() => {
     const inv = data.invoice;
     const project = data.project;
     const totals = totalsNow();
+    const body = inv.kind === 'deposit' ? depositMarkup(inv, totals) : inv.kind === 'legacy' ? legacyMarkup(inv) : billMarkup(inv, totals);
+    LSCMenu.close(false);
     root.innerHTML =
       '<div id="invoice-screen" class="inv-screen">' +
       '<button class="back-btn" id="js-back">← ' + esc([project.upid, project.name].filter(Boolean).join(' · ') || 'Project') + '</button>' +
-      '<section class="inv-head" aria-label="Invoice ' + esc(inv.number || '') + '">' + headMarkup(inv, project, totals) + '</section>' +
-      actionsMarkup(inv) +
+      headMarkup(inv, project, totals) +
       '<div class="pf-action-error" id="inv-error" role="alert"></div>' +
       noticesMarkup(inv) +
-      '<div class="inv-body">' +
-      (inv.kind === 'deposit' ? depositMarkup(inv, totals) : inv.kind === 'legacy' ? legacyMarkup(inv) : billMarkup(inv, totals)) +
+      '<div class="inv-body' + (body.side ? ' has-side' : '') + '">' +
+      '<div class="inv-main">' + body.main + '</div>' +
+      (body.side ? '<div class="inv-side">' + body.side + '</div>' : '') +
       '</div></div>';
     document.title = (inv.number || 'Invoice') + ' · ' + (project.name || 'Project') + ' — LSC Billing';
     bind();
@@ -439,6 +506,7 @@ const InvoiceView = (() => {
 
   function bind() {
     $('js-back').addEventListener('click', () => LSCRouter.leaveTo(folderPath(data.project.id)));
+    // Buttons and closed menus' items alike: menu.js clicks a chosen item in place.
     root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
     root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () =>
       LSCRouter.go(pathOf(data.project.id, b.dataset.go))));
@@ -450,6 +518,8 @@ const InvoiceView = (() => {
       $('inv-pct').addEventListener('input', (e) => { $('inv-pct-hint').innerHTML = pctHint(data.invoice, e.target.value); });
     }
     if (data.invoice.editable && data.invoice.kind !== 'deposit') bindExtras();
+    const est = $('inv-est-panel');
+    if (est) est.addEventListener('lsc:panel', (e) => { estimateOpen = e.detail.open; });
     SendPanel.bindStatus(root, {
       edit: (sendId, b) => openEditSend(b),
       changed: () => refresh(),
@@ -561,9 +631,9 @@ const InvoiceView = (() => {
     // Quiet until there is something to save, then the screen's call to action:
     // it takes the terracotta from the header's primary (Send…, Mark paid…)
     // while the extras are unsaved, so the view still has one.
-    save.classList.toggle('btn-accent', changed);
-    save.classList.toggle('btn-ghost', !changed);
-    document.querySelectorAll('.pf-actions [data-primary]').forEach((b) => b.classList.toggle('btn-accent', !changed));
+    save.classList.toggle('btn-primary', changed);
+    const primary = $('inv-primary');
+    if (primary) primary.classList.toggle('btn-primary', !changed);
     const state = $('inv-save-state');
     if (state && !busy) state.textContent = changed ? 'Unsaved changes' : '';
   }
@@ -582,8 +652,10 @@ const InvoiceView = (() => {
       accept(reply);
       draw();
       Toast.ok('Extras saved. ' + (reply.invoice.kind === 'final' ? 'Balance due ' : 'Total due ') + fmt(reply.invoice.amountDue) + '.');
-      const again = $('inv-save') || $('inv-svc');
+      // Save extras is disabled once saved, so the picker, to add another.
+      const again = $('inv-svc');
       if (again) again.focus();
+      else focusHead();
     } catch (err) {
       setBusy(button, false);
       Toast.hide();
@@ -673,8 +745,7 @@ const InvoiceView = (() => {
       }
       accept(reply);
       draw();
-      const again = root.querySelector('[data-act]');
-      if (again) again.focus();
+      focusHead();
       return reply;
     } catch (err) {
       setBusy(button, false);
@@ -685,8 +756,22 @@ const InvoiceView = (() => {
     }
   }
 
-  function runAction(id, button) {
+  /* What a dialog or panel opened from a menu item gives focus back to: the
+     item is hidden again by then, so its menu's button. */
+  function openerOf(el) {
+    const menu = el && el.closest('.menu');
+    return (menu && menu.querySelector('.menu-btn')) || el;
+  }
+
+  /* After a redraw: the header's primary, else its first menu. */
+  function focusHead() {
+    const target = $('inv-primary') || root.querySelector('.inv-acts .menu-btn');
+    if (target) target.focus();
+  }
+
+  function runAction(id, el) {
     if (busy) return undefined;
+    const button = openerOf(el);
     if (id === 'pdf' || id === 'breakdown' || id === 'legacy-pdf') return download(id, button);
     if (id === 'copy') return SendPanel.copyLink('invoice', data.invoice.publicToken, button);
     if (dirty() && (id === 'send' || id === 'paid' || id === 'void')) {
@@ -751,8 +836,7 @@ const InvoiceView = (() => {
         if (!onScreen() || data.invoice.id !== id) return;
         accept(reply);
         draw();
-        const again = root.querySelector('[data-act]');
-        if (again) again.focus();
+        focusHead();
       },
     }));
   }
@@ -953,6 +1037,7 @@ const InvoiceView = (() => {
     }
     accept(reply);
     busy = false;
+    estimateOpen = false;
     draw();
     LSCUtil.landFocus(root);
     LSCUnsaved.watch('invoice-extras', {
@@ -962,8 +1047,9 @@ const InvoiceView = (() => {
     });
     // The folder's row menus hand over Mark paid… and Void and remake….
     if (then === 'paid' || then === 'void') {
-      const button = root.querySelector('[data-act="' + then + '"]');
-      if (button) (then === 'paid' ? openMarkPaid : openVoid)(button);
+      // Only while this state still offers it (the primary, or an Actions item).
+      const el = root.querySelector('.inv-acts [data-act="' + then + '"]');
+      if (el) (then === 'paid' ? openMarkPaid : openVoid)(openerOf(el));
     }
   }
 

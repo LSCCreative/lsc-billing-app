@@ -105,12 +105,18 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     menu's button to return focus to. New row kinds: `inv-paid`, `inv-void` (hand over to the
     Invoice screen, which now takes `state.action` `'void'` as well as `'paid'`), and `duplicate`
     (the row's own estimate).
-- **Next: task 10, "Invoice screen"** (frontend — Opus/high), then 11–14 and 16. These need no NAS
-  or live app: build and verify only against local `api-scratch` / `api-scratch-mail`, never the
-  live site or API. Skip the deploy tasks (8, 15, 17) until the user says the NAS is back; when it
-  is, task 8 comes first, then 15 and 17. Commit locally on `ui-clarity`; don't push.
-  Task 10 should move the Invoice screen off the `.pf-actions*`, `.pf-section-head`, `.pf-h2`
-  rules kept at the foot of `project-folder.css` (marked), then delete them.
+  - [x] Task 10, the Invoice screen. `invoice.js` `actionsFor(inv)` → `{ primary, actions, files }`
+    (IA's Invoice-screen column) drawn into the header as `#inv-primary` + `LSCMenu`s with stable
+    ids `inv-menu-act` / `inv-menu-doc`; menu items keep `data-act` (and `data-go` for Open the
+    replacement), `openerOf` gives dialogs the menu's button, `focusHead()` refocuses after a
+    redraw. Bodies are `{ main, side }` panels; Extras is `.panel.billing-block` so the editor's
+    tablet floor and phone stacking still apply. The `.pf-actions*` / `.pf-section-head` /
+    `.pf-h2` rules are deleted from `project-folder.css`.
+- **Next: task 11, "Editor: six panels"** (money — Opus/high, **Frontend task**), then 12–14 and
+  16. These need no NAS or live app: build and verify only against local `api-scratch` /
+  `api-scratch-mail`, never the live site or API. Skip the deploy tasks (8, 15, 17) until the user
+  says the NAS is back; when it is, task 8 comes first, then 15 and 17. Commit locally on
+  `ui-clarity`; don't push.
 
 ## Waiting on the user
 
@@ -130,6 +136,23 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
+
+## Decisions made in task 10 (tell the user)
+
+- **Paid and void invoices have no primary button**: IA's Invoice-screen column gives them none
+  (its "Open" is the Project page row's). Only Actions ▾ and Documents ▾ show.
+- **The sum sits beside the panels at ≥1100** (Balance, Total, or Amount for a deposit/legacy),
+  sticky while a long list of extras is edited; below that it comes last.
+- **The status is the Project page's mono chip** (NOT SENT, SCHEDULED, SENT, OVERDUE, PAID, VOID,
+  LEGACY) with its note beside it; the overdue note is red.
+- **The deposit's % is the Deposit panel's count**, and Production days booked is its own panel.
+- **The accepted estimate's own blocks sit one layer in** (inset, no border) inside its panel, and
+  it stays open across a redraw of the same invoice (e.g. after Save extras), collapsed on arrival.
+- Ledger figures are `--font-figures` (U24); Balance due stays Delight. Its label is grey, so the
+  figure is the corner's one terracotta.
+- **Fixed in passing:** after Save extras, focus went nowhere (it aimed at the now-disabled Save
+  button); it lands on the Additional work picker. A paid legacy invoice's notice no longer says
+  "Mark it paid when the money is in."
 
 ## Decisions made in task 9 (tell the user)
 
@@ -242,6 +265,13 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
   SEND-A…RVR-011 names are gone. Rebuild: seed the `dev` account (launch.json), start
   `api-scratch-mail`, `node .design/ui-clarity/seed-review.js server`. Its signing step was fixed
   after the run that built today's data (DPD-006 was signed by hand), so check it the first time.
+- **A voided deposit only warns on a final that has gone out.** Voiding a deposit while its final
+  is a draft re-points the final at the replacement (server rule), so no notice shows; the
+  "deposit … was voided" notice needs a sent/scheduled final. To make one on scratch: send the
+  deposit and the final `{ by: 'link', dueAt }`, then void the deposit.
+- **Scratch is shared state:** task 10's checks ran on a `db.backup()` copy and restored it
+  (stop `api-scratch-mail`, copy over `billing.db`, delete `-wal`/`-shm`, restart). Do the same
+  before any check that sends, voids or marks paid, so `seed-review.js`'s states survive.
 - **Project page menus have stable ids** (`pf-menu-head`, `pf-menu-e-<estimateId>-act|doc`,
   `pf-menu-i-<invoiceId>-act|doc`): the quiet refresh after a send puts focus back by id, and
   waits while a menu is open (a redraw would close it).
