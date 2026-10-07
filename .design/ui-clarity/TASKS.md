@@ -129,7 +129,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
     fails each time).
   - _Modifies: `documents.js` ×2, `signing.js`, tests._
 
-- [ ] **5. The builder: header and clause cards** (frontend — Opus/high) **Frontend**
+- [x] **5. The builder: header and clause cards** (frontend — Opus/high) **Frontend**
+  - **Done** `890def6`: on scratch, clause 7 dragged to 2 and saved; the preview and the client link's agreement are byte-identical (header + all of TERMS). Real-key Alt+↑ and Tab focus ring checked; touch drag and the ⋯ sheet (Move up/down, 48px rows) at 375; no overflow at 1280/800/375; 565 tests green. Screenshots `screenshots/task5-*`.
   - Settings → Service agreement becomes these panels, in order:
     - The section intro and **Preview with a project…**.
     - **Header:** the locked layout with field chips, the **Intro** textarea, and "Missing" links

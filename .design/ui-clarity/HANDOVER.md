@@ -80,7 +80,11 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     styles those lines as heads). `docSettings().agreement` is `{ intro, clauses, hourlyRate }`;
     `agreementText` and `agreement.text` are gone. The seed JSON the user gave is
     `server/test/fixtures/agreement-seed.json`, and a test turns the defaults back into it.
-- **Next: task 5, "The builder: header and clause cards"** (frontend — Opus/high). **Frontend task.**
+  - [x] Task 5, the builder (`890def6`). Settings → Service agreement is panels (Header, Clauses,
+    Agreement values, Fields you can use, Client page); Business gains **Signs for the business**
+    (`business.signer`). `web/js/sortable.js` is the shared reorder helper; `Toast.ok(msg, { action })`
+    gives the Undo.
+- **Next: task 6, "Sub-clauses and reset"** (frontend — Opus/high). **Frontend task.**
 
 ## Waiting on the user
 
@@ -123,6 +127,21 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Blank sub-clauses and empty clauses are skipped and take no letter or number. An indented
   first sub-clause is lettered (and stored as indent 0).
 
+## Decisions made in task 5 (tell the user)
+
+- **The preview shows what's on screen, saved or not** (D39's original rule), not the saved
+  clauses as task 4's interim did.
+- **Cards are numbered by position**, as a deposit project reads them. A deposit-only clause
+  carries a "Deposit only" tag; on a single invoice the render skips it and numbers on.
+- **Sub-clauses show read-only** in an open card until task 6 makes them editable. A clause with
+  sub-clauses calls its text box "Intro (optional)".
+- **Delete confirms only when the clause has text** (body or sub-clauses; a title alone doesn't
+  count). Undo lasts 10s and holds while hovered or focused.
+- **Field insertion** goes where the cursor last was in the Intro or a clause (else the Intro's
+  end), opening that card if it was closed.
+- **Missing** (Header panel) covers Email, Phone and Signs for the business; it jumps to the
+  field and updates as you type.
+
 ## Traps
 
 - **Agreement business details come from the version's frozen snapshot** (`snap.business`), as
@@ -131,12 +150,26 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - **`(i)` is ambiguous in the text:** the 9th letter and roman one look alike. Task 7's
   presentation must tell them apart by context (a roman one follows a lettered line or another
   roman one; a letter `(i)` follows `(h)`), or a clause with 9+ sub-clauses indents wrongly.
-- **Settings' agreement text box is interim** until task 5: it still edits the retired
-  `agreement.text` (nothing reads it); the save merges `loaded.agreement`, so stored clauses
-  survive a save. Its Preview already uses `agreementText` from the *saved* clauses.
+- **`agreement.text` still rides in the live row** (merged through `loaded.agreement`, read by
+  nothing). Left on purpose as a second copy of the user's old text; the pre-deploy backup is the
+  first.
 - The owner's agreement PDF route (`routes/projects.js`) always uses the real renderer and ignores
   `opts.renderPdf`; tests read a PDF through the client's `/public/estimates/:token/agreement`.
 
+- **Testing declarative menus by script:** `el.click()` on a menu item does nothing in the end,
+  because menu.js re-clicks the item in place and `HTMLElement.click()` is a no-op on an element
+  whose own click is in progress. Real clicks are fine. Test with
+  `el.dispatchEvent(new MouseEvent('click', { bubbles: true }))`. Task 9 will meet this too.
+- **Stacked grids need `grid-template-columns: minmax(0, 1fr)`**, or a nowrap child (an
+  ellipsised title, a chip) widens the column: the panels overflowed 375 by 54px until both
+  `.set-agr-panels` and `.clause-list` had it.
+- **sortable.js** takes items that are direct children of the list only, so task 6's sub-clause
+  list inside a card attaches its own instance. Its `onMove(from, to)` must move data and node
+  together, as `Clauses.move` does. The handle is `touch-action: none`.
+- **Scratch DB was recreated 2026-10-07** (the account-recovery session): the review dataset
+  (SEND-A…RVR-011) is gone. It now holds one fictional sent project, SEND-A "Harbour launch
+  film" (Example Harbour Co, $0, token `pku61I2I…`), and the agreement settings are back to the
+  defaults.
 - **Menus (task 3):** an open list is moved into `<body>`, and a chosen declarative item is put
   back and `.click()`ed in place, so a screen's delegated `data-act` handler must listen on a
   container that holds the *closed* menu, not on the list. menu.js listens in the capture phase
