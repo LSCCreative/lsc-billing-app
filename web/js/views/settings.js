@@ -28,12 +28,27 @@
  * doesn't have:
  *   invoicing.depositPct (D33)  invoicing.validDays (D44)  invoicing.dueDays
  *   messages.{estimate,deposit,final,single} (D43)
- *   agreement.text (D39)  agreement.faqUrl (D55; '' hides the FAQ button)
+ *   agreement.faqUrl (D55; '' hides the FAQ button)
  *   business.email and .phone (task 33 DR1): the client pages' contact line
  *   and notices, and the estimate PDF's sign-off. Stored before, but only SQL
  *   could set them.
- * The service agreement's "Preview with a project…" fills the text on screen,
- * saved or not, through the same documents.js that stage E's signing will use.
+ *   business.signer (ui-clarity U22): "Signs for the business", the
+ *   agreement's "represented by".
+ *
+ * THE SERVICE AGREEMENT BUILDER (ui-clarity task 5; IA "Settings → Service
+ * agreement")
+ * agreement.{intro, clauses, hourlyRate} replace the retired free text
+ * (agreement.text, still in the row and merged through untouched; nothing
+ * reads it). The section is panels: Header (the locked layout with its fields
+ * as chips, the Intro, and Missing links for blank Business details), Clauses
+ * (cards: open to edit, reorder by drag, Alt+↑/↓ or ⋯, duplicate, delete with
+ * an Undo toast), Agreement values, Fields you can use, and Client page.
+ * The clauses live in `form.clauses`, edited in place, so the unsaved-edit
+ * check and Save settings cover them like any other field; which cards are
+ * open is not an edit and lives apart (Clauses.open). Cards are numbered by
+ * position, as agreementText() numbers them for a deposit project.
+ * "Preview with a project…" fills what is on screen, saved or not, through
+ * the same agreementText() signing uses.
  *
  * SAVING MERGES, IT DOES NOT REPLACE
  * PUT /api/settings writes the body over the whole row, and this screen does
@@ -64,6 +79,13 @@ const SettingsView = (() => {
     ['account', 'Account'],
   ];
   const MESSAGE_LABELS = { estimate: 'Estimate', deposit: 'Deposit invoice', final: 'Final invoice', single: 'Single invoice' };
+  /* The agreement header's details that come from Business, each shown in
+     the Header panel with "Missing" when blank: [form key, field id, label]. */
+  const BIZ_DETAILS = [
+    ['businessEmail', 'set-biz-email', 'Email'],
+    ['businessPhone', 'set-biz-phone', 'Phone'],
+    ['businessSigner', 'set-biz-signer', 'Signs for the business'],
+  ];
 
   /* Text fields: element id -> key in `form`. Each writes straight to `form` on
      input, so typing never redraws and never loses focus, and fill() puts the
@@ -73,6 +95,7 @@ const SettingsView = (() => {
     ['set-abn', 'abn'],
     ['set-biz-email', 'businessEmail'],
     ['set-biz-phone', 'businessPhone'],
+    ['set-biz-signer', 'businessSigner'],
     ['set-gst-rate', 'rateRaw'],
     ['set-bank-name', 'bankName'],
     ['set-account-name', 'accountName'],
@@ -82,7 +105,8 @@ const SettingsView = (() => {
     ['set-deposit', 'depositRaw'],
     ['set-valid', 'validRaw'],
     ['set-due', 'dueRaw'],
-    ['set-agreement', 'agreementText'],
+    ['set-agr-intro', 'intro'],
+    ['set-agr-rate', 'hourlyRaw'],
     ['set-faq', 'faqUrl'],
   ].concat(D.MESSAGE_KINDS.map((k) => ['set-msg-' + k, 'msg_' + k]));
   const CHECKS = [
@@ -116,6 +140,7 @@ const SettingsView = (() => {
       abn: abnFormat(business.abn),
       businessEmail: business.email || '',
       businessPhone: business.phone || '',
+      businessSigner: business.signer || '',
       registered: gst.registered === true,
       rateRaw: toPercent(gst.rate),
       pricesIncludeGst: gst.pricesIncludeGst === true,
@@ -127,9 +152,9 @@ const SettingsView = (() => {
       depositRaw: String(docs.depositPct),
       validRaw: String(docs.validDays),
       dueRaw: String(docs.dueDays),
-      // Retired by ui-clarity task 4 (clauses are rendered by agreementText);
-      // read raw only so this box keeps working until task 5 replaces it.
-      agreementText: typeof (settings.agreement || {}).text === 'string' ? settings.agreement.text : '',
+      intro: docs.agreement.intro,
+      clauses: docs.agreement.clauses, // a fresh copy: edited in place
+      hourlyRaw: docs.agreement.hourlyRate === null ? '' : String(docs.agreement.hourlyRate),
       faqUrl: docs.faqUrl,
     };
     D.MESSAGE_KINDS.forEach((k) => {
@@ -181,6 +206,12 @@ const SettingsView = (() => {
       '</div>' +
       '<p class="set-hint" id="set-contact-hint">How a client reaches you: shown at the foot of every client page, ' +
       'in its notices (“Contact …”), and on the estimate PDF. Left blank, a client page says “contact us” with no address.</p>' +
+      '<div class="form-grid set-signer">' +
+        field('set-biz-signer', 'Signs for the business', f.businessSigner, {
+          attrs: ' placeholder="e.g. Lachlan Sullivan-Carey" autocomplete="name" aria-describedby="set-biz-signer-hint"',
+          hint: 'Named in the service agreement as the person who represents the business.',
+        }) +
+      '</div>' +
       '<h3 class="set-group-head">GST</h3>' +
       '<label class="set-check"><input type="checkbox" id="set-gst-reg"' + (f.registered ? ' checked' : '') +
       '><span>Registered for GST</span></label>' +
@@ -228,30 +259,197 @@ const SettingsView = (() => {
       '<div class="form-grid set-msgs">' + msgs + '</div>');
   }
 
+  /* The agreement's fixed header, as agreementText() lays it out, with each
+     field shown as a chip where its value goes. Only the Intro is typed. */
+  const chip = (key) => '<span class="agr-chip">{' + key + '}</span>';
+
+  function headerMarkup(f) {
+    const block = (label, lines, cls) => '<div class="agr-block' + (cls ? ' ' + cls : '') + '">' +
+      '<p class="agr-label">' + label + '</p>' + lines.map((l) => '<p>' + l + '</p>').join('') + '</div>';
+    return '<div class="agr-doc" aria-describedby="set-agr-doc-hint">' +
+      '<p class="agr-label agr-title">' + esc(D.AGREEMENT_TITLE) + '</p>' +
+      block('PARTIES', [
+        chip('business_name') + ' (ABN ' + chip('business_abn') + '), represented by ' + chip('business_signer') + ' (the "Business")',
+        chip('business_email') + ' · ' + chip('business_phone'),
+        chip('client_business') + ' (ABN ' + chip('client_abn') + ') (the "Client")',
+        chip('client_email') + ' · ' + chip('client_phone'),
+      ]) +
+      '<div class="field agr-intro">' +
+        '<label for="set-agr-intro">Intro</label>' +
+        '<textarea id="set-agr-intro" rows="3" spellcheck="true" data-agr-text aria-describedby="set-agr-intro-hint">' + esc(f.intro) + '</textarea>' +
+        '<p class="set-hint" id="set-agr-intro-hint">The header’s one paragraph of your own words. Leave it empty to go without.</p>' +
+      '</div>' +
+      block('PROJECT', [chip('project_name') + ' (' + chip('upid') + '), as set out in quote ' + chip('upid') + ' (the "Quote").']) +
+      block('PAYMENT SCHEDULE', [
+        'Total: ' + chip('total'),
+        'Deposit (' + chip('deposit_pct') + '): ' + chip('deposit_amount'),
+        'Balance: ' + chip('balance_amount'),
+        'Invoices are due ' + chip('due_days') + ' days after each is issued',
+        '<span class="agr-alt">On a single invoice, one line: Total: ' + chip('total') + ', on a single invoice, due ' +
+          chip('due_days') + ' days after it is issued</span>',
+      ]) +
+      block('SCOPE AND PRODUCTION DAYS', [
+        'The services and deliverables are as set out in the Quote.',
+        'Production days:<br>' + chip('production_days'),
+      ]) +
+      block('TERMS', ['<span class="agr-alt">The clauses below, numbered in their order.</span>']) +
+      '<p class="agr-sign">Signed for ' + chip('client_business') + ' by ' + chip('client_contact') + ', ' +
+        chip('signatory_role') + ', on ' + chip('date') + '.</p>' +
+    '</div>' +
+    '<p class="set-hint" id="set-agr-doc-hint">The same on every agreement, filled in from the project. A part with nothing to ' +
+      'fill is left out, so a client with no ABN gets no “(ABN )”.</p>' +
+    '<div class="agr-biz">' +
+      '<p class="agr-biz-lead">From <button type="button" class="set-link agr-goto" data-goto="set-biz-name">Settings → Business</button></p>' +
+      '<dl class="agr-biz-list">' +
+        BIZ_DETAILS.map(([key, , label]) => '<div><dt>' + label + '</dt><dd data-biz="' + key + '"></dd></div>').join('') +
+      '</dl>' +
+    '</div>';
+  }
+
+  /* (a)…(z), (aa)…; (i), (ii)… under a lettered one: agreementText()'s marks,
+     for the card's read-only list until sub-clauses are edited here (task 6).
+     A blank sub-clause takes no mark (null), as in the render. */
+  function subMarks(subs) {
+    const letter = (n) => {
+      let out = '';
+      for (let k = n; k >= 0; k = Math.floor(k / 26) - 1) out = String.fromCharCode(97 + (k % 26)) + out;
+      return out;
+    };
+    const roman = (n) => {
+      let k = n + 1;
+      let out = '';
+      [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'],
+        [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']].forEach(([v, sym]) => {
+        for (; k >= v; k -= v) out += sym;
+      });
+      return out;
+    };
+    let l = -1;
+    let r = -1;
+    return subs.map((x) => {
+      if (!x.heading.trim() && !x.text.trim()) return null;
+      if (x.indent === 1 && l >= 0) return { mark: '(' + roman(++r) + ')', under: true };
+      r = -1;
+      return { mark: '(' + letter(++l) + ')', under: false };
+    });
+  }
+
+  const clauseName = (c) => c.title.trim() || 'Untitled clause';
+
+  /* A text box tall enough to show its text when a card opens (about 80
+     characters a line at the card's width), within reason. */
+  function rowsFor(text, min) {
+    const lines = String(text).split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 80)), 0);
+    return Math.min(14, Math.max(min, lines));
+  }
+
+  const menuLabel = (i, c) => 'Actions for clause ' + (i + 1) + ', ' + clauseName(c);
+  const handleLabel = (i, c) => 'Move clause ' + (i + 1) + ', ' + clauseName(c);
+
+  function clauseMenu(i, n, c) {
+    return LSCMenu.markup({
+      label: 'Actions',
+      icon: '⋯',
+      ariaLabel: menuLabel(i, c),
+      btnClass: 'btn btn-quiet btn-sm clause-more',
+      items: [
+        i > 0 && { text: 'Move up', attrs: { 'data-cl-act': 'up' } },
+        i < n - 1 && { text: 'Move down', attrs: { 'data-cl-act': 'down' } },
+        { text: 'Duplicate', attrs: { 'data-cl-act': 'dup' } },
+        { text: 'Delete', danger: true, attrs: { 'data-cl-act': 'del' } },
+      ],
+    });
+  }
+
+  function clauseMarkup(c, i, n, isOpen) {
+    const id = 'set-cl-' + c.id;
+    const marks = subMarks(c.subs);
+    const subs = c.subs.length
+      ? '<div class="clause-subs"><p class="clause-subs-head" id="' + id + '-subs">Sub-clauses</p>' +
+        '<ol class="clause-sub-list" aria-labelledby="' + id + '-subs">' +
+        c.subs.map((x, k) => (marks[k]
+          ? '<li class="clause-sub' + (marks[k].under ? ' is-indent' : '') + '">' +
+            '<span class="clause-sub-mark">' + marks[k].mark + '</span><span class="clause-sub-text">' +
+            (x.heading.trim() ? '<strong>' + esc(x.heading.trim()) + '</strong> ' : '') + esc(x.text) + '</span></li>'
+          : '')).join('') +
+        '</ol></div>'
+      : '';
+    return '<li class="clause' + (isOpen ? ' is-open' : '') + '" data-id="' + esc(c.id) + '">' +
+      '<div class="clause-row">' +
+        '<button type="button" class="clause-handle" aria-label="' + esc(handleLabel(i, c)) + '" aria-describedby="set-cl-howto" title="Drag to reorder, or Alt+↑ / Alt+↓">' +
+          '<span class="clause-grip" aria-hidden="true"></span></button>' +
+        '<h4 class="clause-head"><button type="button" class="clause-toggle" id="' + id + '-toggle" aria-expanded="' + isOpen + '" aria-controls="' + id + '-body">' +
+          '<span class="clause-num"><span class="sr-only">Clause </span><span class="clause-n">' + (i + 1) + '</span></span>' +
+          '<span class="clause-title">' + esc(clauseName(c)) + '</span>' +
+          '<span class="clause-tag"' + (c.depositOnly ? '' : ' hidden') + '>Deposit only</span>' +
+          '<span class="panel-chev" aria-hidden="true"></span>' +
+        '</button></h4>' +
+        '<span class="clause-menu">' + clauseMenu(i, n, c) + '</span>' +
+      '</div>' +
+      '<div class="clause-body" id="' + id + '-body"' + (isOpen ? '' : ' hidden') + '>' +
+        '<div class="field"><label for="' + id + '-title">Title</label>' +
+          '<input id="' + id + '-title" type="text" value="' + esc(c.title) + '" data-cl-field="title" data-agr-text spellcheck="true"></div>' +
+        // With sub-clauses the text is only their lead-in, often empty.
+        '<div class="field"><label for="' + id + '-text">' + (c.subs.length ? 'Intro <span class="set-optional">(optional)</span>' : 'Text') + '</label>' +
+          '<textarea id="' + id + '-text" rows="' + rowsFor(c.body, c.subs.length ? 2 : 3) + '" data-cl-field="body" data-agr-text spellcheck="true" aria-describedby="set-cl-text-hint"' +
+          (c.subs.length ? ' placeholder="Text before the sub-clauses"' : '') + '>' + esc(c.body) + '</textarea></div>' +
+        subs +
+        '<label class="set-check clause-deposit"><input type="checkbox" data-cl-field="depositOnly"' + (c.depositOnly ? ' checked' : '') +
+          ' aria-describedby="' + id + '-dep-hint"><span>Deposit projects only</span></label>' +
+        '<p class="set-hint clause-dep-hint" id="' + id + '-dep-hint">Left out of an agreement billed on a single invoice, and the clauses after it number on.</p>' +
+      '</div>' +
+    '</li>';
+  }
+
   function agreementMarkup(f) {
     const fields = D.AGREEMENT_FIELDS.map((x) =>
       '<li><button type="button" class="set-field-code" data-field="' + x.key + '" aria-label="Insert {' + x.key + '}: ' +
       esc(x.says) + '"><code>{' + x.key + '}</code></button><span>' + esc(x.says) + '</span></li>').join('');
+    const n = f.clauses.length;
+    const panel = (key, title, body, extra) => '<section class="panel set-panel" aria-labelledby="set-agr-' + key + '-title">' +
+      '<div class="panel-head"><h3 class="panel-title" id="set-agr-' + key + '-title">' + title + (extra || '') + '</h3></div>' +
+      '<div class="panel-body">' + body + '</div></section>';
     return section('agreement', 'Service agreement',
-      'Your own text, which the client agrees to when they accept an estimate. Each signing keeps the exact text it ' +
-      'was signed with, so editing it here never changes an agreement already signed.',
-      '<div class="set-agreement">' +
-        '<div class="field set-agreement-text">' +
-          '<label for="set-agreement">Agreement text</label>' +
-          '<textarea id="set-agreement" rows="18" spellcheck="true" aria-describedby="set-agreement-hint" ' +
-          'placeholder="Paste your service agreement here. Use the fields beside it for the parts that change per project.">' +
-          esc(f.agreementText) + '</textarea>' +
-          '<p class="set-hint" id="set-agreement-hint">Fields in curly brackets are filled in per project when it’s signed.</p>' +
-          '<p class="set-preview-row"><button type="button" class="btn btn-ghost btn-sm" id="set-preview">Preview with a project…</button></p>' +
-        '</div>' +
-        '<div class="set-fields">' +
-          '<h3 class="set-group-head" id="set-fields-head">Fill-in fields</h3>' +
-          '<p class="set-hint set-hint-lead">Click one to put it where the cursor is.</p>' +
-          '<div class="set-field-box"><ul class="set-field-list" aria-labelledby="set-fields-head">' + fields + '</ul></div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="set-faq">' +
-        field('set-faq', 'Service agreement FAQ', f.faqUrl, { type: 'url', attrs: ' inputmode="url" placeholder="https://" aria-describedby="set-faq-hint"', hint: 'The client page’s “Service agreement FAQ” button opens this. Clear it to hide the button.' }) +
+      'What the client signs when they accept a quote: the header below, then your clauses. Each signing keeps the exact ' +
+      'text it was signed with, so a change here never alters an agreement already signed.',
+      '<p class="set-preview-row set-agr-preview"><button type="button" class="btn btn-sm" id="set-preview">Preview with a project…</button></p>' +
+      '<div class="set-agr-panels">' +
+        panel('head', 'Header', headerMarkup(f)) +
+        panel('clauses', 'Clauses',
+          '<p class="set-hint set-cl-lead" id="set-cl-howto">Numbered in this order. Drag a clause by its handle, or focus the handle ' +
+            'and press Alt+↑ or Alt+↓. Open one to edit it.</p>' +
+          '<p class="sr-only" id="set-cl-text-hint">Paragraphs are separated by a blank line. Fields in curly brackets are filled in per project.</p>' +
+          '<ol class="clause-list" id="set-cl-list">' +
+            f.clauses.map((c, i) => clauseMarkup(c, i, n, Clauses.isOpen(c.id))).join('') +
+          '</ol>' +
+          '<p class="set-cl-empty" id="set-cl-empty"' + (n ? ' hidden' : '') + '>No clauses: the client would sign only an acceptance of the quote.</p>' +
+          '<div class="set-cl-add"><button type="button" class="btn btn-sm" id="set-cl-add">+ Add clause</button></div>' +
+          '<div class="sr-only" id="set-cl-live" aria-live="polite"></div>',
+          '<span class="panel-count" id="set-cl-count">' + n + '</span>') +
+        panel('values', 'Agreement values',
+          '<div class="set-agr-rate">' +
+            field('set-agr-rate', 'Hourly rate for extra work ($)', f.hourlyRaw, {
+              type: 'number',
+              attrs: ' min="0" step="0.01" inputmode="decimal" placeholder="e.g. 63" aria-describedby="set-agr-rate-hint"',
+              hint: 'Fills <code>{hourly_rate}</code>, which the Revisions clause uses. Clear it to leave that blank.',
+            }) +
+          '</div>') +
+        '<section class="panel set-panel is-collapsed" aria-labelledby="set-agr-fields-title">' +
+          '<div class="panel-head"><h3 class="panel-title" id="set-agr-fields-title">' +
+            '<button type="button" class="panel-toggle" aria-expanded="false" aria-controls="set-agr-fields-body">' +
+              '<span class="panel-chev" aria-hidden="true"></span><span class="panel-name">Fields you can use</span>' +
+              '<span class="panel-sum">' + D.AGREEMENT_FIELDS.length + ' fields</span>' +
+            '</button></h3></div>' +
+          '<div class="panel-body" id="set-agr-fields-body" hidden>' +
+            '<p class="set-hint set-hint-lead">Each is filled in per project when the agreement is signed. Click one to put it ' +
+              'where the cursor last was, in the Intro or a clause.</p>' +
+            '<ul class="set-field-list">' + fields + '</ul>' +
+          '</div>' +
+        '</section>' +
+        panel('client', 'Client page',
+          '<div class="set-faq">' +
+            field('set-faq', 'Service agreement FAQ', f.faqUrl, { type: 'url', attrs: ' inputmode="url" placeholder="https://" aria-describedby="set-faq-hint"', hint: 'The client page’s “Service agreement FAQ” button opens this. Clear it to hide the button.' }) +
+          '</div>') +
       '</div>');
   }
 
@@ -359,6 +557,32 @@ const SettingsView = (() => {
     });
   }
 
+  /* The agreement header's Business details: each value, or "Missing" as a
+     button that takes you to its field. Repainted as those fields are typed
+     in, since both are on this page. */
+  function paintBiz() {
+    BIZ_DETAILS.forEach(([key, fieldId, label]) => {
+      const dd = root.querySelector('[data-biz="' + key + '"]');
+      if (!dd) return;
+      const value = form[key].trim();
+      dd.innerHTML = value
+        ? '<span class="agr-biz-value">' + esc(value) + '</span>'
+        : '<button type="button" class="agr-missing agr-goto" data-goto="' + fieldId + '" aria-label="' + label +
+          ' is missing. Add it under Business.">Missing</button>';
+    });
+  }
+
+  /* To a field elsewhere on the page (a Missing link): scrolled to the middle
+     of the window and focused, with the rail marking its section. */
+  function goToField(fieldId) {
+    const el = $(fieldId);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.focus({ preventScroll: true });
+    const sec = el.closest('.set-section');
+    if (sec) markRail(sec.id.replace('set-sec-', ''));
+  }
+
   /* The fields from `form`, after a save trimmed what it stored. */
   function fill() {
     TEXT.forEach(([id, key]) => {
@@ -369,19 +593,27 @@ const SettingsView = (() => {
     });
     paintGst();
     paintDefaults();
+    paintBiz();
+    Clauses.render();
   }
 
-  /* A fill-in field goes where the cursor is, replacing any selection, as if
-     typed, and the cursor ends up after it. */
+  /* A fill-in field goes where the cursor last was in the agreement's own text
+     (the Intro, or a clause's title or text), replacing any selection, as if
+     typed, and the cursor ends up after it. Before any of them has had the
+     cursor, it goes at the end of the Intro. */
+  let lastText = null; // the id of the agreement text box that last had focus
   function insertField(key) {
-    const box = $('set-agreement');
+    let box = lastText && $(lastText);
+    if (!box) box = $('set-agr-intro');
+    const card = box.closest('.clause');
+    if (card) Clauses.setOpen(card.dataset.id, true);
     const code = '{' + key + '}';
-    const start = box.selectionStart === undefined ? box.value.length : box.selectionStart;
-    const end = box.selectionEnd === undefined ? start : box.selectionEnd;
+    const start = typeof box.selectionStart === 'number' ? box.selectionStart : box.value.length;
+    const end = typeof box.selectionEnd === 'number' ? box.selectionEnd : start;
     box.focus();
     box.setRangeText(code, start, end, 'end');
-    form.agreementText = box.value;
-    paintState();
+    // Through the box's own input handler, so `form` and the card's row follow.
+    box.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function bind() {
@@ -389,6 +621,7 @@ const SettingsView = (() => {
       $(id).addEventListener('input', function () {
         form[key] = this.value;
         if (key.startsWith('msg_')) paintDefaults();
+        if (BIZ_DETAILS.some(([k]) => k === key)) paintBiz();
         paintState();
       });
     });
@@ -412,6 +645,14 @@ const SettingsView = (() => {
     root.querySelectorAll('.set-field-code').forEach((btn) => {
       btn.addEventListener('click', () => insertField(btn.dataset.field));
     });
+    $('set-sec-agreement').addEventListener('focusin', (event) => {
+      if (event.target.matches('[data-agr-text]')) lastText = event.target.id;
+    });
+    root.addEventListener('click', (event) => {
+      const go = event.target.closest('.agr-goto');
+      if (go) goToField(go.dataset.goto);
+    });
+    Clauses.bind();
     $('set-preview').addEventListener('click', () => Preview.open($('set-preview')));
     $('set-save').addEventListener('click', save);
 
@@ -422,6 +663,304 @@ const SettingsView = (() => {
       LSCRouter.go('/settings/' + link.dataset.section, { replace: true, skipGuard: true, state: { jump: true } });
     });
   }
+
+  // ── The clause cards (ui-clarity task 5) ──────────────────────────────────
+
+  /* Every change to the list goes through here, and each one changes
+     `form.clauses` and the card nodes together: the nodes are moved, added
+     and removed, never redrawn, so an open card keeps its cursor and scroll.
+     renumber() then puts each card's number, labels and ⋯ items right for
+     where it now stands (Move up isn't offered to the first, nor Move down to
+     the last). */
+  const Clauses = (() => {
+    const open = new Set(); // ids of the open cards; survives a save's redraw
+    let sortable = null;
+
+    const list = () => $('set-cl-list');
+    const cards = () => Array.from(list().children);
+    const cardOf = (id) => list().querySelector(':scope > [data-id="' + CSS.escape(id) + '"]');
+    const indexOf = (id) => form.clauses.findIndex((c) => c.id === id);
+
+    function isOpen(id) {
+      return open.has(id);
+    }
+
+    /* A short random id, unique among every clause and sub-clause id (IA:
+       made in the browser, kept across saves). */
+    function newId(prefix) {
+      const used = new Set();
+      form.clauses.forEach((c) => {
+        used.add(c.id);
+        c.subs.forEach((x) => used.add(x.id));
+      });
+      let id;
+      do id = prefix + Math.random().toString(36).slice(2, 8); while (used.has(id));
+      return id;
+    }
+
+    function announce(text) {
+      const live = $('set-cl-live');
+      if (!live) return;
+      live.textContent = '';
+      LSCUtil.announce(live, text);
+    }
+
+    function renumber() {
+      const nodes = cards();
+      const n = nodes.length;
+      nodes.forEach((node, i) => {
+        const c = form.clauses[i];
+        node.querySelector('.clause-n').textContent = String(i + 1);
+        node.querySelector('.clause-handle').setAttribute('aria-label', handleLabel(i, c));
+        node.querySelector('.clause-menu').innerHTML = clauseMenu(i, n, c);
+      });
+      $('set-cl-count').textContent = String(n);
+      $('set-cl-empty').hidden = n > 0;
+    }
+
+    function setOpen(id, next) {
+      const node = cardOf(id);
+      if (!node) return;
+      if (next) open.add(id);
+      else open.delete(id);
+      node.classList.toggle('is-open', next);
+      node.querySelector('.clause-toggle').setAttribute('aria-expanded', String(next));
+      node.querySelector('.clause-body').hidden = !next;
+    }
+
+    /* The list from `form`, after a save trimmed what it stored. */
+    function render() {
+      const n = form.clauses.length;
+      list().innerHTML = form.clauses.map((c, i) => clauseMarkup(c, i, n, open.has(c.id))).join('');
+      renumber();
+    }
+
+    function focusHandle(id) {
+      const node = cardOf(id);
+      if (node) node.querySelector('.clause-handle').focus();
+    }
+
+    /* The one move: drag, Alt+arrow and the ⋯ menu all end here. */
+    function move(from, to) {
+      const n = form.clauses.length;
+      if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+      const [c] = form.clauses.splice(from, 1);
+      form.clauses.splice(to, 0, c);
+      const node = cards()[from];
+      const rest = cards().filter((el) => el !== node);
+      list().insertBefore(node, rest[to] || null);
+      renumber();
+      paintState();
+      focusHandle(c.id);
+      announce(clauseName(c) + ' moved to clause ' + (to + 1) + ' of ' + n + '.');
+    }
+
+    function insertAt(c, at, focus) {
+      form.clauses.splice(at, 0, c);
+      const n = form.clauses.length;
+      const holder = document.createElement('ol');
+      holder.innerHTML = clauseMarkup(c, at, n, open.has(c.id));
+      list().insertBefore(holder.firstChild, cards()[at] || null);
+      renumber();
+      paintState();
+      const node = cardOf(c.id);
+      if (focus === 'title') {
+        const title = node.querySelector('[data-cl-field="title"]');
+        title.focus();
+        title.select();
+      } else node.querySelector('.clause-toggle').focus();
+    }
+
+    function add() {
+      const c = { id: newId('c'), title: '', body: '', subs: [], depositOnly: false };
+      open.add(c.id);
+      insertAt(c, form.clauses.length, 'title');
+    }
+
+    function duplicate(id) {
+      const at = indexOf(id);
+      if (at < 0) return;
+      const copy = JSON.parse(JSON.stringify(form.clauses[at]));
+      copy.id = newId('c');
+      copy.subs.forEach((x) => {
+        x.id = newId('s');
+      });
+      copy.title = copy.title.trim() ? copy.title.trim() + ' (copy)' : '';
+      open.add(copy.id);
+      insertAt(copy, at + 1, 'title');
+      announce('Copy added as clause ' + (at + 2) + '.');
+    }
+
+    const hasText = (c) => Boolean(c.body.trim()) || c.subs.some((x) => x.heading.trim() || x.text.trim());
+
+    /* Gone at once, with Undo in the toast; a clause with text asks first. */
+    function remove(id, opener) {
+      const at = indexOf(id);
+      if (at < 0) return;
+      const c = form.clauses[at];
+      if (hasText(c)) {
+        Confirm.open(opener, {
+          title: 'Delete clause ' + (at + 1) + '?',
+          body: '“' + clauseName(c) + '” and its text go from the agreement. You can undo it straight after, and nothing ' +
+            'changes for clients until you save.',
+          confirm: 'Delete clause',
+          run: () => drop(id),
+        });
+        return;
+      }
+      drop(id);
+    }
+
+    function drop(id) {
+      const at = indexOf(id);
+      if (at < 0) return;
+      const [c] = form.clauses.splice(at, 1);
+      const wasOpen = open.has(id);
+      open.delete(id);
+      cardOf(id).remove();
+      renumber();
+      paintState();
+      // Focus to the card that took its place, or the one above, or Add.
+      const next = cards()[at] || cards()[at - 1];
+      if (next) next.querySelector('.clause-toggle').focus();
+      else $('set-cl-add').focus();
+      announce('Clause ' + (at + 1) + ', ' + clauseName(c) + ', deleted.');
+      const owner = form; // an Undo after the screen was drawn again does nothing
+      Toast.ok('“' + clauseName(c) + '” deleted.', {
+        action: {
+          label: 'Undo',
+          run: () => {
+            if (form !== owner || !onScreen() || indexOf(c.id) >= 0) return;
+            if (wasOpen) open.add(c.id);
+            const back = Math.min(at, form.clauses.length);
+            insertAt(c, back);
+            announce(clauseName(c) + ' restored as clause ' + (back + 1) + '.');
+          },
+        },
+      });
+    }
+
+    function bind() {
+      const el = list();
+      sortable = LSCSortable.attach(el, { item: '.clause', handle: '.clause-handle', onMove: move });
+
+      el.addEventListener('input', (event) => {
+        const box = event.target;
+        const key = box.dataset.clField;
+        if (key !== 'title' && key !== 'body') return;
+        const node = box.closest('.clause');
+        const c = form.clauses[indexOf(node.dataset.id)];
+        c[key] = box.value;
+        if (key === 'title') {
+          const i = indexOf(c.id);
+          node.querySelector('.clause-title').textContent = clauseName(c);
+          node.querySelector('.clause-handle').setAttribute('aria-label', handleLabel(i, c));
+          node.querySelector('.clause-more').setAttribute('aria-label', menuLabel(i, c));
+        }
+        paintState();
+      });
+
+      el.addEventListener('change', (event) => {
+        const box = event.target;
+        if (box.dataset.clField !== 'depositOnly') return;
+        const node = box.closest('.clause');
+        form.clauses[indexOf(node.dataset.id)].depositOnly = box.checked;
+        node.querySelector('.clause-tag').hidden = !box.checked;
+        paintState();
+      });
+
+      // The card's own buttons, and its ⋯ items, which menu.js clicks in place.
+      el.addEventListener('click', (event) => {
+        const toggle = event.target.closest('.clause-toggle');
+        const act = event.target.closest('[data-cl-act]');
+        const node = event.target.closest('.clause');
+        if (!node || (!toggle && !act)) return;
+        const id = node.dataset.id;
+        if (toggle) {
+          setOpen(id, !open.has(id));
+          return;
+        }
+        const at = indexOf(id);
+        const verb = act.dataset.clAct;
+        if (verb === 'up') move(at, at - 1);
+        else if (verb === 'down') move(at, at + 1);
+        else if (verb === 'dup') duplicate(id);
+        else if (verb === 'del') remove(id, node.querySelector('.clause-more'));
+      });
+
+      $('set-cl-add').addEventListener('click', add);
+    }
+
+    return {
+      isOpen,
+      setOpen,
+      render,
+      bind,
+      // A fresh visit starts with every card closed (IA), and a drag in
+      // progress on the screen being left is let go.
+      reset() {
+        open.clear();
+        if (sortable) sortable.cancel();
+        sortable = null;
+      },
+    };
+  })();
+
+  // ── A confirm dialog (a clause with text, before it's deleted) ─────────────
+
+  const Confirm = (() => {
+    let overlay = null;
+    let opener = null;
+
+    function onKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close(true);
+        return;
+      }
+      LSCModal.trapTab(overlay, event);
+    }
+    function onBackdrop(event) {
+      if (event.target === overlay) close(true);
+    }
+
+    function close(returnFocus) {
+      if (!overlay || !overlay.classList.contains('open')) return;
+      overlay.classList.remove('open');
+      overlay.innerHTML = '';
+      document.removeEventListener('keydown', onKeydown);
+      overlay.removeEventListener('click', onBackdrop);
+      if (returnFocus && opener && opener.isConnected) opener.focus();
+      opener = null;
+    }
+
+    /* opts: { title, body, confirm, run }. Confirming closes it, then runs
+       run(), which puts focus where the result is. */
+    function open(from, opts) {
+      overlay = document.getElementById('modal-settings-confirm');
+      close(false);
+      opener = from || null;
+      overlay.innerHTML =
+        '<div class="modal-box set-confirm" role="dialog" aria-modal="true" aria-labelledby="set-cf-title" aria-describedby="set-cf-body">' +
+        '<h2 class="modal-title" id="set-cf-title">' + esc(opts.title) + '</h2>' +
+        '<p class="set-cf-body" id="set-cf-body">' + esc(opts.body) + '</p>' +
+        '<div class="modal-actions">' +
+          '<button type="button" class="btn btn-quiet" id="set-cf-cancel">Cancel</button>' +
+          '<button type="button" class="btn btn-danger" id="set-cf-ok">' + esc(opts.confirm) + '</button>' +
+        '</div></div>';
+      overlay.classList.add('open');
+      document.addEventListener('keydown', onKeydown);
+      overlay.addEventListener('click', onBackdrop);
+      overlay.querySelector('#set-cf-cancel').addEventListener('click', () => close(true));
+      overlay.querySelector('#set-cf-ok').addEventListener('click', () => {
+        close(false);
+        opts.run();
+      });
+      overlay.querySelector('#set-cf-cancel').focus();
+    }
+
+    return { open, close };
+  })();
 
   // ── Sections: jumping and the rail's marker ───────────────────────────────
 
@@ -475,6 +1014,14 @@ const SettingsView = (() => {
     const n = Number(String(raw).trim());
     return String(raw).trim() !== '' && Number.isFinite(n) && n > 0 && n <= 100 ? n : null;
   };
+  /* The hourly rate: blank is cleared on purpose (null, and {hourly_rate}
+     fills as blank); otherwise dollars, to the cent. undefined: unusable. */
+  const rateOf = (raw) => {
+    const v = String(raw).trim();
+    if (!v) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined;
+  };
   const urlOk = (raw) => {
     const v = String(raw).trim();
     if (!v) return true;
@@ -515,6 +1062,9 @@ const SettingsView = (() => {
     if (wholeIn(form.dueRaw, 0) === null) {
       found.push({ msg: 'Invoices must be due after a whole number of days, from 0 to ' + D.DAYS_MAX + '.', field: $('set-due') });
     }
+    if (rateOf(form.hourlyRaw) === undefined) {
+      found.push({ msg: 'The hourly rate for extra work must be a number of dollars, or left blank.', field: $('set-agr-rate') });
+    }
     if (!urlOk(form.faqUrl)) {
       found.push({ msg: 'The FAQ link must be a web address starting https://, or left blank to hide the button.', field: $('set-faq') });
     }
@@ -523,6 +1073,8 @@ const SettingsView = (() => {
 
   /* Merged onto `loaded`: the PUT replaces the whole row. Trimmed on the way
      out only; trimming as the user types eats the space between two words. */
+  // Line breaks inside the agreement's text are its own; only the ends go.
+  const ends = (v) => String(v).replace(/^\s+|\s+$/g, '');
   function payload() {
     const percent = parseFloat(form.rateRaw);
     const usable = Number.isFinite(percent) && percent >= 0 && percent <= 100;
@@ -536,6 +1088,7 @@ const SettingsView = (() => {
         abn: abnDigits(form.abn),
         email: form.businessEmail.trim(),
         phone: form.businessPhone.trim(),
+        signer: form.businessSigner.trim(),
       }),
       gst: Object.assign({}, loaded.gst, {
         registered: form.registered,
@@ -558,9 +1111,17 @@ const SettingsView = (() => {
         dueDays: wholeIn(form.dueRaw, 0),
       }),
       messages: Object.assign({}, loaded.messages, messages),
+      // The retired agreement.text rides along untouched in loaded.agreement.
       agreement: Object.assign({}, loaded.agreement, {
-        // Line breaks inside are the agreement's own; only the ends are trimmed.
-        text: form.agreementText.replace(/^\s+|\s+$/g, ''),
+        intro: ends(form.intro),
+        clauses: form.clauses.map((c) => ({
+          id: c.id,
+          title: c.title.trim(),
+          body: ends(c.body),
+          subs: c.subs.map((x) => ({ id: x.id, heading: x.heading.trim(), text: ends(x.text), indent: x.indent })),
+          depositOnly: c.depositOnly === true,
+        })),
+        hourlyRate: rateOf(form.hourlyRaw),
         faqUrl: form.faqUrl.trim(),
       }),
     });
@@ -809,6 +1370,8 @@ const SettingsView = (() => {
     saving = false;
     form = null;
     Preview.reset();
+    Confirm.close(false);
+    Clauses.reset();
     EmailPanel.reset();
     AccountPanel.reset();
     root.innerHTML = head + '<div class="empty-state"><h3>Loading…</h3></div>';
@@ -832,7 +1395,9 @@ const SettingsView = (() => {
     form = formFrom(settings);
     baseline = snapshot();
     root.innerHTML = screenMarkup(form, sectionId || SECTIONS[0][0]);
+    lastText = null;
     bind();
+    paintBiz();
     $('set-email-send').addEventListener('click', EmailPanel.sendTest);
     EmailPanel.load(ticket);
     AccountPanel.bind();
@@ -942,7 +1507,9 @@ const SettingsView = (() => {
         notes('<p class="set-pv-warn">This project has no estimate to fill the agreement from.</p>');
         return;
       }
-      const docs = D.docSettings(loaded).agreement;
+      // What is on screen, saved or not (D39).
+      const rate = rateOf(form.hourlyRaw);
+      const docs = { intro: form.intro, clauses: form.clauses, hourlyRate: rate === undefined ? null : rate };
       const ownPct = typeof project.depositPct === 'number' ? project.depositPct : null;
       // A single invoice has no deposit. Otherwise the project's own %, or the
       // one on this screen.
@@ -963,11 +1530,12 @@ const SettingsView = (() => {
         days: estimate.days,
         business: Object.assign({}, loaded.business, {
           name: form.businessName, abn: abnDigits(form.abn), email: form.businessEmail, phone: form.businessPhone,
+          signer: form.businessSigner,
         }),
         hourlyRate: docs.hourlyRate,
         today: LSCUtil.today(),
       });
-      // The one render signing uses (ui-clarity task 4), from the saved clauses.
+      // The one render signing uses (ui-clarity task 4).
       const filled = D.agreementText(docs, values, { single: project.invoicing === 'single' });
       out.textContent = filled.text;
       const bits = [];

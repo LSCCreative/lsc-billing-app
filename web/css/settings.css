@@ -116,6 +116,12 @@
   flex-shrink: 0;
 }
 
+/* Signs for the business (U22): its own row, clear of the contact hint. */
+.set-signer {
+  margin-top: var(--space-7);
+  margin-bottom: 0;
+}
+
 /* GST's rate and the inclusive tick, which mean nothing unless registered. */
 .set-row {
   display: flex;
@@ -181,69 +187,6 @@
 }
 .set-link[hidden] {
   display: none;
-}
-
-/* ── Service agreement ────────────────────────────────────────────────────── */
-
-.set-agreement {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
-}
-
-.field textarea#set-agreement {
-  min-height: 360px;
-  line-height: 1.65;
-}
-
-.set-preview-row {
-  margin-top: 10px;
-}
-
-.set-fields .set-group-head {
-  margin-top: 0;
-}
-.set-field-list {
-  list-style: none;
-  border-top: 1px solid var(--border);
-}
-.set-field-list li {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--muted);
-}
-
-.set-field-code {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 2px;
-  background: none;
-  border: 0;
-  color: var(--text);
-  cursor: pointer;
-}
-.set-field-code code {
-  font-family: var(--font-family-mono);
-  font-size: 12px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  transition: border-color 0.15s, color 0.15s;
-}
-.set-field-code:hover code {
-  border-color: var(--accent);
-  color: var(--accent-text);
-}
-
-.set-faq {
-  margin-top: 26px;
 }
 
 /* ── Not set up yet (Email, Card payments until stage E) ──────────────────── */
@@ -435,17 +378,6 @@
   .set-link {
     min-height: 0;
   }
-  .set-field-code {
-    min-height: 28px;
-  }
-  .set-field-list li {
-    padding: 6px 0;
-  }
-
-  .set-faq {
-    max-width: 520px;
-  }
-
   .set-save-bar {
     padding: 12px 22px;
   }
@@ -460,40 +392,6 @@
     padding: 28px 32px;
     border-left: 1px solid var(--border);
     border-right: 1px solid var(--border);
-  }
-}
-
-/* The fill-in fields go beside the agreement once there's room for the text
-   to keep a comfortable measure next to them. */
-@media (min-width: 900px) {
-  .set-agreement {
-    grid-template-columns: minmax(0, 1fr) 230px;
-    gap: 28px;
-  }
-  /* The list is as tall as the agreement beside it and scrolls inside that
-     (task 33 DR16): at its full length it ran ~900px past the box and left
-     the text's column empty. Absolutely placed, so it never sets the row. */
-  .set-fields {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .set-field-box {
-    position: relative;
-    flex: 1 1 0;
-    min-height: 240px;
-  }
-  .set-field-list {
-    position: absolute;
-    inset: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 0 6px 28px 0;
-    border-bottom: 1px solid var(--border);
-    /* A fade at the foot says there's more below; the padding lets the last
-       field scroll clear of it. */
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
   }
 }
 
@@ -536,4 +434,479 @@
 .set-email-test {
   max-width: 420px;
   margin-top: 10px;
+}
+
+/* ── Service agreement: the builder (ui-clarity task 5) ───────────────────── */
+
+/* Tokens only from here on (TASKS ground rules). The section is a stack of
+   panels (app.css); each panel's body carries its own vertical padding,
+   since .panel-body is padded across only. */
+.set-agr-preview {
+  margin: 0 0 var(--space-6);
+}
+.set-agr-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* never wider than the column */
+  gap: var(--panel-gap);
+}
+.set-panel .panel-body {
+  padding-top: var(--panel-pad-y);
+  padding-bottom: var(--panel-pad-y);
+}
+.set-panel .set-hint code,
+.set-panel .field .set-hint code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+}
+
+/* The Header panel: the agreement's fixed layout as a page of text on the
+   inset layer, its heads in mono caps (they are the agreement's own heads),
+   each field a chip where its value goes. */
+.agr-doc {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  background: var(--color-bg-inset);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.agr-label {
+  margin-bottom: var(--space-2);
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-text-primary);
+}
+.agr-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.agr-alt {
+  font-style: italic;
+  color: var(--color-text-tertiary);
+}
+.agr-chip {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--chip-radius);
+  background: var(--color-bg-panel);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--color-accent-text);
+  white-space: nowrap;
+}
+/* The one part typed here sits where it prints, lifted onto the panel. */
+.agr-intro {
+  padding: var(--space-5);
+  margin: 0 calc(-1 * var(--space-3));
+  background: var(--color-bg-panel);
+  border-radius: var(--radius-sm);
+}
+.agr-intro label {
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-accent-text);
+}
+
+.agr-biz {
+  margin-top: var(--space-6);
+}
+.agr-biz-lead {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.agr-biz-lead .set-link {
+  font-size: var(--font-size-sm);
+}
+.agr-biz-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-5);
+  min-height: var(--touch-min);
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+}
+.agr-biz-list > div:last-child {
+  border-bottom: 0;
+}
+.agr-biz-list dt {
+  color: var(--color-text-secondary);
+}
+.agr-biz-value {
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+/* Blank: says so, in the warning colour with its shape (a dashed edge), and
+   takes you to the field. */
+.agr-missing {
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  background: none;
+  border: 0;
+  font: var(--chip-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-status-warning-text);
+  cursor: pointer;
+}
+.agr-missing::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: var(--space-3);
+  border: 1px dashed currentColor;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+.agr-missing:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The Clauses panel. */
+.set-cl-lead {
+  margin: 0 0 var(--space-5);
+}
+.clause-list {
+  position: relative; /* the drop line is placed inside it */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* long titles ellipsise, never widen */
+  gap: var(--space-3);
+  list-style: none;
+}
+.set-cl-empty {
+  padding: var(--space-6);
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.set-cl-empty[hidden] {
+  display: none;
+}
+.set-cl-add {
+  margin-top: var(--space-5);
+}
+
+/* A card: closed, a row on the inset layer; open, lifted onto the panel
+   with an edge, so the one being edited stands apart. */
+.clause {
+  background: var(--color-bg-inset);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+.clause.is-open {
+  background: var(--color-bg-panel);
+  border-color: var(--color-border-subtle);
+  box-shadow: var(--shadow-sm);
+}
+.clause-row {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding-right: var(--space-2);
+}
+.clause-handle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min);
+  min-height: var(--touch-min);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none; /* a finger on the handle drags; anywhere else scrolls */
+}
+.clause-handle:hover {
+  color: var(--color-text-primary);
+}
+/* Two columns of three dots, drawn so they sit on the row's centre line
+   (the ⠿ glyph rides high in most system faces). */
+.clause-grip {
+  width: 8px;
+  height: 14px;
+  background: radial-gradient(circle, currentColor 1.25px, transparent 1.5px) 0 0 / 4px 5px;
+}
+.clause-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+}
+.clause-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: var(--font-weight-medium) var(--font-size-base)/var(--line-height-snug) var(--font-family-body);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.clause-num {
+  flex: 0 0 auto;
+  min-width: 2ch;
+  font: var(--clause-num-font);
+  color: var(--color-accent-text);
+}
+.clause-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clause-tag {
+  flex: 0 0 auto;
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+  font: var(--chip-font);
+  color: var(--color-text-secondary);
+}
+.clause-tag[hidden] {
+  display: none;
+}
+.clause-toggle .panel-chev {
+  margin-left: auto;
+}
+.clause-toggle[aria-expanded='false'] .panel-chev {
+  transform: rotate(-45deg);
+}
+.clause-toggle:hover .panel-chev {
+  color: var(--color-text-primary);
+}
+.clause-menu {
+  flex: 0 0 auto;
+  display: flex; /* the button centres on the row, not on a text baseline */
+}
+.clause-more {
+  min-width: var(--touch-min);
+  justify-content: center;
+}
+
+.clause-body {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-2) var(--space-5) var(--space-6);
+}
+.clause-body[hidden] {
+  display: none;
+}
+/* Grows with its text where the browser can (rows is the fallback), up to
+   most of the window, so an open card shows its whole clause. */
+.clause-body textarea,
+.field textarea#set-agr-intro {
+  field-sizing: content;
+  min-height: calc(3lh + 2 * var(--space-4));
+  max-height: 60vh;
+  line-height: var(--line-height-relaxed);
+}
+.set-optional {
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-tertiary);
+}
+.clause-deposit {
+  margin-bottom: calc(-1 * var(--space-4));
+}
+.clause-dep-hint {
+  margin-top: 0;
+}
+
+/* Sub-clauses, read-only here for now, lettered as they print. */
+.clause-subs-head {
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+.clause-sub-list {
+  list-style: none;
+  border-top: 1px solid var(--color-border-hairline);
+}
+.clause-sub {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+.clause-sub.is-indent {
+  padding-left: var(--space-8);
+}
+.clause-sub-mark {
+  flex: 0 0 4ch;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.8;
+  color: var(--color-text-primary);
+}
+.clause-sub-text {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.clause-sub-text strong {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+/* Dragging (sortable.js): the card lifts and follows the pointer, the line
+   marks where it lands, and nothing else on the page reacts to the pointer
+   or selects text on the way. */
+.clause.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+.sort-line {
+  position: absolute;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-mark);
+  pointer-events: none;
+  z-index: 3; /* over the lifted card, which can sit across it */
+}
+.sort-dragging,
+.sort-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.clause-handle:focus-visible,
+.clause-toggle:focus-visible,
+.agr-missing:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+
+/* Fields you can use: the list, two columns once there's room. */
+.set-field-list {
+  list-style: none;
+  border-top: 1px solid var(--color-border-hairline);
+}
+.set-field-list li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+.set-field-code {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-1);
+  background: none;
+  border: 0;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.set-field-code code {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--chip-radius);
+  background: var(--color-bg-inset);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  transition: color var(--duration-fast) var(--easing-default), box-shadow var(--duration-fast) var(--easing-default);
+}
+.set-field-code:hover code {
+  box-shadow: inset 0 0 0 1px var(--color-accent-mark);
+  color: var(--color-accent-text);
+}
+
+.set-preview-row {
+  margin-top: var(--space-5);
+}
+
+/* The confirm before a clause with text is deleted. */
+.set-confirm {
+  max-width: 440px;
+}
+.set-cf-body {
+  margin-bottom: var(--space-7);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+  .agr-doc {
+    padding: var(--space-7);
+  }
+  .agr-intro {
+    margin: 0 calc(-1 * var(--space-5));
+  }
+  .agr-biz-list > div {
+    min-height: var(--control-h);
+  }
+  .agr-missing {
+    min-height: var(--control-h-sm);
+  }
+  .set-agr-rate,
+  .set-faq {
+    max-width: 420px;
+  }
+  .clause-row {
+    min-height: 48px;
+  }
+  .clause-handle {
+    width: var(--space-8);
+    min-height: var(--space-8);
+  }
+  .clause-toggle {
+    min-height: var(--control-h);
+  }
+  .clause-more {
+    min-width: var(--control-h-sm);
+  }
+  .clause-body {
+    /* Under the title, past the handle and number. */
+    padding: var(--space-2) var(--space-6) var(--space-6) calc(var(--space-8) + 2ch + var(--space-4));
+  }
+  .set-field-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-7);
+  }
+  .set-field-code {
+    min-height: var(--control-h-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .set-field-code code {
+    transition: none;
+  }
 }
