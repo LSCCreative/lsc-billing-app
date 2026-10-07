@@ -180,7 +180,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 5. Reuses: `sortable.js`, `menu.js`._
 
 - [x] **7. Clause headings on the sign dialog and agreement PDF** (signing — Opus/high) **Frontend**
-  - **Done** (commit below): `documents.js agreementLayout` reads the format back from the text; the dialog (h3/h4/h5) and PDF (h1/h2/h3) draw it. On SEND-A the dialog's text equals the offered parts at 1280/800/375 and the signed row's text and SHA; `test-pdf.js` strips the PDF's tags back to `agreement_text` exactly; free text prints as plain paragraphs; separator and roman-rule mutations each fail tests; 574 green. Screenshots `screenshots/task7-*`.
+  - **Done** `b49373a`: `documents.js agreementLayout` reads the format back from the text; the dialog (h3/h4/h5) and PDF (h1/h2/h3) draw it. On SEND-A the dialog's text equals the offered parts at 1280/800/375 and the signed row's text and SHA; `test-pdf.js` strips the PDF's tags back to `agreement_text` exactly; free text prints as plain paragraphs; separator and roman-rule mutations each fail tests; 574 green. Screenshots `screenshots/task7-*`.
   - The client sign dialog (`web/c/c.js showAgreement`) and `pdf.js buildAgreementHtml` render the
     app's own format, from the stored text, purely as presentation:
     - `TERMS` and the header labels as section heads.
