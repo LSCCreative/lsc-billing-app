@@ -94,8 +94,23 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     continuation paragraphs at their sub's depth, the signing line. Lossless by construction and
     test. `pdf.js agreementBodyHtml` and `c.js showAgreement` draw it; the dialog joins `parts`
     with one NUL per slot, lays out, and puts the slot spans back in order.
-- **Next: task 8, "Deploy system + D3"** (deploy — Sonnet/medium). Not a frontend task. Ask the
-  user first; fetch and merge `origin/main`, ship v15, NAS before Pages.
+- **Task 8, "Deploy system + D3" is ON HOLD (2026-10-08): the NAS is offline.** It is still the
+  first deploy owed (fetch and merge `origin/main`, ship v15, NAS before Pages) and must still
+  happen before any Pages push, because the old server ignores saved clauses. Don't attempt it,
+  don't push `main`, and don't treat the offline NAS as a bug.
+  - [x] Task 9, the Project page. `project-folder.js` draws the header (`headMarkup`: one
+    `.btn-primary` = `nextAction`, Actions ▾ = `headerActions`), `noticeMarkup` (now also the
+    dates-taken warning), and three `.panel`s; each document is `estimateDoc` / `invoiceDoc` →
+    `docRow`. Menu items carry the old `data-act` / `data-doc`; `openerOf` gives dialogs the
+    menu's button to return focus to. New row kinds: `inv-paid`, `inv-void` (hand over to the
+    Invoice screen, which now takes `state.action` `'void'` as well as `'paid'`), and `duplicate`
+    (the row's own estimate).
+- **Next: task 10, "Invoice screen"** (frontend — Opus/high), then 11–14 and 16. These need no NAS
+  or live app: build and verify only against local `api-scratch` / `api-scratch-mail`, never the
+  live site or API. Skip the deploy tasks (8, 15, 17) until the user says the NAS is back; when it
+  is, task 8 comes first, then 15 and 17. Commit locally on `ui-clarity`; don't push.
+  Task 10 should move the Invoice screen off the `.pf-actions*`, `.pf-section-head`, `.pf-h2`
+  rules kept at the foot of `project-folder.css` (marked), then delete them.
 
 ## Waiting on the user
 
@@ -115,6 +130,20 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
+
+## Decisions made in task 9 (tell the user)
+
+- **One terracotta on the page:** the header's next action. A document row's own button (Open,
+  Send…, Send vN…) is a secondary button, so the rows don't compete with it.
+- **Decline… is a danger item** (red, below the divider) in every menu, with Delete and Void.
+- **Accepted with no invoices still offers Decline…** in the header: IA's table left it out, but
+  today's rule (no live invoice) allows it, and this track doesn't change rules.
+- **Row Mark paid… / Void and remake…** open the invoice's own page with that dialog already open.
+- **Rows say more:** an overdue invoice reads OVERDUE · was due 4 Oct, an expired quote "expired
+  5 Oct" in red, a void one VOID · voided … · replaced by ….
+- **The dates-taken warning** moved from the Production days panel to the notices under the header.
+- **Duplicate as new project** on a second estimate's row copies that estimate (the header's
+  copies the lead). **Show all (N)** in Activity resets on each visit.
 
 ## Decisions made in task 4 (tell the user)
 
@@ -208,10 +237,16 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - **sortable.js** takes items that are direct children of the list only, so task 6's sub-clause
   list inside a card attaches its own instance. Its `onMove(from, to)` must move data and node
   together, as `Clauses.move` does. The handle is `touch-action: none`.
-- **Scratch DB was recreated 2026-10-07** (the account-recovery session): the review dataset
-  (SEND-A…RVR-011) is gone. It now holds one fictional sent project, SEND-A "Harbour launch
-  film" (Example Harbour Co, $0, token `pku61I2I…`), and the agreement settings are back to the
-  defaults.
+- **Scratch DB recreated 2026-10-08** (macOS cleared /tmp). It holds the review dataset
+  DRF-001…VOD-010 from [`seed-review.js`](seed-review.js) (its header lists each state); the old
+  SEND-A…RVR-011 names are gone. Rebuild: seed the `dev` account (launch.json), start
+  `api-scratch-mail`, `node .design/ui-clarity/seed-review.js server`. Its signing step was fixed
+  after the run that built today's data (DPD-006 was signed by hand), so check it the first time.
+- **Project page menus have stable ids** (`pf-menu-head`, `pf-menu-e-<estimateId>-act|doc`,
+  `pf-menu-i-<invoiceId>-act|doc`): the quiet refresh after a send puts focus back by id, and
+  waits while a menu is open (a redraw would close it).
+- **On a phone the download toast sits over the foot of the page** for its few seconds, so a tap
+  on Activity's Show all can land on the toast. Task 14 to look at (toast placement).
 - **Menus (task 3):** an open list is moved into `<body>`, and a chosen declarative item is put
   back and `.click()`ed in place, so a screen's delegated `data-act` handler must listen on a
   container that holds the *closed* menu, not on the list. menu.js listens in the capture phase

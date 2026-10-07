@@ -960,9 +960,10 @@ const InvoiceView = (() => {
       onScreen: () => onScreen() && data && data.invoice.id === reply.invoice.id,
       dirty,
     });
-    if (then === 'paid') {
-      const button = root.querySelector('[data-act="paid"]');
-      if (button) openMarkPaid(button);
+    // The folder's row menus hand over Mark paid… and Void and remake….
+    if (then === 'paid' || then === 'void') {
+      const button = root.querySelector('[data-act="' + then + '"]');
+      if (button) (then === 'paid' ? openMarkPaid : openVoid)(button);
     }
   }
 
@@ -1005,7 +1006,8 @@ const InvoiceView = (() => {
     },
 
     /* The router's way in: the project id, then [invoiceId]. `state.action`
-       'paid' opens Mark paid once drawn (the folder's "Mark deposit paid…"). */
+       'paid' opens Mark paid once drawn (the folder's "Mark deposit paid…"),
+       'void' its Void and remake (the folder's row menu). */
     show(projectId, rest, state) {
       const [invoiceId, extra] = rest;
       if (invoiceId === undefined || extra !== undefined) return false;

@@ -1,16 +1,23 @@
 'use strict';
 
 /* #/projects/<id> — the project folder (production-booking task 18; D28, D31,
- * D58; IA "Project folder"). Everything one job holds, in four in-page
- * sections rather than tabs, so the stage is always in sight:
+ * D58), laid out as ui-clarity's Project page (task 9; U3, U20; its IA
+ * "Project page" and menu tables). Everything one job holds, on one page:
  *
- *   Overview         UPID, name, client, the stage line, and the ONE next
- *                    action as the primary button; the quiet actions under it.
- *   Production days  a compact, read-only list; each row opens the editor at
- *                    that day's card.
- *   Documents        the estimate, its Cost Breakdown, the signed agreement,
- *                    and the invoices.
- *   Activity         this project's log, newest first.
+ *   Header           UPID eyebrow, name, client, the stage line and facts,
+ *                    then the ONE next action as the primary button and
+ *                    Actions ▾ for the rest.
+ *   Notices          full width: UPID needed, declined, dates taken.
+ *   Documents        the main panel (first on a phone): each estimate and
+ *                    invoice is one row with one button, Actions ▾ and
+ *                    Documents ▾. The Cost Breakdown and signed agreements
+ *                    are in their estimate's Documents ▾. Void rows go last.
+ *   Production days  side panel, read-only; a row opens the editor's day.
+ *   Activity         side panel, newest first: the latest 8, Show all (N).
+ *
+ * Menu items carry the same data-act / data-doc a button would, and menu.js
+ * clicks a chosen item in place, so one handler serves both; a dialog opened
+ * from an item gives focus back to its menu's button (openerOf).
  *
  * It is one read, GET /api/projects/:id, and every action answers with the
  * folder as it then stands, so the screen redraws from that reply rather than
@@ -135,6 +142,35 @@ const ProjectFolder = (() => {
     return [];
   }
 
+  /* The header's Actions ▾ (IA "Project header"): the forward actions beside
+     the primary, then the record ones. What each state offers is still
+     moreActions' and the decline rule's; the menu only holds them. */
+  function headerActions(project) {
+    const items = moreActions(project).slice();
+    if (project.stage === 'declined' && lead()) items.push({ id: 'view', label: 'View estimate' });
+    if (lead()) items.push({ id: 'duplicate', label: 'Duplicate as new project' });
+    if (project.stage !== 'declined' && !hasLiveInvoice()) items.push({ id: 'decline', label: 'Decline…', danger: true });
+    items.push({ id: 'delete', label: 'Delete…', danger: true });
+    return items;
+  }
+
+  /* A header action as a menu item: the same data-act a button carries, so
+     runAction can't tell them apart. */
+  function actItem(a) {
+    const attrs = { 'data-act': a.id, 'data-write': '' };
+    if (a.target) attrs['data-target'] = a.target;
+    if (a.action) attrs['data-then'] = a.action;
+    return { text: a.label, danger: a.danger, attrs };
+  }
+
+  /* A row's action or download as a menu item (data-doc, data-id); a
+     project-level one (Mark accepted, Decline) keeps its data-act. */
+  function docItem(a) {
+    if (!a) return null;
+    if (a.act) return Object.assign(actItem({ id: a.act, label: a.label, danger: a.danger }), { hint: a.hint });
+    return { text: a.label, hint: a.hint, danger: a.danger, attrs: { 'data-doc': a.id, 'data-id': a.target } };
+  }
+
   function headMarkup(project, today) {
     const client = project.client || {};
     const upid = project.upid
@@ -143,50 +179,46 @@ const ProjectFolder = (() => {
     const next = project.nextDay;
     const facts = [
       // The job's figure, as large as the Projects card shows it (task 33 DR13).
-      ['Total (inc GST)', fmt(project.totalIncGst), 'pf-total'],
+      ['Total inc GST', fmt(project.totalIncGst), 'pf-total'],
       next && C.isDate(next.date)
         ? ['Next production day', C.statusChip(next.status) + '<span>' +
           esc(next.date === today ? 'Today' : C.longDate(next.date, today)) + '</span>']
         : null,
       project.estimateCount > 1 ? ['Estimates', String(project.estimateCount)] : null,
     ].filter(Boolean);
+    const primary = nextAction(project);
     return (
+      '<header class="pf-head">' +
       '<div class="pf-overview">' +
-      '<div class="est-upid' + (project.upid ? '' : ' pf-upid-missing') + '">' + upid + '</div>' +
-      '<h1 class="est-name">' + esc(project.name || 'Untitled') + '</h1>' +
+      '<p class="eyebrow pf-upid' + (project.upid ? '' : ' is-missing') + '">' + upid + '</p>' +
+      '<h1 class="pf-title">' + esc(project.name || 'Untitled') + '</h1>' +
       (client.businessName || client.contactName
-        ? '<div class="est-client">' + esc([client.businessName, client.contactName].filter(Boolean).join(' · ')) + '</div>'
+        ? '<p class="pf-client">' + esc([client.businessName, client.contactName].filter(Boolean).join(' · ')) + '</p>'
         : '') +
       '<div class="pf-stage">' + ProjectCard.stageMarkup(project, today) + '</div>' +
       '<dl class="pf-facts">' + facts.map(([k, v, cls]) => '<div><dt>' + k + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</dd></div>').join('') + '</dl>' +
-      '</div>'
-    );
-  }
-
-  function actionsMarkup(project) {
-    const primary = nextAction(project);
-    const quiet = [];
-    if (project.stage !== 'declined' && !hasLiveInvoice()) quiet.push({ id: 'decline', label: 'Decline…' });
-    if (lead()) quiet.push({ id: 'duplicate', label: 'Duplicate as new project' });
-    quiet.push({ id: 'delete', label: 'Delete…', danger: true });
-    const btn = (a, cls) =>
-      '<button type="button" class="btn ' + cls + '" data-act="' + a.id + '"' +
-      (a.target ? ' data-target="' + esc(a.target) + '"' : '') + (a.action ? ' data-then="' + esc(a.action) + '"' : '') +
-      ' data-write><span class="spinner"></span>' + esc(a.label) + '</button>';
-    return (
-      '<div class="pf-actions">' +
-      '<div class="pf-actions-main">' +
-      btn(primary, 'btn-accent') +
-      moreActions(project).map((a) => btn(a, 'btn-ghost')).join('') +
       '</div>' +
-      '<div class="pf-actions-quiet">' +
-      quiet.map((a) => btn(a, (a.danger ? 'btn-danger' : 'btn-ghost') + ' btn-sm')).join('') +
+      '<div class="pf-head-acts">' +
+      '<button type="button" class="btn btn-primary" data-act="' + primary.id + '"' +
+      (primary.target ? ' data-target="' + esc(primary.target) + '"' : '') +
+      (primary.action ? ' data-then="' + esc(primary.action) + '"' : '') +
+      ' data-write><span class="spinner"></span>' + esc(primary.label) + '</button>' +
+      LSCMenu.markup({
+        id: 'pf-menu-head',
+        label: 'Actions',
+        ariaLabel: 'Project actions',
+        btnClass: 'btn pf-head-menu',
+        items: headerActions(project).map(actItem),
+      }) +
       '</div>' +
-      '</div>' +
+      '</header>' +
       '<div class="pf-action-error" id="pf-action-error" role="alert"></div>'
     );
   }
 
+  /* Full width under the header (IA): the UPID fix-up, a declined project,
+     and proposed dates another project has confirmed since the quote went
+     (C6, D41). */
   function noticeMarkup(project, today) {
     let html = '';
     if (project.needsUpid) {
@@ -200,7 +232,15 @@ const ProjectFolder = (() => {
         '<p class="pf-notice">Declined' + (project.declinedAt ? ' on ' + esc(C.longDate(ProjectCard.localDate(project.declinedAt), today)) : '') +
         '. Its production days are off every calendar and lock no dates. Reopen it to put them back.</p>';
     }
-    return html;
+    const taken = new Set((project.takenDays || []).map((t) => t.date)).size;
+    if (taken) {
+      html +=
+        '<p class="pf-notice is-alert" role="note">Your client can’t accept until they have new dates: ' +
+        (taken === 1 ? 'a proposed date has' : taken + ' proposed dates have') +
+        ' since been confirmed for another project. Move ' + (taken === 1 ? 'that day' : 'those days') +
+        ' in the estimate and save; the update goes to your client as you save it.</p>';
+    }
+    return html ? '<div class="pf-notices">' + html + '</div>' : '';
   }
 
   // ── Production days ─────────────────────────────────────────────────────
@@ -224,22 +264,15 @@ const ProjectFolder = (() => {
       a.i - b.i);
     const declined = project.stage === 'declined';
     const head =
-      '<div class="pf-section-head"><h2 class="pf-h2" id="pf-days-h">Production days</h2>' +
-      (rows.length ? '<span class="pf-count">' + rows.length + '</span>' : '') + '</div>';
+      '<div class="panel-head"><h2 class="panel-title" id="pf-days-h">Production days' +
+      (rows.length ? '<span class="panel-count">' + rows.length + '</span>' : '') + '</h2></div>';
     if (!rows.length) {
-      return head + '<p class="pf-empty">None booked. Book days in the estimate’s Production Booking.</p>';
+      return head + '<div class="panel-body"><p class="pf-empty">None booked. Book days in the estimate’s Production booking.</p></div>';
     }
     const many = folder.estimates.length > 1;
-    // Proposed dates another project has confirmed since the quote went (C6, D41).
     const taken = new Map((project.takenDays || []).map((t) => [t.date, t]));
-    const takenHint = taken.size
-      ? '<p class="pf-hint pf-hint-alert" role="note">Your client can’t accept until they have new dates: ' +
-        (taken.size === 1 ? 'a proposed date has' : taken.size + ' proposed dates have') +
-        ' since been confirmed for another project. Move ' + (taken.size === 1 ? 'that day' : 'those days') +
-        ' in the estimate and save; the update goes to your client as you save it.</p>'
-      : '';
-    return head +
-      (declined ? '<p class="pf-hint">Off every calendar while the project is declined.</p>' : '') + takenHint +
+    return head + '<div class="panel-body is-flush">' +
+      (declined ? '<p class="pf-hint">Off every calendar while the project is declined.</p>' : '') +
       '<ol class="pf-days' + (declined ? ' is-declined' : '') + '">' + rows.map(({ estimate, day, i, items }) => {
         const when = day.date ? C.longDate(day.date, today) : 'Day ' + (i + 1) + ' — date TBC';
         const times = day.startTime || day.endTime ? C.timeText(day) : '';
@@ -263,7 +296,7 @@ const ProjectFolder = (() => {
           '<span class="pf-day-go" aria-hidden="true">Edit →</span>' +
           '</button></li>'
         );
-      }).join('') + '</ol>';
+      }).join('') + '</ol></div>';
   }
 
   // ── Documents ───────────────────────────────────────────────────────────
@@ -271,111 +304,168 @@ const ProjectFolder = (() => {
   const ESTIMATE_STATUS = { draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined' };
   const INVOICE_KIND = { deposit: 'Deposit invoice', final: 'Final invoice', single: 'Invoice', legacy: 'Invoice' };
   const INVOICE_STATUS = { draft: 'Not sent', scheduled: 'Scheduled', sent: 'Sent', paid: 'Paid', void: 'Void' };
+  /* The chip's tone: the word carries the meaning, the tone only echoes it. */
+  const TONE = {
+    Draft: 'neutral', 'Not sent': 'neutral', Legacy: 'neutral',
+    Sent: 'info', Scheduled: 'info',
+    Accepted: 'ok', Paid: 'ok',
+    Declined: 'alert', Overdue: 'alert', Expired: 'alert',
+    Void: 'void',
+  };
 
+  /* One document: name and ref, its amount, a status chip and meta line, the
+     send status, then one primary button and the Actions ▾ and Documents ▾
+     menus (U3). Nothing here decides what's allowed: the callers pass only
+     the actions the existing rules give. */
   function docRow(doc) {
+    const key = 'pf-menu-' + doc.key;
+    const named = doc.label;
+    const p = doc.primary;
     return (
       '<li class="pf-doc' + (doc.void ? ' is-void' : '') + '">' +
-      '<div class="pf-doc-main">' +
-      '<span class="pf-doc-name">' + doc.name + '</span>' +
-      (doc.meta ? '<span class="pf-doc-meta">' + doc.meta + '</span>' : '') +
+      '<p class="pf-doc-id"><span class="pf-doc-name">' + doc.name + '</span>' +
+      (doc.ref ? '<span class="ref">' + esc(doc.ref) + '</span>' : '') + '</p>' +
+      (doc.amount !== undefined ? '<span class="pf-doc-amount fig">' + doc.amount + '</span>' : '') +
+      '<div class="pf-doc-state">' +
+      '<p class="pf-doc-meta"><span class="pf-chip is-' + (TONE[doc.chip] || 'neutral') + '">' + esc(doc.chip) + '</span>' +
+      (doc.meta ? '<span class="pf-doc-note' + (doc.alert ? ' is-alert' : '') + '">' + doc.meta + '</span>' : '') + '</p>' +
       (doc.status || '') +
       '</div>' +
-      (doc.amount !== undefined ? '<span class="pf-doc-amount">' + doc.amount + '</span>' : '') +
-      '<div class="pf-doc-acts">' + doc.actions.map((a) =>
-        '<button type="button" class="btn btn-ghost btn-xs" data-doc="' + a.id + '" data-id="' + esc(a.target) + '"' +
-        (a.label2 ? ' aria-label="' + esc(a.label2) + '"' : '') + '>' +
-        '<span class="spinner"></span>' + esc(a.label) + '</button>').join('') +
+      '<div class="pf-doc-acts">' +
+      '<button type="button" class="btn btn-sm pf-doc-primary" data-doc="' + p.id + '" data-id="' + esc(p.target) + '"' +
+      ' aria-label="' + esc(p.label + ' — ' + named) + '"><span class="spinner"></span>' + esc(p.label) + '</button>' +
+      LSCMenu.markup({ id: key + '-act', label: 'Actions', ariaLabel: 'Actions for ' + named, items: doc.actions.map(docItem) }) +
+      LSCMenu.markup({ id: key + '-doc', label: 'Documents', ariaLabel: 'Documents for ' + named, items: doc.files.map(docItem) }) +
       '</div></li>'
     );
   }
 
-  function documentsMarkup(project, today) {
+  function estimateDoc(e, project, today) {
     const many = folder.estimates.length > 1;
-    const docs = [];
+    const named = 'the estimate' + (many ? ' ' + (e.name || 'Untitled') : '');
+    const isLead = e.id === project.estimateId;
     const sendable = project.stage === 'draft' || project.stage === 'sent';
-    folder.estimates.forEach((e) => {
-      const title = 'Estimate' + (many ? ' — ' + esc(e.name || 'Untitled') : '');
-      const named = many ? ' ' + (e.name || 'Untitled') : '';
-      const live = (e.versions || []).filter((v) => !v.supersededAt).pop();
-      const actions = [
-        { id: 'view', label: 'View', target: e.id, label2: 'View the estimate' + named },
-        { id: 'edit', label: 'Edit', target: e.id, label2: 'Edit the estimate' + named },
-        { id: 'pdf', label: '↓ PDF', target: e.id, label2: 'Download the estimate PDF' + (many ? ' for' + named : '') },
-      ];
-      // Only the lead is sent (the server sends the project's lead estimate).
-      if (sendable && e.id === project.estimateId && !estimateWaiting()) {
-        actions.push({ id: 'send', label: 'Send v' + nextVersion(e) + '…', target: e.id, label2: 'Send v' + nextVersion(e) + ' of the estimate' + named });
-      }
-      if (liveLink(e)) actions.push({ id: 'copy', label: 'Copy link', target: e.id, label2: 'Copy the client link to the estimate' + named });
-      docs.push({
-        name: title + (live ? ' <span class="pf-doc-num">v' + esc(String(live.n)) + '</span>' : ''),
-        meta: esc(ESTIMATE_STATUS[e.status] || e.status) +
-          (live && live.validUntil && e.status === 'sent' ? ' · valid until ' + esc(ProjectCard.dayMonth(live.validUntil, today)) : '') +
-          ' · changed ' + esc(ProjectCard.dayMonth(e.updatedAt, today)),
-        status: SendPanel.statusMarkup(e.send, 'the estimate' + named),
-        amount: fmt((e.totals || {}).totalIncGst),
-        actions,
-      });
-      docs.push({
-        name: 'Cost Breakdown' + (many ? ' — ' + esc(e.name || 'Untitled') : ''),
-        meta: 'For you only: how the price is made up',
-        actions: [{ id: 'breakdown', label: '↓ PDF', target: e.id, label2: 'Download the Cost Breakdown PDF' + (many ? ' for ' + (e.name || 'Untitled') : '') }],
-      });
-    });
-    // Signed service agreements (task 27, D42): the client's signature, kept
-    // as the PDF they signed.
-    (folder.signatures || []).forEach((sig) => {
-      const v = sig.version > 1 ? ' v' + sig.version : '';
-      docs.push({
-        name: 'Signed agreement' + esc(v),
-        meta: esc(sig.fullName + (sig.role ? ', ' + sig.role : '')) + ' · signed ' + esc(ProjectCard.dayMonth(sig.signedAt, today)),
-        actions: [{ id: 'agreement', label: '↓ PDF', target: sig.id, label2: 'Download the signed agreement' + v }],
-      });
-    });
+    const live = (e.versions || []).filter((v) => !v.supersededAt).pop();
+    // Only the lead is sent (the server sends the project's lead estimate).
+    const send = sendable && isLead && !estimateWaiting()
+      ? { id: 'send', label: 'Send v' + nextVersion(e) + '…', target: e.id }
+      : null;
+    const open = { id: 'view', label: 'Open', target: e.id };
+    const until = live && live.validUntil && e.status === 'sent' ? String(live.validUntil).slice(0, 10) : '';
+    const expired = C.isDate(until) && until < today;
+    const sigs = (folder.signatures || []).filter((s) => s.estimateId === e.id || (isLead && !folder.estimates.some((x) => x.id === s.estimateId)));
+    return {
+      key: 'e-' + e.id,
+      label: named,
+      name: 'Estimate' + (many ? ' — ' + esc(e.name || 'Untitled') : ''),
+      ref: live ? 'v' + live.n : '',
+      chip: ESTIMATE_STATUS[e.status] || e.status,
+      meta: (until ? (expired ? 'expired ' : 'valid until ') + esc(ProjectCard.dayMonth(until, today)) + ' · ' : '') +
+        'changed ' + esc(ProjectCard.dayMonth(e.updatedAt, today)),
+      alert: expired,
+      status: SendPanel.statusMarkup(e.send, named),
+      amount: fmt((e.totals || {}).totalIncGst),
+      primary: send || open,
+      actions: [
+        send ? open : null,
+        { id: 'edit', label: 'Edit', target: e.id },
+        liveLink(e) ? { id: 'copy', label: 'Copy link', target: e.id } : null,
+        isLead && sendable ? { act: 'accept', label: 'Mark accepted…' } : null,
+        { id: 'duplicate', label: 'Duplicate as new project', target: e.id },
+        isLead && project.stage !== 'declined' && !hasLiveInvoice() ? { act: 'decline', label: 'Decline…', danger: true } : null,
+      ],
+      files: [
+        { id: 'pdf', label: 'Estimate PDF', target: e.id },
+        { id: 'breakdown', label: 'Cost Breakdown', hint: 'For you only', target: e.id },
+      ].concat(sigs.map((sig) => ({
+        // Signed service agreements (task 27, D42): the PDF the client signed.
+        id: 'agreement',
+        label: 'Signed agreement' + (sigs.length > 1 ? ' v' + sig.version : ' PDF'),
+        hint: sig.fullName + ' · ' + ProjectCard.dayMonth(sig.signedAt, today),
+        target: sig.id,
+      }))),
+    };
+  }
+
+  function invoiceDoc(inv, today) {
+    const legacy = inv.kind === 'legacy';
+    const named = 'invoice ' + (inv.number || '');
     const numberOf = (id) => ((folder.invoices.find((i) => i.id === id) || {}).number || '');
-    folder.invoices.forEach((inv) => {
-      const legacy = inv.kind === 'legacy';
-      const label = 'invoice ' + (inv.number || '');
-      const replacedBy = inv.status === 'void' ? folder.invoices.find((i) => i.replacesId === inv.id) : null;
-      const when = (ymd) => esc(ProjectCard.dayMonth(ymd, today));
-      let meta;
-      if (legacy) meta = (inv.status === 'paid' ? 'Paid · ' : '') + 'Made the old way';
-      else if (inv.status === 'void') {
-        meta = 'Void' + (inv.voidedAt ? ' ' + when(inv.voidedAt) : '') + (replacedBy ? ' · replaced by ' + esc(replacedBy.number || '') : '');
-      } else {
-        meta = esc(INVOICE_STATUS[inv.status] || inv.status) +
-          (inv.status === 'paid' && inv.paidAt ? ' ' + when(inv.paidAt) : '') +
-          ((inv.status === 'sent' || inv.status === 'scheduled') && inv.dueAt ? ' · due ' + when(inv.dueAt) : '') +
-          (inv.replacesId ? ' · replaces ' + esc(numberOf(inv.replacesId)) : '');
-      }
-      const actions = [{ id: 'invoice', label: 'Open', target: inv.id, label2: 'Open ' + label }];
-      if (!legacy && inv.status === 'draft') actions.push({ id: 'send-invoice', label: 'Send…', target: inv.id, label2: 'Send ' + label });
-      if (!legacy && inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status)) {
-        actions.push({ id: 'copy-invoice', label: 'Copy link', target: inv.id, label2: 'Copy the client link to ' + label });
-      }
-      // An old invoice prints from the estimate row it was made from, as it always did.
-      if (legacy && inv.estimateId) actions.push({ id: 'legacy-pdf', label: '↓ PDF', target: inv.estimateId, label2: 'Download ' + label + ' PDF' });
-      if (!legacy) actions.push({ id: 'inv-pdf', label: '↓ PDF', target: inv.id, label2: 'Download ' + label + ' PDF' });
-      if (!legacy && inv.status !== 'void') {
-        actions.push({ id: 'inv-breakdown', label: '↓ Breakdown', target: inv.id, label2: 'Download the Cost Breakdown for ' + label });
-      }
-      docs.push({
-        name: esc(INVOICE_KIND[inv.kind] || 'Invoice') + (inv.number ? ' <span class="pf-doc-num">' + esc(inv.number) + '</span>' : ''),
-        meta,
-        amount: inv.status === 'void' ? '<s>' + fmt(inv.amountDue) + '</s>' : fmt(inv.amountDue),
-        status: legacy ? '' : SendPanel.statusMarkup(inv.send, label),
-        actions,
-        void: inv.status === 'void',
-      });
-    });
+    const replacedBy = inv.status === 'void' ? folder.invoices.find((i) => i.replacesId === inv.id) : null;
+    const when = (ymd) => esc(ProjectCard.dayMonth(ymd, today));
+    const out = inv.status === 'sent' || inv.status === 'scheduled';
+    const unpaid = inv.status !== 'paid' && inv.status !== 'void';
+    const due = String(inv.dueAt || '').slice(0, 10);
+    const overdue = inv.status === 'sent' && C.isDate(due) && due < today;
+    let chip;
+    let meta;
+    if (legacy) {
+      chip = inv.status === 'paid' ? 'Paid' : 'Legacy';
+      meta = 'made the old way';
+    } else if (inv.status === 'void') {
+      chip = 'Void';
+      meta = (inv.voidedAt ? 'voided ' + when(inv.voidedAt) : '') +
+        (replacedBy ? (inv.voidedAt ? ' · ' : '') + 'replaced by ' + esc(replacedBy.number || '') : '');
+    } else {
+      chip = overdue ? 'Overdue' : INVOICE_STATUS[inv.status] || inv.status;
+      meta = [
+        inv.status === 'paid' && inv.paidAt ? 'paid ' + when(inv.paidAt) : '',
+        out && C.isDate(due) ? (overdue ? 'was due ' : 'due ') + when(due) : '',
+        inv.replacesId ? 'replaces ' + esc(numberOf(inv.replacesId)) : '',
+      ].filter(Boolean).join(' · ');
+    }
+    const open = { id: 'invoice', label: 'Open', target: inv.id };
+    const send = !legacy && inv.status === 'draft' ? { id: 'send-invoice', label: 'Send…', target: inv.id } : null;
+    const paid = unpaid && (legacy || inv.status === 'draft' || out) ? { id: 'inv-paid', label: 'Mark paid…', target: inv.id } : null;
+    return {
+      key: 'i-' + inv.id,
+      label: named,
+      name: esc(INVOICE_KIND[inv.kind] || 'Invoice'),
+      ref: inv.number || '',
+      chip,
+      meta,
+      alert: overdue,
+      status: legacy ? '' : SendPanel.statusMarkup(inv.send, named),
+      amount: inv.status === 'void' ? '<s>' + fmt(inv.amountDue) + '</s>' : fmt(inv.amountDue),
+      void: inv.status === 'void',
+      primary: send || open,
+      actions: [
+        send ? open : null,
+        !legacy && inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status)
+          ? { id: 'copy-invoice', label: 'Copy link', target: inv.id } : null,
+        paid,
+        replacedBy ? { id: 'invoice', label: 'Open the replacement', hint: replacedBy.number || '', target: replacedBy.id } : null,
+        !legacy && out ? { id: 'inv-void', label: 'Void and remake…', danger: true, target: inv.id } : null,
+      ],
+      files: legacy
+        // An old invoice prints from the estimate row it was made from, as it always did.
+        ? [inv.estimateId ? { id: 'legacy-pdf', label: 'Invoice PDF', target: inv.estimateId } : null]
+        : [
+          { id: 'inv-pdf', label: 'Invoice PDF', target: inv.id },
+          inv.status !== 'void' ? { id: 'inv-breakdown', label: 'Cost Breakdown', hint: 'For you only', target: inv.id } : null,
+        ],
+    };
+  }
+
+  /* Estimates, then live invoices, then void ones last (IA growth plan). */
+  function documentsMarkup(project, today) {
+    const invoices = folder.invoices.filter((i) => i.status !== 'void')
+      .concat(folder.invoices.filter((i) => i.status === 'void'));
+    const docs = folder.estimates.map((e) => estimateDoc(e, project, today))
+      .concat(invoices.map((inv) => invoiceDoc(inv, today)));
     return (
-      '<div class="pf-section-head"><h2 class="pf-h2" id="pf-docs-h">Documents</h2></div>' +
-      '<ul class="pf-docs">' + docs.map(docRow).join('') + '</ul>' +
-      '<div class="pf-doc-error" id="pf-doc-error" role="alert"></div>'
+      '<div class="panel-head"><h2 class="panel-title" id="pf-docs-h">Documents' +
+      '<span class="panel-count">' + docs.length + '</span></h2></div>' +
+      '<div class="panel-body is-flush"><ul class="pf-docs">' + docs.map(docRow).join('') + '</ul>' +
+      '<div class="pf-doc-error" id="pf-doc-error" role="alert"></div></div>'
     );
   }
 
   // ── Activity ────────────────────────────────────────────────────────────
+
+  /* The latest few; Show all (N) opens the rest in place (IA growth plan). */
+  const ACTIVITY_SHOWN = 8;
+  let activityAll = false;
 
   /* When it happened, on this browser's clock: `at` is UTC, and an evening
      here is the next morning there. */
@@ -387,13 +477,19 @@ const ProjectFolder = (() => {
   }
 
   function activityMarkup(today) {
-    const head = '<div class="pf-section-head"><h2 class="pf-h2" id="pf-activity-h">Activity</h2></div>';
-    if (!folder.activity.length) {
-      return head + '<p class="pf-empty">Nothing recorded yet. Sending, the client opening and accepting, and your own changes show here.</p>';
+    const all = folder.activity;
+    const head = '<div class="panel-head"><h2 class="panel-title" id="pf-activity-h">Activity' +
+      (all.length ? '<span class="panel-count">' + all.length + '</span>' : '') + '</h2></div>';
+    if (!all.length) {
+      return head + '<div class="panel-body"><p class="pf-empty">Nothing recorded yet. Sending, the client opening and accepting, and your own changes show here.</p></div>';
     }
-    return head + '<ol class="pf-activity">' + folder.activity.map((a) =>
-      '<li><span class="pf-act-when">' + esc(whenText(a.at, today)) + '</span>' +
-      '<span class="pf-act-what">' + esc(ProjectCard.activityText(a, today)) + '</span></li>').join('') + '</ol>';
+    const cut = !activityAll && all.length > ACTIVITY_SHOWN;
+    return head + '<div class="panel-body"><ol class="pf-activity" id="pf-activity">' + all.map((a, i) =>
+      '<li' + (i === ACTIVITY_SHOWN ? ' tabindex="-1"' : '') + (cut && i >= ACTIVITY_SHOWN ? ' hidden' : '') + '>' +
+      '<span class="pf-act-when">' + esc(whenText(a.at, today)) + '</span>' +
+      '<span class="pf-act-what">' + esc(ProjectCard.activityText(a, today)) + '</span></li>').join('') + '</ol></div>' +
+      (cut ? '<div class="panel-foot pf-activity-foot"><button type="button" class="btn btn-quiet btn-sm" id="pf-activity-more"' +
+        ' aria-controls="pf-activity">Show all (' + all.length + ')</button></div>' : '');
   }
 
   // ── The screen ──────────────────────────────────────────────────────────
@@ -401,18 +497,18 @@ const ProjectFolder = (() => {
   function draw() {
     const today = LSCUtil.today();
     const project = folder.project;
+    LSCMenu.close(false);
     root.innerHTML =
       '<div id="project-folder" class="project-folder">' +
-      '<button class="back-btn" id="js-back">← All Projects</button>' +
-      '<section class="pf-head" aria-label="Overview">' +
-      headMarkup(project, today) + actionsMarkup(project) +
-      '</section>' +
+      '<button class="back-btn" id="js-back">← All projects</button>' +
+      headMarkup(project, today) +
       noticeMarkup(project, today) +
       '<div class="pf-body">' +
-      '<section class="pf-days-section" aria-labelledby="pf-days-h">' + daysMarkup(project, today) + '</section>' +
-      '<section class="pf-docs-section" aria-labelledby="pf-docs-h">' + documentsMarkup(project, today) + '</section>' +
-      '<section class="pf-activity-section" aria-labelledby="pf-activity-h">' + activityMarkup(today) + '</section>' +
-      '</div></div>';
+      '<section class="panel pf-docs-panel" aria-labelledby="pf-docs-h">' + documentsMarkup(project, today) + '</section>' +
+      '<div class="pf-side">' +
+      '<section class="panel pf-days-panel" aria-labelledby="pf-days-h">' + daysMarkup(project, today) + '</section>' +
+      '<section class="panel pf-activity-panel" aria-labelledby="pf-activity-h">' + activityMarkup(today) + '</section>' +
+      '</div></div></div>';
     document.title = (project.upid ? project.upid + ' · ' : '') + (project.name || 'Project') + ' — LSC Billing';
     bind();
     clearTimeout(following);
@@ -421,10 +517,18 @@ const ProjectFolder = (() => {
     tries = 0;
   }
 
+  /* What a dialog or panel opened from a menu item gives focus back to: the
+     item is hidden again by then, so its menu's button. */
+  function openerOf(el) {
+    const menu = el && el.closest('.menu');
+    return (menu && menu.querySelector('.menu-btn')) || el;
+  }
+
   function bind() {
     $('js-back').addEventListener('click', () => LSCRouter.leaveTo('/projects'));
     const fix = $('js-fix-upid');
     if (fix) fix.addEventListener('click', () => LSCRouter.go('/setup/upids'));
+    // Buttons and closed menus' items alike: menu.js clicks a chosen item in place.
     root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
     root.querySelectorAll('[data-doc]').forEach((b) => b.addEventListener('click', () => runDoc(b.dataset.doc, b.dataset.id, b)));
     SendPanel.bindStatus(root, {
@@ -437,6 +541,15 @@ const ProjectFolder = (() => {
       const estimate = folder.estimates.find((e) => e.id === b.dataset.estimate);
       if (estimate) openEstimate(estimate, false, { focusDay: b.dataset.day });
     }));
+    const more = $('pf-activity-more');
+    if (more) more.addEventListener('click', () => {
+      activityAll = true;
+      root.querySelectorAll('#pf-activity > li[hidden]').forEach((li) => (li.hidden = false));
+      more.closest('.panel-foot').remove();
+      // Focus the first row it showed, so the reader carries on from there.
+      const first = root.querySelector('#pf-activity > li[tabindex]');
+      if (first) first.focus();
+    });
   }
 
   /* An invoice's page (task 20); `then` 'paid' opens its Mark paid. */
@@ -517,9 +630,12 @@ const ProjectFolder = (() => {
     }
   }
 
-  async function runAction(id, button) {
+  /* `el` is the button or the menu item chosen; dialogs and panels return
+     focus to `button`, which is its menu's button for an item. */
+  async function runAction(id, el) {
     if (busy) return;
-    if (id === 'invoice') return openInvoice(button.dataset.target, button.dataset.then);
+    if (id === 'invoice') return openInvoice(el.dataset.target, el.dataset.then);
+    const button = openerOf(el);
     const estimate = lead();
     if (id === 'edit' && estimate) return openEstimate(estimate, false);
     if (id === 'view' && estimate) return openEstimate(estimate, true);
@@ -534,7 +650,7 @@ const ProjectFolder = (() => {
       run: (b) => post('decline', undefined, b, 'Declining…', 'Declined. Its days are off the calendars.'),
     });
     if (id === 'reopen') return reopen(button);
-    if (id === 'duplicate') return duplicate(button);
+    if (id === 'duplicate') return duplicate(lead(), button);
     if (id === 'delete') return openConfirm(button, {
       title: 'Delete this project?',
       body: 'This deletes ' + describeContents() + '. It can’t be undone.',
@@ -592,8 +708,8 @@ const ProjectFolder = (() => {
     }
   }
 
-  async function duplicate(button) {
-    const estimate = lead();
+  /* The header's copies the lead; a row's, its own estimate. */
+  async function duplicate(estimate, button) {
     if (!estimate || busy) return;
     clearActionError();
     setBusy(button, true);
@@ -839,6 +955,12 @@ const ProjectFolder = (() => {
      to the first action, as after any action. */
   async function refresh(quiet) {
     if (!folder) return;
+    if (quiet && LSCMenu.isOpen()) {
+      // A redraw would close the open menu: look again once it's closed.
+      clearTimeout(following);
+      following = setTimeout(() => refresh(true), 2000);
+      return;
+    }
     const id = folder.project.id;
     try {
       const reply = await LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today());
@@ -846,8 +968,11 @@ const ProjectFolder = (() => {
         // A follow-up look: redraw without moving focus, and only when
         // nothing is open over the screen.
         if (!onScreen() || !folder || folder.project.id !== id || busy) return;
-        const keep = document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-act],[data-doc]');
-        const key = keep ? (keep.dataset.act ? '[data-act="' + keep.dataset.act + '"]' : '[data-doc="' + keep.dataset.doc + '"][data-id="' + keep.dataset.id + '"]') : null;
+        const keep = document.activeElement && document.activeElement.closest && document.activeElement.closest('.menu-btn,[data-act],[data-doc]');
+        const key = !keep ? null
+          : keep.classList.contains('menu-btn') ? '#' + CSS.escape(keep.id)
+          : keep.dataset.act ? '[data-act="' + keep.dataset.act + '"]'
+          : '[data-doc="' + keep.dataset.doc + '"][data-id="' + CSS.escape(keep.dataset.id) + '"]';
         folder = reply;
         draw();
         const back = key && root.querySelector(key);
@@ -968,8 +1093,12 @@ const ProjectFolder = (() => {
 
   // ── Downloads ───────────────────────────────────────────────────────────
 
-  async function runDoc(kind, id, button) {
+  async function runDoc(kind, id, el) {
+    const button = openerOf(el);
     if (kind === 'invoice') return openInvoice(id);
+    // The invoice's own page does these, as its header would (IA: * rows only).
+    if (kind === 'inv-paid') return openInvoice(id, 'paid');
+    if (kind === 'inv-void') return openInvoice(id, 'void');
     if (kind === 'send') return openSendEstimate(button);
     if (kind === 'send-invoice') return openSendInvoice(folder.invoices.find((i) => i.id === id), button);
     if (kind === 'copy') {
@@ -983,6 +1112,7 @@ const ProjectFolder = (() => {
     const estimate = folder.estimates.find((e) => e.id === id);
     if (kind === 'view' && estimate) return openEstimate(estimate, true);
     if (kind === 'edit' && estimate) return openEstimate(estimate, false);
+    if (kind === 'duplicate') return duplicate(estimate, button);
     return download(kind, id, button, showDocError);
   }
 
@@ -1069,7 +1199,7 @@ const ProjectFolder = (() => {
   function placeholder(body) {
     folder = null;
     root.innerHTML =
-      '<button class="back-btn" id="js-back">← All Projects</button>' +
+      '<button class="back-btn" id="js-back">← All projects</button>' +
       '<div class="empty-state">' + body + '</div>';
     root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo('/projects'));
   }
@@ -1087,6 +1217,7 @@ const ProjectFolder = (() => {
     try {
       const reply = await LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today());
       if (!LSCRouter.isCurrent(ticket)) return;
+      activityAll = false;
       folder = reply;
       busy = false;
       draw();

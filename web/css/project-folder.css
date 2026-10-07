@@ -1,128 +1,151 @@
-/* The project folder (production-booking task 18; js/views/project-folder.js).
-   New classes only, so no existing screen can move. Reuses .est-upid,
-   .est-name, .est-client (app.css), .stage-line (projects.css), .status-chip
-   (calendar.css), .upid-banner (setup.css), .btn, .spinner, .modal-*.
+/* The Project page (production-booking task 18, reworked in ui-clarity task 9;
+   js/views/project-folder.js). Reuses .panel (app.css), .eyebrow / .ref /
+   .fig, .stage-line (projects.css), .status-chip (calendar.css), .upid-banner
+   (setup.css), .send-status (send.css), the menu button (menu.css), .btn,
+   .spinner and .modal-*.
 
-   The head is the estimate detail's header, the stage line under the name
-   and the one next action beside it. The sections below are headed like
-   Home's panels (a Delight title over a hairline), because the folder is a
-   dashboard for one job, not a document.
+   The header sits on the page; everything below it is a panel (U2). One
+   terracotta button on the page: the header's next action. A document row's
+   own button is secondary, and the rest is in its Actions ▾ and Documents ▾.
 
    Written phone first:
-     - under 768px: one column, the actions full width under the overview;
-     - 768–1099: the actions beside the overview, the sections stacked;
-     - 1100 and up: Production days and Activity on the left, Documents on
-       the right. */
+     - under 768px: one column; Documents first, then Production days and
+       Activity; the next action full width with Actions ▾ beside it; a row's
+       button full width with its two menus beside it;
+     - 768–1099: the actions beside the overview; a row's actions on its
+       second line, at the right;
+     - 1100 and up: Documents the wide main column, the days and Activity
+       beside it (U20).
 
-/* ── The head ─────────────────────────────────────────────────────────────── */
+   The Invoice screen still borrows .pf-actions, .pf-facts, .pf-notice,
+   .pf-section-head, .pf-hint and the dialog's classes (until ui-clarity
+   task 10), so those are kept below, marked. */
+
+/* ── The header ───────────────────────────────────────────────────────────── */
 
 .pf-head {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin-bottom: 22px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-7);
+  margin-bottom: var(--space-7);
 }
-.pf-upid-missing {
-  color: var(--err-text);
+.pf-upid {
+  margin-bottom: var(--space-4);
+}
+.pf-upid.is-missing {
+  color: var(--color-status-error-text);
+}
+.pf-title {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-3xl);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.pf-client {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
 }
 .pf-stage {
-  margin-top: 12px;
+  margin-top: var(--space-5);
 }
 .pf-stage .stage-line {
-  font-size: 13px;
-}
-.pf-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 28px;
-  margin-top: 14px;
-}
-.pf-facts dt {
   font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--muted);
-  margin-bottom: 4px;
 }
-.pf-facts dd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-/* The total in the card's own type (task 33 DR13): Delight, accent text. The
-   facts sit on one baseline, so the shorter ones line up with its foot. */
-.pf-facts {
-  align-items: flex-end;
-}
-.pf-facts dd.pf-total {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 700;
-  font-size: 22px;
-  line-height: 1.1;
-  color: var(--accent-text);
+.pf-head .pf-facts {
+  margin-top: var(--space-6);
 }
 
-.pf-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+/* The next action, then Actions ▾: on a phone the button takes the width. */
+.pf-head-acts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: start;
 }
-.pf-actions-main,
-.pf-actions-quiet {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.pf-actions .btn {
-  justify-content: center;
-  min-height: 44px;
+.pf-head-acts > .btn {
+  min-width: 0;
 }
 
 @media (min-width: 768px) {
   .pf-head {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-8);
+    align-items: start;
   }
-  .pf-overview {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  .pf-actions {
-    flex: 0 0 auto;
-    align-items: flex-end;
-  }
-  .pf-actions-main,
-  .pf-actions-quiet {
-    flex-direction: row;
-    flex-wrap: wrap;
+  .pf-head-acts {
+    display: flex;
     justify-content: flex-end;
   }
-  .pf-actions .btn {
-    min-height: 0;
+}
+@media (min-width: 1100px) {
+  .pf-title {
+    font-size: var(--font-size-4xl);
   }
 }
 
-/* The actions' failures, under the head: as #export-error (estimates.css). */
+/* Facts under the stage line (shared with the Invoice screen): a mono caps
+   label over each value. The labels share a top line and the values a foot,
+   so the shorter values line up with the total's. */
+.pf-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5) var(--space-8);
+  margin-top: var(--space-5);
+}
+.pf-facts > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.pf-facts dt {
+  margin-bottom: var(--space-3);
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.pf-facts dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+}
+/* The total in the Projects card's own type (task 33 DR13). */
+.pf-facts dd.pf-total {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  color: var(--color-accent-text);
+}
+
+/* ── Failures and notices ─────────────────────────────────────────────────── */
+
+/* An action's failure, under the header; a download's, in the Documents
+   panel. A layer tinted with the error colour, its rule on the left. */
 .pf-action-error,
 .pf-doc-error {
   display: none;
-  padding: 10px 14px;
-  border: 1px solid var(--err-border);
-  background: var(--err-bg);
-  color: var(--err-text);
-  font-size: 12px;
-  line-height: 1.5;
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-status-error) 12%, var(--color-bg-panel));
+  box-shadow: inset 2px 0 0 var(--color-status-error);
+  color: var(--color-status-error-text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
 }
 .pf-action-error {
-  margin: -8px 0 22px;
+  margin: calc(-1 * var(--space-4)) 0 var(--space-7);
 }
 .pf-doc-error {
-  margin-top: 12px;
+  margin: 0 var(--panel-pad-x) var(--panel-pad-y);
 }
 .pf-action-error.show,
 .pf-doc-error.show {
@@ -130,162 +153,66 @@
 }
 .pf-action-error .btn,
 .pf-doc-error .btn {
-  margin-left: 8px;
+  margin-left: var(--space-4);
   vertical-align: middle;
 }
 
+/* A note on arrival, not an alert: a raised layer with a quiet rule. Shared
+   with the Invoice screen, which stacks them with their own margin. */
 .pf-notice {
-  margin-bottom: 22px;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-left: 2px solid var(--muted);
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--muted);
+  margin-bottom: var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-panel);
+  box-shadow: inset 2px 0 0 var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
 }
-
-/* ── Sections ─────────────────────────────────────────────────────────────── */
-
-.pf-body {
+/* Dates taken (C6): the client can't accept until the owner acts. */
+.pf-notice.is-alert {
+  box-shadow: inset 2px 0 0 var(--color-status-error);
+  color: var(--color-status-error-text);
+}
+.pf-notices {
   display: grid;
-  gap: 30px;
+  gap: var(--space-5);
+  margin-bottom: var(--space-7);
 }
-.pf-section-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding-bottom: 8px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-.pf-h2 {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.02em;
-  color: var(--text);
-}
-.pf-count {
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.pf-empty,
-.pf-hint {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-.pf-empty {
-  padding: 6px 0;
-}
-.pf-hint {
-  margin-bottom: 10px;
-}
-/* A sent quote's proposed date taken by another project (C6): the owner must
-   act before the client can accept. */
-.pf-hint-alert {
-  color: var(--err-text);
-  font-weight: 600;
-}
-.pf-muted {
-  color: var(--muted);
+.pf-notices > .pf-notice,
+.pf-notices > .upid-banner {
+  margin: 0;
 }
 
+/* ── The panels ───────────────────────────────────────────────────────────── */
+
+.pf-body,
+.pf-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--panel-gap);
+  align-items: start;
+}
 @media (min-width: 1100px) {
   .pf-body {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    grid-template-areas: 'days docs' 'activity docs';
-    align-items: start;
-    column-gap: 36px;
-  }
-  .pf-days-section {
-    grid-area: days;
-  }
-  .pf-docs-section {
-    grid-area: docs;
-  }
-  .pf-activity-section {
-    grid-area: activity;
   }
 }
 
-/* ── Production days: Coming up's rows (home.css), one per day ────────────── */
-
-.pf-days {
-  list-style: none;
-  display: grid;
-  gap: 6px;
-}
-.pf-day {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 12px;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.pf-day:hover {
-  border-color: var(--accent);
-}
-.pf-day:focus-visible {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  box-shadow: var(--shadow-focus);
-}
-.pf-day-when {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  font-size: 12px;
-}
-.pf-day-date {
-  font-weight: 600;
-}
-.pf-day-time {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.pf-day-items {
-  grid-column: 1;
-  font-size: 12px;
-  line-height: 1.5;
-}
-/* "Clash, rebook" (D18): accepting confirmed this day on a date another
-   project had confirmed first. Said in words, not only in colour. */
-.pf-day-rebook {
-  flex-basis: 100%;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--err-text);
-}
-.pf-day-note {
-  display: block;
-  color: var(--muted);
-  font-style: italic;
-}
-.pf-day-go {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
+.pf-empty,
+.pf-hint {
   font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--muted);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
 }
-.pf-day:hover .pf-day-go {
-  color: var(--text);
+.pf-empty {
+  padding: var(--space-6) 0;
 }
-/* Declined: off every calendar, so the rows are drawn as history. */
-.pf-days.is-declined .pf-day {
-  opacity: 0.6;
+.pf-hint {
+  margin-bottom: var(--space-5);
+}
+.pf-muted {
+  color: var(--color-text-secondary);
 }
 
 /* ── Documents ────────────────────────────────────────────────────────────── */
@@ -296,161 +223,380 @@
 .pf-doc {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'main amount' 'acts acts';
-  gap: 8px 12px;
-  padding: 12px 0;
+  grid-template-areas:
+    'id amount'
+    'state state'
+    'acts acts';
+  gap: var(--space-3) var(--space-5);
+  padding: var(--row-pad-y) var(--panel-pad-x);
 }
 .pf-doc + .pf-doc {
-  border-top: 1px solid var(--cal-rule, var(--border));
+  border-top: 1px solid var(--color-border-hairline);
 }
-.pf-doc-main {
-  grid-area: main;
+.pf-doc-id {
+  grid-area: id;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
   min-width: 0;
 }
 .pf-doc-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-.pf-doc-num {
-  margin-left: 6px;
-  font-weight: 400;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-.pf-doc-meta {
-  font-size: 11px;
-  color: var(--muted);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
 }
 .pf-doc-amount {
   grid-area: amount;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
+  align-self: baseline;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
   text-align: right;
 }
-.pf-doc-acts {
-  grid-area: acts;
+.pf-doc-state {
+  grid-area: state;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.pf-doc-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
 }
-.pf-doc-acts:empty {
-  display: none;
+.pf-doc-note.is-alert {
+  color: var(--color-status-error-text);
 }
-.pf-doc-acts .btn {
-  min-height: 44px;
-  min-width: 44px;
-  justify-content: center;
+.pf-doc .send-status {
+  margin-top: 0;
 }
+
+/* The row's button, then Actions ▾ and Documents ▾. On a phone the button
+   takes what the menus leave. */
+.pf-doc-acts {
+  grid-area: acts;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: auto;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.pf-doc-primary {
+  min-width: 0;
+}
+
+/* A void invoice: kept for the record, quiet, and after the live ones. */
+.pf-doc.is-void .pf-doc-name,
+.pf-doc.is-void .pf-doc-amount,
+.pf-doc.is-void .pf-doc-meta {
+  color: var(--color-text-tertiary);
+}
+
 @media (min-width: 768px) {
-  /* 28px, over WCAG 2.2's 24px minimum: the row's buttons sit 6px apart, too
-     close for its spacing exception. */
-  .pf-doc-acts .btn {
-    min-height: 28px;
+  .pf-doc {
+    grid-template-areas:
+      'id amount'
+      'state acts';
+    row-gap: var(--space-2);
+  }
+  .pf-doc-acts {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    align-self: start;
+    margin-top: 0;
   }
 }
 
-/* ── Activity ─────────────────────────────────────────────────────────────── */
+/* The document's state, in a mono chip. The word carries the meaning; the
+   tint only echoes it. Each ink clears 4.5:1 on its tint over a panel. */
+.pf-chip {
+  display: inline-block;
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
+  font: var(--chip-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-status-neutral-text);
+  background: color-mix(in srgb, var(--color-status-neutral) 16%, transparent);
+}
+.pf-chip.is-info {
+  color: var(--color-status-info-text);
+  background: color-mix(in srgb, var(--color-status-info) 16%, transparent);
+}
+.pf-chip.is-ok {
+  color: var(--color-status-success-text);
+  background: color-mix(in srgb, var(--color-status-success) 16%, transparent);
+}
+.pf-chip.is-alert {
+  color: var(--color-status-error-text);
+  background: color-mix(in srgb, var(--color-status-error) 16%, transparent);
+}
+.pf-chip.is-void {
+  color: var(--color-text-tertiary);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+
+/* ── Production days: one row per day, hairlines between ─────────────────── */
+
+.pf-days-panel .pf-hint {
+  margin: 0;
+  padding: var(--space-5) var(--panel-pad-x) 0;
+}
+.pf-days {
+  list-style: none;
+}
+.pf-days li + li {
+  border-top: 1px solid var(--color-border-hairline);
+}
+.pf-day {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-5);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--space-5) var(--panel-pad-x);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--easing-default);
+}
+.pf-days li:last-child .pf-day {
+  border-radius: 0 0 var(--panel-radius) var(--panel-radius);
+}
+.pf-day:hover {
+  background: var(--color-bg-hover);
+}
+.pf-day:focus-visible {
+  z-index: 1;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+.pf-day-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+}
+.pf-day-date {
+  font-weight: var(--font-weight-semibold);
+}
+.pf-day-time {
+  font-family: var(--font-figures);
+  color: var(--color-text-secondary);
+}
+.pf-day-items {
+  grid-column: 1;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+/* "Clash, rebook" (D18): accepting confirmed this day on a date another
+   project had confirmed first. Said in words, not only in colour. */
+.pf-day-rebook {
+  flex-basis: 100%;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-status-error-text);
+}
+.pf-day-note {
+  display: block;
+  font-style: italic;
+}
+.pf-day-go {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.pf-day:hover .pf-day-go {
+  color: var(--color-text-primary);
+}
+/* Declined: off every calendar, so the rows are drawn as history. */
+.pf-days.is-declined .pf-day {
+  opacity: 0.6;
+}
+
+/* ── Activity: the latest 8, then Show all (N) ────────────────────────────── */
 
 .pf-activity {
   list-style: none;
 }
 .pf-activity li {
   display: grid;
-  grid-template-columns: minmax(0, 9em) minmax(0, 1fr);
-  gap: 12px;
-  padding: 8px 0;
-  font-size: 12px;
-  line-height: 1.5;
+  grid-template-columns: minmax(0, 8.5em) minmax(0, 1fr);
+  gap: var(--space-5);
+  padding: var(--space-4) 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
 }
 .pf-activity li + li {
-  border-top: 1px solid var(--cal-rule, var(--border));
+  border-top: 1px solid var(--color-border-hairline);
+}
+.pf-activity li[hidden] {
+  display: none;
+}
+.pf-activity li:focus {
+  outline: none;
+}
+.pf-activity li:focus-visible {
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-focus);
 }
 .pf-act-when {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-figures);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
 }
 .pf-act-what {
-  color: var(--text);
+  color: var(--color-text-primary);
+}
+.pf-activity-foot {
+  justify-content: flex-start;
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+}
+/* Its words line up with the rows' left edge. */
+.pf-activity-foot .btn {
+  margin-left: calc(-1 * var(--space-4));
 }
 
-/* ── The dialog ───────────────────────────────────────────────────────────── */
+/* ── Kept for the Invoice screen until ui-clarity task 10 ─────────────────── */
+
+.pf-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.pf-actions-main,
+.pf-actions-quiet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.pf-actions .btn {
+  justify-content: center;
+}
+@media (min-width: 768px) {
+  .pf-actions {
+    flex: 0 0 auto;
+    align-items: flex-end;
+  }
+  .pf-actions-main,
+  .pf-actions-quiet {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+.pf-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.pf-h2 {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+}
+
+/* ── The dialog (Mark accepted, Decline, Delete; the Invoice screen's too) ── */
 
 .pfd-text {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--muted);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
 }
 .pfd-pdf {
-  margin: 14px 0 18px;
+  margin: var(--space-6) 0 var(--space-6);
 }
 /* Mark accepted's taken dates (task 33 DR6), and the send panel's (DR7). */
 .pfd-taken {
-  margin: 12px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
+  margin: var(--space-5) 0 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-status-error-text);
+}
+.pf-hint-alert {
+  color: var(--color-status-error-text);
+  font-weight: var(--font-weight-semibold);
 }
 .pf-dialog .field label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-3);
 }
 .pf-dialog .field input {
   width: 100%;
 }
 .pfd-hint {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--muted);
+  margin-top: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
 }
 /* Mark accepted: pair or single, then the deposit %. */
 .pfd-choice {
   display: grid;
-  gap: 4px;
-  margin: 16px 0 14px;
+  gap: var(--space-2);
+  margin: var(--space-6) 0 var(--space-5);
   padding: 0;
   border: 0;
 }
 .pfd-choice legend {
-  margin-bottom: 6px;
+  margin-bottom: var(--space-3);
   font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--muted);
+  color: var(--color-text-secondary);
 }
 .pfd-choice label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  font-size: 13px;
+  gap: var(--space-5);
+  min-height: var(--touch-min);
+  font-size: var(--font-size-base);
   cursor: pointer;
 }
 .pfd-choice input {
   width: 18px;
   height: 18px;
-  accent-color: var(--accent);
+  accent-color: var(--color-accent-primary);
 }
 .pf-dialog .field[hidden] {
   display: none;
 }
 .pfd-split {
-  margin-top: 10px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text);
+  margin-top: var(--space-5);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 .pfd-error {
-  font-size: 12px;
-  color: var(--err-text);
+  font-size: var(--font-size-sm);
+  color: var(--color-status-error-text);
 }
 .pfd-error:not(:empty) {
-  margin-top: 14px;
+  margin-top: var(--space-5);
 }
 
 @media (prefers-reduced-motion: reduce) {
