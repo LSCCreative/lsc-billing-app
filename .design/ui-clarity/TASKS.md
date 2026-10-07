@@ -213,7 +213,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
 ## D1: the busy screens
 
 - [x] **9. Project page** (frontend — Opus/high) **Frontend**
-  - **Done** (commit below): header (UPID eyebrow, one terracotta next action, Actions ▾), notices, Documents panel (rows with one button, Actions ▾, Documents ▾; void last), Production days and Activity (8 + Show all) panels. All 10 review states (`seed-review.js`) show IA's items; 25 scripted real-click checks pass at 1280 and 375 (dialogs, send panel, copy link, every PDF, Mark paid / Void hand-offs, delete refusal, focus return); no overflow and one terracotta per page at 1280/800/375; 574 green. Screenshots `screenshots/task9-*`.
+  - **Done** `8a8e04f`: header (UPID eyebrow, one terracotta next action, Actions ▾), notices, Documents panel (rows with one button, Actions ▾, Documents ▾; void last), Production days and Activity (8 + Show all) panels. All 10 review states (`seed-review.js`) show IA's items; 25 scripted real-click checks pass at 1280 and 375 (dialogs, send panel, copy link, every PDF, Mark paid / Void hand-offs, delete refusal, focus return); no overflow and one terracotta per page at 1280/800/375; 574 green. Screenshots `screenshots/task9-*`.
   - Rebuild `project-folder.js`'s markup per IA:
     - **Header:** eyebrow UPID, title, client, stage line, facts, then **one primary** and
       **Actions ▾** (IA "Project header" table).
