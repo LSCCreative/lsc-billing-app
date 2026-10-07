@@ -729,46 +729,116 @@
   margin-top: 0;
 }
 
-/* Sub-clauses, read-only here for now, lettered as they print. */
+/* Sub-clauses (task 6): rows inside an open card, each a handle, its
+   letter as it prints, an optional heading and the text, and a ⋯. An
+   indented row steps in under the lettered one above it; the space is the
+   nesting, no rule. On a phone the text takes the row's full width below;
+   from 768px it sits under the heading. */
 .clause-subs-head {
   margin-bottom: var(--space-3);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
 }
-.clause-sub-list {
+.clause-subs-head[hidden] {
+  display: none;
+}
+.sub-list {
+  position: relative; /* the drop line is placed inside it */
   list-style: none;
+}
+.sub-list:has(> .sub) {
   border-top: 1px solid var(--color-border-hairline);
 }
-.clause-sub {
-  display: flex;
-  gap: var(--space-4);
+.sub {
+  display: grid;
+  grid-template-columns: var(--touch-min) 4ch minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-3);
   padding: var(--space-4) 0;
   border-bottom: 1px solid var(--color-border-hairline);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-normal);
-  color: var(--color-text-secondary);
+  background: var(--color-bg-panel);
 }
-.clause-sub.is-indent {
-  padding-left: var(--space-8);
+.sub.is-indent {
+  margin-left: var(--space-6);
 }
-.clause-sub-mark {
-  flex: 0 0 4ch;
+.sub-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none; /* a finger on the handle drags; anywhere else scrolls */
+}
+.sub-handle:hover {
+  color: var(--color-text-primary);
+}
+.sub-mark {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.8;
+  color: var(--color-accent-text);
+}
+.sub.is-indent .sub-mark {
+  color: var(--color-text-secondary);
+}
+.sub-heading,
+.sub-text {
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  font: inherit;
+  font-size: var(--font-size-md);
   color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default);
 }
-.clause-sub-text {
-  min-width: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-.clause-sub-text strong {
+.sub-heading {
+  min-height: var(--touch-min);
   font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
+}
+.sub-text {
+  grid-column: 1 / -1; /* a phone's full row: long clauses need the width */
+  min-height: calc(2lh + 2 * var(--space-3));
+  max-height: 60vh;
+  field-sizing: content;
+  resize: vertical;
+  line-height: var(--line-height-relaxed);
+}
+.sub-heading::placeholder,
+.sub-text::placeholder {
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-normal);
+}
+.sub-heading:focus,
+.sub-text:focus {
+  border-color: var(--color-accent-mark);
+}
+.sub-menu {
+  grid-column: 4;
+  grid-row: 1; /* beside the heading, whichever row the text takes */
+  display: flex;
+}
+.sub-more {
+  min-width: var(--touch-min);
+  justify-content: center;
+}
+.sub-add {
+  margin-top: var(--space-4);
+}
+.sub.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-sm);
 }
 
 /* Dragging (sortable.js): the card lifts and follows the pointer, the line
@@ -800,6 +870,7 @@
 
 .clause-handle:focus-visible,
 .clause-toggle:focus-visible,
+.sub-handle:focus-visible,
 .agr-missing:focus-visible {
   outline: 2px solid transparent;
   outline-offset: 2px;
@@ -895,6 +966,30 @@
     /* Under the title, past the handle and number. */
     padding: var(--space-2) var(--space-6) var(--space-6) calc(var(--space-8) + 2ch + var(--space-4));
   }
+  .sub {
+    grid-template-columns: var(--space-8) 4ch minmax(0, 1fr) auto;
+    padding: var(--space-3) 0;
+  }
+  .sub.is-indent {
+    margin-left: var(--space-8);
+  }
+  .sub-handle {
+    width: var(--space-8);
+    height: var(--control-h);
+  }
+  .sub-heading,
+  .sub-text {
+    font-size: var(--font-size-base);
+  }
+  .sub-heading {
+    min-height: var(--control-h);
+  }
+  .sub-text {
+    grid-column: 3 / 4;
+  }
+  .sub-more {
+    min-width: var(--control-h-sm);
+  }
   .set-field-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -906,7 +1001,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .set-field-code code {
+  .set-field-code code,
+  .sub-heading,
+  .sub-text {
     transition: none;
   }
 }

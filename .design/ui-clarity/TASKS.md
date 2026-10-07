@@ -163,7 +163,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - Settings now has a seventh section, **Account** (account recovery). Keep it, its own form
     and its Update account button outside Save settings.
 
-- [ ] **6. Sub-clauses and reset** (frontend — Opus/high) **Frontend**
+- [x] **6. Sub-clauses and reset** (frontend — Opus/high) **Frontend**
+  - **Done**: clause 5 reads (a) Raw materials, (b) Client licence, (c) Portfolio use; a new row is (d) at once, moved up and indented it is (b)(i) in the card, the preview and the stored settings; Reset (confirm names the count, Undo) restored and saved the 13 defaults. Alt+↑/↓ and ⋯ at both levels, pointer drag, Tab focus ring; at 375 44px targets, 16px inputs, the ⋯ sheet (Outdent on an indented row, 48px rows), no overflow at 1280/800/375; 565 green. Screenshots `screenshots/task6-*`.
   - Inside an open card, add a **Sub-clauses** list. Each row has a handle, an auto letter, an
     optional heading, text and ⋯ (Indent, Outdent, Move up, Move down, Delete).
   - Letters re-flow at once: (a)(b)(c), and (i)(ii) under the row above when indented. An indented

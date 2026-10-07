@@ -84,7 +84,12 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     Agreement values, Fields you can use, Client page); Business gains **Signs for the business**
     (`business.signer`). `web/js/sortable.js` is the shared reorder helper; `Toast.ok(msg, { action })`
     gives the Undo.
-- **Next: task 6, "Sub-clauses and reset"** (frontend — Opus/high). **Frontend task.**
+  - [x] Task 6, sub-clauses and reset. Open cards edit their sub-clause rows (handle, letter,
+    heading, text, ⋯ with Indent/Outdent/Move up/Move down/Delete); each card's row list has its
+    own `LSCSortable` (`Clauses.wire`), attached at draw and on every insert. The Clauses panel
+    head's ⋯ holds **Reset to LSC default clauses…** (`D.docSettings({}).agreement.clauses`).
+- **Next: task 7, "Clause headings on the sign dialog and agreement PDF"** (signing — Opus/high).
+  **Frontend task.**
 
 ## Waiting on the user
 
@@ -133,8 +138,23 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
   clauses as task 4's interim did.
 - **Cards are numbered by position**, as a deposit project reads them. A deposit-only clause
   carries a "Deposit only" tag; on a single invoice the render skips it and numbers on.
-- **Sub-clauses show read-only** in an open card until task 6 makes them editable. A clause with
-  sub-clauses calls its text box "Intro (optional)".
+- A clause with sub-clauses calls its text box "Intro (optional)" (the label follows as rows
+  are added or deleted).
+
+## Decisions made in task 6 (tell the user)
+
+- **A new, blank sub-clause is lettered at once** ((d)), so the card letters every row, blank or
+  not, while the render skips blank ones. **Save drops blank rows**, so the two agree once
+  saved. A row with only a heading (8(a) "By the Client") is not blank.
+- **A row moved or left to the top loses its indent** (it has nothing to sit under); moving it
+  back down doesn't restore it.
+- **Rows move one at a time.** Moving a lettered row doesn't carry its (i)(ii) along; they
+  re-letter under whichever lettered row is now above them.
+- **Sub-clause delete has no confirm**, only the 10s Undo (back where it was, indent and all).
+- **Reset** confirms with the count ("Your 12 clauses are replaced by the 13…"), skips the
+  confirm when there are none, and its toast has Undo too (open cards come back open).
+- The heading's placeholder is just "Heading" (the 375 box cut "(optional)" off); its
+  accessible name still says optional.
 - **Delete confirms only when the clause has text** (body or sub-clauses; a title alone doesn't
   count). Undo lasts 10s and holds while hovered or focused.
 - **Field insertion** goes where the cursor last was in the Intro or a clause (else the Intro's

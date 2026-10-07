@@ -306,9 +306,12 @@ const SettingsView = (() => {
     '</div>';
   }
 
-  /* (a)…(z), (aa)…; (i), (ii)… under a lettered one: agreementText()'s marks,
-     for the card's read-only list until sub-clauses are edited here (task 6).
-     A blank sub-clause takes no mark (null), as in the render. */
+  /* (a)…(z), (aa)…; (i), (ii)… under a lettered one, as agreementText()
+     letters them, for the card's sub-clause rows (task 6). Unlike the render,
+     a blank row is lettered too: a row just added reads (d) at once, while
+     its text is still to come. A blank row prints nothing, and payload()
+     leaves it out, so the two agree again once saved. Each mark is
+     { mark: '(i)', full: '(b)(i)', under: true }. */
   function subMarks(subs) {
     const letter = (n) => {
       let out = '';
@@ -327,12 +330,54 @@ const SettingsView = (() => {
     let l = -1;
     let r = -1;
     return subs.map((x) => {
-      if (!x.heading.trim() && !x.text.trim()) return null;
-      if (x.indent === 1 && l >= 0) return { mark: '(' + roman(++r) + ')', under: true };
+      if (x.indent === 1 && l >= 0) {
+        const mark = '(' + roman(++r) + ')';
+        return { mark, full: '(' + letter(l) + ')' + mark, under: true };
+      }
       r = -1;
-      return { mark: '(' + letter(++l) + ')', under: false };
+      const mark = '(' + letter(++l) + ')';
+      return { mark, full: mark, under: false };
     });
   }
+
+  const isBlankSub = (x) => !x.heading.trim() && !x.text.trim();
+  const subName = (x, m) => (x.heading.trim() ? m.full + ' ' + x.heading.trim() : 'Sub-clause ' + m.full);
+
+  /* A row's ⋯: Indent from the second row on (an indented first row has
+     nothing to sit under), Outdent on an indented one. */
+  function subMenu(k, n, x, m) {
+    return LSCMenu.markup({
+      label: 'Actions',
+      icon: '⋯',
+      ariaLabel: 'Actions for sub-clause ' + m.full,
+      btnClass: 'btn btn-quiet btn-sm sub-more',
+      items: [
+        k > 0 && x.indent !== 1 && { text: 'Indent', attrs: { 'data-sub-act': 'in' } },
+        x.indent === 1 && { text: 'Outdent', attrs: { 'data-sub-act': 'out' } },
+        k > 0 && { text: 'Move up', attrs: { 'data-sub-act': 'up' } },
+        k < n - 1 && { text: 'Move down', attrs: { 'data-sub-act': 'down' } },
+        { text: 'Delete', danger: true, attrs: { 'data-sub-act': 'del' } },
+      ],
+    });
+  }
+
+  function subMarkup(x, k, n, m) {
+    const id = 'set-sub-' + x.id;
+    return '<li class="sub' + (m.under ? ' is-indent' : '') + '" data-sid="' + esc(x.id) + '">' +
+      '<button type="button" class="sub-handle" aria-label="Move sub-clause ' + m.full + '" aria-describedby="set-sub-howto" title="Drag to reorder, or Alt+↑ / Alt+↓">' +
+        '<span class="clause-grip" aria-hidden="true"></span></button>' +
+      '<span class="sub-mark" aria-hidden="true">' + m.mark + '</span>' +
+      '<input id="' + id + '-h" class="sub-heading" type="text" value="' + esc(x.heading) + '" data-sub-field="heading" data-agr-text spellcheck="true"' +
+        ' placeholder="Heading" aria-label="Sub-clause ' + m.full + ' heading, optional">' +
+      '<textarea id="' + id + '-t" class="sub-text" rows="' + rowsFor(x.text, 2) + '" data-sub-field="text" data-agr-text spellcheck="true"' +
+        ' placeholder="Text" aria-label="Sub-clause ' + m.full + ' text" aria-describedby="set-cl-text-hint">' + esc(x.text) + '</textarea>' +
+      '<span class="sub-menu">' + subMenu(k, n, x, m) + '</span>' +
+    '</li>';
+  }
+
+  /* The body's label: plain Text, or an optional lead-in once there are
+     sub-clauses (with them, the text is often empty). */
+  const bodyLabel = (has) => (has ? 'Intro <span class="set-optional">(optional)</span>' : 'Text');
 
   const clauseName = (c) => c.title.trim() || 'Untitled clause';
 
@@ -361,19 +406,17 @@ const SettingsView = (() => {
     });
   }
 
-  function clauseMarkup(c, i, n, isOpen) {
+  function clauseMarkup(c, i, total, isOpen) {
     const id = 'set-cl-' + c.id;
     const marks = subMarks(c.subs);
-    const subs = c.subs.length
-      ? '<div class="clause-subs"><p class="clause-subs-head" id="' + id + '-subs">Sub-clauses</p>' +
-        '<ol class="clause-sub-list" aria-labelledby="' + id + '-subs">' +
-        c.subs.map((x, k) => (marks[k]
-          ? '<li class="clause-sub' + (marks[k].under ? ' is-indent' : '') + '">' +
-            '<span class="clause-sub-mark">' + marks[k].mark + '</span><span class="clause-sub-text">' +
-            (x.heading.trim() ? '<strong>' + esc(x.heading.trim()) + '</strong> ' : '') + esc(x.text) + '</span></li>'
-          : '')).join('') +
-        '</ol></div>'
-      : '';
+    const n = c.subs.length;
+    const subs = '<div class="clause-subs">' +
+      '<p class="clause-subs-head" id="' + id + '-subs"' + (n ? '' : ' hidden') + '>Sub-clauses</p>' +
+      '<ol class="sub-list" aria-labelledby="' + id + '-subs">' +
+        c.subs.map((x, k) => subMarkup(x, k, n, marks[k])).join('') +
+      '</ol>' +
+      '<div class="sub-add"><button type="button" class="btn btn-quiet btn-sm" data-sub-add>+ Add sub-clause</button></div>' +
+    '</div>';
     return '<li class="clause' + (isOpen ? ' is-open' : '') + '" data-id="' + esc(c.id) + '">' +
       '<div class="clause-row">' +
         '<button type="button" class="clause-handle" aria-label="' + esc(handleLabel(i, c)) + '" aria-describedby="set-cl-howto" title="Drag to reorder, or Alt+↑ / Alt+↓">' +
@@ -384,15 +427,15 @@ const SettingsView = (() => {
           '<span class="clause-tag"' + (c.depositOnly ? '' : ' hidden') + '>Deposit only</span>' +
           '<span class="panel-chev" aria-hidden="true"></span>' +
         '</button></h4>' +
-        '<span class="clause-menu">' + clauseMenu(i, n, c) + '</span>' +
+        '<span class="clause-menu">' + clauseMenu(i, total, c) + '</span>' +
       '</div>' +
       '<div class="clause-body" id="' + id + '-body"' + (isOpen ? '' : ' hidden') + '>' +
         '<div class="field"><label for="' + id + '-title">Title</label>' +
           '<input id="' + id + '-title" type="text" value="' + esc(c.title) + '" data-cl-field="title" data-agr-text spellcheck="true"></div>' +
         // With sub-clauses the text is only their lead-in, often empty.
-        '<div class="field"><label for="' + id + '-text">' + (c.subs.length ? 'Intro <span class="set-optional">(optional)</span>' : 'Text') + '</label>' +
-          '<textarea id="' + id + '-text" rows="' + rowsFor(c.body, c.subs.length ? 2 : 3) + '" data-cl-field="body" data-agr-text spellcheck="true" aria-describedby="set-cl-text-hint"' +
-          (c.subs.length ? ' placeholder="Text before the sub-clauses"' : '') + '>' + esc(c.body) + '</textarea></div>' +
+        '<div class="field"><label for="' + id + '-text" class="clause-body-label">' + bodyLabel(n > 0) + '</label>' +
+          '<textarea id="' + id + '-text" rows="' + rowsFor(c.body, n ? 2 : 3) + '" data-cl-field="body" data-agr-text spellcheck="true" aria-describedby="set-cl-text-hint"' +
+          (n ? ' placeholder="Text before the sub-clauses"' : '') + '>' + esc(c.body) + '</textarea></div>' +
         subs +
         '<label class="set-check clause-deposit"><input type="checkbox" data-cl-field="depositOnly"' + (c.depositOnly ? ' checked' : '') +
           ' aria-describedby="' + id + '-dep-hint"><span>Deposit projects only</span></label>' +
@@ -406,8 +449,8 @@ const SettingsView = (() => {
       '<li><button type="button" class="set-field-code" data-field="' + x.key + '" aria-label="Insert {' + x.key + '}: ' +
       esc(x.says) + '"><code>{' + x.key + '}</code></button><span>' + esc(x.says) + '</span></li>').join('');
     const n = f.clauses.length;
-    const panel = (key, title, body, extra) => '<section class="panel set-panel" aria-labelledby="set-agr-' + key + '-title">' +
-      '<div class="panel-head"><h3 class="panel-title" id="set-agr-' + key + '-title">' + title + (extra || '') + '</h3></div>' +
+    const panel = (key, title, body, extra, action) => '<section class="panel set-panel" aria-labelledby="set-agr-' + key + '-title">' +
+      '<div class="panel-head"><h3 class="panel-title" id="set-agr-' + key + '-title">' + title + (extra || '') + '</h3>' + (action || '') + '</div>' +
       '<div class="panel-body">' + body + '</div></section>';
     return section('agreement', 'Service agreement',
       'What the client signs when they accept a quote: the header below, then your clauses. Each signing keeps the exact ' +
@@ -419,13 +462,21 @@ const SettingsView = (() => {
           '<p class="set-hint set-cl-lead" id="set-cl-howto">Numbered in this order. Drag a clause by its handle, or focus the handle ' +
             'and press Alt+↑ or Alt+↓. Open one to edit it.</p>' +
           '<p class="sr-only" id="set-cl-text-hint">Paragraphs are separated by a blank line. Fields in curly brackets are filled in per project.</p>' +
+          '<p class="sr-only" id="set-sub-howto">Lettered in this order. Drag by the handle, or focus it and press Alt+↑ or Alt+↓.</p>' +
           '<ol class="clause-list" id="set-cl-list">' +
             f.clauses.map((c, i) => clauseMarkup(c, i, n, Clauses.isOpen(c.id))).join('') +
           '</ol>' +
           '<p class="set-cl-empty" id="set-cl-empty"' + (n ? ' hidden' : '') + '>No clauses: the client would sign only an acceptance of the quote.</p>' +
           '<div class="set-cl-add"><button type="button" class="btn btn-sm" id="set-cl-add">+ Add clause</button></div>' +
           '<div class="sr-only" id="set-cl-live" aria-live="polite"></div>',
-          '<span class="panel-count" id="set-cl-count">' + n + '</span>') +
+          '<span class="panel-count" id="set-cl-count">' + n + '</span>',
+          '<span class="set-cl-tools">' + LSCMenu.markup({
+            label: 'Actions',
+            icon: '⋯',
+            ariaLabel: 'Clause actions',
+            btnClass: 'btn btn-quiet btn-sm',
+            items: [{ text: 'Reset to LSC default clauses…', attrs: { 'data-cl-reset': '' } }],
+          }) + '</span>') +
         panel('values', 'Agreement values',
           '<div class="set-agr-rate">' +
             field('set-agr-rate', 'Hourly rate for extra work ($)', f.hourlyRaw, {
@@ -671,10 +722,15 @@ const SettingsView = (() => {
      and removed, never redrawn, so an open card keeps its cursor and scroll.
      renumber() then puts each card's number, labels and ⋯ items right for
      where it now stands (Move up isn't offered to the first, nor Move down to
-     the last). */
+     the last).
+     Sub-clauses (task 6) follow the same rule one level down: a row's data
+     and node change together, and reletter() puts every row's letter,
+     indent, labels and ⋯ right afterwards. Each open-able card's row list
+     has its own sortable (sortable.js takes direct children only). */
   const Clauses = (() => {
     const open = new Set(); // ids of the open cards; survives a save's redraw
     let sortable = null;
+    const subSortables = new Map(); // clause id → its rows' sortable
 
     const list = () => $('set-cl-list');
     const cards = () => Array.from(list().children);
@@ -731,8 +787,184 @@ const SettingsView = (() => {
     /* The list from `form`, after a save trimmed what it stored. */
     function render() {
       const n = form.clauses.length;
+      dropSubSortables();
       list().innerHTML = form.clauses.map((c, i) => clauseMarkup(c, i, n, open.has(c.id))).join('');
+      cards().forEach(wire);
       renumber();
+    }
+
+    // ── Sub-clauses ──
+    const clauseOf = (node) => form.clauses[indexOf(node.dataset.id)];
+    const subList = (card) => card.querySelector('.sub-list');
+    const subRows = (card) => Array.from(subList(card).children).filter((el) => el.matches('.sub'));
+    const rowOf = (card, sid) => subList(card).querySelector(':scope > [data-sid="' + CSS.escape(sid) + '"]');
+
+    function wire(card) {
+      const id = card.dataset.id;
+      subSortables.set(id, LSCSortable.attach(subList(card), {
+        item: '.sub',
+        handle: '.sub-handle',
+        onMove: (from, to) => moveSub(card, from, to),
+      }));
+    }
+
+    function dropSubSortables() {
+      subSortables.forEach((s) => s.cancel());
+      subSortables.clear();
+    }
+
+    /* Letters, indents, labels and ⋯ for every row, from the data. A row that
+       has become the first can't stay indented: it has nothing to sit under. */
+    function reletter(card) {
+      const c = clauseOf(card);
+      if (c.subs.length && c.subs[0].indent === 1) c.subs[0].indent = 0;
+      const marks = subMarks(c.subs);
+      const n = c.subs.length;
+      subRows(card).forEach((row, k) => {
+        const x = c.subs[k];
+        const m = marks[k];
+        row.classList.toggle('is-indent', m.under);
+        row.querySelector('.sub-mark').textContent = m.mark;
+        row.querySelector('.sub-handle').setAttribute('aria-label', 'Move sub-clause ' + m.full);
+        row.querySelector('.sub-heading').setAttribute('aria-label', 'Sub-clause ' + m.full + ' heading, optional');
+        row.querySelector('.sub-text').setAttribute('aria-label', 'Sub-clause ' + m.full + ' text');
+        row.querySelector('.sub-menu').innerHTML = subMenu(k, n, x, m);
+      });
+      card.querySelector('.clause-subs-head').hidden = n === 0;
+      const body = card.querySelector('[data-cl-field="body"]');
+      card.querySelector('.clause-body-label').innerHTML = bodyLabel(n > 0);
+      if (n) body.setAttribute('placeholder', 'Text before the sub-clauses');
+      else body.removeAttribute('placeholder');
+      return marks;
+    }
+
+    function focusSub(card, sid, part) {
+      const row = rowOf(card, sid);
+      if (row) row.querySelector(part).focus();
+    }
+
+    /* Drag, Alt+arrow and the row's ⋯ all end here. */
+    function moveSub(card, from, to) {
+      const c = clauseOf(card);
+      const n = c.subs.length;
+      if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+      const [x] = c.subs.splice(from, 1);
+      c.subs.splice(to, 0, x);
+      const row = subRows(card)[from];
+      const rest = subRows(card).filter((el) => el !== row);
+      subList(card).insertBefore(row, rest[to] || null);
+      const marks = reletter(card);
+      paintState();
+      focusSub(card, x.id, '.sub-handle');
+      announce((x.heading.trim() || 'Sub-clause') + ' moved to ' + marks[to].full + ', ' + (to + 1) + ' of ' + n + '.');
+    }
+
+    function indentSub(card, k, indent) {
+      const c = clauseOf(card);
+      const x = c.subs[k];
+      if (!x || (indent === 1 && k === 0)) return;
+      x.indent = indent;
+      const marks = reletter(card);
+      paintState();
+      focusSub(card, x.id, '.sub-more');
+      announce((indent ? 'Indented' : 'Outdented') + ': now ' + marks[k].full + '.');
+    }
+
+    function insertSub(card, x, at, part) {
+      const c = clauseOf(card);
+      c.subs.splice(at, 0, x);
+      const holder = document.createElement('ol');
+      holder.innerHTML = subMarkup(x, at, c.subs.length, subMarks(c.subs)[at]);
+      subList(card).insertBefore(holder.firstChild, subRows(card)[at] || null);
+      const marks = reletter(card);
+      paintState();
+      focusSub(card, x.id, part);
+      return marks[indexOfSub(c, x.id)];
+    }
+
+    const indexOfSub = (c, sid) => c.subs.findIndex((x) => x.id === sid);
+
+    function addSub(card) {
+      const c = clauseOf(card);
+      const m = insertSub(card, { id: newId('s'), heading: '', text: '', indent: 0 }, c.subs.length, '.sub-heading');
+      announce('Sub-clause ' + m.full + ' added.');
+    }
+
+    /* Gone at once, with Undo in the toast (no confirm: a row is small, and
+       the Undo puts it back where it was, indent and all). */
+    function dropSub(card, k) {
+      const c = clauseOf(card);
+      const x = c.subs[k];
+      if (!x) return;
+      const name = subName(x, subMarks(c.subs)[k]);
+      c.subs.splice(k, 1);
+      rowOf(card, x.id).remove();
+      reletter(card);
+      paintState();
+      // Focus to the row that took its place, or the one above, or Add.
+      const next = c.subs[k] || c.subs[k - 1];
+      if (next) focusSub(card, next.id, '.sub-more');
+      else card.querySelector('[data-sub-add]').focus();
+      announce(name + ' deleted.');
+      const owner = form;
+      const cid = c.id;
+      Toast.ok('“' + (x.heading.trim() || 'Sub-clause') + '” deleted.', {
+        action: {
+          label: 'Undo',
+          run: () => {
+            const home = form === owner && onScreen() && cardOf(cid);
+            const into = home && clauseOf(home);
+            if (!into || indexOfSub(into, x.id) >= 0) return;
+            setOpen(cid, true);
+            const m = insertSub(home, x, Math.min(k, into.subs.length), '.sub-handle');
+            announce(subName(x, m) + ' restored.');
+          },
+        },
+      });
+    }
+
+    /* The 13 defaults back, in place of whatever is there, after a confirm
+       that says how many go; Undo in the toast puts them back. */
+    function resetDefaults(opener) {
+      const n = form.clauses.length;
+      const fresh = D.docSettings({}).agreement.clauses;
+      const run = () => {
+        const before = form.clauses.slice();
+        const wasOpen = new Set(open);
+        replaceAll(fresh, []);
+        $('set-cl-list').querySelector('.clause-toggle').focus();
+        announce('Clauses reset: the ' + fresh.length + ' LSC defaults.');
+        const owner = form;
+        Toast.ok('Clauses reset to the ' + fresh.length + ' LSC defaults.', {
+          action: {
+            label: 'Undo',
+            run: () => {
+              if (form !== owner || !onScreen()) return;
+              replaceAll(before, wasOpen);
+              announce('Your ' + before.length + ' clause' + (before.length === 1 ? '' : 's') + ' restored.');
+            },
+          },
+        });
+      };
+      if (!n) {
+        run();
+        return;
+      }
+      Confirm.open(opener, {
+        title: 'Reset to the LSC default clauses?',
+        body: (n === 1 ? 'Your 1 clause is' : 'Your ' + n + ' clauses are') + ' replaced by the ' + fresh.length +
+          ' LSC default clauses. You can undo it straight after, and nothing changes for clients until you save.',
+        confirm: 'Replace ' + n + ' clause' + (n === 1 ? '' : 's'),
+        run,
+      });
+    }
+
+    function replaceAll(next, openIds) {
+      form.clauses.splice(0, form.clauses.length, ...next);
+      open.clear();
+      openIds.forEach((id) => open.add(id));
+      render();
+      paintState();
     }
 
     function focusHandle(id) {
@@ -760,10 +992,11 @@ const SettingsView = (() => {
       const n = form.clauses.length;
       const holder = document.createElement('ol');
       holder.innerHTML = clauseMarkup(c, at, n, open.has(c.id));
-      list().insertBefore(holder.firstChild, cards()[at] || null);
+      const node = holder.firstChild;
+      list().insertBefore(node, cards()[at] || null);
+      wire(node);
       renumber();
       paintState();
-      const node = cardOf(c.id);
       if (focus === 'title') {
         const title = node.querySelector('[data-cl-field="title"]');
         title.focus();
@@ -818,6 +1051,7 @@ const SettingsView = (() => {
       const wasOpen = open.has(id);
       open.delete(id);
       cardOf(id).remove();
+      subSortables.delete(id);
       renumber();
       paintState();
       // Focus to the card that took its place, or the one above, or Add.
@@ -843,9 +1077,18 @@ const SettingsView = (() => {
     function bind() {
       const el = list();
       sortable = LSCSortable.attach(el, { item: '.clause', handle: '.clause-handle', onMove: move });
+      cards().forEach(wire); // the cards drawn with the screen
 
       el.addEventListener('input', (event) => {
         const box = event.target;
+        const part = box.dataset.subField;
+        if (part === 'heading' || part === 'text') {
+          const card = box.closest('.clause');
+          const c = clauseOf(card);
+          c.subs[indexOfSub(c, box.closest('.sub').dataset.sid)][part] = box.value;
+          paintState();
+          return;
+        }
         const key = box.dataset.clField;
         if (key !== 'title' && key !== 'body') return;
         const node = box.closest('.clause');
@@ -871,6 +1114,24 @@ const SettingsView = (() => {
 
       // The card's own buttons, and its ⋯ items, which menu.js clicks in place.
       el.addEventListener('click', (event) => {
+        const subAct = event.target.closest('[data-sub-act]');
+        const subAdd = event.target.closest('[data-sub-add]');
+        if (subAct || subAdd) {
+          const card = event.target.closest('.clause');
+          if (subAdd) {
+            addSub(card);
+            return;
+          }
+          const c = clauseOf(card);
+          const k = indexOfSub(c, subAct.closest('.sub').dataset.sid);
+          const verb = subAct.dataset.subAct;
+          if (verb === 'up') moveSub(card, k, k - 1);
+          else if (verb === 'down') moveSub(card, k, k + 1);
+          else if (verb === 'in') indentSub(card, k, 1);
+          else if (verb === 'out') indentSub(card, k, 0);
+          else if (verb === 'del') dropSub(card, k);
+          return;
+        }
         const toggle = event.target.closest('.clause-toggle');
         const act = event.target.closest('[data-cl-act]');
         const node = event.target.closest('.clause');
@@ -889,6 +1150,11 @@ const SettingsView = (() => {
       });
 
       $('set-cl-add').addEventListener('click', add);
+      // The panel head's ⋯, listened for where its closed list lives.
+      const tools = root.querySelector('.set-cl-tools');
+      tools.addEventListener('click', (event) => {
+        if (event.target.closest('[data-cl-reset]')) resetDefaults(tools.querySelector('.menu-btn'));
+      });
     }
 
     return {
@@ -902,6 +1168,7 @@ const SettingsView = (() => {
         open.clear();
         if (sortable) sortable.cancel();
         sortable = null;
+        dropSubSortables();
       },
     };
   })();
@@ -1118,7 +1385,10 @@ const SettingsView = (() => {
           id: c.id,
           title: c.title.trim(),
           body: ends(c.body),
-          subs: c.subs.map((x) => ({ id: x.id, heading: x.heading.trim(), text: ends(x.text), indent: x.indent })),
+          // A blank row prints nothing (agreementText skips it), so it isn't
+          // kept; the first row left can't be indented.
+          subs: c.subs.filter((x) => !isBlankSub(x))
+            .map((x, k) => ({ id: x.id, heading: x.heading.trim(), text: ends(x.text), indent: k > 0 && x.indent === 1 ? 1 : 0 })),
           depositOnly: c.depositOnly === true,
         })),
         hourlyRate: rateOf(form.hourlyRaw),
