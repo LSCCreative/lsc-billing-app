@@ -12,6 +12,7 @@
 
 const { RESERVED_SECTION_IDS } = require('./ratecard');
 const { gstTreatment, costBreakdown, lineDef, round2 } = require('./calc');
+const { agreementLayout } = require('./documents');
 
 function fmt(n) {
   return '$' + (parseFloat(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -608,11 +609,54 @@ function signedAtText(iso) {
     part({ hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' }).replace(/\s+/g, ' ');
 }
 
+/* The agreement's own layout as markup (ui-clarity task 7): the title, the
+   section heads, the clause heads and hanging sub-clauses, read back from the
+   text by documents.js agreementLayout, as the client's sign dialog draws it.
+   Presentation only: each character of the text is written once, in order,
+   escaped and nothing else, and the separators between blocks (whitespace
+   only) stay as text between the elements, where they show as nothing. So the
+   markup with its tags taken out is the text, exactly (test-pdf.js). */
+const AGREEMENT_TAG = { title: 'h1', head: 'h2', clause: 'h3', p: 'p', sub: 'p', signed: 'p' };
+
+function agreementBodyHtml(text) {
+  const layout = agreementLayout(text);
+  return layout.items.map((it) => {
+    const tag = AGREEMENT_TAG[it.type] || 'p';
+    const cls = 'ag-' + it.type + (it.level ? ' ag-l' + it.level : '');
+    return esc(it.before) + '<' + tag + ' class="' + cls + '">' +
+      it.parts.map((p) => (p.role ? '<span class="ag-' + p.role + '">' + esc(p.text) + '</span>' : esc(p.text))).join('') +
+      '</' + tag + '>';
+  }).join('') + esc(layout.tail);
+}
+
+/* Arial at print sizes, as the other PDFs. Every block keeps its own line
+   ends (pre-wrap); the container doesn't, so the separators between blocks
+   collapse. A sub-clause hangs from its mark: (a) at 2.4em, (i) a step in. */
+const AGREEMENT_STYLE =
+  '.ag{font-size:10pt;line-height:1.5;overflow-wrap:anywhere}' +
+  '.ag>*{white-space:pre-wrap;orphans:2;widows:2}' +
+  '.ag-title{font-size:14pt;font-weight:700;letter-spacing:.06em;padding-bottom:10px;border-bottom:2px solid #181818}' +
+  // Tracked lightly: wider, and a PDF reader copies "PARTIES" as "PA R T I E S".
+  '.ag-head{font-size:8pt;font-weight:700;letter-spacing:.06em;color:#555;margin-top:20px;padding-top:7px;border-top:1px solid #ddd;break-after:avoid}' +
+  '.ag-title+.ag-head{margin-top:14px;padding-top:0;border-top:0}' +
+  '.ag-head+.ag-p{margin-top:4px}' +
+  '.ag-clause{font-size:10.5pt;font-weight:700;margin-top:16px;break-after:avoid}' +
+  '.ag-num{font-weight:400;color:#555}' +
+  '.ag-p,.ag-sub{margin-top:7px}' +
+  '.ag-clause+.ag-p,.ag-clause+.ag-sub{margin-top:3px}' +
+  '.ag-sub{padding-left:2.4em;text-indent:-2.4em}' +
+  '.ag-mark{display:inline-block;min-width:2.4em;text-indent:0;white-space:pre;color:#555}' +
+  '.ag-l2{margin-left:2.4em}.ag-p.ag-l1,.ag-p.ag-l2{padding-left:2.4em}' +
+  '.ag-signed{margin-top:22px;padding-top:10px;border-top:1px solid #ddd;break-inside:avoid}' +
+  '.ag>:first-child{margin-top:0}';
+
 /**
  * A signed service agreement as a PDF (task 27, D39, D40, D66): the exact text
  * the client was shown and signed, then what records the signature. Built
  * only from the signature row, so a later edit to Settings, the estimate or
- * the business can never change it.
+ * the business can never change it. Since ui-clarity task 7 the text is laid
+ * out with headings (agreementBodyHtml), its characters untouched; one signed
+ * before task 4 (the owner's free text) prints as plain paragraphs.
  *
  * @param {object} sig  public.js signatureRow: full_name, role, signed_at, ip,
  *                      agreement_text, agreement_sha256, n, upid
@@ -628,13 +672,12 @@ function buildAgreementHtml(sig) {
   ];
   return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' + PDF_STYLE +
     // A legal text runs to several pages: each one gets a margin, not just the first.
-    '@page{margin:14mm 0}' +
-    '.ag{white-space:pre-wrap;font-size:10pt;line-height:1.5;overflow-wrap:anywhere}' +
+    '@page{margin:14mm 0}' + AGREEMENT_STYLE +
     '.sig{margin-top:28px;break-inside:avoid}.sig table{width:100%;border-collapse:collapse;font-size:9.5pt}' +
     '.sig th{text-align:left;color:#555;font-weight:400;width:34%;padding:5px 0;border-bottom:1px solid #ddd;vertical-align:top}' +
     '.sig td{padding:5px 0;border-bottom:1px solid #ddd;overflow-wrap:anywhere}.sig .how{font-size:8.5pt;color:#555;margin-top:10px}' +
     '</style></head>' + INVOICE_BODY +
-    '<div class="ag">' + esc(sig.agreement_text) + '</div>' +
+    '<div class="ag">' + agreementBodyHtml(sig.agreement_text) + '</div>' +
     '<div class="sig"><div class="sh">Signature</div><table>' +
     rows.map(([k, v]) => '<tr><th>' + esc(k) + '</th><td>' + esc(v) + '</td></tr>').join('') +
     '</table><p class="how">Signed online by typing a full name and role and ticking “I agree to the service agreement”. ' +
@@ -1020,6 +1063,7 @@ module.exports = {
   extraItems,
   acceptedEstimate,
   buildAgreementHtml,
+  agreementBodyHtml,
   agreementFilename,
   invoiceBlocker,
   buildCostBreakdownHtml,

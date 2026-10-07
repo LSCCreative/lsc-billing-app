@@ -11,7 +11,7 @@ const { join } = require('node:path');
 const vm = require('node:vm');
 const {
   DOC_DEFAULTS, MESSAGE_KINDS, docSettings, AGREEMENT_FIELDS, agreementValues, fillAgreement,
-  DEFAULT_CLAUSES, FALLBACK_TEXT, agreementText,
+  DEFAULT_CLAUSES, FALLBACK_TEXT, agreementText, agreementLayout,
 } = require('../src/documents');
 const { buildEstimateHtml } = require('../src/pdf');
 
@@ -438,4 +438,123 @@ test('the browser copy renders the same text as the server', () => {
   const agreement = docSettings({}).agreement;
   assert.equal(web.agreementText(web.docSettings({}).agreement, web.agreementValues(PROJECT)).text,
     agreementText(agreement, agreementValues(PROJECT)).text);
+});
+
+// ── The agreement as it is read (ui-clarity task 7) ─────────────────────────
+
+/* The layout drawn back as text: every before, part and the tail, in order. */
+const drawn = (layout) => layout.items.map((it) => it.before + it.parts.map((p) => p.text).join('')).join('') + layout.tail;
+/* Each item as "type[level]: text", for reading a layout at a glance. */
+const shape = (layout) => layout.items.map((it) => it.type + (it.level ? it.level : '') + ': ' +
+  it.parts.map((p) => (p.role ? '[' + p.text + ']' : p.text)).join(''));
+
+test('the layout loses, adds and changes no character, for every kind of agreement', () => {
+  const sub = (heading, text, indent) => ({ id: heading + text, heading, text, indent: indent ? 1 : 0 });
+  const texts = [
+    agreementText(docSettings({}).agreement, VALUES).text,
+    agreementText(docSettings({}).agreement, VALUES, { single: true }).text,
+    agreementText(docSettings({}).agreement, agreementValues({})).text,
+    agreementText({ intro: 'One.\n\nTwo\nlines.', clauses: [clause('a', '', 'Untitled body.'), clause('b', 'Subs only', '', [sub('H', 'T'), sub('', 'U', 1)])] }, VALUES).text,
+    fillAgreement(FALLBACK_TEXT, VALUES).text,
+    'Free text\r\n\r\n1. Old clause\n a. lettered\n\n\n\n  (i) roman\n\t\n',
+    '\n\nLeading blank lines, then text.',
+    'One line', '', ' \n\n ',
+  ];
+  for (const t of texts) assert.equal(drawn(agreementLayout(t)), t);
+  assert.deepEqual(agreementLayout(undefined), { kind: 'plain', items: [], tail: '' });
+  // Every separator is whitespace: drawn between blocks, it shows as nothing.
+  for (const t of texts) {
+    for (const it of agreementLayout(t).items) assert.match(it.before, /^\s*$/);
+  }
+});
+
+test('the app\'s agreement reads as title, section heads, numbered clause heads and hanging sub-clauses', () => {
+  const layout = agreementLayout(agreementText(docSettings({}).agreement, VALUES).text);
+  assert.equal(layout.kind, 'clauses');
+  const s = shape(layout);
+  assert.equal(s[0], 'title: SERVICE AGREEMENT');
+  assert.deepEqual(layout.items.filter((it) => it.type === 'head').map((it) => it.parts[0].text),
+    ['PARTIES', 'PROJECT', 'PAYMENT SCHEDULE', 'SCOPE AND PRODUCTION DAYS', 'TERMS']);
+  // A head's lines follow it as one paragraph, a single line end apart.
+  const parties = s.indexOf('head: PARTIES');
+  assert.match(s[parties + 1], /^p: Lachlan Sullivan-Carey \(ABN [^\n]+\nstudio@lsc.test/);
+  assert.equal(layout.items[parties + 1].before, '\n');
+  // 13 clause heads, numbered 1 to 13, the number its own part.
+  const heads = layout.items.filter((it) => it.type === 'clause');
+  assert.deepEqual(heads.map((it) => it.parts[0]), Array.from({ length: 13 }, (_, i) => ({ text: (i + 1) + '.', role: 'num' })));
+  assert.equal(heads[4].parts[1].text, ' Intellectual Property and Usage Rights');
+  const at = s.indexOf('clause: [5.] Intellectual Property and Usage Rights');
+  assert.match(s[at + 1], /^sub1: \[\(a\) \]Raw materials\. /);
+  assert.match(s[at + 2], /^sub1: \[\(b\) \]Client licence\. /);
+  assert.match(s[at + 3], /^sub1: \[\(c\) \]Portfolio use\. /);
+  const eight = s.indexOf('clause: [8.] Cancellation and Postponement');
+  assert.deepEqual(s.slice(eight + 1, eight + 4).map((x) => x.slice(0, 12)), ['sub1: [(a) ]', 'sub2: [(i) ]', 'sub2: [(ii) ']);
+  assert.match(s[s.length - 1], /^signed: Signed for Acme Pty Ltd by Sam Lee, Director, on 4 October 2026\.$/);
+  // The body of a clause with a title follows its head a line end apart.
+  const thirteen = s.indexOf('clause: [13.] Acceptance');
+  assert.equal(layout.items[thirteen + 1].type, 'p');
+  assert.equal(layout.items[thirteen + 1].before, '\n');
+});
+
+test('(i) after (h) is a letter unless (ii) follows; (v) and (x) likewise', () => {
+  const sub = (text, indent) => ({ id: text, heading: '', text, indent: indent ? 1 : 0 });
+  const letters = 'abcdefgh'.split('').map((l) => sub('L' + l));
+  const marks = (subs) => agreementLayout(agreementText({ clauses: [clause('a', 'T', '', subs)] }, VALUES).text)
+    .items.filter((it) => it.type === 'sub').map((it) => it.level + it.parts[0].text.trim());
+  // (h), then a ninth letter (i), then (j).
+  assert.deepEqual(marks(letters.concat([sub('Li'), sub('Lj')])).slice(7), ['1(h)', '1(i)', '1(j)']);
+  // (h), then (i)(ii) under it.
+  assert.deepEqual(marks(letters.concat([sub('R1', 1), sub('R2', 1)])).slice(7), ['1(h)', '2(i)', '2(ii)']);
+  // A lone (i) under (h) is the same text as a ninth letter: with no (ii)
+  // after it, nothing tells them apart, and it reads as the letter.
+  assert.deepEqual(marks(letters.concat([sub('R1', 1)])).slice(7), ['1(h)', '1(i)']);
+  // (u) with (i)…(iv) under it, then (v) roman, then (vi).
+  const toU = 'abcdefghijklmnopqrstu'.split('').map((l) => sub('L' + l));
+  const iv = [1, 2, 3, 4].map((n) => sub('R' + n, 1));
+  assert.deepEqual(marks(toU.concat(iv, [sub('R5', 1), sub('R6', 1)])).slice(-3), ['2(iv)', '2(v)', '2(vi)']);
+  // (u) with (i)…(iv), then the letter (v), then (w).
+  assert.deepEqual(marks(toU.concat(iv, [sub('Lv'), sub('Lw')])).slice(-3), ['2(iv)', '1(v)', '1(w)']);
+});
+
+test('a sub-clause\'s second paragraph keeps its depth', () => {
+  const t = agreementText({ clauses: [clause('a', 'T', 'Body.', [
+    { id: 's', heading: 'H', text: 'First.\n\nSecond.', indent: 0 },
+    { id: 'r', heading: '', text: 'Roman.\n\nMore.', indent: 1 },
+  ]), clause('b', 'Next', 'Body two.')] }, VALUES).text;
+  const s = shape(agreementLayout(t));
+  const at = s.indexOf('clause: [1.] T');
+  assert.deepEqual(s.slice(at, at + 8), [
+    'clause: [1.] T', 'p: Body.', 'sub1: [(a) ]H. First.', 'p1: Second.', 'sub2: [(i) ]Roman.', 'p2: More.',
+    'clause: [2.] Next', 'p: Body two.',
+  ]);
+});
+
+test('free text from before task 4 is plain paragraphs, whatever it looks like; the fallback has a title', () => {
+  const old = 'SERVICE AGREEMENT\n\n1. Payment\nA deposit.\n\n(a) Lettered.\n\nTERMS\n\nSigned by me.';
+  const plain = agreementLayout(old);
+  assert.equal(plain.kind, 'plain');
+  assert.ok(plain.items.every((it) => it.type === 'p' && it.level === 0 && it.parts.length === 1));
+  assert.equal(plain.items.length, 5);
+  const fb = agreementLayout(fillAgreement(FALLBACK_TEXT, VALUES).text);
+  assert.equal(fb.kind, 'fallback');
+  assert.deepEqual(fb.items.map((it) => it.type), ['title', 'p', 'signed']);
+  // A slot (the sign dialog's NUL for the name or role) rides inside its part.
+  const slotted = agreementLayout('SERVICE AGREEMENT\n\nPARTIES\nX\n\nTERMS\n\n1. A\nB\n\nSigned for Co by \u0000, \u0000, on 1 May.');
+  assert.equal(slotted.kind, 'clauses');
+  assert.deepEqual(shape(slotted).slice(-1), ['signed: Signed for Co by \u0000, \u0000, on 1 May.']);
+});
+
+test('the browser copy lays out the same as the server', () => {
+  const sandbox = { console };
+  sandbox.globalThis = sandbox;
+  vm.runInContext(readFileSync(join(__dirname, '..', '..', 'web', 'js', 'documents.js'), 'utf8'), vm.createContext(sandbox));
+  const text = agreementText(docSettings({}).agreement, VALUES).text;
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.LSCDocuments.agreementLayout(text))), agreementLayout(text));
+});
+
+test('the client page loads documents.js before c.js, for the sign dialog\'s layout', () => {
+  const html = readFileSync(join(__dirname, '..', '..', 'web', 'c', 'index.html'), 'utf8');
+  const at = (f) => html.indexOf('src="' + f + '"');
+  assert.ok(at('../js/documents.js') > 0, 'c/index.html must load ../js/documents.js');
+  assert.ok(at('../js/documents.js') < at('c.js'), 'documents.js must load before c.js');
 });

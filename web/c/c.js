@@ -3,7 +3,8 @@
  * D46, D50–D56). The client is never shown the word "estimate": to them it
  * is a quote (D103), on this page, its PDF and its emails.
  *
- * A separate page on the same Pages site: it loads none of the app's CSS or JS,
+ * A separate page on the same Pages site: of the app's CSS and JS it loads
+ * only tokens.css, config.js and documents.js (for the agreement's layout); it
  * keeps nothing in localStorage and runs no analytics. The address is
  * `c/#e/<token>` for an estimate and `c/#i/<token>` for an invoice; the token
  * stays in the fragment so it never reaches a server log or a Referer header.
@@ -696,19 +697,53 @@
   }
 
   /* The agreement, with the typed name and role (or a marked gap until there
-     is one) in each place they go. Text nodes throughout: nothing in it is markup. */
+     is one) in each place they go. Laid out by documents.js agreementLayout,
+     as the signed PDF is (ui-clarity task 7): the title, section heads and
+     clause heads as headings, sub-clauses hanging from their marks. Purely
+     presentation: the parts are joined with one NUL per gap (a character the
+     text never holds), laid out, and drawn back as text nodes with each NUL
+     replaced by its slot, so every character on screen is the text's, once and
+     in order. The separators between blocks (whitespace only) stay as text
+     between them, where they show as nothing. */
+  const AGREEMENT_TAG = { title: 'h3', head: 'h4', clause: 'h5', p: 'p', sub: 'p', signed: 'p' };
+
   function showAgreement() {
     const box = field('sg-text');
     box.textContent = '';
-    agreement.parts.forEach((part, i) => {
-      box.appendChild(document.createTextNode(part));
-      if (i < agreement.parts.length - 1) {
-        const slot = document.createElement('span');
-        slot.className = 'sign-slot';
-        slot.dataset.slot = agreement.slots[i];
-        box.appendChild(slot);
-      }
+    let n = 0;
+    const draw = (into, text) => {
+      text.split('\u0000').forEach((piece, i) => {
+        if (i > 0) {
+          const slot = document.createElement('span');
+          slot.className = 'sign-slot';
+          slot.dataset.slot = agreement.slots[n++];
+          into.appendChild(slot);
+        }
+        if (piece) into.appendChild(document.createTextNode(piece));
+      });
+    };
+    const text = agreement.parts.join('\u0000');
+    const D = globalThis.LSCDocuments;
+    const layout = D && D.agreementLayout
+      ? D.agreementLayout(text)
+      : { items: [{ type: 'p', level: 0, before: '', parts: [{ text }] }], tail: '' };
+    layout.items.forEach((it) => {
+      draw(box, it.before);
+      const el = document.createElement(AGREEMENT_TAG[it.type] || 'p');
+      el.className = 'ag-' + it.type + (it.level ? ' ag-l' + it.level : '');
+      it.parts.forEach((p) => {
+        if (p.role) {
+          const span = document.createElement('span');
+          span.className = 'ag-' + p.role;
+          draw(span, p.text);
+          el.appendChild(span);
+        } else {
+          draw(el, p.text);
+        }
+      });
+      box.appendChild(el);
     });
+    draw(box, layout.tail);
     fillSlots();
   }
 

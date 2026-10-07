@@ -520,6 +520,156 @@
     return { text: sections.join('\n\n'), unknown, blank };
   }
 
+  // ── The agreement as it is read (ui-clarity task 7) ──
+
+  /* A sub-clause's mark at the start of a block: "(a) ", "(ii) ". */
+  const MARK_RE = /^\(([a-z]+)\) /;
+
+  /**
+   * How a stored agreement is laid out to be read: the sign dialog and the
+   * agreement PDF both draw it from this, purely as presentation. Nothing is
+   * added, dropped or changed: every character of `text`, in order, is in
+   * exactly one `before`, one part or `tail`, so drawing them all gives back
+   * the text that was signed and hashed.
+   *
+   * It reads agreementText's own format back from the text, never from the
+   * clauses (a signed agreement is never re-rendered):
+   *   'clauses'   SERVICE AGREEMENT, then PARTIES…: the title, the header's
+   *               section heads, TERMS, numbered clause heads (1, 2, 3… in
+   *               order), lettered and roman sub-clauses, the signing line.
+   *   'fallback'  ACCEPTANCE OF QUOTE: the title, paragraphs, the signing line.
+   *   'plain'     anything else (an agreement signed before task 4 was the
+   *               owner's free text): paragraphs only.
+   *
+   * "(i)" is both the 9th letter and roman one. It is a letter only where (h)
+   * came before it and the next mark is not (ii); "(v)" and "(x)" likewise.
+   *
+   * Each item: { type, level, before, parts }.
+   *   type   'title' | 'head' | 'clause' | 'p' | 'sub' | 'signed'
+   *   level  0, or 1 under a lettered sub-clause, 2 under a roman one
+   *          (a 'sub' is 1 or 2; a 'p' after a sub-clause is its continuation)
+   *   before the separator ahead of the item, whitespace only ('\n\n', or '\n'
+   *          between a head line and its lines)
+   *   parts  [{ text, role }], role 'num' (a clause's "1."), 'mark' (a
+   *          sub-clause's "(a) ", its space included) or undefined
+   *
+   * @param {string} text  the agreement as stored or offered
+   * @returns {{kind:string, items:Array, tail:string}}
+   */
+  function agreementLayout(text) {
+    const src = String(text === undefined || text === null ? '' : text);
+
+    // Blocks are split on blank lines, each keeping the exact run before it.
+    const blocks = [];
+    const SEP = /\n[ \t]*(?:\n[ \t]*)+/g;
+    let pending = '';
+    let from = 0;
+    const take = (chunk) => {
+      if (chunk) {
+        blocks.push({ before: pending, text: chunk });
+        pending = '';
+      }
+    };
+    for (let m = SEP.exec(src); m; m = SEP.exec(src)) {
+      take(src.slice(from, m.index));
+      pending += m[0];
+      from = m.index + m[0].length;
+    }
+    take(src.slice(from));
+
+    const items = [];
+    const push = (type, level, before, parts) => {
+      items.push({ type, level, before, parts: parts.filter((p) => p.text) });
+    };
+    const firstLine = (t) => {
+      const nl = t.indexOf('\n');
+      return nl === -1 ? { first: t, rest: null } : { first: t.slice(0, nl), rest: t.slice(nl + 1) };
+    };
+    const last = blocks.length - 1;
+    const signedAt = (i) => i === last && i > 0 && /^Signed\b/.test(blocks[i].text);
+
+    let kind = 'plain';
+    if (blocks.length > 1 && blocks[0].text === AGREEMENT_TITLE &&
+        firstLine(blocks[1].text).first === 'PARTIES' && blocks.some((b) => b.text === 'TERMS')) {
+      kind = 'clauses';
+    } else if (blocks.length > 1 && blocks[0].text === 'ACCEPTANCE OF QUOTE') {
+      kind = 'fallback';
+    }
+
+    if (kind !== 'clauses') {
+      blocks.forEach((b, i) => {
+        const type = kind === 'fallback' ? (i === 0 ? 'title' : signedAt(i) ? 'signed' : 'p') : 'p';
+        push(type, 0, b.before, [{ text: b.text }]);
+      });
+      return { kind, items, tail: pending };
+    }
+
+    let terms = false;
+    let expect = 1;
+    let letter = -1;
+    let roman = -1;
+    let level = 0;
+    // A block inside a clause: a sub-clause by its mark, else a paragraph at
+    // the depth of the sub-clause it follows.
+    const body = (t, before, next) => {
+      const m = MARK_RE.exec(t);
+      if (m) {
+        const asLetter = m[1] === letterOf(letter + 1);
+        const asRoman = letter >= 0 && m[1] === romanOf(roman + 1);
+        let isRoman = asRoman && !asLetter;
+        if (asLetter && asRoman) {
+          const n = MARK_RE.exec(next || '');
+          isRoman = Boolean(n) && n[1] === romanOf(roman + 2);
+        }
+        if (asLetter || asRoman) {
+          if (isRoman) {
+            roman++;
+            level = 2;
+          } else {
+            letter++;
+            roman = -1;
+            level = 1;
+          }
+          push('sub', level, before, [{ text: m[0], role: 'mark' }, { text: t.slice(m[0].length) }]);
+          return;
+        }
+      }
+      push('p', level, before, [{ text: t }]);
+    };
+
+    blocks.forEach((b, i) => {
+      const next = i < last ? blocks[i + 1].text : '';
+      const { first, rest } = firstLine(b.text);
+      const num = /^(\d+)\.(?= |$)/.exec(first);
+      if (i === 0) {
+        push('title', 0, b.before, [{ text: b.text }]);
+      } else if (!terms) {
+        if (b.text === 'TERMS') {
+          terms = true;
+          push('head', 0, b.before, [{ text: b.text }]);
+        } else if (AGREEMENT_HEADS.indexOf(first) !== -1) {
+          // PARTIES and the rest: the head, then its lines.
+          push('head', 0, b.before, [{ text: first }]);
+          if (rest !== null) push('p', 0, '\n', [{ text: rest }]);
+        } else {
+          push('p', 0, b.before, [{ text: b.text }]); // the Intro
+        }
+      } else if (signedAt(i)) {
+        push('signed', 0, b.before, [{ text: b.text }]);
+      } else if (num && Number(num[1]) === expect) {
+        expect++;
+        letter = -1;
+        roman = -1;
+        level = 0;
+        push('clause', 0, b.before, [{ text: num[0], role: 'num' }, { text: first.slice(num[0].length) }]);
+        if (rest !== null) body(rest, '\n', next);
+      } else {
+        body(b.text, b.before, next);
+      }
+    });
+    return { kind, items, tail: pending };
+  }
+
   /* Loaded two ways: require()d by the server, and as a plain <script> in the
      browser, where it becomes globalThis.LSCDocuments. */
   const api = {
@@ -535,6 +685,7 @@
     AGREEMENT_TITLE,
     AGREEMENT_HEADS,
     agreementText,
+    agreementLayout,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.LSCDocuments = api;

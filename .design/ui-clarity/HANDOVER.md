@@ -88,8 +88,14 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     heading, text, ⋯ with Indent/Outdent/Move up/Move down/Delete); each card's row list has its
     own `LSCSortable` (`Clauses.wire`), attached at draw and on every insert. The Clauses panel
     head's ⋯ holds **Reset to LSC default clauses…** (`D.docSettings({}).agreement.clauses`).
-- **Next: task 7, "Clause headings on the sign dialog and agreement PDF"** (signing — Opus/high).
-  **Frontend task.**
+  - [x] Task 7, clause headings. `documents.js agreementLayout(text)` → `{ kind, items, tail }`
+    reads agreementText's format back from the stored text (never the clauses): title, section
+    heads, numbered clause heads (sequential only), lettered/roman subs with hanging indents,
+    continuation paragraphs at their sub's depth, the signing line. Lossless by construction and
+    test. `pdf.js agreementBodyHtml` and `c.js showAgreement` draw it; the dialog joins `parts`
+    with one NUL per slot, lays out, and puts the slot spans back in order.
+- **Next: task 8, "Deploy system + D3"** (deploy — Sonnet/medium). Not a frontend task. Ask the
+  user first; fetch and merge `origin/main`, ship v15, NAS before Pages.
 
 ## Waiting on the user
 
@@ -132,6 +138,22 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Blank sub-clauses and empty clauses are skipped and take no letter or number. An indented
   first sub-clause is lettered (and stored as indent 0).
 
+## Decisions made in task 7 (tell the user)
+
+- **The client page now loads `../js/documents.js`** (pure functions, no DOM/storage/requests),
+  so the dialog and the PDF share one layout. Its header comment and c.js's say so.
+- **Only the app's own format gets headings.** A text is 'clauses' only if it starts
+  `SERVICE AGREEMENT`, then `PARTIES`, and has a `TERMS` block; `ACCEPTANCE OF QUOTE` gets its
+  title and signing line; anything else (pre-task-4 free text) is plain paragraphs, even if it
+  has "1. Payment" lines.
+- **The (i) rule:** "(i)" after (h) is a letter unless the next mark is (ii); (v) and (x)
+  likewise. A *lone* indented (i) under (h) is the same text as a ninth letter and reads as one
+  (it loses its extra indent; the words are unchanged).
+- Sub-clause headings aren't bolded: the text can't tell "Heading." from a first sentence.
+- PDF heads are tracked only .06em: wider, and PDF readers copy "PARTIES" as "PA R T I E S".
+- **The Settings preview is still plain text.** It could draw with `agreementLayout` too
+  (a small follow-up, not in any task).
+
 ## Decisions made in task 5 (tell the user)
 
 - **The preview shows what's on screen, saved or not** (D39's original rule), not the saved
@@ -167,9 +189,8 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - **Agreement business details come from the version's frozen snapshot** (`snap.business`), as
   name and ABN always did. A link sent before Settings → Business email, phone and signer are
   filled offers a header without them, until it is re-sent.
-- **`(i)` is ambiguous in the text:** the 9th letter and roman one look alike. Task 7's
-  presentation must tell them apart by context (a roman one follows a lettered line or another
-  roman one; a letter `(i)` follows `(h)`), or a clause with 9+ sub-clauses indents wrongly.
+- **`(i)` is ambiguous in the text** (the 9th letter and roman one): `agreementLayout` settles it
+  by the next mark (task 7's decisions). Any new reader of the text must use that function.
 - **`agreement.text` still rides in the live row** (merged through `loaded.agreement`, read by
   nothing). Left on purpose as a second copy of the user's old text; the pre-deploy backup is the
   first.

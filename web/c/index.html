@@ -25,9 +25,12 @@
   <noscript><p class="loading">This page needs JavaScript to show your quote or invoice. You can also ask us for a PDF copy.</p></noscript>
 </main>
 <p id="c-status" class="visually-hidden" role="status" aria-live="polite"></p>
-<!-- Only the API's address from the app (Pages writes it at deploy); none of
-     the app's CSS or scripts. -->
+<!-- From the app: the API's address (Pages writes it at deploy), and
+     documents.js, whose agreementLayout lays out the agreement in the sign
+     dialog exactly as the signed PDF does. Pure functions only: no DOM, no
+     storage, no requests. -->
 <script src="../js/config.js"></script>
+<script src="../js/documents.js"></script>
 <script src="c.js"></script>
 </body>
 </html>

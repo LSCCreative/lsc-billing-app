@@ -622,11 +622,70 @@ a:hover { color: var(--ink); }
   background: var(--panel);
   border-radius: var(--radius);
   font-size: 15px;
-  line-height: 1.6;
-  white-space: pre-wrap;
+  line-height: var(--line-height-relaxed);
   overflow-wrap: anywhere;
 }
 .sign-text:focus-visible { outline: 3px solid var(--terra-dk); outline-offset: 2px; }
+
+/* The agreement as it reads (ui-clarity task 7): documents.js agreementLayout
+   gives each block its type, and these set it as a document. The characters
+   are the signed text's own, so nothing here adds any (no generated content,
+   no text-transform: the heads are capitals in the text). Each block keeps
+   its own line ends; the box doesn't, so the blank lines between blocks
+   become the space below.
+     title    SERVICE AGREEMENT, Delight, tracked
+     head     PARTIES … TERMS, mono over a hairline, the page's label voice
+     clause   "3. Payment", the number quieter than its title
+     sub      (a) at one hang, (i) a hang further in, each hanging from its
+              mark; a second paragraph of either keeps its depth
+     signed   the signing line, set off below a hairline */
+.sign-text { --ag-hang: 2.4em; }
+.sign-text > * { margin: 0; white-space: pre-wrap; }   /* h4, h5 included */
+.sign-text > * + * { margin-top: var(--space-5); }
+.ag-title {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0.06em;
+}
+.sign-text > .ag-head {
+  margin-top: var(--space-7);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hair);
+  font-family: var(--mono);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.sign-text > .ag-clause {
+  margin-top: var(--space-7);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
+}
+.ag-num { font-weight: var(--font-weight-normal); color: var(--muted); }
+.sign-text > .ag-head + *,
+.sign-text > .ag-clause + * { margin-top: var(--space-2); }
+.ag-sub {
+  padding-left: var(--ag-hang);
+  text-indent: calc(-1 * var(--ag-hang));
+}
+.ag-mark {
+  display: inline-block;
+  min-width: var(--ag-hang);
+  text-indent: 0;
+  white-space: pre;      /* its space counts, so a long mark never touches its text */
+  color: var(--muted);
+}
+.ag-l2 { margin-left: var(--ag-hang); }
+.ag-p.ag-l1, .ag-p.ag-l2 { padding-left: var(--ag-hang); }
+.sign-text > .ag-signed {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--hair);
+}
 /* The role, as typed, wherever the agreement names it. Until it's typed, a
    marked gap that reads as one. */
 .sign-slot { font-weight: 700; }

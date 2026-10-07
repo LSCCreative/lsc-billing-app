@@ -18,7 +18,9 @@ const { hashPassword } = require('../src/auth');
 const {
   buildEstimateHtml, buildCostBreakdownHtml, costBreakdownBlocker, exportBlocker, exportFilename, costBreakdownFilename,
   resolveExecutablePath, PROPOSED_DISCLAIMER, buildInvoiceDocHtml, invoiceFilename, invoiceBlocker,
+  buildAgreementHtml,
 } = require('../src/pdf');
+const { docSettings, agreementValues, agreementText, fillAgreement, FALLBACK_TEXT } = require('../src/documents');
 const {
   PRICING_SHAPE, computeTotals, surchargeSnapshot, stampSurchargedPrices, depositAmount, extrasTotals,
   finalInvoiceTotals, singleInvoiceTotals,
@@ -693,4 +695,60 @@ test('invoice Cost Breakdown: the estimate’s breakdown, the extras, then what 
   const dep = buildCostBreakdownHtml(deposit.estimate, DAY_PRICING, T20_SETTINGS, deposit);
   assert.match(dep, /This Invoice &middot; INV-T20-D.*Estimate total.*\$2,772\.00.*Deposit, 50%.*to secure the booking.*\$1,386\.00.*of which GST.*\$126\.00/s);
   assert.doesNotMatch(dep, /<div class="sh">Extras/);
+});
+
+// ── The signed agreement, laid out (ui-clarity task 7) ─────────────────────
+
+/* What the agreement block shows: its markup with every tag taken out and
+   the entities read back. Nothing is drawn by CSS (no generated content), so
+   this is all the text there is to see. */
+function agreementShown(html) {
+  const from = html.indexOf('<div class="ag">') + '<div class="ag">'.length;
+  const to = html.indexOf('</div><div class="sig">');
+  assert.ok(from > 16 && to > from, 'the agreement block is where it was');
+  return html.slice(from, to).replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
+const SIG = {
+  full_name: 'Sam Lee', role: 'Director', signed_at: '2026-10-04T04:15:00.000Z', ip: '203.0.113.9',
+  agreement_sha256: 'f'.repeat(64), n: 2, upid: 'UP-042',
+};
+const signedWith = (text) => buildAgreementHtml({ ...SIG, agreement_text: text });
+
+test('the agreement PDF shows the signed text exactly, laid out with headings', () => {
+  const values = agreementValues({
+    client: { businessName: 'Smith & Sons <Pty> Ltd', contactName: 'Sam "Sammy" Lee', abn: '51824753556' },
+    business: { name: 'LSC Creative', abn: '12345678901', email: 'studio@lsc.test', signer: 'Lachlan' },
+    signatoryRole: 'Director', upid: 'UP-042', projectName: 'Brand film', totalIncGst: 1100,
+    depositPct: 50, depositTotal: 550, balanceTotal: 550, dueDays: 14,
+    days: [{ date: '2026-11-02', status: 'confirmed', startTime: '08:00', endTime: '17:00' }], today: '2026-10-04',
+  });
+  for (const single of [false, true]) {
+    const text = agreementText(docSettings({}).agreement, values, { single }).text;
+    const html = signedWith(text);
+    assert.equal(agreementShown(html), text);
+    assert.match(html, /<h1 class="ag-title">SERVICE AGREEMENT<\/h1>/);
+    assert.match(html, /\n\n<h2 class="ag-head">TERMS<\/h2>\n\n<h3 class="ag-clause"><span class="ag-num">1\.<\/span> Services and Deliverables<\/h3>/);
+    assert.match(html, /<h2 class="ag-head">PARTIES<\/h2>\n<p class="ag-p">LSC Creative \(ABN /);
+    assert.match(html, /<p class="ag-sub ag-l1"><span class="ag-mark">\(a\) <\/span>Raw materials\. /);
+    assert.match(html, /<p class="ag-sub ag-l2"><span class="ag-mark">\(i\) <\/span>If the Client cancels after signing/);
+    assert.match(html, /<p class="ag-signed">Signed for Smith &amp; Sons &lt;Pty> Ltd by Sam &quot;Sammy&quot; Lee, Director, on 4 October 2026\.<\/p>/);
+    assert.equal((html.match(/<h3 class="ag-clause">/g) || []).length, single ? 12 : 13);
+  }
+  // No text is drawn by the stylesheet, so the tags-out text is all there is.
+  assert.doesNotMatch(signedWith('x'), /content\s*:/);
+});
+
+test('an agreement signed before task 4 (free text) prints as plain paragraphs; the fallback with its title', () => {
+  const old = 'SERVICE AGREEMENT\n\n1. Payment\nA 50% deposit & the rest.\n\n a. On delivery.\n\n\n\nSigned by <me>.\n';
+  const html = signedWith(old);
+  assert.equal(agreementShown(html), old);
+  const blocks = html.slice(html.indexOf('<div class="ag">'), html.indexOf('<div class="sig">')).match(/<(\w+) class="([^"]+)">/g);
+  assert.deepEqual(blocks.slice(1), Array(4).fill('<p class="ag-p">'));
+  const fallback = fillAgreement(FALLBACK_TEXT, agreementValues({ client: { businessName: 'Acme' }, today: '2026-10-04' })).text;
+  const fb = signedWith(fallback);
+  assert.equal(agreementShown(fb), fallback);
+  assert.match(fb, /<h1 class="ag-title">ACCEPTANCE OF QUOTE<\/h1>/);
+  assert.match(fb, /<p class="ag-signed">Signed for Acme/);
 });
