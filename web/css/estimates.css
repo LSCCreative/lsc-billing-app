@@ -561,7 +561,7 @@
 /* ── Deliverables (production-booking B2-3, D86) ────────────────────────────
    D86 made this the editor's one non-neutral block (accent border and tint).
    ui-clarity's U17 keeps terracotta for the one primary action, so it is an
-   ordinary panel now; it still leads the editor's money blocks. */
+   ordinary panel now (task 11's Deliverables); it still leads the money. */
 /* Type · Name · Format · Length · Qty · Post hrs (rec.) · ×. The editor's
    only; the read-only screens keep app.css's four-column .deliv-grid. */
 .deliv-grid.deliv-typed {
@@ -794,4 +794,122 @@
   .doc-type-bar {
     min-height: 61px;
   }
+}
+
+/* ── The editor's six panels (ui-clarity task 11, U21) ──────────────────────
+   Job details · Deliverables · Production booking · Services · On set, by
+   day · Summary: each a collapsible .panel (app.css), stacked at
+   --panel-gap. Inside Services and On set, each category is a sub-section on
+   the panel's own layer (the inset layer is the inputs' fill), its head a
+   smaller title and a subtle rule between them, not a panel within a panel.
+   They stay .billing-blocks, so responsive.css's tablet floor and phone
+   stacking reach their grids as before. Written phone first. */
+.ed-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--panel-gap);
+  margin-bottom: var(--space-7);
+}
+/* Production booking is also a .billing-block; the stack sets the gap. */
+.ed-panels .ed-panel.billing-block {
+  margin-bottom: 0;
+}
+/* A head's summary wraps under the name on a phone, rather than past the
+   panel's edge ("3 days · 2 confirmed · 1 pencilled · 28 Oct – 4 Nov · 1
+   rental" is wider than 375). */
+.ed-panel .panel-sum {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ed-panel .panel-sum .ref {
+  white-space: nowrap;
+}
+.ed-panel .panel-sum .fig {
+  margin-left: var(--space-2);
+}
+.ed-panel .panel-head {
+  flex-wrap: wrap;
+}
+/* Job details' and Production booking's summaries are words, too long to sit
+   beside the name on a phone: there they take their own line, starting under
+   the name (past the chevron, its margins and the toggle's gap). */
+@media (max-width: 767px) {
+  .ed-panel .ed-sum-line {
+    flex-basis: 100%;
+    margin-left: 0;
+    padding-left: calc(7px + var(--space-1) + var(--space-2) + var(--space-4));
+  }
+}
+/* A body of fields and figures rather than rows. */
+.ed-panel-body:not(.is-flush) {
+  padding-top: var(--panel-pad-y);
+  padding-bottom: var(--panel-pad-y);
+}
+.ed-panel-empty {
+  padding: var(--space-6) var(--panel-pad-x);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* Job details: the client fields, the Short notice row, then Prices, which
+   closes the panel. */
+.ed-panel .rates-bar {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* The sub-sections. */
+.ed-panel .ed-sub {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.ed-panel .ed-sub + .ed-sub {
+  border-top: 1px solid var(--color-border-subtle);
+}
+.ed-sub > .bb-head {
+  min-height: 0;
+  padding: var(--space-6) var(--panel-pad-x) var(--space-5);
+  border-bottom: 0;
+}
+.ed-sub > .bb-head .bb-label {
+  font-family: var(--font-family-body);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+}
+/* The last rows of a sub-section meet the rule (or the panel's foot edge)
+   below them; a hairline there would double it. */
+.ed-panel .ed-sub .gt-body > .gt-row:last-child {
+  border-bottom: 0;
+}
+/* On set's day groups line up with the sub-section titles above them. */
+.ed-panel .onset-group,
+.ed-panel .onset-empty {
+  padding-left: var(--panel-pad-x);
+  padding-right: var(--panel-pad-x);
+}
+/* Deliverables has no sub-head: its table's head row starts the panel body. */
+.ed-panel .deliv-block > .gt-head {
+  padding-top: var(--space-3);
+}
+/* The grids' first column starts on the panel's edge, under its title. */
+@media (min-width: 768px) {
+  .ed-panel .ed-sub .gt-head > div:first-child,
+  .ed-panel .ed-sub .gt-row > div:first-child {
+    padding-left: var(--panel-pad-x);
+  }
+  .ed-panel .ed-sub .gt-head > div:last-child,
+  .ed-panel .ed-sub .gt-row > div:last-child {
+    padding-right: var(--space-5);
+  }
+}
+
+/* Summary: the surcharges, the overhead tick, the bars, the floor. Its last
+   figure sits on the panel's padding, not a margin of its own. */
+.ed-panel-body > :last-child,
+.ed-panel-body > .mjp-line:has(+ .mjp-income[hidden]) {
+  margin-bottom: 0;
 }

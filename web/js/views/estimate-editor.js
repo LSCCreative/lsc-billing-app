@@ -896,13 +896,13 @@ const EstimateEditor = (() => {
         '" aria-label="Unit to add for ' + esc(section.label) + '"></select>' +
         '<button type="button" class="btn btn-sm" id="add-' + esc(section.id) + '">+ Add service</button></div>';
 
-    const tag = section.archived
-      ? '<span class="bb-label-tag">No longer on the rate card</span>'
-      : '<span class="bb-label-tag">Labour</span>';
+    /* A sub-section of the Services panel (task 11, U21), so an h3. Every
+       one is labour there, so only an archived category is tagged. */
+    const tag = section.archived ? '<span class="bb-label-tag">No longer on the rate card</span>' : '';
 
     return (
-      '<div class="billing-block">' +
-      '<div class="bb-head"><div><h2 class="bb-label">' + esc(section.label) + '</h2>' + tag + '</div>' +
+      '<div class="billing-block ed-sub" id="block-' + esc(section.id) + '">' +
+      '<div class="bb-head"><div><h3 class="bb-label">' + esc(section.label) + '</h3>' + tag + '</div>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + esc(section.id) + '">$0.00</b></span></div>' +
       (section.id === 'post' && !section.archived ? postPlanMarkup() : '') +
       picker +
@@ -1866,7 +1866,8 @@ const EstimateEditor = (() => {
      can't disagree. "Add to a day ▾" opens a card's service menu at this
      category. */
   const ON_SET = [
-    ['prod', null, 'On set'], // labelled with the Rate Card's own name for the section
+    // Labelled with the Rate Card's own name for the section. Tagged by the subtotal it counts toward.
+    ['prod', null, 'Labour'],
     ['travel', 'Travel &amp; accommodation', 'Expenses'],
     ['crew', 'External crew &amp; contracts', 'Expenses'],
     ['equip', 'Equipment Hire', 'Expenses'],
@@ -1875,7 +1876,7 @@ const EstimateEditor = (() => {
 
   function onSetSummaryMarkup(kind, label, tag) {
     return (
-      '<div class="billing-block onset-block" id="block-' + kind + '" data-onset="' + kind + '">' +
+      '<div class="billing-block ed-sub onset-block" id="block-' + kind + '" data-onset="' + kind + '">' +
       '<div class="bb-head"><div><h3 class="bb-label" id="onset-h-' + kind + '">' + label + '</h3>' +
       '<span class="bb-label-tag">' + tag + '</span></div>' +
       '<div class="onset-head-r">' +
@@ -1890,7 +1891,6 @@ const EstimateEditor = (() => {
   function onSetMarkup() {
     const prod = prodSection();
     return (
-      '<h2 class="onset-divider">On set, by day</h2>' +
       ON_SET.filter(([kind]) => kind !== 'prod' || prod)
         .map(([kind, label, tag]) => onSetSummaryMarkup(kind, label || esc(prod.label), tag)).join('')
     );
@@ -1970,17 +1970,16 @@ const EstimateEditor = (() => {
     });
   }
 
-  /* The headline block (D86): what the client is buying, above when it's shot
-     (D98). Tinted and heavier than the service sections — estimates.css. */
+  /* What the client is buying, above when it's shot (D98). The Deliverables
+     panel's body (task 11): its title and "+ Add deliverable" are the panel's
+     head, so the block keeps only the table. Still a .billing-block, for
+     responsive.css's tablet floor and phone stacking. */
   function deliverablesSectionMarkup() {
     return (
-      '<div class="billing-block deliv-block" id="block-deliverables">' +
-      '<div class="bb-head"><div><h2 class="bb-label">Deliverables</h2>' +
-      '<span class="bb-label-tag">PROJECT OUTPUT</span></div>' +
-      '<button type="button" class="btn btn-sm" id="add-deliverables">+ Add deliverable</button></div>' +
+      '<div class="billing-block ed-sub deliv-block" id="block-deliverables">' +
       '<div class="gt-head deliv-grid deliv-typed"><div>Type</div><div>Name</div><div>Format</div>' +
       '<div>Length</div><div class="right">Qty</div><div class="right">Post hrs (rec.)</div><div></div></div>' +
-      bodyMarkup('deliverables', 'No deliverables added yet — click “+ Add Deliverable” above.') +
+      bodyMarkup('deliverables', 'No deliverables added yet. Use “+ Add deliverable” above.') +
       '</div>'
     );
   }
@@ -2048,7 +2047,7 @@ const EstimateEditor = (() => {
   function surchargeBoxMarkup() {
     return (
       '<section class="sur-box" id="sur-box" aria-labelledby="sur-box-h" hidden>' +
-      '<div class="sur-box-head"><h2 class="sur-box-h" id="sur-box-h">Surcharges</h2>' +
+      '<div class="sur-box-head"><h3 class="sur-box-h" id="sur-box-h">Surcharges</h3>' +
       LSCInfo.markup({
         id: 'surcharges',
         label: 'How the surcharges are worked out',
@@ -2185,15 +2184,123 @@ const EstimateEditor = (() => {
       ' Your client’s page keeps the version they accepted.</p></div>';
   }
 
+  // ── The six panels (ui-clarity task 11, U21) ──────────────────────────────
+  /* Job details · Deliverables · Production booking · Services · On set, by
+     day · Summary. Each is a collapsible .panel (app.css's Panels comment,
+     js/panel.js turns it) whose head keeps a summary while it is closed. A
+     closed body is [hidden], never removed, so collect(), payload() and the
+     unsaved guard read every field as before. Production booking is
+     BookingBlock's own panel, under the same rules.
+
+     The summaries are figures recalc() has already painted inside the panel
+     (paintPanelSums): a subtotal here is the sum of the subtotals on show,
+     so the two can't disagree.
+
+     Open and closed are remembered per browser, by panel, for all but Job
+     details, which follows the estimate instead (formMarkup). */
+  const PANELS_KEY = 'lsc.editor.panels';
+
+  function storedPanels() {
+    try {
+      const v = JSON.parse(localStorage.getItem(PANELS_KEY));
+      return v && typeof v === 'object' ? v : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function rememberPanel(key, open) {
+    try {
+      const all = storedPanels();
+      all[key] = open;
+      localStorage.setItem(PANELS_KEY, JSON.stringify(all));
+    } catch (e) {
+      // Private mode or storage off: the panel simply isn't remembered.
+    }
+  }
+
+  /** The remembered state of a panel, or `fallback` when there is none. */
+  function panelOpen(key, fallback) {
+    const v = storedPanels()[key];
+    return typeof v === 'boolean' ? v : fallback;
+  }
+
+  /* One panel. opts.open: its state (default: remembered, else open);
+     opts.flush: a body of edge-to-edge sub-sections and tables; opts.action:
+     the head's one button, beside the toggle; opts.line: a summary in words,
+     which takes its own line under the name on a phone. */
+  function edPanel(key, name, body, opts) {
+    const o = opts || {};
+    const open = typeof o.open === 'boolean' ? o.open : panelOpen(key, true);
+    const id = 'ed-' + key;
+    return (
+      '<section class="panel ed-panel' + (open ? '' : ' is-collapsed') + '" id="' + id + '" data-panel="' + key +
+      '" aria-labelledby="' + id + '-name">' +
+      '<div class="panel-head"><h2 class="panel-title">' +
+      '<button type="button" class="panel-toggle" aria-expanded="' + open + '" aria-controls="' + id + '-body">' +
+      '<span class="panel-chev" aria-hidden="true"></span>' +
+      '<span class="panel-name" id="' + id + '-name">' + name + '</span>' +
+      '<span class="panel-sum' + (o.line ? ' ed-sum-line' : '') + '" id="' + id + '-sum"></span></button></h2>' +
+      (o.action || '') + '</div>' +
+      '<div class="panel-body ed-panel-body' + (o.flush ? ' is-flush' : '') + '" id="' + id + '-body"' +
+      (open ? '' : ' hidden') + '>' + body + '</div>' +
+      '</section>'
+    );
+  }
+
+  /** Open the panel `el` sits in, if it's closed: before focusing a field there. */
+  function openPanelOf(el) {
+    const panel = el && el.closest('.ed-panel');
+    if (panel && panel.classList.contains('is-collapsed')) LSCPanel.setOpen(panel, true);
+  }
+
+  /* Job details' summary: which job this is (IA: "NBK-014 · Autumn campaign ·
+     Northbank Studio"), then the two ticks in it that move prices, so a
+     closed panel doesn't hide them. Painted as the fields are typed in. */
+  function paintJobSum() {
+    const sum = $('ed-job-sum');
+    if (!sum) return;
+    const upid = $('f-upid').value.trim();
+    const parts = [$('f-name').value.trim(), $('f-business').value.trim()].filter(Boolean).map(esc);
+    if (upid) parts.unshift('<span class="ref">' + esc(upid) + '</span>');
+    if ($('f-shortnotice').checked) parts.push('Short notice');
+    if (gstFreeNow() && $('f-gstfree')) parts.push('GST-free');
+    const html = parts.length ? parts.join(' · ') : 'Not filled in yet';
+    if (sum.innerHTML !== html) sum.innerHTML = html;
+  }
+
+  const figSum = (label, amount) => label + ' <span class="fig">' + fmt(amount) + '</span>';
+
+  /* The other summaries, at the end of every recalc(). `subs` is each labour
+     section's subtotal as painted (sum-<id>); `onSetTotal` adds travel, crew
+     and gear's to the production one; `total` is the Summary panel's Total
+     (inc GST). Production booking's is the block's own head (refreshHead). */
+  function paintPanelSums(subs, onSetTotal, total) {
+    const put = (id, html) => {
+      const el = $(id);
+      if (el && el.innerHTML !== html) el.innerHTML = html;
+    };
+    const n = rowsIn('deliverables').length;
+    put('ed-deliverables-sum', n ? plural(n, 'deliverable', 'deliverables') : 'None yet');
+    const services = sections
+      .filter((s) => s.id !== 'prod' || s.archived)
+      .reduce((sum, s) => sum + (subs[s.id] || 0), 0);
+    put('ed-services-sum', figSum('Subtotal', services));
+    put('ed-onset-sum', figSum('Subtotal', onSetTotal));
+    put('ed-summary-sum', figSum('Total (inc GST)', total));
+  }
+
   function formMarkup(estimate, pricing) {
     const client = (estimate && estimate.client) || {};
 
-    let html =
+    const head =
       '<button class="back-btn" id="js-back">← Back</button>' +
       '<div class="page-head"><div><h1 class="page-title">' +
       (estimate ? 'Edit estimate' : 'New estimate') + '</h1>' +
       '<div class="page-sub">Select services from each category to build your estimate</div></div></div>' +
-      sentNoteMarkup(estimate) + acceptedNoteMarkup(estimate) +
+      sentNoteMarkup(estimate) + acceptedNoteMarkup(estimate);
+
+    const job =
       '<div class="form-grid">' +
       '<div class="field full"><label for="f-upid" class="label-accent">UPID — Unique Project Identifier *</label>' +
       '<input id="f-upid" type="text" value="' + esc(estimate ? estimate.upid : '') + '"' +
@@ -2259,28 +2366,43 @@ const EstimateEditor = (() => {
           (estimate && estimate.gstFree ? ' checked' : '') + '><span>GST-free job</span></label>'
         : '') +
       '</div>' +
-      /* D98: what you edit first. The Prices bar governs every line below it,
-         so it heads them; then what's being made (Deliverables); then when
-         it's shot (the booking block). */
-      ratesBarMarkup() +
-      deliverablesSectionMarkup() +
-      // The Production Booking block (production-booking task 6), filled by BookingBlock.mount.
-      '<div id="booking-slot"></div>' +
-      // Where a line's unit switch is announced (switchUnit).
-      '<p class="sr-only" id="editor-live" aria-live="polite"></p>' +
-      // Where a day's surcharge changing is announced (announceSurcharges).
-      '<p class="sr-only" id="sur-live" aria-live="polite"></p>';
+      /* D98: the Prices bar governs every line below it, so it closes the
+         job's details, above the first line. */
+      ratesBarMarkup();
 
     /* D98: the editable sections in the Rate Card's order (Pre-Production,
        Post-Production, Additional work), then the read-only "On set, by
        day". An archived production section has no day cards to summarise,
        so it stays an ordinary section among them. */
-    sections.forEach((section) => {
-      if (section.id !== 'prod' || section.archived) html += labourSectionMarkup(section);
-    });
-    html += onSetMarkup();
+    const services = sections
+      .filter((section) => section.id !== 'prod' || section.archived)
+      .map(labourSectionMarkup).join('') ||
+      '<p class="ed-panel-empty">No service categories on the Rate Card.</p>';
 
-    html += summaryMarkup();
+    /* The six panels (task 11, U21), in D98's order: what you edit first,
+       then what's being made, when it's shot, the work, the shoot, the sums.
+       Job details is closed on an estimate that already exists (its summary
+       says which job this is) and open on a new one or a fresh copy, whose
+       UPID is still to fill in. */
+    const jobOpen = !estimate || Boolean(copiedFrom);
+    let html =
+      head +
+      '<div class="ed-panels" id="ed-panels">' +
+      edPanel('job', 'Job details', job, { open: jobOpen, line: true }) +
+      edPanel('deliverables', 'Deliverables', deliverablesSectionMarkup(), {
+        flush: true,
+        action: '<button type="button" class="btn btn-sm" id="add-deliverables">+ Add deliverable</button>',
+      }) +
+      // Production booking (production-booking task 6): BookingBlock.mount draws its own panel here.
+      '<div id="booking-slot"></div>' +
+      edPanel('services', 'Services', services, { flush: true }) +
+      edPanel('onset', 'On set, by day', onSetMarkup(), { flush: true }) +
+      edPanel('summary', 'Summary', summaryMarkup()) +
+      '</div>' +
+      // Where a line's unit switch is announced (switchUnit).
+      '<p class="sr-only" id="editor-live" aria-live="polite"></p>' +
+      // Where a day's surcharge changing is announced (announceSurcharges).
+      '<p class="sr-only" id="sur-live" aria-live="polite"></p>';
 
     html +=
       '<div id="editor-error" role="alert"></div>' +
@@ -2464,6 +2586,8 @@ const EstimateEditor = (() => {
       return p;
     };
 
+    // Each subtotal as painted, for the panel heads (paintPanelSums).
+    const subs = {};
     sections.forEach((section) => {
       let subtotal = 0;
       rowsIn(section.id).forEach((tr, i) => {
@@ -2499,6 +2623,7 @@ const EstimateEditor = (() => {
         if (day) p.hours += def ? qty * LSCCalc.hoursPerUnitOf(def) : 0;
       });
       setText('sum-' + section.id, fmt(subtotal));
+      subs[section.id] = subtotal;
     });
 
     /* Travel, crew and gear are never surcharged, on a day or not (D3): each
@@ -2516,6 +2641,7 @@ const EstimateEditor = (() => {
       tally('travel', line.dayId, bill, onSetLine(line.name, qtyText, billed, ''));
     });
     setText('sum-travel', fmt(travelSubtotal));
+    subs.travel = travelSubtotal;
 
     ['crew', 'equip'].forEach((kind) => {
       let subtotal = 0;
@@ -2534,6 +2660,7 @@ const EstimateEditor = (() => {
           plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, name !== vendor ? vendor : '', !name));
       });
       setText('sum-' + kind, fmt(subtotal));
+      subs[kind] = subtotal;
     });
     paintDays(perDay);
     paintOnSet(onSet);
@@ -2557,6 +2684,12 @@ const EstimateEditor = (() => {
     setText('s-total', fmt(totals.totalIncGst));
     setText('s-tax', fmt(totals.taxSetAside));
     setText('s-takehome', fmt(totals.estTakeHome));
+
+    // On set's subtotal is its blocks' (an archived production section is a Service).
+    const prod = prodSection();
+    const onSetTotal = (prod ? subs.prod || 0 : 0) + subs.travel + subs.crew + subs.equip;
+    paintPanelSums(subs, onSetTotal, totals.totalIncGst);
+    paintJobSum();
 
     // Reads the totals above rather than recomputing anything of its own.
     paintMinimum(totals, hoursWorking(LSCCalc.labourHoursBreakdown(active, pricing), totals));
@@ -3157,6 +3290,8 @@ const EstimateEditor = (() => {
   }
 
   function fieldError(msg, id) {
+    // The field may sit in a closed panel; showFieldErrors focuses it.
+    openPanelOf($(id));
     LSCUtil.showFieldErrors($('editor-error'), [{ msg, field: $(id) }]);
   }
 
@@ -3493,9 +3628,19 @@ const EstimateEditor = (() => {
     const del = $('js-delete');
     if (del) del.addEventListener('click', remove);
 
-    ['f-upid', 'f-name', 'f-business'].forEach((id) =>
-      $(id).addEventListener('change', () => booking.refreshIdentity())
-    );
+    ['f-upid', 'f-name', 'f-business'].forEach((id) => {
+      $(id).addEventListener('change', () => booking.refreshIdentity());
+      $(id).addEventListener('input', paintJobSum);
+    });
+
+    /* The panels remember being opened or closed (task 11), Job details
+       aside. lsc:panel comes from js/panel.js, on the panel itself, for a
+       click on its head and for an open from elsewhere (an error's field,
+       Edit on the day) alike. */
+    $('ed-panels').addEventListener('lsc:panel', (e) => {
+      const key = e.target.dataset && e.target.dataset.panel;
+      if (key && key !== 'job') rememberPanel(key, e.detail.open);
+    });
 
     const business = $('f-business');
     ClientTypeahead.attach(business, { onPick: pickClient });
@@ -3559,9 +3704,11 @@ const EstimateEditor = (() => {
       });
     });
 
-    $('add-deliverables').addEventListener('click', () =>
-      injectRow($('tbody-deliverables'), buildDeliverableRow({ qty: 1 }))
-    );
+    // The button is in the panel's head, so it works with the panel closed: it opens it first.
+    $('add-deliverables').addEventListener('click', () => {
+      openPanelOf($('tbody-deliverables'));
+      injectRow($('tbody-deliverables'), buildDeliverableRow({ qty: 1 }));
+    });
   }
 
   /* options.copiedFrom: { upid, name } of the estimate Duplicate just copied
@@ -3637,7 +3784,9 @@ const EstimateEditor = (() => {
     restoreRows(activeRows, pricing, estimate && estimate.days);
     booking = BookingBlock.mount($('booking-slot'), {
       estimate,
-      // Collapsed unless there is booking to show (D64): days, or any on-set line, which lives on a card.
+      // Its panel as last left in this browser (task 11), when it has been.
+      open: panelOpen('booking', undefined),
+      // Otherwise collapsed unless there is booking to show (D64): days, or any on-set line, which lives on a card.
       hasItems: ['prod', 'travel', 'crew', 'equip'].some((k) => Array.isArray(activeRows[k]) && activeRows[k].length > 0),
       // How this estimate's own tiles are labelled on the calendar, read live.
       identity: () => ({
@@ -3681,6 +3830,8 @@ const EstimateEditor = (() => {
     const day = options && options.focusDay ? booking.showDay(options.focusDay) : null;
     const dayField = day && day.querySelector('[data-f="date"]');
     if (dayField) dayField.focus();
+    // Job details is closed on an existing estimate: its head, whose summary names the job, takes focus.
+    else if ($('ed-job-body').hidden) $('ed-job').querySelector('.panel-toggle').focus();
     else $('f-upid').focus();
   }
 

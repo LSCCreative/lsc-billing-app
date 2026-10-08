@@ -41,7 +41,7 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
 `routes/account.js`. `git fetch` and merge `origin/main` before each deploy; other sessions push
 `main` too.
 
-## State as of 2026-10-06
+## State as of 2026-10-08
 
 - **Phase 1** (Grill Me): done. The answers are in DECISIONS.md.
 - **Phase 2** (Design Brief): done, in `DESIGN_BRIEF.md`.
@@ -112,8 +112,17 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     redraw. Bodies are `{ main, side }` panels; Extras is `.panel.billing-block` so the editor's
     tablet floor and phone stacking still apply. The `.pf-actions*` / `.pf-section-head` /
     `.pf-h2` rules are deleted from `project-folder.css`.
-- **Next: task 11, "Editor: six panels"** (money — Opus/high, **Frontend task**), then 12–14 and
-  16. These need no NAS or live app: build and verify only against local `api-scratch` /
+  - [x] Task 11, the editor's six panels. `estimate-editor.js` `edPanel(key, name, body, opts)`
+    draws Job details · Deliverables · Services · On set, by day · Summary (`#ed-<key>`,
+    `data-panel`, inside `#ed-panels`); `booking-block.js` draws Production booking as the same
+    kind of panel (`#block-booking`, `data-panel="booking"`). Summaries: `paintJobSum` (as typed)
+    and `paintPanelSums` (end of `recalc`, from the `subs` it painted). `openPanelOf(el)` opens a
+    closed panel before a field in it is focused (fieldError, + Add deliverable). States live in
+    `localStorage['lsc.editor.panels']` (`rememberPanel` / `panelOpen`), Job details excepted.
+- **Next: task 12, "Editor: jump rail and sticky bar"** (money — Opus/high, **Frontend task**),
+  then 13, 14 and 16. For 12: open a panel with `LSCPanel.setOpen(panelEl, true)` (it fires
+  `lsc:panel`, so booking loads and the state is remembered), focus its `.panel-toggle`, and read
+  the bar's total from `#s-total` / `ed-summary-sum` (both painted by `recalc`). These need no NAS or live app: build and verify only against local `api-scratch` /
   `api-scratch-mail`, never the live site or API. Skip the deploy tasks (8, 15, 17) until the user
   says the NAS is back; when it is, task 8 comes first, then 15 and 17. Commit locally on
   `ui-clarity`; don't push.
@@ -136,6 +145,27 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
+
+## Decisions made in task 11 (tell the user)
+
+- **Job details isn't remembered.** It is closed on an existing estimate and open on a new one or
+  a fresh Duplicate (its UPID is blank); the other five remember (IA said all six, but then the
+  "starts collapsed" rule could never hold). With Job details closed, focus lands on its head.
+- **Production booking with nothing remembered** keeps D64 (closed unless it has days or on-set
+  lines); once opened or closed in this browser, that wins. A new estimate opens it if it was
+  left open, which fetches the calendar.
+- **Job details' summary adds "Short notice" and "GST-free"** when ticked: they move prices and
+  would otherwise be hidden in a closed panel. Blank: "Not filled in yet".
+- **Tags:** Services' categories lost "LABOUR" (all are), Deliverables lost "PROJECT OUTPUT";
+  On set's Production now says **Labour** (was "On set"), beside the others' Expenses, so each
+  says which Summary subtotal it counts toward. An archived category keeps its tag.
+- Sub-sections sit on the panel's own layer (inset is the input fill) with a subtle rule
+  between them, headed in Metro Sans semibold. On a phone, the two word summaries (Job details,
+  Production booking) take their own line under the name; the figures stay beside it.
+- The Summary panel's insides (surcharge box, bars, Minimum Job Price) are unchanged: their
+  boxes inside a panel are task 13/14's to judge.
+- **Not fixed (task 14):** "+ Add deliverable" / "+ Add service" don't move focus to the new row
+  (they never did).
 
 ## Decisions made in task 10 (tell the user)
 
@@ -238,6 +268,17 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
   field and updates as you type.
 
 ## Traps
+
+- **The booking block draws its day cards while closed** (task 11). A day's items are the
+  editor's own rows, and collect() reads them from the page: before, a closed block held no
+  cards, so with a remembered-closed booking a save dropped every on-set line. Only the calendar
+  waits for the open. Don't put `paintCards()` back behind `if (!open)`.
+- **Every booking open/close goes through `LSCPanel.setOpen`** and its `lsc:panel` event (the
+  block's handler mounts the calendar and calls `onToggle`). Calling paint with a changed `open`
+  instead leaves the toggle and the remembered state behind.
+- **NBK-014** (`prj_4eaa776d` on today's scratch) is a draft with a line in every section, made
+  by `seed-review.js`'s step 14; its Vehicle line prints "—" (no km rate on the card, on
+  purpose: a line with no price). Its saves in task 11's checks only re-saved it as it was.
 
 - **Agreement business details come from the version's frozen snapshot** (`snap.business`), as
   name and ABN always did. A link sent before Settings → Business email, phone and signer are

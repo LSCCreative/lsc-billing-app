@@ -2,14 +2,18 @@
 
 /* The estimate editor's Production Booking block (production-booking task 6).
  *
- * A collapsible .billing-block under the doc-type bar. Inside: the shared month
+ * The editor's Production booking panel (ui-clarity task 11: a collapsible
+ * .panel, turned by js/panel.js like the editor's other five). Inside: the shared month
  * calendar (js/calendar.js) with this estimate's days at full strength and every
  * other project's faded (D23), and this estimate's day cards in date order,
  * with Date TBC days (D9) after the dated ones.
  *
- * It is collapsed unless the estimate already has days or production items
- * (D64): the editor is the screen used most, and booking must not slow down
- * adding items. Nothing is fetched until it is opened.
+ * It opens as it was last left in this browser (`opts.open`, the editor's
+ * remembered state). With none, it is collapsed unless the estimate already
+ * has days or production items (D64): the editor is the screen used most, and
+ * booking must not slow down adding items. Nothing is fetched until it is
+ * opened. Every open and close goes through LSCPanel.setOpen, whose lsc:panel
+ * event is where this block fetches and paints (and the editor remembers).
  *
  * WHAT THE EDITOR GETS
  *   const booking = BookingBlock.mount(slot, { estimate, identity, hasProductionItems, onChange, itemsFor });
@@ -252,7 +256,7 @@ const BookingBlock = (() => {
     const ownId = (estimate && estimate.id) || 'this-estimate';
     const stored = new Map(((estimate && estimate.days) || []).map((d) => [String(d.id), norm(d)]));
     let days = sortDays(((estimate && estimate.days) || []).map(norm));
-    let open = days.length > 0 || Boolean(opts.hasItems);
+    let open = typeof opts.open === 'boolean' ? opts.open : days.length > 0 || Boolean(opts.hasItems);
     let cal = null;
     let holidayList = null; // kept for a calendar mounted after it arrives
     let loadFailed = false;
@@ -271,14 +275,20 @@ const BookingBlock = (() => {
     let targetId = null; // the card the service menu is adding to, edged
 
     slot.innerHTML =
-      '<div class="billing-block booking-block" id="block-booking">' +
-      '<div class="bb-head booking-head">' +
-      // A heading round the button (B2-12): the block's h3s (Gear rentals, the menu) need an h2 of their own.
-      '<h2 class="booking-h"><button type="button" class="booking-toggle" id="booking-toggle" aria-controls="booking-body">' +
-      '<span class="bb-chevron" aria-hidden="true">▶</span><span class="bb-label">Production Booking</span></button></h2>' +
-      '<span class="bb-sum" id="booking-sum"></span>' +
+      /* Still a .billing-block, for responsive.css's phone stacking of the day
+         cards' rows. A heading round the button (B2-12): the block's h3s
+         (Gear rentals, the menu) need an h2 of their own. */
+      '<section class="panel ed-panel billing-block booking-block' + (open ? '' : ' is-collapsed') +
+      '" id="block-booking" data-panel="booking" ' +
+      'aria-labelledby="booking-name">' +
+      '<div class="panel-head booking-head">' +
+      '<h2 class="panel-title"><button type="button" class="panel-toggle" id="booking-toggle" ' +
+      'aria-expanded="' + open + '" aria-controls="booking-body">' +
+      '<span class="panel-chev" aria-hidden="true"></span>' +
+      '<span class="panel-name" id="booking-name">Production booking</span>' +
+      '<span class="panel-sum ed-sum-line" id="booking-sum"></span></button></h2>' +
       '</div>' +
-      '<div class="booking-body" id="booking-body">' +
+      '<div class="booking-body" id="booking-body"' + (open ? '' : ' hidden') + '>' +
       '<div class="booking-cal-col">' +
       '<div id="booking-cal"></div>' +
       '<p class="booking-load-note" id="booking-load-note" hidden>Other projects’ bookings couldn’t be loaded. ' +
@@ -302,7 +312,7 @@ const BookingBlock = (() => {
       '<div class="booking-rentals-slot"></div>' +
       '<p class="sr-only" id="booking-live" aria-live="polite"></p>' +
       '</div>' +
-      '</div>';
+      '</section>';
 
     const $ = (id) => slot.querySelector('#' + id);
     const alive = () => slot.isConnected && Boolean($('booking-cards'));
@@ -542,23 +552,24 @@ const BookingBlock = (() => {
       return Array.from(otherRentals.values()).concat(mine);
     }
 
+    // The toggle's state is LSCPanel's (and the markup's, at mount); this is the summary.
     function paintHead() {
       $('booking-sum').textContent = summary();
-      const toggle = $('booking-toggle');
-      toggle.setAttribute('aria-expanded', String(open));
-      $('booking-body').hidden = !open;
-      slot.querySelector('.booking-block').classList.toggle('is-open', open);
     }
 
+    /* The cards are drawn open or closed (task 11): a day's items are the
+       editor's own rows, which collect() reads from the page, so a block
+       closed with days on it must still hold them, or a save would drop
+       every on-set line. Only the calendar waits for the block to open. */
     function paint() {
       paintHead();
+      paintCards();
       if (!open) return;
       if (cal) {
         cal.setRentals(calendarRentals());
         cal.setDays(calendarDays());
       }
       $('booking-load-note').hidden = !loadFailed;
-      paintCards();
     }
 
     // ── Opening, and the calendar ─────────────────────────────────────────────
@@ -593,18 +604,17 @@ const BookingBlock = (() => {
       ensureCovered(days.map((d) => d.date));
     }
 
-    function setOpen(next) {
-      open = next;
+    /* A click on the head, or reveal() below: LSCPanel turns the toggle and
+       shows or hides the body, then says so here. */
+    const panelEl = slot.querySelector('.booking-block');
+    panelEl.addEventListener('lsc:panel', (e) => {
+      if (e.target !== panelEl) return;
+      open = e.detail.open;
       if (open) ensureCalendar();
       paint();
       onToggle(open);
-    }
-
-    $('booking-toggle').addEventListener('click', () => setOpen(!open));
-    // The whole head is the target, as the old app's collapsible heads were; the button is what a keyboard reaches.
-    slot.querySelector('.booking-head').addEventListener('click', (e) => {
-      if (!e.target.closest('#booking-toggle')) setOpen(!open);
     });
+    const setOpen = (next) => LSCPanel.setOpen($('booking-toggle'), next);
 
     // ── Adding ────────────────────────────────────────────────────────────────
 

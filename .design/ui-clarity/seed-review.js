@@ -6,7 +6,8 @@
 // DRF-001 draft · SNT-002 sent, email scheduled · EXP-003 sent, expired ·
 // ACC-004 accepted, no invoices · DEP-005 deposit overdue · DPD-006 signed by
 // the client, deposit paid, 14 activity rows · SGL-007 single paid ·
-// DCL-008 declined · LEG-009 legacy invoice · VOD-010 voided and remade.
+// DCL-008 declined · LEG-009 legacy invoice · VOD-010 voided and remade ·
+// NBK-014 a draft with a line in every editor section, for tasks 11–12.
 const path = require('node:path');
 const SERVER = path.resolve(process.argv[2] || 'server');
 const Database = require(path.join(SERVER, 'node_modules/better-sqlite3'));
@@ -124,6 +125,27 @@ const paid = (id) => api('/api/invoices/' + id + '/paid?today=' + today, 'POST',
   const v1 = f.invoices.find((i) => i.kind === 'single');
   await sendInv(v1.id);
   await api('/api/invoices/' + v1.id + '/void?today=' + today, 'POST', { reason: 'Wrong billing address' });
+
+  // 14. The editor's every panel (tasks 11–12): deliverables, three days, a rental, and lines in every section.
+  const nd = [[20, 'confirmed', '08:00', '16:00'], [21, 'confirmed', '08:00', '16:00'], [27, 'pencilled', null, null]]
+    .map(([k, status, startTime, endTime], i) => ({ id: 'd_nbk' + i, date: ymd(k), status, startTime, endTime }));
+  made.editor = (await api('/api/estimates', 'POST', {
+    pricingShape: PRICING_SHAPE, upid: 'NBK-014', name: 'Autumn campaign',
+    client: { businessName: 'Northbank Studio', contactName: 'Mara Quinn', email: 'mara@northbank.example', phone: '0400 000 014' },
+    notes: 'Two shoot days plus a pencilled pickup day.',
+    days: nd,
+    rentals: [{ id: 'r_nbk0', vendor: 'Lemac', outDate: ymd(19), outMethod: 'pickup', backDate: ymd(22), backMethod: 'return', note: '' }],
+    activeRows: {
+      deliverables: [{ id: 'dl_nbk0', name: 'Hero film', format: '16:9', duration: '90s', qty: 1 }, { id: 'dl_nbk1', name: 'Social cutdowns', format: '9:16', duration: '15s', qty: 4 }, { id: 'dl_nbk2', name: 'Stills selects', format: 'JPEG', duration: '', qty: 20 }],
+      preprod: [{ name: 'Pre-Production Meeting with Client', qty: 2, mu: 56, hoursPerUnit: 1 }, { name: 'Pre-Production Development & Admin', qty: 4, mu: 42, hoursPerUnit: 1 }],
+      prod: [{ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8, dayId: 'd_nbk0' }, { name: 'Photo Capture', qty: 4, mu: 112, hoursPerUnit: 1, dayId: 'd_nbk0' }, { name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8, dayId: 'd_nbk1' }, { name: 'Drone Aerial Capture', qty: 2, mu: 84, hoursPerUnit: 1, dayId: 'd_nbk2' }],
+      post: [{ name: 'Video Editor — Project Setup', qty: 2, mu: 49, hoursPerUnit: 1 }, { name: 'Video Editor — B-Roll Offline Edit', qty: 10, mu: 63, hoursPerUnit: 1 }],
+      additional: [{ name: 'Overtime — per hour', qty: 1, mu: 210, hoursPerUnit: 1 }],
+      travel: [{ name: 'Crew Meals', qty: 6, rate: 30, mu: 30, unit: 'meals', dayId: 'd_nbk0' }, { name: 'Vehicle — per km', qty: 120, dayId: 'd_nbk1' }],
+      crew: [{ role: 'Gaffer', days: 2, cost: 650, dayId: 'd_nbk0' }],
+      equip: [{ vendor: 'Lemac', item: 'FX6 kit', days: 3, cost: 220, dayId: 'd_nbk0' }],
+    },
+  })).estimate;
 
   // A long log on DPD-006, for Show all (N).
   const ins = db.prepare("INSERT INTO activity (id, project_id, at, kind, detail_json) VALUES (?, ?, ?, 'opened', ?)");

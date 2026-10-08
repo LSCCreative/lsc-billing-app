@@ -7,49 +7,11 @@
 
 /* responsive.css gives every .billing-block a 660px floor below 1100 and lets
    it scroll sideways, so the editor's money grids can't squash. This block has
-   no grid: its content wraps, and that floor would push its head past the
-   block's edge. Doubled class to outrank it from this earlier file (the same
-   fix as the Rate Card's Surcharges block). */
+   no grid: its content wraps, so it doesn't scroll. Doubled class to outrank
+   it from this earlier file (the same fix as the Rate Card's Surcharges
+   block). Its head is the editor's panel head (task 11, estimates.css). */
 .billing-block.booking-block {
   overflow-x: hidden;
-}
-.billing-block.booking-block .bb-head {
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  cursor: pointer;
-}
-
-/* ── The head: a disclosure button and a one-line summary ─────────────────── */
-
-/* The <h2> round the button (B2-12) is for screen-reader navigation only: a
-   flex box, so it has no line box of its own to make the head taller. */
-.booking-h {
-  display: flex;
-  min-width: 0;
-}
-.booking-toggle {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--text);
-  cursor: pointer;
-}
-/* The block's own head only: the service menu's group heads inside it have
-   chevrons of their own, turned by aria-expanded (task 33 DR3). */
-.booking-block.is-open > .booking-head .bb-chevron {
-  transform: rotate(90deg);
-}
-.booking-head .bb-sum {
-  font-variant-numeric: tabular-nums;
-}
-@media (min-width: 768px) {
-  .booking-toggle {
-    min-height: 0;
-  }
 }
 
 /* ── The body: calendar and cards ──────────────────────────────────────────── */
@@ -58,7 +20,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 20px;
-  padding: 16px 14px;
+  padding: var(--panel-pad-y) var(--panel-pad-x);
 }
 .booking-body[hidden] {
   display: none;
@@ -67,7 +29,6 @@
   .booking-body {
     grid-template-columns: 420px minmax(0, 1fr);
     align-items: start;
-    padding: 16px;
   }
 }
 .booking-load-note {
@@ -390,7 +351,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .booking-block .bb-chevron,
   .ad-add {
     transition: none;
   }
@@ -632,24 +592,9 @@
 }
 
 /* ── "On set, by day" (B2-6, D78, D98) ──────────────────────────────────────
-   A quiet divider, then four read-only summaries of the day cards: a group per
-   card with its lines and total, plain text like the estimate detail, so they
-   don't read as more fields to fill in. */
-.onset-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 24px 0 10px;
-  font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--muted);
-}
-.onset-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
+   Its own panel since task 11: four read-only summaries of the day cards, a
+   group per card with its lines and total, plain text like the estimate
+   detail, so they don't read as more fields to fill in. */
 .onset-head-r {
   display: flex;
   flex-wrap: wrap;
