@@ -245,7 +245,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 2, 3. Modifies: `invoice.js`, `invoice.css`._
 
 - [x] **11. Editor: six panels** (money — Opus/high) **Frontend**
-  - **Done** `COMMIT`: six collapsible panels in D98's order; Services and On set hold their categories as sub-sections; every head's summary reads recalc's painted figures. NBK-014 (new in `seed-review.js`) opens with Job details closed and summaries equal to their insides ($1,218 + $4,996 = $6,214, live as lines change); PUT bodies identical open, all closed, and after a reload with all closed; states remembered across reloads; a save error opens its panel and focuses the field; no overflow and one terracotta at 1280/800/375; 574 green. Screenshots `screenshots/task11-*`.
+  - **Done** `f1d310f`: six collapsible panels in D98's order; Services and On set hold their categories as sub-sections; every head's summary reads recalc's painted figures. NBK-014 (new in `seed-review.js`) opens with Job details closed and summaries equal to their insides ($1,218 + $4,996 = $6,214, live as lines change); PUT bodies identical open, all closed, and after a reload with all closed; states remembered across reloads; a save error opens its panel and focuses the field; no overflow and one terracotta at 1280/800/375; 574 green. Screenshots `screenshots/task11-*`.
   - Regroup the editor into **Job details · Deliverables · Production booking · Services · On
     set, by day · Summary** (U21). Pre, Post and Additional become sub-sections of Services, and
     Production, Travel, Crew and Equipment become sub-sections of On set.
