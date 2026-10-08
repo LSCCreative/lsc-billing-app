@@ -82,7 +82,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .card-gross{font-family:var(--font-family-display);font-weight:700;font-size:26px;color:var(--accent)}
 .card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
 .card-date{color:var(--muted);font-size:10px}
-.tag{font-size:10px;padding:3px 9px;border:1px solid var(--border);color:var(--muted);letter-spacing:.05em}
+.tag{font-family:var(--font-figures);font-size:var(--font-size-xs);color:var(--color-text-secondary);white-space:nowrap}
 .empty-state{text-align:center;padding:80px 30px;border:1px dashed var(--border)}
 .empty-state h3{font-family:var(--font-family-display);font-weight:700;font-size:22px;color:var(--muted);margin-bottom:10px}
 .empty-state p{color:var(--muted);font-size:12px}
@@ -166,7 +166,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .notes-card p{color:var(--muted);line-height:1.8;font-size:12px}
 .spinner{width:11px;height:11px;border:2px solid color-mix(in srgb,currentColor 25%,transparent);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:none}
 @keyframes spin{to{transform:rotate(360deg)}}
-.export-toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);padding:12px 18px;display:none;align-items:center;gap:10px;font-size:12px;z-index:9999}
+.export-toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 18px;display:none;align-items:center;gap:10px;font-size:12px;z-index:9999}
 .export-toast.show{display:flex}
 .export-toast.ok{border-color:var(--color-status-success);background:color-mix(in srgb,var(--color-status-success) 10%,var(--color-bg-float))}
 .export-toast.err{border-color:var(--err-border);background:var(--err-bg)}
@@ -209,7 +209,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 /* Invoice Settings Modal */
 .modal-overlay{position:fixed;inset:0;background:var(--color-surface-overlay);z-index:9000;display:none;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
-.modal-box{background:var(--color-bg-float);border:1px solid var(--border);width:500px;max-width:95vw;padding:28px 32px}
+.modal-box{background:var(--color-bg-float);border:1px solid var(--border);border-radius:var(--radius-lg);width:500px;max-width:95vw;padding:28px 32px}
 .modal-title{font-family:var(--font-family-display);font-weight:700;font-size:20px;color:var(--text);margin-bottom:20px}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;padding-top:18px;border-top:1px solid var(--border);margin-top:18px}
 /* Doc type bar */
@@ -393,4 +393,40 @@ button,input,textarea,select{font-family:var(--font-family-body)}
   outline: 2px solid transparent;
   outline-offset: 2px;
   box-shadow: var(--shadow-focus);
+}
+
+/* ── Panel surfaces on the other screens (ui-clarity task 13) ────────────────
+   The boxes that group a screen's sections already sit on the panel's layer
+   and edge (--surface and --border alias the panel tokens) but kept the old
+   square corners, so a screen read as two systems side by side. They take
+   the panel's radius here, in one place, rather than in eleven screen files.
+   No layout moves (TASKS 13: no re-layouts). Containers with a filled head
+   clip to the radius. */
+.proj-card,
+.totals-card,
+.notes-card,
+.summary-bar,
+.dash-panel,
+.goals-ty,
+.cap-defaults,
+.dep-sched-state,
+.fix-group,
+.empty-state,
+.cal-grid,
+.up-row,
+.surch-mode-opt,
+.home-switch,
+.dash-floors {
+  border-radius: var(--panel-radius);
+}
+/* .dash-floors is one bordered box only on a phone, where its tiles stack. */
+.fix-group,
+.cal-grid,
+.home-switch,
+.dash-floors {
+  overflow: hidden;
+}
+/* The sign-in card stands alone on the page, as a dialog does. */
+.login-card {
+  border-radius: var(--radius-lg);
 }

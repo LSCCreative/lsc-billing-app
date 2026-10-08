@@ -89,8 +89,8 @@
   --color-status-error-text:   #F08A7E;
   --color-status-info:         #6E93C4;  /* sent, gear rental */
   --color-status-info-text:    #93ADD0;
-  --color-status-neutral:      #8D939C;  /* proposed, draft */
-  --color-status-neutral-text: #A9AFB7;
+  --color-status-neutral:      #9A938B;  /* proposed, draft: warm grey (task 13; was a blue-grey) */
+  --color-status-neutral-text: #B2ABA3;
   --color-on-status:           #121110;  /* ink on a filled chip: 5.7–8.0:1 on all four */
 
   /* ── Typography (U19) ──────────────────────────────────────────────────── */
@@ -270,7 +270,7 @@
   --color-status-warning-text: #7A5E14;
   --color-status-error-text:   #A63A2E;
   --color-status-info-text:    #3D5F8C;
-  --color-status-neutral-text: #5A5F66;
+  --color-status-neutral-text: #605A55;
 
   --shadow-sm: 0 1px 2px rgba(14, 14, 14, 0.08);
   --shadow-md: 0 8px 24px rgba(14, 14, 14, 0.12), 0 0 0 1px var(--color-border-subtle);

@@ -91,7 +91,7 @@ const SetupView = (() => {
       (group.canKeepTogether
         ? '<button type="button" class="btn btn-ghost" data-act="keep" data-write>Keep together as one project</button>'
         : '') +
-      '<button type="button" class="btn btn-accent" data-act="save" data-write>' +
+      '<button type="button" class="btn" data-act="save" data-write>' +
       '<span class="spinner"></span>' + (n === 1 ? 'Save UPID' : 'Save UPIDs') + '</button>' +
       '</div>' +
       '</section>'
@@ -247,6 +247,7 @@ const SetupView = (() => {
     const at = sections.indexOf(section);
     const next = sections[at + 1] || sections[at - 1];
     section.remove();
+    markPrimary();
     // The toast (role="status") says it; a second live region would say it twice.
     root.querySelector('#fix-count').textContent = countText(left);
     next.querySelector('.fix-group-upid').focus();
@@ -275,9 +276,18 @@ const SetupView = (() => {
     submit(section, { key: section.dataset.key, keepTogether: true }, upid + ' is one project of ' + n + ' estimates.');
   }
 
+  /* One terracotta on the page (ui-clarity task 13): the groups are settled
+     from the top, so the first one's Save is the page's next action and the
+     rest are plain buttons until they get there. Run after every draw and
+     every group that leaves. */
+  function markPrimary() {
+    root.querySelectorAll('.fix-group [data-act="save"]').forEach((b, i) => b.classList.toggle('btn-primary', i === 0));
+  }
+
   function draw(listing) {
     serial = 0;
     root.innerHTML = markup(listing);
+    markPrimary();
     root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(LIST));
     root.querySelectorAll('.fix-group').forEach((section) => {
       section.addEventListener('click', (event) => {

@@ -127,8 +127,14 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     `recalc` beside `#s-total`; ⋯ is `LSCMenu.open` built each time from `moreItems()`, and
     `paintMore()` hides ⋯ when it has nothing. `#editor-error` lives in the bar now. `.form-actions`
     is gone from the editor (still used elsewhere).
-- **Next: task 13, "System sweep of the other screens"** (frontend — Opus/high, **Frontend
-  task**), then 14 and 16. These need no NAS or live app: build and verify only against local
+  - [x] Task 13, the system sweep. Most of it was already done by tasks 1–3: the sweep found no
+    outlined caps buttons and no sideways scroll. What was left: the boxes that group sections kept
+    square corners (`.proj-card` and its users, `.totals-card`, `.notes-card`, `.summary-bar`,
+    `.dash-panel`, `.goals-ty`, …), now one rule at the end of `app.css`; dialogs and the toast got
+    their radius; `--color-status-neutral` (Proposed, Draft) was the last blue-grey; the UPID
+    fix-up had a terracotta Save per group. `scratchpad/sweep13.js`-style checks: see TASKS.
+- **Next: task 14, "Accessibility and responsive pass"** (frontend — Opus/high, **Frontend
+  task**), then 16. These need no NAS or live app: build and verify only against local
   `api-scratch` / `api-scratch-mail`, never the live site or API. Skip the deploy tasks (8, 15, 17) until the user
   says the NAS is back; when it is, task 8 comes first, then 15 and 17. Commit locally on
   `ui-clarity`; don't push.
@@ -151,6 +157,25 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
+
+## Decisions made in task 13 (tell the user)
+
+- **Corners, not re-layouts.** The other screens' sections were already on the panel's colours;
+  what made them read as the old app was square corners. Every sectional box takes the panel's
+  8px radius from one rule in `app.css`; dialogs and the sign-in card take `--radius-lg` (16),
+  as the tokens give dialogs. Settings' sections stay divided by rules: Service agreement
+  already holds panels, so wrapping sections in panels would nest panels in panels.
+- **Proposed and Draft are warm grey** (`--color-status-neutral` `#9A938B`, was blue-grey
+  `#8D939C`, same lightness, so the chip ink stays ~6:1). The client pages' neutral text warmed
+  with it. Sent and gear rentals keep their blue: that is the info status, not the old palette.
+- **The UPID fix-up has one terracotta Save:** the first group's. The others are plain until
+  they reach the top (each saved group leaves the list, so the next one takes it).
+- **The client card's phone** is a mono figure, not a boxed label (`.tag`, used nowhere else).
+- **Left as they are, for you to call:** the Projects cards' totals are terracotta figures (11
+  on a full page) beside the terracotta + New project. They're figures, not buttons, like the
+  Invoice's Balance due, so the one-terracotta-button rule holds; toning them to white would
+  calm the page further. The Estimate view's header still has four ringed buttons beside its
+  primary (U1 kept that screen to system changes).
 
 ## Decisions made in task 12 (tell the user)
 
