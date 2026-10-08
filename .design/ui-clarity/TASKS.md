@@ -282,7 +282,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 3, 11. Modifies: `estimate-editor.js`, `estimates.css`._
 
 - [x] **13. System sweep of the other screens** (frontend — Opus/high) **Frontend**
-  - **Done** `COMMIT`: a scripted sweep of 20 screens and states at 1280 and 375 (Home, Projects, first run, Estimate view sent and accepted, Clients and a client, Finance ×6 with Depreciation, Settings with Account, Login's five states, the UPID fix-up; the last three with faked API replies, nothing written) finds one terracotta button per view, no caps or outlined buttons outside nav/eyebrows/chips/the primary, no blue-grey, no square sectional boxes, no sideways scroll; 574 green. Screenshots `screenshots/task13-*` (before: `task13-before-*`).
+  - **Done** `566bfdd`: a scripted sweep of 20 screens and states at 1280 and 375 (Home, Projects, first run, Estimate view sent and accepted, Clients and a client, Finance ×6 with Depreciation, Settings with Account, Login's five states, the UPID fix-up; the last three with faked API replies, nothing written) finds one terracotta button per view, no caps or outlined buttons outside nav/eyebrows/chips/the primary, no blue-grey, no square sectional boxes, no sideways scroll; 574 green. Screenshots `screenshots/task13-*` (before: `task13-before-*`).
   - Home, Projects list and cards, Clients, Estimate view, Finance (Dashboard, Capacity,
     Depreciation, Goals), Rate Card, the rest of Settings (including **Account**), Login (all
     five states: sign in, forgot, sent, new password, link expired, via `#/reset/<token>`) and
