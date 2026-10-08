@@ -2385,8 +2385,13 @@ const EstimateEditor = (() => {
        says which job this is) and open on a new one or a fresh copy, whose
        UPID is still to fill in. */
     const jobOpen = !estimate || Boolean(copiedFrom);
+    /* The rail beside everything from 1100px, the page and its bar in the
+       column next to it (task 12); below that the rail is the Jump to… select
+       at the head of the panels. */
     let html =
+      '<div class="ed-shell">' + railMarkup() + '<div class="ed-main">' +
       head +
+      jumpSelectMarkup() +
       '<div class="ed-panels" id="ed-panels">' +
       edPanel('job', 'Job details', job, { open: jobOpen, line: true }) +
       edPanel('deliverables', 'Deliverables', deliverablesSectionMarkup(), {
@@ -2402,19 +2407,159 @@ const EstimateEditor = (() => {
       // Where a line's unit switch is announced (switchUnit).
       '<p class="sr-only" id="editor-live" aria-live="polite"></p>' +
       // Where a day's surcharge changing is announced (announceSurcharges).
-      '<p class="sr-only" id="sur-live" aria-live="polite"></p>';
-
-    html +=
-      '<div id="editor-error" role="alert"></div>' +
-      '<div class="form-actions">' +
-      (estimate ? '<button type="button" class="btn btn-danger btn-sm" id="js-delete" data-write>Delete</button>' : '') +
-      '<button type="button" class="btn btn-ghost" id="js-cancel">Cancel</button>' +
-      '<button type="button" class="btn btn-accent" id="js-save" data-write>' +
-      '<span class="spinner" id="save-spin"></span><span id="save-label">Save estimate</span></button>' +
-      '</div>';
+      '<p class="sr-only" id="sur-live" aria-live="polite"></p>' +
+      barMarkup() +
+      '</div></div>';
 
     return html;
   }
+
+  // ── Jump rail and sticky bar (ui-clarity task 12, U5) ─────────────────────
+  /* The rail and the Jump to… select scroll to a panel, open it if it's
+     closed (LSCPanel.setOpen, so it is remembered and Production booking
+     loads its calendar as from a click), and focus its toggle. They never
+     touch the hash: the router owns it (IA "Panel anchors"). The rail marks
+     the panel being read as the page scrolls, as Settings' does.
+
+     The rail's labels are short enough for its column (IA allows it); the
+     select's are the panels' own names. */
+  const JUMPS = [
+    ['job', 'Job details', 'Job details'],
+    ['deliverables', 'Deliverables', 'Deliverables'],
+    ['booking', 'Booking', 'Production booking'],
+    ['services', 'Services', 'Services'],
+    ['onset', 'On set', 'On set, by day'],
+    ['summary', 'Summary', 'Summary'],
+  ];
+  /* A panel is the one being read once its top passes this far down the
+     window: under the 52px header, with room for the panel's head. */
+  const SPY_LINE = 120;
+  const PHONE = window.matchMedia('(max-width: 767px)');
+
+  function railMarkup() {
+    return '<nav class="ed-rail" aria-label="Estimate sections">' +
+      JUMPS.map(([key, short]) =>
+        '<button type="button" class="nav-link" data-jump="' + key + '">' + short + '</button>').join('') +
+      '</nav>';
+  }
+
+  function jumpSelectMarkup() {
+    return '<div class="ed-jump"><select id="ed-jump" aria-label="Jump to a section">' +
+      '<option value="">Jump to…</option>' +
+      JUMPS.map(([key, , name]) => '<option value="' + key + '">' + esc(name) + '</option>').join('') +
+      '</select></div>';
+  }
+
+  /* The bar: the client total, ⋯, Cancel and Save, always in reach. The save
+     error sits on top of it, beside the button that raised it, rather than at
+     the foot of a page the owner may be halfway down. Below 768px Cancel goes
+     into ⋯ (moreItems). */
+  function barMarkup() {
+    return (
+      '<div class="ed-bar" id="ed-bar">' +
+      '<div id="editor-error" role="alert"></div>' +
+      '<div class="ed-bar-total"><span class="eyebrow ed-bar-label">Client total · inc GST</span>' +
+      '<span class="ed-bar-fig" id="ed-bar-total">$0.00</span></div>' +
+      '<div class="ed-bar-acts">' +
+      '<button type="button" class="btn btn-quiet ed-bar-more" id="js-more" aria-label="More for this estimate" ' +
+      'aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">⋯</span></button>' +
+      '<button type="button" class="btn btn-quiet ed-bar-cancel" id="js-cancel">Cancel</button>' +
+      '<button type="button" class="btn btn-primary" id="js-save" data-write>' +
+      '<span class="spinner" id="save-spin"></span><span id="save-label">Save</span></button>' +
+      '</div></div>'
+    );
+  }
+
+  const panelEl = (key) => $('ed-panels').querySelector('[data-panel="' + key + '"]');
+
+  function markRail(key) {
+    root.querySelectorAll('.ed-rail [data-jump]').forEach((b) => {
+      if (b.dataset.jump === key) b.setAttribute('aria-current', 'true');
+      else b.removeAttribute('aria-current');
+    });
+  }
+
+  /* Where a jump left the page: the rail keeps that panel marked until the
+     page moves on, even when a short panel near the end can't reach the top. */
+  let jumpHold = null;
+
+  function jumpTo(key) {
+    const panel = panelEl(key);
+    if (!panel) return;
+    if (panel.classList.contains('is-collapsed')) LSCPanel.setOpen(panel, true);
+    panel.scrollIntoView({ block: 'start' });
+    const toggle = panel.querySelector('.panel-toggle');
+    if (toggle) toggle.focus({ preventScroll: true });
+    jumpHold = { key, y: window.scrollY };
+    markRail(key);
+  }
+
+  /* The last panel whose top has passed SPY_LINE, or the last panel once the
+     page can't scroll further. */
+  function spy() {
+    if (!onScreen()) return;
+    if (jumpHold && Math.abs(window.scrollY - jumpHold.y) < 2) return markRail(jumpHold.key);
+    jumpHold = null;
+    const atEnd = window.scrollY > 0 &&
+      window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+    let current = JUMPS[0][0];
+    JUMPS.forEach(([key]) => {
+      const p = panelEl(key);
+      if (p && p.getBoundingClientRect().top <= SPY_LINE) current = key;
+    });
+    markRail(atEnd ? JUMPS[JUMPS.length - 1][0] : current);
+  }
+
+  let spyQueued = false;
+  function onSpyScroll() {
+    if (!onScreen()) {
+      window.removeEventListener('scroll', onSpyScroll);
+      return;
+    }
+    if (spyQueued) return;
+    spyQueued = true;
+    requestAnimationFrame(() => {
+      spyQueued = false;
+      spy();
+    });
+  }
+
+  /* ⋯'s items as things stand: built each time it opens, so Delete is never
+     offered mid-save and How this is calculated only while there is a
+     Minimum Job Price to explain (its ⓘ in Summary follows the same rule).
+     "Cancel editing", not "Cancel": the phone's sheet ends with a Cancel row
+     of its own, which only closes the sheet. */
+  function moreItems() {
+    return [
+      PHONE.matches && { act: 'cancel', text: 'Cancel editing' },
+      breakdown && { act: 'calc', text: 'How this is calculated' },
+      existing && !saving && { act: 'delete', text: 'Delete estimate…', danger: true, attrs: { 'data-write': '' } },
+    ];
+  }
+
+  /* A new estimate on a desktop with no Finance set up has nothing for ⋯. */
+  function paintMore() {
+    const more = $('js-more');
+    if (more) more.hidden = !LSCMenu.hasItems(moreItems());
+  }
+
+  function openMore(opener) {
+    LSCMenu.open(opener, {
+      label: 'More for this estimate',
+      title: 'This estimate',
+      items: moreItems(),
+      onSelect: (it) => {
+        if (it.act === 'cancel') handlers.onCancel();
+        else if (it.act === 'calc') openBreakdown(opener);
+        else if (it.act === 'delete') remove();
+      },
+    });
+  }
+
+  // Crossing 768px moves Cancel into ⋯ or out of it, which can show or hide ⋯.
+  PHONE.addEventListener('change', () => {
+    if (onScreen()) paintMore();
+  });
 
   // ── Reading the form back ─────────────────────────────────────────────────
 
@@ -2682,6 +2827,8 @@ const EstimateEditor = (() => {
     setText('s-client-price', fmt(totals.clientPriceExGst));
     setText('s-gst', fmt(totals.gst));
     setText('s-total', fmt(totals.totalIncGst));
+    // The sticky bar's total (task 12): the same figure, painted in the same pass.
+    setText('ed-bar-total', fmt(totals.totalIncGst));
     setText('s-tax', fmt(totals.taxSetAside));
     setText('s-takehome', fmt(totals.estTakeHome));
 
@@ -2693,6 +2840,8 @@ const EstimateEditor = (() => {
 
     // Reads the totals above rather than recomputing anything of its own.
     paintMinimum(totals, hoursWorking(LSCCalc.labourHoursBreakdown(active, pricing), totals));
+    // The breakdown just painted decides whether ⋯ offers How this is calculated.
+    paintMore();
   }
 
   /* The job's hours, in words, when they aren't just a sum of the quantities on
@@ -3302,9 +3451,9 @@ const EstimateEditor = (() => {
     if (!onScreen()) return;
     $('js-save').disabled = next;
     $('save-spin').style.display = next ? 'inline-block' : 'none';
-    $('save-label').textContent = next ? 'Saving…' : 'Save estimate';
-    const del = $('js-delete');
-    if (del) del.disabled = next;
+    $('save-label').textContent = next ? 'Saving…' : 'Save';
+    // Delete leaves ⋯ while a save is in flight (moreItems).
+    paintMore();
   }
 
   // ── Client link ───────────────────────────────────────────────────────────
@@ -3625,8 +3774,21 @@ const EstimateEditor = (() => {
     $('js-back').addEventListener('click', leave);
     $('js-cancel').addEventListener('click', leave);
     $('js-save').addEventListener('click', save);
-    const del = $('js-delete');
-    if (del) del.addEventListener('click', remove);
+    $('js-more').addEventListener('click', (e) => openMore(e.currentTarget));
+
+    // The jump rail and its select (task 12).
+    root.querySelector('.ed-rail').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-jump]');
+      if (b) jumpTo(b.dataset.jump);
+    });
+    $('ed-jump').addEventListener('change', (e) => {
+      const key = e.target.value;
+      // Back to "Jump to…": it is a way to go somewhere, not a setting.
+      e.target.value = '';
+      if (key) jumpTo(key);
+    });
+    window.removeEventListener('scroll', onSpyScroll);
+    window.addEventListener('scroll', onSpyScroll, { passive: true });
 
     ['f-upid', 'f-name', 'f-business'].forEach((id) => {
       $(id).addEventListener('change', () => booking.refreshIdentity());
@@ -3640,6 +3802,8 @@ const EstimateEditor = (() => {
     $('ed-panels').addEventListener('lsc:panel', (e) => {
       const key = e.target.dataset && e.target.dataset.panel;
       if (key && key !== 'job') rememberPanel(key, e.detail.open);
+      // Opening or closing one moves every panel below it.
+      onSpyScroll();
     });
 
     const business = $('f-business');
@@ -3819,6 +3983,8 @@ const EstimateEditor = (() => {
     lookUpLastProject();
 
     baseline = snapshot();
+    jumpHold = null;
+    spy();
     LSCUnsaved.watch('estimate-editor', {
       label: 'this estimate',
       // Hidden still counts as on screen: behind the login card after a 401

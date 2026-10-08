@@ -25,7 +25,16 @@
 .booking-body[hidden] {
   display: none;
 }
-@media (min-width: 1100px) {
+/* Calendar beside the cards only once the editor's panels have their full
+   1000px (from 1296px). From 1100px the editor's jump rail (ui-clarity task
+   12) takes width from the panels, and below ~1000px of panel the cards'
+   item rows don't fit beside a 420px calendar (this block clips sideways,
+   so they would be cut off). Until then the calendar sits above the cards,
+   as it does below 1100px. A media query, not a container query: container
+   containment would make this block the box for the Gear rentals ⓘ's fixed
+   popover. 1296 is tokens.css's --max-width-page; media queries can't
+   read tokens. */
+@media (min-width: 1296px) {
   .booking-body {
     grid-template-columns: 420px minmax(0, 1fr);
     align-items: start;

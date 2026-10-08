@@ -266,7 +266,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 2. Modifies: `estimate-editor.js`, `booking-block.js` (its own toggle becomes
     the panel's), `estimates.css`, `booking.css`._
 
-- [ ] **12. Editor: jump rail and sticky bar** (money — Opus/high) **Frontend**
+- [x] **12. Editor: jump rail and sticky bar** (money — Opus/high) **Frontend**
+  - **Done** `COMMIT`: 47 scripted checks at 1280/800/375 (puppeteer, real clicks and keys): the bar equals Summary's total at load and after editing, adding and removing lines; rail and Jump to… open a closed panel, land it under the header, focus its toggle, never touch the hash; scrolling marks the panel in view; ⋯ (How this is calculated, Delete estimate…; Cancel editing on 375), Cancel's unsaved guard, a refused save shown in the bar, Save, Save and update the quote (SNT-002), Delete refused (DEP-005); 375 bar is total, ⋯, Save in one 61px row; no overflow 900–1440; 574 green. Screenshots `screenshots/task12-*`.
   - **Jump rail** (the Settings/Finance rail pattern) beside the panels at ≥1100px; a
     "Jump to…" select below that. It scrolls, opens a closed panel, focuses its heading,
     highlights the panel in view, and never touches the hash.

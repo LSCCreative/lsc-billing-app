@@ -119,11 +119,17 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     and `paintPanelSums` (end of `recalc`, from the `subs` it painted). `openPanelOf(el)` opens a
     closed panel before a field in it is focused (fieldError, + Add deliverable). States live in
     `localStorage['lsc.editor.panels']` (`rememberPanel` / `panelOpen`), Job details excepted.
-- **Next: task 12, "Editor: jump rail and sticky bar"** (money — Opus/high, **Frontend task**),
-  then 13, 14 and 16. For 12: open a panel with `LSCPanel.setOpen(panelEl, true)` (it fires
-  `lsc:panel`, so booking loads and the state is remembered), focus its `.panel-toggle`, and read
-  the bar's total from `#s-total` / `ed-summary-sum` (both painted by `recalc`). These need no NAS or live app: build and verify only against local `api-scratch` /
-  `api-scratch-mail`, never the live site or API. Skip the deploy tasks (8, 15, 17) until the user
+  - [x] Task 12, the editor's jump rail and sticky bar. `formMarkup` wraps the page in
+    `.ed-shell` (rail) + `.ed-main` (head, `#ed-jump` select, panels, `.ed-bar`). `JUMPS` names
+    the six panels; `jumpTo(key)` opens (`LSCPanel.setOpen`), scrolls, focuses the toggle;
+    `spy()` marks the rail on scroll (`onSpyScroll`, removed once off screen) and `jumpHold`
+    keeps a jumped-to panel marked until the page moves. The bar's `#ed-bar-total` is painted in
+    `recalc` beside `#s-total`; ⋯ is `LSCMenu.open` built each time from `moreItems()`, and
+    `paintMore()` hides ⋯ when it has nothing. `#editor-error` lives in the bar now. `.form-actions`
+    is gone from the editor (still used elsewhere).
+- **Next: task 13, "System sweep of the other screens"** (frontend — Opus/high, **Frontend
+  task**), then 14 and 16. These need no NAS or live app: build and verify only against local
+  `api-scratch` / `api-scratch-mail`, never the live site or API. Skip the deploy tasks (8, 15, 17) until the user
   says the NAS is back; when it is, task 8 comes first, then 15 and 17. Commit locally on
   `ui-clarity`; don't push.
 
@@ -145,6 +151,29 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
+
+## Decisions made in task 12 (tell the user)
+
+- **#main widens by the rail on the editor** (`--max-width-page` is now 1080 + rail + gap =
+  1296px, was 1240): the panels keep their 1000px wherever the window allows, as Finance's shell
+  does. Between 1100 and 1295 they are 804–999px, so **Production booking puts its calendar
+  above its cards until 1296px** (was 1100px): beside a 420px calendar the day cards' rows were
+  clipped (the block hides sideways overflow). A media query, not a container query: containment
+  would have made the block the box for the Gear rentals ⓘ's fixed popover.
+- **The save error moved into the bar**, on top of it beside Save, so a refused save is seen
+  from anywhere on the page (it used to sit at the foot). Focus still goes to the field.
+- **⋯ is built when opened:** How this is calculated only while the Minimum Job Price has
+  figures (as its ⓘ; scratch has no Overhead & Goals, so it doesn't show there), Delete
+  estimate… only on a saved estimate and not mid-save. On a phone it starts with **Cancel
+  editing** (not "Cancel": the sheet's own last row is Cancel, which only closes it). A new
+  estimate on a desktop with no Finance has no ⋯ at all.
+- **Save says "Save"** (was "Save estimate"), per IA; the bar's label is **Client total · inc
+  GST** in grey, so Save is the bar's one terracotta. The total is Delight, 22px on a phone,
+  28px from 768.
+- **Jump to… resets to its prompt after each jump** (it's a way to go, not a setting), so it
+  doesn't track scroll; the rail does. Rail labels are short (Booking, On set), IA allows it.
+- **The toast clears the bar** on the editor (`body:has(.ed-bar) .export-toast`), instead of
+  sitting on Save. The Project page's toast note under traps is unchanged.
 
 ## Decisions made in task 11 (tell the user)
 

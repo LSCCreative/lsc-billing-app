@@ -913,3 +913,170 @@
 .ed-panel-body > .mjp-line:has(+ .mjp-income[hidden]) {
   margin-bottom: 0;
 }
+
+/* ── Jump rail and sticky bar (ui-clarity task 12, U5) ──────────────────────
+   Phone first. Below 1100px the panels are headed by a Jump to… select, and
+   the bar is pinned to the foot of the screen: the client total, ⋯ and Save
+   (Cancel is in ⋯ below 768px). From 1100px the rail sits beside the page as
+   Settings' and Finance's do, and #main widens by it (--max-width-page), so
+   the panels keep the 1000px they had wherever the window has room (from
+   1296px). Between 1100 and that they are narrower, and Production booking
+   puts its calendar above its cards (booking.css).
+
+   Two lengths here are the layout's, not tokens, and match settings.css and
+   finance.css: 70px clears the 52px sticky header, and 86px is that header
+   plus #main's 34px top padding, where the rail rests before any scroll. */
+
+/* A jump lands the panel's head just under the header, not behind it. */
+.ed-panels > .panel {
+  scroll-margin-top: 70px;
+}
+
+.ed-rail {
+  display: none;
+}
+
+.ed-jump {
+  margin-bottom: var(--panel-gap);
+}
+/* 16px so iOS doesn't zoom on focus; full width so it reads as the page's
+   own control rather than a stray field. */
+.ed-jump select {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 0 var(--space-5);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  color: var(--color-text-primary);
+  font: var(--font-weight-normal) var(--font-size-md) / var(--line-height-snug) var(--font-family-body);
+  cursor: pointer;
+}
+
+/* The bar. Edge to edge on a phone (out through #main's 16px gutter), on the
+   float layer with the bar's shadow, the specimen's look. Its own surface, so
+   the rows scrolling under it don't show through. */
+.ed-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-6);
+  margin: 0 calc(-1 * var(--space-6));
+  padding: var(--space-4) var(--space-6) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-bar);
+  border-top: 1px solid var(--color-border-subtle);
+}
+/* A refused save, on top of the bar and beside Save, whatever part of the
+   page the owner was on when they pressed it. */
+.ed-bar #editor-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.ed-bar-total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+/* Grey, so the bar's one terracotta is Save. */
+.ed-bar-label {
+  color: var(--color-text-secondary);
+}
+.ed-bar-fig {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+.ed-bar-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.ed-bar-more {
+  min-width: var(--touch-min);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+}
+.ed-bar-more[hidden],
+.ed-bar .ed-bar-cancel {
+  display: none;
+}
+
+/* The toast clears the bar instead of sitting on Save. */
+body:has(.ed-bar) .export-toast {
+  bottom: var(--space-11);
+}
+
+@media (min-width: 768px) {
+  .ed-jump select {
+    width: auto;
+    min-width: 50%;
+    font-size: var(--font-size-base);
+  }
+  .ed-bar {
+    margin: 0;
+    padding: var(--space-5) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .ed-bar .ed-bar-cancel {
+    display: inline-flex;
+  }
+  .ed-bar-fig {
+    font-size: var(--font-size-2xl);
+  }
+  .ed-bar-more {
+    min-width: var(--control-h);
+  }
+}
+
+@media (min-width: 1100px) {
+  #main:has(.ed-shell) {
+    max-width: var(--max-width-page);
+  }
+  .ed-shell {
+    display: grid;
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    column-gap: var(--space-8);
+    align-items: start;
+  }
+  .ed-main {
+    min-width: 0;
+  }
+  .ed-jump {
+    display: none;
+  }
+  /* The Settings rail's twin: .nav-links on a 1px spine, the panel being
+     read marked on it. */
+  .ed-rail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    position: sticky;
+    top: 86px;
+    border-left: 1px solid var(--color-border-subtle);
+  }
+  .ed-rail .nav-link {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: -1px;
+    padding: var(--space-4) var(--space-6);
+    text-align: left;
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+  }
+  .ed-rail .nav-link[aria-current='true'] {
+    color: var(--color-text-primary);
+    border-left-color: var(--color-accent-mark);
+  }
+}
