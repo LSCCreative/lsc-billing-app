@@ -78,7 +78,7 @@ const LSCApi = (() => {
   // so only a successful file reply takes the binary path, and only when the
   // server says it sent the kind of file that was asked for.
   const FILE_TYPES = { pdf: /^application\/pdf\b/i, csv: /^text\/csv\b/i };
-  async function perform(method, path, body, expect) {
+  async function perform(method, path, body, expect, extraHeaders) {
     // Resolved before the try: base() throws when config.js is missing, and
     // inside the try that would be caught and relabelled 'network' — telling a
     // fresh deploy the NAS is down when the real fault is an unwritten config.
@@ -89,7 +89,7 @@ const LSCApi = (() => {
       res = await fetch(url, {
         method,
         credentials: 'include',
-        headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+        headers: Object.assign(body === undefined ? {} : { 'Content-Type': 'application/json' }, extraHeaders || {}),
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (err) {
@@ -147,10 +147,10 @@ const LSCApi = (() => {
     );
   }
 
-  async function request(method, path, body, expect) {
+  async function request(method, path, body, expect, extraHeaders) {
     let payload;
     try {
-      payload = await perform(method, path, body, expect);
+      payload = await perform(method, path, body, expect, extraHeaders);
     } catch (err) {
       announce({ ok: false, kind: err instanceof ApiError ? err.kind : 'server' });
       throw err;
@@ -168,8 +168,11 @@ const LSCApi = (() => {
       return () => listeners.delete(listener);
     },
     get: (path) => request('GET', path),
-    post: (path, body) => request('POST', path, body),
-    put: (path, body) => request('PUT', path, body),
+    /* `options.headers`: extra request headers. The API must list each in
+       its CORS allow-list (server/src/app.js), or the browser refuses the
+       request before it is sent: the editor's autosave headers are there. */
+    post: (path, body, options) => request('POST', path, body, undefined, options && options.headers),
+    put: (path, body, options) => request('PUT', path, body, undefined, options && options.headers),
     del: (path) => request('DELETE', path),
     /* Resolves to { blob, filename }; filename is null if the reply didn't
        name the file. `body` is optional (the folder's { as: 'estimate' }). */

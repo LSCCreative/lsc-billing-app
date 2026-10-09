@@ -19,7 +19,7 @@
  *   const booking = BookingBlock.mount(slot, { estimate, identity, hasProductionItems, onChange, itemsFor });
  *   booking.payloadDays()      // the `days` the estimate routes take, in display order
  *   booking.list()             // the same days with their card titles ("Day 1 · Sat 3 Oct")
- *   booking.lockProblem()      // { msg, fieldId } for a day the server would refuse, or null
+ *   booking.lockProblem(opts)  // { msg, fieldId } for a day the server would refuse, or null ({ quiet } doesn't open it)
  *   booking.serverLocked(date) // after a 409 date_locked: { msg, fieldId }
  *   booking.refreshIdentity()  // the UPID / name / business changed: redraw this estimate's tiles
  *   booking.showDay(id)        // open the block and scroll that day's card into view
@@ -799,11 +799,12 @@ const BookingBlock = (() => {
           trip: d.trip || null,
         })),
 
-      /** The first day the server would refuse as it stands, opened up and ready to point at. */
-      lockProblem() {
+      /** The first day the server would refuse as it stands, opened up and ready to point at.
+          `quiet` leaves the block as it is (autosave's check, which only says so). */
+      lockProblem(opts) {
         const day = days.find(isLocked);
         if (!day) return null;
-        reveal();
+        if (!(opts && opts.quiet)) reveal();
         return { msg: clashLine(day)[0], fieldId: 'bd-' + day.id + '-note' };
       },
 

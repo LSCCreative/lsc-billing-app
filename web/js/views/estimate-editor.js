@@ -111,8 +111,27 @@ const EstimateEditor = (() => {
   let rowCounter = 0;
   let saving = false;
   let link = null; // { id, name } of the client record this estimate points at
-  let baseline = ''; // the form as it was at mount, for the unsaved-edit check
+  let baseline = ''; // the form as last saved (at mount, or by autosave), for the unsaved-edit check
   let booking = null; // the Production Booking block (views/booking-block.js)
+
+  /* Autosave (trip-planner task 8; see SAVING below). `auto` is the
+     LSCAutosave instance while this is an unsent estimate, null in Save
+     mode (sent, accepted: T14). */
+  let auto = null;
+  let autoMode = false; // drawn for autosave (status + Done) rather than Save
+  let held = false; // an Undo or a delete has the estimate: autosave sends nothing
+  let mountGen = 0; // which mount an autosave reply belongs to
+  let session = ''; // X-LSC-Session: one per mount, for the server's snapshot throttle (I2)
+  let baseUpdatedAt = null; // the updatedAt this editor last saw: sent as baseUpdatedAt
+  let inFlight = null; // the snapshot an autosave is sending, until it lands
+  let opened = null; // { at, body, surcharges }: the estimate as opened, for Undo changes since I opened this
+  let savedSinceOpen = false;
+  /* T17: autosave adds the client to the client list only once Business
+     Name has been typed in and then left, never mid-word, and never just
+     because an estimate opened with an unlinked name. */
+  let businessTyped = false;
+  let businessLeft = false;
+  let refreshMark = 0; // counts Update to current rates, so a save only clears the one it sent
 
   /* Production items on days (production-booking task 7; see PRODUCTION
      ITEMS LIVE ON DAYS below). One items element per day, by day id, kept
@@ -161,6 +180,11 @@ const EstimateEditor = (() => {
   let breakdownOpener = null; // the control that opened it, to hand focus back to
 
   const rid = () => 'r' + ++rowCounter;
+  // X-LSC-Session: random, one per mount (I2). Not a secret, only a label.
+  const newSession = () =>
+    (window.crypto && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const $ = (id) => root.querySelector('#' + id);
 
   /* Is this editor still the screen on #main? A save or delete is async and the
@@ -1315,8 +1339,9 @@ const EstimateEditor = (() => {
       day,
       trip: booking.tripOf(dayId),
       /* Each placed, changed or removed stop, and each route that comes back:
-         the day's trip, saved with the estimate (the bar's Save until
-         autosave, task 8), and its two linked lines written from it. */
+         the day's trip and its two linked lines written from it, then
+         saved by autosave (task 8: recalc() touches it) on an unsent
+         estimate, or by Save on a sent one. */
       onChange: (next) => {
         // A stop's Undo can come from a toast after the editor has gone.
         if (!booking || !onScreen()) return;
@@ -2916,24 +2941,37 @@ const EstimateEditor = (() => {
       '</select></div>';
   }
 
-  /* The bar: the client total, ⋯, Cancel and Save, always in reach. The save
-     error sits on top of it, beside the button that raised it, rather than at
-     the foot of a page the owner may be halfway down. Below 768px Cancel goes
-     into ⋯ (moreItems). */
+  /* The bar: the client total, the save state, ⋯ and the way out, always in
+     reach. An unsent estimate saves itself (task 8, T15, T16): the autosave
+     status and Done. A sent or accepted one keeps Cancel and Save, and Save's
+     resend dialog (T14). A save error sits on top of the bar, beside the
+     button that raised it, rather than at the foot of a page the owner may be
+     halfway down. Below 768px Cancel goes into ⋯ (moreItems), and the status
+     takes its own line under the buttons. */
   function barMarkup() {
     return (
       '<div class="ed-bar" id="ed-bar">' +
       '<div id="editor-error" role="alert"></div>' +
       '<div class="ed-bar-total"><span class="eyebrow ed-bar-label">Client total · inc GST</span>' +
       '<span class="ed-bar-fig" id="ed-bar-total">$0.00</span></div>' +
-      '<div class="ed-bar-acts">' +
-      '<button type="button" class="btn btn-quiet ed-bar-more" id="js-more" aria-label="More for this estimate" ' +
-      'aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">⋯</span></button>' +
+      '<p class="ed-autosave" id="ed-autosave"' + (autoMode ? '' : ' hidden') + '></p>' +
+      '<p class="sr-only" id="ed-autosave-live" aria-live="polite"></p>' +
+      '<div class="ed-bar-acts" id="ed-bar-acts">' + barActs() + '</div></div>'
+    );
+  }
+
+  function barActs() {
+    const more = '<button type="button" class="btn btn-quiet ed-bar-more" id="js-more" aria-label="More for this estimate" ' +
+      'aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">⋯</span></button>';
+    if (autoMode) {
+      return more +
+        '<button type="button" class="btn btn-primary" id="js-done">' +
+        '<span class="spinner" id="done-spin"></span><span id="done-label">Done</span></button>';
+    }
+    return more +
       '<button type="button" class="btn btn-quiet ed-bar-cancel" id="js-cancel">Cancel</button>' +
       '<button type="button" class="btn btn-primary" id="js-save" data-write>' +
-      '<span class="spinner" id="save-spin"></span><span id="save-label">Save</span></button>' +
-      '</div></div>'
-    );
+      '<span class="spinner" id="save-spin"></span><span id="save-label">Save</span></button>';
   }
 
   const panelEl = (key) => $('ed-panels').querySelector('[data-panel="' + key + '"]');
@@ -2997,7 +3035,9 @@ const EstimateEditor = (() => {
      of its own, which only closes the sheet. */
   function moreItems() {
     return [
-      PHONE.matches && { act: 'cancel', text: 'Cancel editing' },
+      !autoMode && PHONE.matches && { act: 'cancel', text: 'Cancel editing' },
+      // Once something has been saved since it opened (task 8, T16).
+      autoMode && opened && savedSinceOpen && !saving && { act: 'undo', text: 'Undo changes since I opened this…', attrs: { 'data-write': '' } },
       breakdown && { act: 'calc', text: 'How this is calculated' },
       existing && !saving && { act: 'delete', text: 'Delete estimate…', danger: true, attrs: { 'data-write': '' } },
     ];
@@ -3016,6 +3056,7 @@ const EstimateEditor = (() => {
       items: moreItems(),
       onSelect: (it) => {
         if (it.act === 'cancel') handlers.onCancel();
+        else if (it.act === 'undo') undoSinceOpen();
         else if (it.act === 'calc') openBreakdown(opener);
         else if (it.act === 'delete') remove();
       },
@@ -3025,6 +3066,11 @@ const EstimateEditor = (() => {
   // Crossing 768px moves Cancel into ⋯ or out of it, which can show or hide ⋯.
   PHONE.addEventListener('change', () => {
     if (onScreen()) paintMore();
+  });
+
+  // A tab put away (or a phone locked) may not come back: what's waiting saves now (T15).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && auto && onScreen()) auto.flush();
   });
 
   // ── Reading the form back ─────────────────────────────────────────────────
@@ -3309,6 +3355,8 @@ const EstimateEditor = (() => {
     paintMinimum(totals, hoursWorking(LSCCalc.labourHoursBreakdown(active, pricing), totals));
     // The breakdown just painted decides whether ⋯ offers How this is calculated.
     paintMore();
+    // Whatever moved the figures is an edit to save (task 8).
+    if (auto) auto.touch();
   }
 
   /* The job's hours, in words, when they aren't just a sum of the quantities on
@@ -3765,6 +3813,7 @@ const EstimateEditor = (() => {
     const kept = JSON.stringify(surchargesNow(days, pricing));
     const was = refreshSurcharges;
     refreshSurcharges = true;
+    refreshMark += 1;
     const surchargesMoved = !was && JSON.stringify(surchargesNow(days, pricing)) !== kept;
     if (!was && !surchargesMoved) refreshSurcharges = false;
     paintLineUnits();
@@ -3918,9 +3967,13 @@ const EstimateEditor = (() => {
     // controls it describes have gone.
     saving = next;
     if (!onScreen()) return;
-    $('js-save').disabled = next;
-    $('save-spin').style.display = next ? 'inline-block' : 'none';
-    $('save-label').textContent = next ? 'Saving…' : 'Save';
+    // Save mode's button; Done is held by its own busy state (done()).
+    if ($('js-save')) {
+      $('js-save').disabled = next;
+      $('save-spin').style.display = next ? 'inline-block' : 'none';
+      $('save-label').textContent = next ? 'Saving…' : 'Save';
+    }
+    if ($('js-done')) $('js-done').disabled = next;
     // Delete leaves ⋯ while a save is in flight (moreItems).
     paintMore();
   }
@@ -3956,6 +4009,7 @@ const EstimateEditor = (() => {
     link = { id: client.id, name: client.businessName };
     paintLink();
     lookUpLastProject();
+    if (auto) auto.touch();
   }
 
   /* "Save to client list" for a name that isn't linked. An existing record with
@@ -4033,38 +4087,71 @@ const EstimateEditor = (() => {
     too_many_rentals: 'There are more than 100 gear rentals on this estimate.',
   };
 
+  /* What would stop this form being saved, checked before anything is sent,
+     or null. Both save paths read it: Save shows `msg` on the bar's error
+     line and goes to the field; autosave shows `short` in its status and
+     leaves the cursor where it is (T15). `reveal` opens what hides the field.
+     A new estimate's missing name or UPID is `waiting`: not saved *yet*. */
+  function problemOf(body) {
+    if (!body.name || !body.upid) {
+      // The brief's words: "add a project name and UPID".
+      const missing = !body.name && !body.upid ? 'a project name and UPID' : !body.name ? 'a project name' : 'a UPID';
+      return {
+        msg: !body.name ? 'Enter a project name before saving.' : 'Enter a UPID before saving.',
+        fieldId: !body.name ? 'f-name' : 'f-upid',
+        // The form's order: the UPID comes first.
+        autoField: !body.upid ? 'f-upid' : 'f-name',
+        short: 'add ' + missing,
+        waiting: !existing,
+      };
+    }
+    // The client's ABN prints on the invoice.
+    if (body.client.abn && !abnValid(body.client.abn)) {
+      return {
+        msg: 'That client ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.',
+        short: 'the client ABN doesn’t check out',
+        fieldId: 'f-abn',
+      };
+    }
+    // A rental back before it went out: the server refuses it (rental_dates_reversed).
+    const backwards = shownRentals().find(reversed);
+    if (backwards) {
+      return {
+        msg: 'The ' + backwards.vendor + ' rental comes back before it goes out. Check its Back date.',
+        short: 'the ' + backwards.vendor + ' rental comes back before it goes out',
+        fieldId: 'rn-' + backwards.id + '-back',
+        reveal: () => booking && booking.showOff(), // opens the block if it was folded
+      };
+    }
+    // A day on a date another project has confirmed, with no specification note (D16).
+    const locked = booking && booking.lockProblem({ quiet: true });
+    if (locked) {
+      return { msg: locked.msg, short: locked.msg, fieldId: locked.fieldId, reveal: () => booking.lockProblem() };
+    }
+    return null;
+  }
+
+  /* Moves to a field a refusal named: its panel opened, the field in view
+     and focused. */
+  function goToField(id, reveal) {
+    if (!onScreen()) return;
+    if (reveal) reveal();
+    const field = id && $(id);
+    if (!field) return;
+    openPanelOf(field);
+    field.scrollIntoView({ block: 'center' });
+    field.focus({ preventScroll: true });
+  }
+
   async function save() {
     if (saving) return;
     clearError();
 
     const body = payload();
-    if (!body.name) {
-      fieldError('Enter a project name before saving.', 'f-name');
-      return;
-    }
-    if (!body.upid) {
-      fieldError('Enter a UPID before saving.', 'f-upid');
-      return;
-    }
-    // The client's ABN prints on the invoice.
-    if (body.client.abn && !abnValid(body.client.abn)) {
-      fieldError('That client ABN doesn’t check out — it should be 11 digits, as shown on the ABN Lookup.', 'f-abn');
-      return;
-    }
-
-    // A rental back before it went out: the server refuses it (rental_dates_reversed).
-    const backwards = shownRentals().find(reversed);
-    if (backwards) {
-      if (booking) booking.showOff(); // opens the block if it was folded
-      fieldError('The ' + backwards.vendor + ' rental comes back before it goes out. Check its Back date.',
-        'rn-' + backwards.id + '-back');
-      return;
-    }
-
-    // A day on a date another project has confirmed, with no specification note (D16).
-    const locked = booking && booking.lockProblem();
-    if (locked) {
-      fieldError(locked.msg, locked.fieldId);
+    const problem = problemOf(body);
+    if (problem) {
+      if (problem.reveal) problem.reveal();
+      fieldError(problem.msg, problem.fieldId);
       return;
     }
 
@@ -4097,21 +4184,15 @@ const EstimateEditor = (() => {
     try {
       let added = false;
       if (!body.clientId && body.client.businessName && $('f-saveclient').checked) {
-        const resolved = await resolveClient({
-          businessName: body.client.businessName,
-          contactName: body.client.contactName,
-          email: body.client.email,
-          phone: body.client.phone,
-          abn: body.client.abn,
-          address: body.client.address,
-        });
+        const resolved = await resolveClient(clientFields(body));
         body.clientId = resolved.id;
         added = resolved.created;
         paintLink();
       }
 
+      // baseUpdatedAt (task 7): refused if another tab or device saved since this one last did.
       const reply = existing
-        ? await LSCApi.put('/api/estimates/' + encodeURIComponent(existing.id), body)
+        ? await LSCApi.put(estimateUrl(), Object.assign({}, body, { baseUpdatedAt }))
         : await LSCApi.post('/api/estimates', body);
       saved(reply, added ? 'Estimate saved — ' + body.client.businessName + ' added to your client list.' : 'Estimate saved.');
     } catch (err) {
@@ -4123,7 +4204,7 @@ const EstimateEditor = (() => {
         if (!onScreen()) return;
         SendPanel.openUpdate($('js-save'), {
           info: err.data,
-          save: (resend) => LSCApi.put('/api/estimates/' + encodeURIComponent(existing.id), Object.assign({}, body, { resend })),
+          save: (resend) => LSCApi.put(estimateUrl(), Object.assign({}, body, { baseUpdatedAt, resend })),
           done: (reply) => {
             const r = reply.resent || {};
             saved(reply, r.by === 'email' ? 'Saved. v' + r.version + ' is on its way to your client.'
@@ -4137,6 +4218,18 @@ const EstimateEditor = (() => {
       refused(err);
     }
   }
+
+  const estimateUrl = () => '/api/estimates/' + encodeURIComponent(existing.id);
+
+  // The client record "Save to client list" makes, from the estimate's copy.
+  const clientFields = (body) => ({
+    businessName: body.client.businessName,
+    contactName: body.client.contactName,
+    email: body.client.email,
+    phone: body.client.phone,
+    abn: body.client.abn,
+    address: body.client.address,
+  });
 
   /* A save that went through. */
   function saved(reply, said) {
@@ -4174,6 +4267,10 @@ const EstimateEditor = (() => {
     if (err.code === 'upid_locked') {
       return fieldError(err.message || 'The UPID is fixed: this project’s invoice numbers carry it.', 'f-upid');
     }
+    if (err.code === 'estimate_changed_elsewhere') {
+      return showError('This estimate was changed in another tab or device after you opened it, so nothing was saved. ' +
+        'Reload to see the latest (your changes here would be lost).');
+    }
     showError(
       err.kind === 'network'
         ? 'Couldn’t save — the server is unreachable. Your work is still here; try again once it’s back.'
@@ -4181,20 +4278,278 @@ const EstimateEditor = (() => {
     );
   }
 
+  /* ── Autosave (trip-planner task 8; T14–T17, I2) ──────────────────────────
+     An unsent estimate (a new one, or a draft) saves itself: 1.5 s after the
+     last edit, on leaving a field, on opening a panel, on Done and when the
+     tab is hidden (js/autosave.js has the timing). Nothing navigates after a
+     save and nothing toasts; the bar's status says where it stands.
+
+     A new estimate saves once it has a name and a UPID: its first save makes
+     the project, and the address becomes the project's in place
+     (handlers.onCreated, LSCRouter.rename). Every save after is a PUT with
+     X-LSC-Autosave (the server refuses it once the estimate isn't a draft)
+     and baseUpdatedAt (refused if another tab or device saved since).
+
+     The money rules are Save's: the same checks first (problemOf), the
+     public holiday list before a dated day is priced, and a price the
+     holiday list changes is on screen for a full pause before it is saved.
+     The client goes on the client list only once Business Name has been
+     left (T17), so never mid-word.
+
+     The unsaved guard asks only about edits not yet saved, or not on their
+     way (a save in flight that carries them lands even if the editor is
+     left). */
+
+  // The payload as the server will hold it once saved: refreshSurcharges asks for a change, it isn't one.
+  function savedKey(body) {
+    const plain = Object.assign({}, body);
+    delete plain.refreshSurcharges;
+    return JSON.stringify(plain);
+  }
+
+  const autoHeaders = () => ({ 'X-LSC-Autosave': '1', 'X-LSC-Session': session });
+
+  // The status when nothing is waiting to be saved.
+  function cleanStatus() {
+    if (existing) return { kind: 'saved', at: existing.updatedAt };
+    const problem = problemOf(payload());
+    return { kind: 'waiting', text: problem ? problem.short : 'add a project name and UPID', field: problem ? problem.autoField : 'f-upid' };
+  }
+
+  async function autoAttempt({ sending }) {
+    const gen = mountGen;
+    const still = () => gen === mountGen && onScreen();
+    if (!still() || held) return null;
+
+    let body = payload();
+    // T17's client-list add is work of its own: leaving Business Name after the pause already saved it.
+    const wantsClient = (b) => businessTyped && businessLeft && !b.clientId && b.client.businessName && $('f-saveclient').checked;
+    if (JSON.stringify(body) === baseline && !wantsClient(body)) return cleanStatus();
+
+    const problem = problemOf(body);
+    if (problem) {
+      return {
+        kind: problem.waiting ? 'waiting' : 'refused',
+        text: problem.short,
+        field: problem.autoField || problem.fieldId,
+        reveal: problem.reveal,
+      };
+    }
+
+    // The holiday list before a dated day is priced, as Save does. A price it
+    // changes is on screen for a full pause before it is saved.
+    if ((body.days || []).some((d) => d.date) && !holidays) {
+      const shown = ($('s-total') || {}).textContent;
+      await loadHolidays();
+      if (!still()) return null;
+      if (!holidays) {
+        return { kind: 'refused', text: 'the public holiday list couldn’t be loaded to price a booked date. It’s tried again on your next change.' };
+      }
+      if (($('s-total') || {}).textContent !== shown) {
+        auto.touch();
+        return { kind: 'waiting', text: 'a booked date is a public holiday, so its prices just changed. They save in a moment.' };
+      }
+      body = payload();
+    }
+
+    const mark = refreshMark;
+    sending();
+    inFlight = JSON.stringify(body);
+    try {
+      let added = false;
+      // T17: only once Business Name has been left, so never a half-typed name.
+      if (wantsClient(body)) {
+        const resolved = await resolveClient(clientFields(body));
+        if (!still()) return null;
+        added = resolved.created;
+        paintLink();
+        body = payload();
+        inFlight = JSON.stringify(body);
+      }
+
+      const reply = existing
+        ? await LSCApi.put(estimateUrl(), Object.assign({}, body, { baseUpdatedAt }), { headers: autoHeaders() })
+        : await LSCApi.post('/api/estimates', body);
+      inFlight = null;
+      if (gen !== mountGen) return null;
+
+      const created = !existing;
+      existing = reply.estimate;
+      baseUpdatedAt = existing.updatedAt || null;
+      baseline = savedKey(body);
+      // Today's surcharges are stored now; only a click since this was sent still wants them.
+      if (refreshMark === mark) refreshSurcharges = false;
+      savedSinceOpen = true;
+      if (!onScreen()) return null;
+      if (created) {
+        // A new project, in place: its address, title and Delete (T17, IA flow 4).
+        handlers.onCreated(existing);
+        const title = root.querySelector('.page-title');
+        if (title) title.textContent = 'Edit estimate';
+      }
+      if (added) Toast.ok(body.client.businessName + ' added to your client list.');
+      paintMore();
+      return { kind: 'saved', at: existing.updatedAt };
+    } catch (err) {
+      inFlight = null;
+      if (gen !== mountGen) return null;
+      return autoRefused(err);
+    }
+  }
+
+  /* An autosave the server refused, or that couldn't reach it, as a status.
+     The form is left as it is, and the next edit tries again. */
+  function autoRefused(err) {
+    if (!(err instanceof LSCApi.ApiError)) throw err;
+    if (err.kind === 'auth') {
+      handlers.onAuthLost({ keepScreen: true });
+      return { kind: 'refused', text: 'you were signed out. Your work is still here; it saves on your next change.' };
+    }
+    // Sent from another tab or device: from now on it saves with Save (T14).
+    if (err.code === 'autosave_not_draft') {
+      toSaveMode();
+      return null;
+    }
+    if (err.code === 'estimate_changed_elsewhere') return { kind: 'conflict' };
+    if (err.code === 'date_locked' && booking) {
+      const lock = booking.serverLocked(err.data && err.data.date, err.data && err.data.upid);
+      return { kind: 'refused', text: lock.msg, field: lock.fieldId || null };
+    }
+    if (RENTAL_ERRORS[err.code]) return { kind: 'refused', text: RENTAL_ERRORS[err.code] };
+    if (err.code === 'upid_taken') {
+      return { kind: 'refused', text: err.message || 'that UPID is already used by another project.', field: 'f-upid' };
+    }
+    if (err.code === 'upid_locked') {
+      return { kind: 'refused', text: err.message || 'the UPID is fixed: this project’s invoice numbers carry it.', field: 'f-upid' };
+    }
+    if (err.kind === 'network') {
+      return { kind: 'refused', text: 'the server is unreachable. Your work is still here; it saves on your next change.' };
+    }
+    return { kind: 'refused', text: err.message || 'the server refused the request.' };
+  }
+
+  /* The estimate was sent elsewhere while this was open: the bar becomes
+     Save's, and Save sends the client the change (T14). */
+  function toSaveMode() {
+    if (auto) auto.stop();
+    auto = null;
+    autoMode = false;
+    if (!onScreen()) return;
+    $('ed-autosave').hidden = true;
+    $('ed-bar-acts').innerHTML = barActs();
+    paintMore();
+    showError('This estimate has been sent from another tab or device, so changes here aren’t saved automatically any more. ' +
+      'Save sends your client the update.');
+  }
+
+  /* "Changed in another tab or device · Reload": the latest from the server,
+     after the guard asks about anything here not yet saved. */
+  function reloadEstimate() {
+    if (!LSCUnsaved.confirmLeave('Reloading it')) return;
+    const here = LSCRouter.current();
+    if (here) LSCRouter.go(here.key, { skipGuard: true });
+  }
+
+  /* Done (T16): the project, once whatever is waiting has saved. Anything
+     still unsaved after that (a refusal, a conflict) is the guard's to ask
+     about. Back does the same. */
+  let doneBusy = false;
+  async function done() {
+    if (doneBusy) return;
+    if (!auto) return handlers.onDone(existing);
+    doneBusy = true;
+    const label = $('done-label');
+    const spin = $('done-spin');
+    const waits = auto.busy() || snapshot() !== baseline;
+    if (waits && label) {
+      label.textContent = 'Saving…';
+      spin.style.display = 'inline-block';
+    }
+    try {
+      if (auto.stopped()) await auto.idle();
+      else await auto.flush();
+    } finally {
+      doneBusy = false;
+    }
+    if (!onScreen()) return;
+    if (label) {
+      label.textContent = 'Done';
+      spin.style.display = 'none';
+    }
+    handlers.onDone(existing);
+  }
+
+  /* ⋯ Undo changes since I opened this (T16): the payload captured at mount,
+     saved back through the autosave path, then the editor drawn again from
+     the reply, so days, trips and lines are all as they were. */
+  async function undoSinceOpen() {
+    if (!auto || !opened || !existing || saving) return;
+    if (!window.confirm(
+      'Put this estimate back as it was at ' + LSCAutosave.clock(opened.at) + '?\n\n' +
+      'Everything changed since then is undone, days, trips and lines included.' +
+      ((await undoMovesSurcharges()) ? ' Weekend, public holiday and after-hours pricing follows today’s Rate Card ' +
+        'and holiday list, so the total may not be quite what it was.' : '')
+    )) return;
+
+    held = true;
+    await auto.idle();
+    if (!onScreen()) return;
+    setSaving(true);
+    Toast.working('Putting it back…');
+    try {
+      const reply = await LSCApi.put(estimateUrl(), Object.assign({}, opened.body, { baseUpdatedAt }), { headers: autoHeaders() });
+      Toast.ok('Back as it was at ' + LSCAutosave.clock(opened.at) + '.');
+      if (!onScreen()) return;
+      // The travel view is drawn afresh with the editor, so its address goes too.
+      if (trip.view) LSCRouter.mark(tripAddress(null), { replace: true });
+      mount(root, reply.estimate, handlers, {});
+    } catch (err) {
+      setSaving(false);
+      Toast.hide();
+      held = false;
+      if (!onScreen()) return;
+      const status = autoRefused(err);
+      if (status && auto) auto.set(status);
+    }
+  }
+
+  /* Will putting the opened version back leave its surcharge snapshot as it
+     was? The server rebuilds the snapshot from what it holds now
+     (prepareWrite), so a day removed since and restored by the Undo takes
+     today's kind, and settings refreshed or dropped since (Update to current
+     rates; every day removed) come back as today's. Worked out with the same
+     calc.js function the server runs, so the Undo dialog only warns when the
+     price can really differ. True when it would differ, or can't be told. */
+  async function undoMovesSurcharges() {
+    await loadHolidays();
+    if (!holidays) return true;
+    const body = opened.body;
+    const after = (body.days || []).length || body.shortNotice
+      ? LSCCalc.surchargeSnapshot(body.days, LSCData.pricing(), holidays,
+        { surcharges: existing.surcharges || {}, days: existing.days || [] })
+      : {};
+    return JSON.stringify(after) !== opened.surcharges;
+  }
+
   async function remove() {
     if (saving || !existing) return;
     if (!window.confirm('Delete this estimate? This cannot be undone.')) return;
 
+    // An autosave on its way lands first, and none starts after: a PUT after the DELETE would 404.
+    held = true;
+    if (auto) await auto.idle();
+    if (!onScreen()) return;
     setSaving(true);
     Toast.working('Deleting…');
     try {
-      await LSCApi.del('/api/estimates/' + encodeURIComponent(existing.id));
+      await LSCApi.del(estimateUrl());
       Toast.ok('Estimate deleted.');
       if (!onScreen()) return;
       handlers.onDeleted();
     } catch (err) {
       setSaving(false);
       Toast.hide();
+      held = false;
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
       showError(
@@ -4239,11 +4594,31 @@ const EstimateEditor = (() => {
        browser's own back button would, which is not where anyone expects to
        lose a form. The question is the router's: onCancel is a route change,
        and every route change asks it (js/router.js). */
-    const leave = () => handlers.onCancel();
+    const leave = () => (autoMode ? done() : handlers.onCancel());
     $('js-back').addEventListener('click', leave);
-    $('js-cancel').addEventListener('click', leave);
-    $('js-save').addEventListener('click', save);
-    $('js-more').addEventListener('click', (e) => openMore(e.currentTarget));
+    // One listener for the bar's buttons: they are drawn again when the bar
+    // changes mode (toSaveMode).
+    $('ed-bar-acts').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.id === 'js-more') openMore(b);
+      else if (b.id === 'js-cancel') leave();
+      else if (b.id === 'js-save') save();
+      else if (b.id === 'js-done') done();
+    });
+
+    /* Autosave's cues (task 8, T15): any edit restarts its pause (recalc()
+       touches it too, for edits made by code: a trip's lines, a day moved);
+       leaving a field or opening a panel saves now. Leaving Business Name is
+       also what lets a save add the client (T17). */
+    const shell = root.querySelector('.ed-shell');
+    shell.addEventListener('input', () => auto && auto.touch());
+    shell.addEventListener('change', () => auto && auto.touch());
+    shell.addEventListener('focusout', (e) => {
+      if (!auto) return;
+      if (e.target.id === 'f-business') businessLeft = true;
+      if (e.target.matches('input, textarea, select')) auto.flush();
+    });
 
     // The jump rail and its select (task 12).
     root.querySelector('.ed-rail').addEventListener('click', (e) => {
@@ -4273,11 +4648,14 @@ const EstimateEditor = (() => {
       if (key && key !== 'job') rememberPanel(key, e.detail.open);
       // Opening or closing one moves every panel below it.
       onSpyScroll();
+      if (auto && e.detail.open) auto.flush();
     });
 
     const business = $('f-business');
     ClientTypeahead.attach(business, { onPick: pickClient });
     business.addEventListener('input', () => {
+      businessTyped = true;
+      businessLeft = false;
       paintLink();
       paintLastToggle();
     });
@@ -4355,6 +4733,23 @@ const EstimateEditor = (() => {
     copiedFrom = (options && options.copiedFrom) || null;
     rowCounter = 0;
     saving = false;
+    /* Autosave (task 8): an unsent estimate, new or a draft (T14). The last
+       mount's instance stops here, and a reply of its still on the way is
+       dropped (mountGen). */
+    if (auto) auto.stop();
+    auto = null;
+    mountGen += 1;
+    autoMode = !estimate || estimate.status === 'draft';
+    held = false;
+    inFlight = null;
+    opened = null;
+    savedSinceOpen = false;
+    businessTyped = false;
+    businessLeft = false;
+    refreshMark = 0;
+    doneBusy = false;
+    baseUpdatedAt = (estimate && estimate.updatedAt) || null;
+    session = newSession();
     breakdownOverlay = document.getElementById('modal-cost-breakdown');
     /* The overlay lives outside `root`, so a re-mount replaces the form under
        an open dialog instead of taking it with it. Nothing in the app can
@@ -4465,8 +4860,27 @@ const EstimateEditor = (() => {
       // Hidden still counts as on screen: behind the login card after a 401
       // this form is being kept for after sign-in, and a reload would lose it.
       onScreen: () => Boolean(root && root.querySelector('#f-upid')),
-      dirty: () => snapshot() !== baseline,
+      // Not yet saved and not on its way: a save in flight lands even if the editor is left.
+      dirty: () => {
+        const now = snapshot();
+        return now !== baseline && now !== inFlight;
+      },
     });
+
+    if (autoMode) {
+      // What Undo changes since I opened this puts back (T16): only a saved estimate has one.
+      if (estimate) {
+        opened = { at: new Date().toISOString(), body: payload(), surcharges: JSON.stringify(estimate.surcharges || {}) };
+      }
+      auto = LSCAutosave.create({
+        status: cleanStatus(),
+        attempt: autoAttempt,
+        el: () => (onScreen() ? $('ed-autosave') : null),
+        live: () => (onScreen() ? $('ed-autosave-live') : null),
+        onField: (s) => goToField(s.field, s.reveal),
+        onReload: reloadEstimate,
+      });
+    }
 
     watchBar();
     LSCRouter.claim(onTripRoute);

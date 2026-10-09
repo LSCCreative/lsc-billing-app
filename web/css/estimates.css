@@ -1011,6 +1011,52 @@
   display: none;
 }
 
+/* Autosave's status (trip-planner task 8, T15). Quiet grey while all is
+   well; warm only when something isn't saved. On a phone it takes its own
+   line under the total and Done; from 768px it sits beside the buttons. A
+   status that names a field is a button to it (44px tall below 768px). */
+.ed-autosave {
+  order: 1;
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+.ed-autosave:empty {
+  display: none;
+}
+.ed-autosave[data-kind="refused"] {
+  color: var(--color-status-warning-text);
+}
+.ed-autosave[data-kind="conflict"] {
+  color: var(--color-status-error-text);
+}
+.ed-autosave-spin {
+  display: inline-block;
+  margin-right: var(--space-3);
+  vertical-align: -1px;
+}
+.ed-autosave-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ed-autosave-link:hover {
+  color: var(--color-text-primary);
+}
+
 /* The toast clears the bar instead of sitting on Save. */
 body:has(.ed-bar) .export-toast {
   bottom: var(--space-11);
@@ -1036,6 +1082,21 @@ body:has(.ed-bar) .export-toast {
   }
   .ed-bar-more {
     min-width: var(--control-h);
+  }
+  /* Beside the buttons, right-aligned, so the bar reads total … status ⋯ Done. */
+  .ed-autosave {
+    order: 0;
+    flex: 0 1 auto;
+    max-width: 52ch;
+    margin-left: auto;
+    text-align: right;
+  }
+  .ed-autosave:not([hidden]):not(:empty) ~ .ed-bar-acts {
+    margin-left: 0;
+  }
+  .ed-autosave-link {
+    min-height: 0;
+    text-align: right;
   }
 }
 

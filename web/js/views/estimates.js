@@ -51,6 +51,14 @@ const EstimatesView = (() => {
          project's editor entry becomes its folder instead. The form was just
          saved, so there is nothing for the guard to ask about. */
       onSaved: (estimate) => LSCRouter.leaveTo(folderPath(estimate.projectId), { skipGuard: true, replace: true }),
+      /* Autosave (trip-planner task 8). A new project's first save: the
+         editor stays, at the project's address (IA flow 4). */
+      onCreated: (estimate) => LSCRouter.rename(ProjectFolder.estimatePath(projectOf(estimate), estimate, false)),
+      /* Done: the project once saved, else (a new one never saved) where
+         Cancel goes. The guard asks about anything still unsaved. */
+      onDone: (estimate) => (estimate && estimate.projectId
+        ? LSCRouter.leaveTo(folderPath(estimate.projectId), { replace: true })
+        : LSCRouter.leaveTo(back, { replace: true })),
       // Its folder may be gone too (a project's last estimate takes it), so
       // this replaces rather than going Back to it.
       onDeleted: () => LSCRouter.go(LIST, { replace: true, skipGuard: true }),

@@ -34,6 +34,14 @@
  * other direction: the screen moving its own address without a render. A claim
  * lasts until the next render.
  *
+ * A NEW RECORD GETS ITS ADDRESS IN PLACE (trip-planner task 8)
+ * A new estimate autosaves, and its first save gives it a project. rename()
+ * moves the screen to its real path without a render, replacing the entry.
+ * Entries the screen pushed before that (the travel view's `?trip`) still say
+ * the old path, and an entry can only be rewritten while it is the current
+ * one, so until the next render the old path is read as the new one when Back
+ * or Forward lands on it.
+ *
  * MODALS ARE NOT ROUTES
  * Back while a dialog is open closes the dialog and stays put. Each modal's own
  * Escape handling does the closing, so a dialog with edits in it asks about them
@@ -52,6 +60,7 @@ const LSCRouter = (() => {
   let pending = null; // in-memory state handed to the next render only
   let ticket = 0;
   let claimant = null; // the screen's (route) => boolean for query-only moves, or null
+  const aliases = new Map(); // old path -> new path, for the screen on show (rename)
 
   /* '#/projects?stage=sent' -> { path: '/projects', segments, query,
      key: '/projects?stage=sent' }. The area is lowercased (the IA's URLs are
@@ -80,6 +89,11 @@ const LSCRouter = (() => {
   }
 
   const here = () => parse(location.hash).key;
+  // `key` with its path swapped for `path`, its query kept.
+  const withPath = (key, path) => {
+    const qs = parse(key).query.toString();
+    return path + (qs ? '?' + qs : '');
+  };
   const stampedIdx = () => {
     const st = history.state;
     return st && typeof st.lscIdx === 'number' ? st.lscIdx : null;
@@ -92,6 +106,7 @@ const LSCRouter = (() => {
   function show(path) {
     ticket += 1;
     claimant = null;
+    aliases.clear();
     rendered = path;
     const state = pending;
     pending = null;
@@ -142,8 +157,14 @@ const LSCRouter = (() => {
   }
 
   function onHashChange() {
-    const path = here();
+    let path = here();
     const newIdx = stampedIdx();
+    // An entry from before rename(): it is this screen's, at its new address.
+    const renamed = aliases.get(parse(path).path);
+    if (renamed) {
+      path = withPath(path, renamed);
+      history.replaceState(history.state, '', '#' + path);
+    }
 
     if (!active || path === rendered) {
       /* Signed out (the route is shown after sign-in), or back on the screen
@@ -267,6 +288,22 @@ const LSCRouter = (() => {
     return true;
   }
 
+  /* The screen on show now lives at `path` (a new record's first save): the
+     entry is replaced in place with no render, keeping its query, and the old
+     path is read as the new one until the next render. False when there is
+     no screen on show. */
+  function rename(path) {
+    if (!active || rendered === null) return false;
+    const from = parse(rendered).path;
+    const to = parse(path).path;
+    if (to === from) return true;
+    aliases.set(from, to);
+    for (const [i, key] of trail) if (parse(key).path === from) trail.set(i, withPath(key, to));
+    rendered = withPath(rendered, to);
+    history.replaceState({ lscIdx: index }, '', '#' + rendered);
+    return true;
+  }
+
   return {
     parse,
 
@@ -312,6 +349,7 @@ const LSCRouter = (() => {
     go,
     leaveTo,
     mark,
+    rename,
 
     /* The screen on show takes query-only moves on its own path: fn(route)
        returns true when it has dealt with one. Cleared by the next render.

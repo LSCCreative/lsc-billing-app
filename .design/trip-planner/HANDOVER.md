@@ -3,10 +3,10 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 8, Opus, effort high: a frontend task (and money: it stores prices).** Stage A
-(the trip planner) and task 7 (autosave on the server) are done.
+**Next: task 9, Sonnet, effort high: backend** (call sheet data, links and the static map; no
+frontend). Stage A (the trip planner) and stage B (autosave) are done.
 
-## State as of 2026-10-10 (task 7)
+## State as of 2026-10-10 (task 8)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -49,8 +49,62 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   (headless), no overflow. 594 server tests pass.
 - [x] **Task 7** autosave on the server, `ff61ec7`. 600 server tests pass (`test-autosave.js`, and
   the throttle with a fake clock in `test-backup.js`). No schema change.
-- [ ] **Next: task 8**, autosave in the editor. *Opus/high, **frontend**, money.* The trip planner
-  then saves through it.
+- [x] **Task 8** autosave in the editor, `COMMIT8`. **Stage B is done.** Verified in the pane on
+  scratch (dispatched events; the pane was hidden, so focus/blur were dispatched `focusout`s):
+  a blank new estimate saved with no click once it had a name and UPID, and its address became
+  `#/projects/<id>/estimate` with no re-render; nothing sent mid-typing, one PUT after the pause,
+  on leaving a field and on opening a panel, each with `X-LSC-Autosave`, `X-LSC-Session` and
+  `baseUpdatedAt`; a bad ABN read "Not saved: …" with a button to the field, sent nothing, and
+  saved once fixed; a write from "another tab" → "Changed in another tab or device · Reload",
+  nothing more sent, Reload asked and redrew the server's copy; removing the trip day ($5,094)
+  then ⋯ Undo put back all three days, the seven-stop trip, both linked lines, the notes and
+  $6,644.60; a sent estimate kept Cancel/Save, sent no autosave and Save opened the resend
+  dialog; the client was added only on leaving Business Name; Back from a new estimate's travel
+  view after its first save closed the view on the same form; Done waited for the save, then
+  the project; a stubbed `autosave_not_draft` switched the bar to Save; Delete waited for the
+  save on its way. Shots at 1280/800/375 (headless), no overflow. 600 server tests pass (no
+  server change).
+- [ ] **Next: task 9**, call sheet data, links and the static map. *Sonnet/high, backend.*
+
+## Decisions made in task 8 (agent's, within the brief)
+
+- **Autosave mode = a new estimate or `status === 'draft'`** (the server's own rule). Anything
+  else draws today's Cancel + Save. A 409 `autosave_not_draft` mid-session switches the bar to
+  Save in place and says why on the error line.
+- **The bar:** total · status · ⋯ · **Done** (primary). Below 768px the status is its own line
+  under the buttons. "Saving…" only while a request is out (a blur with nothing new sends
+  nothing and doesn't flicker). A status naming a field is a button to it (opens its panel,
+  focuses it; never steals focus by itself). Screen readers hear a problem once and the save
+  that fixes it, not every routine save (`#ed-autosave-live`).
+- **One attempt function, two paths:** `problemOf(body)` holds Save's client-side checks for both
+  (Save: `msg` + focus the field; autosave: `short` in the status). `lockProblem({ quiet })`
+  doesn't open the booking block for autosave's check.
+- **Retry only on the next edit** (or blur, panel, Done, tab hidden): a timer would retry a
+  refusal forever. A save asked for while one is out runs after it lands, never alongside.
+- **`baseline` is now "last saved"**, so the unsaved guard asks only about edits not yet saved
+  *and not on their way* (`inFlight`: a save in flight lands even if the editor is left). Save
+  mode is unchanged. Save also sends `baseUpdatedAt` and explains `estimate_changed_elsewhere`.
+- **After a save `existing` becomes the reply** (its `updatedAt` is the next base, its surcharge
+  snapshot the next prior), and `refreshSurcharges` clears only if no Update to current rates
+  was clicked while it was out (`refreshMark`).
+- **Holiday reprice:** if loading the list moves the total, the new prices stay on screen for a
+  full pause ("Not saved yet: … its prices just changed. They save in a moment.") and then save.
+- **T17:** the client is added only when Business Name was *typed in* this session and then left
+  (`businessTyped` + `businessLeft`), so an old estimate with an unlinked name never adds one by
+  being opened; leaving the field is work in itself even if the pause already saved the text.
+- **New estimate's address:** `LSCRouter.rename(path)` replaces the entry with no render, keeps
+  the query (`?trip`), rewrites the trail, and reads the old path as the new one until the next
+  render (an entry the travel view pushed before the save still says `/projects/new`).
+  `handlers.onCreated` / `handlers.onDone` in `estimates.js`. Done for a never-saved estimate
+  goes where Cancel went; Back = Done in autosave mode.
+- **Undo** is offered only once something saved since opening. It PUTs the payload captured at
+  mount (autosave headers, `baseUpdatedAt`), then re-mounts from the reply (the travel view and
+  its `?trip` go). The confirm warns about surcharges only when `calc.js`'s `surchargeSnapshot`,
+  run on the days it will send against what the server holds now, differs from the snapshot at
+  open (a removed-and-restored day, or settings refreshed or dropped since).
+- **Delete and Undo hold autosave** (`held`) and wait for the save in flight first. Each mount
+  bumps `mountGen`, so a late reply from the last estimate is dropped.
+- `LSCApi.post/put(path, body, { headers })` sends extra headers (the API's CORS list has them).
 
 ## Decisions made in task 7 (agent's, within the brief)
 
@@ -239,6 +293,12 @@ secret, correctly. **The user creates it and pastes the client ID and secret int
 `.credentials.local.md`.** Check `/auth/clients` for a duplicate before creating another.
 
 ## Traps
+
+- In the hidden browser pane, scripted `.focus()` fires **no** focus/blur events. Test the blur
+  save by dispatching `new FocusEvent('focusout', { bubbles: true })` on the field.
+- Headless screenshots of the editor: a reload over a dirty form raises `beforeunload` and hangs
+  `page.reload` — `page.on('dialog', d => d.accept())`. The app never reaches `networkidle0`;
+  wait for `#ed-bar` instead.
 
 - `LSCData` (like every module here) is a top-level `const`: `window.LSCData` is **undefined**.
   Test for globals with `typeof`, or just use them.
