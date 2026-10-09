@@ -47,7 +47,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   summaries, Settings → Home base (pick by keyboard, saved with coordinates; typed text refused;
   blank removes it) and its one-pick Start in the travel view. Shots at 1280 and 375
   (headless), no overflow. 594 server tests pass.
-- [x] **Task 7** autosave on the server, `TASK7`. 600 server tests pass (`test-autosave.js`, and
+- [x] **Task 7** autosave on the server, `ff61ec7`. 600 server tests pass (`test-autosave.js`, and
   the throttle with a fake clock in `test-backup.js`). No schema change.
 - [ ] **Next: task 8**, autosave in the editor. *Opus/high, **frontend**, money.* The trip planner
   then saves through it.
