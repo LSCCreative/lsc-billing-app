@@ -1,6 +1,7 @@
 'use strict';
 
-/* The travel view (.design/trip-planner/, T8; task 2 the shell, task 3 the stops).
+/* The travel view (.design/trip-planner/, T8; task 2 the shell, task 3 the
+ * stops, task 4 the route).
  *
  * One production day's trip, planned on a map. It takes over the Production
  * booking panel's body (BookingBlock.showTrip): the panel's head, collapse
@@ -8,18 +9,22 @@
  * opens and closes (the `?trip=<dayId>` address, I1); this file owns what's
  * inside.
  *
- *   const view = TripPlanner.mount({ day, trip, onChange, onBack });
+ *   const view = TripPlanner.mount({ day, trip, onChange, onBack, lines });
  *   view.el        // the view's element, for BookingBlock.showTrip
  *   view.dayId
  *   view.focus()   // its heading, as the view opens
  *   view.destroy() // stop listening; the caller removes the element
  *
- * `day` is { id, title, date } as BookingBlock.list() gives it, the title
- * "Day 2 · Thu 29 Oct". `trip` is the day's stored trip or null.
+ * `day` is { id, title, date, startTime } as BookingBlock.list() gives it,
+ * the title "Day 2 · Thu 29 Oct". `trip` is the day's stored trip or null.
  * onChange(trip) hands back the whole trip after every edit that changes it
- * (null once it has no start); the editor stores it on the day, and it saves
- * with the estimate. onBack() is the Back button: the editor drops `?trip`
- * and returns to the day's service menu.
+ * (null once it has no start), and again when its route comes back; the
+ * editor stores it on the day, writes the day's linked travel lines from it,
+ * and it saves with the estimate. onBack() is the Back button: the editor
+ * drops `?trip` and returns to the day's service menu. lines() is what the
+ * Trip totals list: { lines: [{ name, qty, bill } | { missing }], typed:
+ * [{ name, bill }] }, the day's linked lines (or why one couldn't be added)
+ * and any typed line of the same kind, as the editor holds them.
  *
  * LAYOUT (brief, Responsive Behavior): header across the top; the map and
  * the stops side by side from 768px (55/45 from 1100px, the map sticky as the
@@ -49,9 +54,10 @@
  *     its old one);
  *   - RETURN goes with the last placed destination (Undo brings both back).
  *
- * THE ROUTE (legs, totals, polyline) is task 4's. Until then a trip keeps the
- * route figures it had: days.js stores them as sent, and the leg count needn't
- * match the stops (the last good route stands until the next one).
+ * THE ROUTE (task 4, T5, T6): see "The route" below. Each change to the
+ * stops asks Google again; opening the view never does. The stored legs,
+ * totals and line stand until a route replaces them whole, and
+ * routedFor.stops says which stops they were worked out for.
  */
 
 const TripPlanner = (() => {
@@ -129,6 +135,94 @@ const TripPlanner = (() => {
 
   const spotText = (at) => 'Pinned spot ' + at.lat.toFixed(5) + ', ' + at.lng.toFixed(5);
 
+  // ── The route's figures (task 4) ──────────────────────────────────────────
+
+  /* Which stops a route was worked out for: FNV-1a over each stop's role,
+     spot and time on location, stored as routedFor.stops (days.js ROUTE_SIG).
+     A trip whose stops no longer match it is out of date: saved after a
+     failed re-route, or closed while one was on its way. */
+  function stopsSig(stops) {
+    const text = stops.map((s) => [s.role, s.lat.toFixed(6), s.lng.toFixed(6), s.minutesOnSite || 0].join(',')).join(';');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return 'r' + h.toString(16).padStart(8, '0');
+  }
+
+  /* "4.5 km" under 10 km, "42 km" above; a total to the tenth: "186.2 km". */
+  const legKm = (km) => (km < 10 ? Math.round(km * 10) / 10 : Math.round(km)).toLocaleString('en-AU') + ' km';
+  const totalKm = (km) => (Math.round(km * 10) / 10).toLocaleString('en-AU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' km';
+
+  /* "48 min", "1 h 05" (IA Naming: "h" and "min", never "Hour"). */
+  function duration(minutes) {
+    const m = Math.round(minutes);
+    return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0');
+  }
+
+  /* The same, for a screen reader: "2 hours 40 minutes". */
+  function durationSpoken(minutes) {
+    const m = Math.round(minutes);
+    const h = Math.floor(m / 60);
+    const parts = [];
+    if (h) parts.push(h + (h === 1 ? ' hour' : ' hours'));
+    if (m % 60 || !h) parts.push((m % 60) + ((m % 60) === 1 ? ' minute' : ' minutes'));
+    return parts.join(' ');
+  }
+
+  /* 'HH:MM' plus minutes, on the wall clock, as 'HH:MM' (past midnight wraps). */
+  function clockPlus(hhmm, minutes) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const total = (((h * 60 + m + Math.round(minutes)) % 1440) + 1440) % 1440;
+    return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+  }
+
+  /* '07:05' → '7:05 am'. */
+  function clockText(hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + (h < 12 ? ' am' : ' pm');
+  }
+
+  /* The instant a day's date and start time name in Sydney (the app's zone),
+     wherever this browser is. Two passes settle a daylight-saving edge. */
+  const SYDNEY = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Australia/Sydney', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  function sydneyOffset(t) {
+    const p = {};
+    SYDNEY.formatToParts(new Date(t)).forEach((x) => {
+      p[x.type] = x.value;
+    });
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - Math.floor(t / 1000) * 1000;
+  }
+  function sydneyInstant(date, hhmm) {
+    const [y, mo, d] = date.split('-').map(Number);
+    const [h, mi] = hhmm.split(':').map(Number);
+    const wall = Date.UTC(y, mo - 1, d, h, mi);
+    let t = wall;
+    for (let k = 0; k < 2; k++) t = wall - sydneyOffset(t);
+    return new Date(t);
+  }
+
+  /* Show trip details is remembered in this browser (the brief). */
+  const DETAILS_KEY = 'lsc.trip.details';
+  function detailsPref() {
+    try {
+      return localStorage.getItem(DETAILS_KEY) === '1';
+    } catch (err) {
+      return false;
+    }
+  }
+  function saveDetailsPref(on) {
+    try {
+      localStorage.setItem(DETAILS_KEY, on ? '1' : '0');
+    } catch (err) {
+      // Private mode or blocked storage: it just isn't remembered.
+    }
+  }
+
   function markup(day) {
     return (
       '<section class="trip-view" aria-labelledby="trip-h">' +
@@ -137,6 +231,8 @@ const TripPlanner = (() => {
       '<span aria-hidden="true">←</span> Back</button>' +
       '<h3 class="trip-title" id="trip-h" tabindex="-1">' +
       '<span class="trip-kicker">Travel<span class="sr-only"> · </span></span><span class="trip-day">' + esc(day.title) + '</span></h3>' +
+      '<button type="button" class="btn btn-quiet btn-sm trip-more" aria-haspopup="menu" aria-expanded="false" ' +
+      'aria-label="More travel actions" hidden><span aria-hidden="true">⋯</span></button>' +
       '</div>' +
       '<div class="trip-map-pane">' +
       // The search bar: shown while a cell waits for a location (APG combobox).
@@ -170,18 +266,39 @@ const TripPlanner = (() => {
       '</div>' +
       '</div>' +
       '<div class="trip-stops">' +
+      '<div class="trip-stops-bar">' +
       '<h4 class="trip-stops-h">Destinations</h4>' +
+      // A toggle, so its name stays put and aria-pressed says which way it is.
+      '<button type="button" class="btn btn-quiet btn-sm trip-details-btn" aria-pressed="false" hidden>' +
+      '<span class="trip-switch" aria-hidden="true"></span>Show trip details</button>' +
+      '</div>' +
       '<p class="trip-empty">No stops yet. A trip starts where the day starts: home, the studio, or the first pickup.</p>' +
       '<ol class="trip-cells" aria-label="Stops"></ol>' +
       '<div class="trip-adds"></div>' +
       '<p class="trip-cap" hidden>23 destinations is the most Google can route in one trip.</p>' +
+      // The outcome, last (IA Content Hierarchy): figures, the lines they bill, and why when they can't.
+      '<section class="trip-totals" aria-labelledby="trip-totals-h" hidden>' +
+      '<h4 class="trip-stops-h" id="trip-totals-h" tabindex="-1">Trip totals</h4>' +
+      '<div class="trip-route-msg" hidden><p class="trip-route-text"></p>' +
+      '<button type="button" class="btn btn-sm trip-recalc">Recalculate</button></div>' +
+      '<dl class="trip-figures">' +
+      '<div class="trip-figure"><dt>Distance</dt><dd class="trip-fig-km"></dd></div>' +
+      '<div class="trip-figure"><dt>Drive time</dt><dd class="trip-fig-time"></dd></div>' +
+      '</dl>' +
+      '<p class="trip-traffic"></p>' +
+      '<ul class="trip-lines" aria-label="Lines this trip bills"></ul>' +
+      '<p class="trip-also" hidden></p>' +
+      '</section>' +
       '<p class="sr-only trip-live" aria-live="polite"></p>' +
       '</div>' +
       '</section>'
     );
   }
 
-  function cellMarkup(cells, cell, waiting, startCell) {
+  /* A cell. `leg` is the drive to it from the stop before, spoken with the
+     cell when Show trip details is on (the line drawn above it is hidden
+     from screen readers, so the list counts stops only). */
+  function cellMarkup(cells, cell, waiting, startCell, leg) {
     const name = nameOf(cells, cell);
     const placed = cell.role === 'return' ? Boolean(startCell && isPlaced(startCell)) : isPlaced(cell);
     const isWaiting = waiting === cell.id;
@@ -210,7 +327,8 @@ const TripPlanner = (() => {
     return (
       '<li class="' + cls + '" data-stop-id="' + esc(cell.id) + '">' +
       '<span class="trip-chip" aria-hidden="true">' + esc(chipOf(cells, cell)) + '</span>' +
-      '<div class="trip-cell-body"><span class="sr-only">' + esc(name) + ': </span>' + body + '</div>' +
+      '<div class="trip-cell-body"><span class="sr-only">' + esc(name) + ': </span>' + body +
+      (leg ? '<span class="sr-only"> ' + esc(leg) + '</span>' : '') + '</div>' +
       (acts ? '<div class="trip-cell-acts">' + acts + '</div>' : '') +
       '</li>'
     );
@@ -297,6 +415,224 @@ const TripPlanner = (() => {
       onChange(next);
     }
 
+    /* After every change to the stops: save, then route if the stops are not
+       the ones the stored route was worked out for (an Undo puts back a stop
+       list and the route that went with it, so it asks Google nothing). */
+    function changed() {
+      emit();
+      const trip = tripOf(cells, base);
+      if (trip && !fits(trip)) {
+        reroute();
+        return;
+      }
+      // No trip, or the stored route is already these stops' (an Undo): a route on its way is for stops that have gone.
+      routeSeq++;
+      routing = false;
+      routeError = '';
+      paint();
+    }
+
+    // ── The route (task 4; T5, T6) ─────────────────────────────────────────
+    /* Each change to the stops asks Google for the whole trip (maps.js
+       route), with traffic when the day has a date and a start time still to
+       come, and replaces the legs, totals, line and routedFor/routedAt whole
+       when it answers. Until it does, the last good figures stand, greyed;
+       if it fails they stay, with Try again. The editor writes the day's two
+       linked lines from the totals (opts.onChange). Opening the view asks
+       Google nothing: the stored line and figures are drawn as they are (T6),
+       and a changed day only says so, with Recalculate. */
+
+    let routing = false;
+    let routeError = '';
+    let routeSeq = 0;
+    let routeLine = null;
+    let routeDrawn = ''; // the polyline and look the route line was drawn with
+    let lineSeq = 0;
+    let details = detailsPref();
+
+    /* Does the stored route belong to these stops? */
+    function fits(trip) {
+      const f = base && base.routedFor;
+      if (!trip || !f || !base.routedAt) return false;
+      if (f.stops) return f.stops === stopsSig(trip.stops);
+      // Stored before signatures: the leg count is the best there is.
+      return Array.isArray(base.legs) && base.legs.length === trip.stops.length - 1;
+    }
+
+    /* When the route leaves: with traffic from the day's start (T5), or
+       without when there's no date or time, or it has already passed
+       (Google predicts traffic only for times to come). */
+    function departure() {
+      if (!day.date || !day.startTime) return { at: null, traffic: false };
+      const at = sydneyInstant(day.date, day.startTime);
+      return at.getTime() > Date.now() + 60000 ? { at, traffic: true } : { at: null, traffic: false };
+    }
+
+    /* Each leg's clock times, when the day has a start time: leaving the
+       first stop then, each next leg after the time on location. */
+    function clockLegs(legs, stops) {
+      if (!day.startTime) return legs.map((l) => ({ km: l.km, minutes: l.minutes }));
+      let elapsed = 0;
+      return legs.map((l, i) => {
+        if (i > 0) elapsed += stops[i].minutesOnSite || 0;
+        const departAt = clockPlus(day.startTime, elapsed);
+        elapsed += l.minutes;
+        return { km: l.km, minutes: l.minutes, departAt, arriveAt: clockPlus(day.startTime, elapsed) };
+      });
+    }
+
+    async function reroute() {
+      const trip = tripOf(cells, base);
+      if (!trip) return;
+      const stops = trip.stops;
+      const go = departure();
+      const routedFor = { date: day.date || null, startTime: day.startTime || null, traffic: go.traffic, stops: stopsSig(stops) };
+      const mine = ++routeSeq;
+      routeError = '';
+      if (stops.length < 2) {
+        // A start alone: nothing to drive, and nothing to ask Google.
+        routing = false;
+        base = { legs: [], totals: { km: 0, minutes: 0 }, polyline: '', routedFor, routedAt: new Date().toISOString() };
+        emit();
+        paint();
+        return;
+      }
+      routing = true;
+      paint();
+      let found;
+      try {
+        found = await LSCMaps.route(stops, { departAt: go.at, dwell: (i) => stops[i].minutesOnSite || 0 });
+      } catch (err) {
+        if (mine !== routeSeq || !alive) return;
+        routing = false;
+        routeError = err.message;
+        paint();
+        say('Route not updated. ' + err.message);
+        return;
+      }
+      // A newer change has its own route on the way, or the view has closed (the stops then read as changed when it reopens).
+      if (mine !== routeSeq || !alive) return;
+      const legs = clockLegs(found.legs, stops);
+      const totals = {
+        km: legs.reduce((sum, l) => sum + l.km, 0),
+        minutes: legs.reduce((sum, l) => sum + l.minutes, 0),
+      };
+      base = { legs, totals, polyline: found.polyline, routedFor, routedAt: new Date().toISOString() };
+      routing = false;
+      emit();
+      paint();
+      fit(true);
+      say('Route updated: ' + totalKm(totals.km) + ', ' + durationSpoken(totals.minutes) + '.');
+    }
+
+    /* What the totals say about the stored route. */
+    function routeState(trip) {
+      if (routing) return 'routing';
+      if (routeError) return 'error';
+      if (!base || !base.routedAt) return 'unrouted';
+      if (!fits(trip)) return 'stops';
+      const f = base.routedFor;
+      if ((f.date || null) !== (day.date || null) || (f.startTime || null) !== (day.startTime || null)) return 'day';
+      return 'ok';
+    }
+
+    const ROUTE_TEXT = {
+      routing: 'Working out the route…',
+      unrouted: 'This trip hasn’t been routed yet.',
+      stops: 'The stops changed after the route was worked out.',
+      day: 'Day changed. Drive times may differ.',
+    };
+
+    /* The totals block, the legs, the ⋯ and the route line, from the stored route. */
+    function paintRoute() {
+      const trip = tripOf(cells, base);
+      const routable = Boolean(trip && trip.stops.length > 1);
+      const totalsEl = q('.trip-totals');
+      totalsEl.hidden = !routable;
+      q('.trip-more').hidden = !routable;
+      const fitsNow = routable && fits(trip);
+      q('.trip-details-btn').hidden = !fitsNow;
+      drawRoute(fitsNow);
+      if (!routable) return;
+
+      const state = routeState(trip);
+      const msgEl = q('.trip-route-msg');
+      const text = state === 'error' ? routeError : ROUTE_TEXT[state] || '';
+      msgEl.hidden = !text;
+      msgEl.classList.toggle('is-error', state === 'error');
+      q('.trip-route-text').textContent = text;
+      const again = q('.trip-recalc');
+      again.hidden = state === 'routing' || state === 'ok' || !text;
+      again.textContent = state === 'error' ? 'Try again' : 'Recalculate';
+
+      // The last good figures, greyed while they wait for a route or no longer fit the stops.
+      const has = Boolean(base && base.routedAt);
+      const stale = state === 'routing' || !fitsNow;
+      const figures = q('.trip-figures');
+      figures.hidden = !has;
+      figures.classList.toggle('is-stale', stale);
+      totalsEl.setAttribute('aria-busy', String(state === 'routing'));
+      if (has) {
+        q('.trip-fig-km').textContent = totalKm(base.totals.km);
+        q('.trip-fig-time').textContent = duration(base.totals.minutes);
+      }
+      const f = has ? base.routedFor : null;
+      let traffic = '';
+      if (f && f.traffic) {
+        traffic = 'With traffic, leaving ' + clockText(f.startTime) + '.';
+      } else if (f) {
+        traffic = !f.date || !f.startTime
+          ? 'Without traffic: this day has no date or start time.'
+          : 'Without traffic: Google predicts traffic only for times still to come.';
+      }
+      const trafficEl = q('.trip-traffic');
+      trafficEl.textContent = traffic;
+      trafficEl.hidden = !traffic;
+
+      // The day's two lines, as the editor holds them.
+      const info = typeof opts.lines === 'function' ? opts.lines() : { lines: [], typed: [] };
+      const linesEl = q('.trip-lines');
+      linesEl.innerHTML = info.lines.map((l) =>
+        l.missing
+          ? '<li class="trip-line is-missing">' + esc(l.missing) + '</li>'
+          : '<li class="trip-line' + (stale ? ' is-stale' : '') + '"><span class="trip-line-name">' + esc(l.name) + '</span>' +
+            '<span class="trip-line-qty">' + esc(l.qty) + '</span><span class="trip-line-bill">' + esc(l.bill) + '</span></li>'
+      ).join('');
+      linesEl.hidden = !info.lines.length;
+      const also = q('.trip-also');
+      also.textContent = info.typed.length
+        ? day.title + ' also has ' + info.typed.map((t) => t.name + ' (' + t.bill + ')').join(' and ') +
+          ' typed in by hand. Remove ' + (info.typed.length === 1 ? 'it' : 'them') + ' if this trip covers the same driving.'
+        : '';
+      also.hidden = !info.typed.length;
+    }
+
+    /* The route line, from the stored polyline: full strength while it fits
+       the stops, faint while it waits for a route or no longer fits them. */
+    async function drawRoute(fitsNow) {
+      const encoded = mapReady && base && base.polyline ? base.polyline : '';
+      const faint = !fitsNow || routing;
+      const look = encoded ? encoded.length + ':' + encoded.slice(0, 64) + ':' + faint : '';
+      if (look === routeDrawn) return;
+      routeDrawn = look;
+      const mine = ++lineSeq;
+      if (routeLine) routeLine.setMap(null);
+      routeLine = null;
+      if (!encoded) return;
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--color-accent-mark').trim();
+      const line = await LSCMaps.routeLine(map, encoded, { color, opacity: faint ? 0.35 : 0.9 });
+      if (mine !== lineSeq || !alive) {
+        if (line) line.setMap(null);
+        return;
+      }
+      routeLine = line;
+    }
+
+    function recalculate() {
+      if (!tripOf(cells, base)) return;
+      reroute();
+    }
+
     // ── The map ────────────────────────────────────────────────────────────
 
     function showState(text, canRetry) {
@@ -341,10 +677,13 @@ const TripPlanner = (() => {
     }
     PHONE.addEventListener('change', onPhoneChange);
 
-    /* Every placed stop in view (RETURN shares START's spot). */
+    /* Every placed stop in view (RETURN shares START's spot), and the route
+       between them while it fits them: a road can bulge past its stops. */
     function fit(animate) {
       if (!mapReady) return;
-      const points = cells.filter((c) => c.role !== 'return' && isPlaced(c)).map((c) => ({ lat: c.lat, lng: c.lng }));
+      let points = cells.filter((c) => c.role !== 'return' && isPlaced(c)).map((c) => ({ lat: c.lat, lng: c.lng }));
+      const trip = tripOf(cells, base);
+      if (points.length > 1 && base && base.polyline && fits(trip)) points = points.concat(LSCMaps.decode(base.polyline));
       LSCMaps.show(map, points, { animate: animate && !REDUCED.matches });
     }
 
@@ -404,9 +743,49 @@ const TripPlanner = (() => {
 
     // ── Drawing the stops ──────────────────────────────────────────────────
 
+    /* The drive into each placed cell, by cell id, while Show trip details is
+       on and the stored legs belong to these stops: legs[i] runs from stop i
+       to stop i + 1 of the trip, whose stops are the placed cells in order. */
+    function legsByCell() {
+      const out = new Map();
+      const trip = tripOf(cells, base);
+      if (!details || !trip || !fits(trip)) return out;
+      trip.stops.forEach((s, i) => {
+        const leg = i > 0 ? base.legs[i - 1] : null;
+        if (leg) out.set(s.id, leg);
+      });
+      return out;
+    }
+
+    function legMarkup(leg) {
+      const clock = leg.departAt && leg.arriveAt ? clockText(leg.departAt) + ' → ' + clockText(leg.arriveAt) : '';
+      return (
+        '<li class="trip-leg' + (routing ? ' is-stale' : '') + '" aria-hidden="true">' +
+        '<span class="trip-leg-fig">— ' + esc(legKm(leg.km)) + ' · ' + esc(duration(leg.minutes)) + ' —</span>' +
+        (clock ? '<span class="trip-leg-clock">' + esc(clock) + '</span>' : '') +
+        '</li>'
+      );
+    }
+
+    function legSpoken(leg) {
+      return 'Drive from the stop before: ' + legKm(leg.km) + ', ' + durationSpoken(leg.minutes) +
+        (leg.departAt && leg.arriveAt ? ', leaving ' + clockText(leg.departAt) + ', arriving ' + clockText(leg.arriveAt) : '') + '.';
+    }
+
     function paint() {
       const start = startCell();
-      listEl.innerHTML = cells.map((c) => cellMarkup(cells, c, waiting, start)).join('');
+      const legs = legsByCell();
+      // A route can come back while focus is on a cell's button: the rebuilt cell gets it back.
+      const had = listEl.contains(document.activeElement) ? document.activeElement : null;
+      const hadCell = had && had.closest('[data-stop-id]');
+      const hadAct = had && had.dataset.act;
+      listEl.innerHTML = cells.map((c) => {
+        const leg = legs.get(c.id);
+        return (leg ? legMarkup(leg) : '') + cellMarkup(cells, c, waiting, start, leg ? legSpoken(leg) : '');
+      }).join('');
+      if (hadCell && !listEl.contains(document.activeElement)) focusIn(hadCell.dataset.stopId, hadAct);
+      const toggle = q('.trip-details-btn');
+      toggle.setAttribute('aria-pressed', String(details));
       listEl.hidden = !cells.length;
       q('.trip-empty').hidden = cells.length > 0;
 
@@ -431,6 +810,7 @@ const TripPlanner = (() => {
       pane.setAttribute('aria-label', 'Map of ' + day.title + '’s route, ' + (n ? n + (n === 1 ? ' stop' : ' stops') : 'no stops yet'));
       if (map) map.setOptions({ draggableCursor: waiting ? 'crosshair' : null });
       drawPins();
+      paintRoute();
     }
 
     function focusIn(id, act) {
@@ -518,7 +898,7 @@ const TripPlanner = (() => {
       session = null;
       search.hidden = true;
       paint();
-      emit();
+      changed();
       fit(true);
       say(nameOf(cells, cell) + ' set: ' + cell.address + '.');
       focusNext();
@@ -792,7 +1172,7 @@ const TripPlanner = (() => {
       if (cells.some((c) => c.role === 'return') || !destinations().some(isPlaced)) return;
       cells.push({ id: newStopId(), role: 'return' });
       paint();
-      emit();
+      changed();
       say('Return trip added: back to ' + startCell().address + '.');
       focusNext();
     }
@@ -807,7 +1187,7 @@ const TripPlanner = (() => {
       }
       cells = copyCells(saved);
       paint();
-      emit();
+      changed();
       fit(true);
     }
 
@@ -831,7 +1211,7 @@ const TripPlanner = (() => {
       }
       paint();
       if (wasPlaced) {
-        emit();
+        changed();
         fit(true);
         const dayId = day.id;
         Toast.ok(dropsReturn ? 'Stop and return trip removed' : 'Stop removed', {
@@ -875,6 +1255,29 @@ const TripPlanner = (() => {
       q('#trip-h').focus();
     });
 
+    // Recalculate, or Try again after a failure: the message's button, then focus to the totals' heading.
+    q('.trip-recalc').addEventListener('click', () => {
+      recalculate();
+      q('#trip-totals-h').focus();
+    });
+
+    // The view's ⋯ (task 6 adds Clear trip).
+    const more = q('.trip-more');
+    more.addEventListener('click', () => {
+      LSCMenu.open(more, {
+        label: 'Travel actions',
+        items: [{ text: 'Recalculate', hint: 'Ask Google again for this day' }],
+        onSelect: () => recalculate(),
+      });
+    });
+
+    q('.trip-details-btn').addEventListener('click', () => {
+      details = !details;
+      saveDetailsPref(details);
+      paint();
+      say(details ? 'Trip details shown: the drive between each stop.' : 'Trip details hidden.');
+    });
+
     paint();
     startMap();
 
@@ -899,6 +1302,10 @@ const TripPlanner = (() => {
           m.map = null;
         });
         if (pendingMarker) pendingMarker.map = null;
+        routeSeq++;
+        lineSeq++;
+        if (routeLine) routeLine.setMap(null);
+        routeLine = null;
         map = null;
       },
     };

@@ -3,8 +3,8 @@
 /* Google Maps, in one place (.design/trip-planner/, T1; task 2).
  *
  * Every call the browser makes to Google goes through this file: loading the
- * script, the map itself, and (tasks 3 and 4) address search, reverse
- * geocoding and routes. That keeps the billable calls countable, the failure
+ * script, the map itself, address search and reverse geocoding (task 3),
+ * and routes (task 4). That keeps the billable calls countable, the failure
  * messages consistent, and a change of provider inside one file.
  *
  * THE KEY. window.LSC_MAPS_KEY (and LSC_MAPS_ID, the Map ID that numbered
@@ -317,6 +317,197 @@ const LSCMaps = (() => {
     map.fitBounds(bounds, 56);
   }
 
+  // ── Routes (task 4, T5) ─────────────────────────────────────────────────────
+  /* Google's Routes API, asked directly over HTTPS with the browser key (it
+     is website-restricted, and the request carries this page's address the
+     way the map's own requests do). The Maps script isn't needed for it.
+
+     WITH TRAFFIC (a departure time is given): one request per leg, in order,
+     each leaving when the one before it arrived plus the time on location
+     there (T5, T11), so every leg is priced at its own hour of the day.
+     WITHOUT: one request for the whole trip, its stops as waypoints.
+
+     A route is all or nothing: if any leg fails, route() rejects and the
+     caller keeps its last good figures (the brief's "never a half result"). */
+
+  const ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+  const ROUTE_FIELDS = 'routes.legs.distanceMeters,routes.legs.duration,routes.legs.polyline.encodedPolyline';
+
+  const routeFailed = () => fail('route', 'Couldn’t reach Google Maps to work out the route. Check the connection and try again.');
+
+  const waypoint = (s) => ({ location: { latLng: { latitude: s.lat, longitude: s.lng } } });
+  const seconds = (d) => (typeof d === 'string' ? parseFloat(d) : 0) || 0;
+
+  /* One Routes request through `points`, in order: [{ km, minutes, polyline }] per leg. */
+  async function computeLegs(key, points, departAt) {
+    const body = {
+      origin: waypoint(points[0]),
+      destination: waypoint(points[points.length - 1]),
+      travelMode: 'DRIVE',
+      routingPreference: departAt ? 'TRAFFIC_AWARE' : 'TRAFFIC_UNAWARE',
+      polylineQuality: 'OVERVIEW',
+      regionCode: 'AU',
+      languageCode: 'en-AU',
+      units: 'METRIC',
+    };
+    if (points.length > 2) body.intermediates = points.slice(1, -1).map(waypoint);
+    if (departAt) body.departureTime = departAt.toISOString();
+    let res;
+    try {
+      res = await fetch(ROUTES_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': ROUTE_FIELDS },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw routeFailed();
+    }
+    let reply = null;
+    try {
+      reply = await res.json();
+    } catch (err) {
+      reply = null;
+    }
+    if (res.status === 403) {
+      throw fail('refused', 'Google refused the route request. The Routes API may be switched off for this site’s map key.');
+    }
+    if (!res.ok) {
+      console.error('Routes API', res.status, reply);
+      throw routeFailed();
+    }
+    const route = reply && Array.isArray(reply.routes) ? reply.routes[0] : null;
+    const legs = route && Array.isArray(route.legs) ? route.legs : [];
+    if (legs.length !== points.length - 1) {
+      throw fail('no_route', 'Google found no driving route between these stops. Check that each one can be reached by road.');
+    }
+    return legs.map((l) => ({
+      km: (l.distanceMeters || 0) / 1000,
+      minutes: seconds(l.duration) / 60,
+      polyline: (l.polyline && l.polyline.encodedPolyline) || '',
+    }));
+  }
+
+  /**
+   * The driving route through `stops` ([{ lat, lng }], two or more), as
+   * { legs: [{ km, minutes }], polyline } with the legs in order and the
+   * polyline the whole trip's line, encoded.
+   *
+   * options.departAt: a Date to leave the first stop at, with traffic; leave
+   * it out for Google's traffic-unaware times. options.dwell(i): minutes
+   * spent at stop i before the next leg leaves (time on location).
+   */
+  async function route(stops, options) {
+    const opts = options || {};
+    const key = String(window.LSC_MAPS_KEY || '').trim();
+    if (!key) throw fail('no_key', 'Google Maps isn’t set up on this site yet: there’s no map key in its settings.');
+    if (refusal) throw refusal;
+    const dwell = typeof opts.dwell === 'function' ? opts.dwell : () => 0;
+    let legs;
+    if (!opts.departAt) {
+      legs = await computeLegs(key, stops, null);
+    } else {
+      legs = [];
+      let at = opts.departAt.getTime();
+      for (let i = 0; i < stops.length - 1; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        const [leg] = await computeLegs(key, [stops[i], stops[i + 1]], new Date(at));
+        legs.push(leg);
+        at += (leg.minutes + (Number(dwell(i + 1)) || 0)) * 60000;
+      }
+    }
+    return {
+      legs: legs.map((l) => ({ km: l.km, minutes: l.minutes })),
+      polyline: joinPolylines(legs.map((l) => l.polyline)),
+    };
+  }
+
+  // ── Encoded polylines ───────────────────────────────────────────────────────
+  /* Google's encoded polyline format (precision 5): the legs' lines joined
+     into one, stored with the trip so the map redraws without asking Google
+     (T6), and later drawn on the call sheet's static map. days.js caps it at
+     50,000 characters; a longer line is thinned to fit, keeping each end. */
+
+  const MAX_POLYLINE = 49000;
+
+  function decode(str) {
+    const points = [];
+    let i = 0;
+    let lat = 0;
+    let lng = 0;
+    const next = () => {
+      let result = 0;
+      let shift = 0;
+      let b;
+      do {
+        b = str.charCodeAt(i++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20); // past the end, charCodeAt is NaN, which stops it
+      return result & 1 ? ~(result >> 1) : result >> 1;
+    };
+    while (i < (str || '').length) {
+      lat += next();
+      lng += next();
+      points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+    return points;
+  }
+
+  function encodeValue(v) {
+    let n = v < 0 ? ~(v << 1) : v << 1;
+    let out = '';
+    while (n >= 0x20) {
+      out += String.fromCharCode((0x20 | (n & 0x1f)) + 63);
+      n >>= 5;
+    }
+    return out + String.fromCharCode(n + 63);
+  }
+
+  function encode(points) {
+    let lat = 0;
+    let lng = 0;
+    let out = '';
+    points.forEach((p) => {
+      const la = Math.round(p.lat * 1e5);
+      const ln = Math.round(p.lng * 1e5);
+      out += encodeValue(la - lat) + encodeValue(ln - lng);
+      lat = la;
+      lng = ln;
+    });
+    return out;
+  }
+
+  function joinPolylines(parts) {
+    let points = [];
+    parts.forEach((part) => {
+      const pts = decode(part || '');
+      // A leg starts where the last one ended: that point once, not twice.
+      points = points.concat(points.length && pts.length ? pts.slice(1) : pts);
+    });
+    let out = encode(points);
+    for (let step = 2; out.length > MAX_POLYLINE && points.length > 2; step++) {
+      const thin = points.filter((p, i) => i % step === 0 || i === points.length - 1);
+      out = encode(thin);
+    }
+    return out;
+  }
+
+  /** The route's line on `map`, drawn from its encoded polyline. line.setMap(null) removes it. */
+  async function routeLine(map, encoded, options) {
+    if (!map || !encoded) return null;
+    const opts = options || {};
+    const { Polyline } = await window.google.maps.importLibrary('maps');
+    return new Polyline({
+      map,
+      path: decode(encoded),
+      clickable: false,
+      strokeColor: opts.color || '#C0603C',
+      strokeOpacity: opts.opacity === undefined ? 0.9 : opts.opacity,
+      strokeWeight: 5,
+      zIndex: 1,
+    });
+  }
+
   return {
     load,
     createMap,
@@ -328,6 +519,9 @@ const LSCMaps = (() => {
     reverseGeocode,
     canPin,
     pin,
+    route,
+    routeLine,
+    decode,
     /** fn(err) once Google refuses the key; returns a function that stops listening. */
     onRefused(fn) {
       refusedListeners.add(fn);

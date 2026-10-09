@@ -319,6 +319,9 @@ test('a bad trip is refused with its code, and nothing is saved', async () => {
   await refused(Object.assign(t(), { legs: [{ km: 1 }] }), 'trip_invalid');
   await refused(Object.assign(t(), { routedFor: { date: '2026-02-30', startTime: null, traffic: false } }), 'trip_invalid');
   await refused(Object.assign(t(), { routedAt: 'yesterday' }), 'trip_invalid');
+  await refused(Object.assign(t(), { routedFor: { date: null, startTime: null, traffic: false, stops: 'has spaces' } }), 'trip_invalid');
+  await refused(Object.assign(t(), { routedFor: { date: null, startTime: null, traffic: false, stops: 'x'.repeat(65) } }), 'trip_invalid');
+  await refused(Object.assign(t(), { routedFor: { date: null, startTime: null, traffic: false, stops: 42 } }), 'trip_invalid');
   await refused(Object.assign(t(), { polyline: 'x'.repeat(50001) }), 'trip_invalid');
   const fraction = t();
   fraction.stops[1].minutesOnSite = 1.5;
@@ -351,6 +354,10 @@ test('parseTrip keeps only the fields it names, and 23 destinations is allowed',
   assert.deepEqual(trip.stops[0], Object.assign({ id: 's0', role: 'start' }, HOME));
   assert.deepEqual(trip.stops[1].details, { capture: 'Wide', access: '' }, 'a present key is kept, even blank');
   assert.equal(trip.legs[0].departAt, '07:00');
+  assert.deepEqual(trip.routedFor, { date: '2026-11-03', startTime: '07:00', traffic: true }, 'no stop signature, no key');
+
+  const signed = tripOf(10, 10, { routedFor: { date: null, startTime: null, traffic: false, stops: 'r1a2b3c4d', extra: 'x' } });
+  assert.deepEqual(parseTrip(signed).trip.routedFor, { date: null, startTime: null, traffic: false, stops: 'r1a2b3c4d' });
 
   assert.deepEqual(parseTrip(null), { trip: null });
   assert.deepEqual(parseTrip({ stops: [] }), { trip: null }, 'no stops is no trip');

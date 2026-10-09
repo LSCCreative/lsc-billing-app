@@ -3,9 +3,9 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Model: Opus, effort high. Frontend task** (also writes priced travel lines → money bucket).
+**Model: Opus, effort high. Frontend task** (task 5 next; tasks 4 and 6 are money too).
 
-## State as of 2026-10-09
+## State as of 2026-10-09 (task 4)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -22,9 +22,61 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   saved and reloaded (server stores it, no dirty flag on reopen); map click by a real click;
   Escape ×2; Change + Escape keeps the old spot; 23 cap; no results; search failure (stubbed);
   Home base (stubbed in memory). 593 server tests pass (no server change).
-- [ ] **Next: task 4**, routing, legs, totals and the linked lines. *Money: Opus/high, and
-  frontend.* **Frontend task.** The scratch estimate `est_43f5777a` day `d_nbk1` has a saved
-  Fitzroy → Bondi → Eveleigh → return trip to route.
+- [x] **Task 4** routing, legs, totals and the linked lines, `COMMIT4`. Routes API, Show trip
+  details, Trip totals, FROM TRIP lines, Recalculate (⋯ and the message), Day changed, failure +
+  Try again, the live region. Verified on the scratch trip (Fitzroy North VIC → Bondi → Eveleigh
+  → return, ~1,750 km): editor total = Rate Card price × rounded quantities ($0.90 × 1,751 km,
+  $95 × 19 h; then 1,752 km and 18.5 h without traffic), and the server's derived qty matched after
+  each save. No Routes call on open; Undo restores route + lines with no call; a slow reply after
+  an Undo is dropped. Shots at 1280/800/375 (headless), no overflow. 593 server tests pass.
+- [ ] **Next: task 5**, destination details, time on location and reordering. *Frontend:
+  Opus/high.* **Frontend task.** `minutesOnSite` already feeds the route (dwell before the next
+  leg, and the stop signature), so a time-on-location edit must go through the view's
+  `changed()` to re-route. A reorder likewise.
+
+**Scratch state (for testing):** the scratch card now prices both trip rows (Overhead
+`vehicleCostPerKm` 0.9; Transport & Logistics Hrs typed $95). Setting the vehicle figure through
+`PUT /api/goals` also filled in Capacity defaults. `est_43f5777a` day `d_nbk1` is saved as START
+→ Bondi → RETURN with **no start time** (traffic-unaware route), and still has the hand-typed
+"Vehicle — per km" (qty 120) line that sets off the double-billing note.
+
+## Decisions made in task 4 (agent's, within the brief)
+
+- **Routes over REST** (`routes.googleapis.com/directions/v2:computeRoutes`, key in a header),
+  not the Maps JS routes library: one known request shape, no script needed. Works from the
+  browser with the website-restricted key. All in `maps.js` (`route`, `routeLine`, polyline
+  codec).
+- **With traffic: one request per leg, in order**, each departing at the previous arrival + that
+  stop's time on location (T5/T11). **Without traffic: one request** for the whole trip.
+  Traffic needs the day's date + start time *and* a start still in the future (Google refuses
+  past times for traffic), else traffic-unaware with a note that says which.
+- **`routedFor.stops`**: a short FNV signature of the stops (role, spot, time on location),
+  accepted by `days.js` (`ROUTE_SIG`, optional). A stored route that doesn't match the stops
+  shows "The stops changed after the route was worked out" + Recalculate (after a failed
+  re-route, or Back while one was on its way). A trip never routed shows "hasn't been routed
+  yet" + Recalculate. **Opening never routes**, not even an unrouted trip.
+- Leg clock times are wall-clock `HH:MM` from the day's start time (`departAt`/`arriveAt`), only
+  when the day has one. Totals: km to 0.1, time "18 h 55"; the lines show the billed (rounded-up)
+  quantities.
+- **Linked lines exist only while the trip has ≥ 1 leg.** The editor (`syncTripLines`) makes
+  each the first time it's needed, priced like a menu add (`unitSnap`, `markOwn`; the rates
+  toggle applies), then only its qty follows. A start alone, or no trip, removes them (Undo
+  brings them back). A row with no price yet adds no line, and the totals say why.
+- **Linked lines are fully locked** (T4): read-only qty (dashed), FROM TRIP chip + Edit trip,
+  **no ×, no Move to, no drag**. Unlink is task 6.
+- **A line typed by hand of a kind the trip bills is not adopted.** The totals warn instead
+  ("also has … typed in by hand. Remove it if this trip covers the same driving"). Adopting it
+  would fight task 6's Unlink (an unlinked line would be re-adopted on the next route). Task 6
+  may revisit.
+- **Duplicate day strips `fromTrip`** from the copies (`duplicateLines`) until task 6 copies the
+  trip with them.
+- The ⋯ shows once the trip has ≥ 2 stops, holding Recalculate only. Show trip details shows when
+  the stored legs fit the stops; it's `localStorage['lsc.trip.details']`.
+- The route line is `--color-accent-mark`, faint (0.35) while routing or out of date. Leg lines
+  are `aria-hidden` list items; each cell carries the spoken leg ("Drive from the stop before:
+  …") so the list still counts stops only.
+- Polylines over 49,000 characters are thinned (every nth point, ends kept). The scratch
+  Melbourne–Sydney round trip was ~42k.
 
 ## Decisions made in task 3 (agent's, within the brief)
 
@@ -117,5 +169,11 @@ secret, correctly. **The user creates it and pastes the client ID and secret int
 - New schema (v16): NAS before Pages. The NAS and the live site are back online (2026-10-09).
 - `GET /api/estimates` (the list) now carries every day's trip, polyline included (≤ 50k chars
   each). Fine at today's volume. If the list slows, strip `polyline` there, not in `readDays`.
+- The browser pane is often **hidden** (`document.visibilityState === 'hidden'`): its screenshots
+  freeze. Use the headless route (memory: review screenshots); a script like task 4's lives in
+  the session scratchpad only.
+- A route reply that lands after the stops changed is dropped by `routeSeq`. Anything that
+  changes the stops must go through `changed()` (never `emit()` alone), or a late reply can
+  overwrite it.
 - Limits in `days.js`: 23 destinations, 2000 chars per detail, 300 per address, 50k polyline,
   `minutesOnSite` a whole number ≤ 1440.

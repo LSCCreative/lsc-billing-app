@@ -31,6 +31,7 @@ const MAX_PLACE_ID = 300;
 const MAX_POLYLINE = 50000;
 const MAX_TRIP_KM = 100000;
 const MAX_TRIP_MINUTES = 100000;
+const ROUTE_SIG = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_MINUTES_ON_SITE = 24 * 60;
 const MAX_STAMP = 40;
 const DETAIL_KEYS = ['capture', 'description', 'access'];
@@ -194,6 +195,13 @@ function parseTrip(raw) {
     const startTime = clockOrNull(f.startTime);
     if (startTime === undefined || typeof f.traffic !== 'boolean') return { error: 'trip_invalid' };
     routedFor = { date, startTime, traffic: f.traffic };
+    // Which stops the route was worked out for (trip-planner task 4): a short
+    // signature the browser makes, so a trip saved after a failed re-route
+    // reads as out of date when it is reopened. Optional; never interpreted here.
+    if (f.stops !== undefined && f.stops !== null && f.stops !== '') {
+      if (typeof f.stops !== 'string' || !ROUTE_SIG.test(f.stops)) return { error: 'trip_invalid' };
+      routedFor.stops = f.stops;
+    }
   }
   const routedAt = stampOrNull(raw.routedAt);
   if (routedAt === undefined || (routedAt !== null && Number.isNaN(Date.parse(routedAt)))) return { error: 'trip_invalid' };

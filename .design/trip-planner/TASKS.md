@@ -83,7 +83,7 @@ starting. **Frontend** marks anything a person looks at.
   search failure, no results, 23-destination cap. _Reuses: `typeahead.js` pattern, `toast.js`.
   Modifies: `trip-planner.js`, `maps.js`._ _Depends on: 1, 2._
 
-- [ ] **4. Routing, legs, totals and the linked lines** *(money: Opus/high, frontend)*: Any stop
+- [x] **4. Routing, legs, totals and the linked lines** *(money: Opus/high, frontend)*: **Done (commit below in HANDOVER).** Routes REST per leg with traffic, linked FROM TRIP lines, stale/failure states; editor and server quantities agree. Original spec: Any stop
   change asks the Routes API for the whole trip, departing at the day's date + start time with
   traffic (T5), each leg leaving after the previous stop's time on location. With no date or time
   it's traffic-unaware and says so. It stores legs, totals, the polyline and `routedFor`/`routedAt`,

@@ -382,6 +382,8 @@ const EstimateEditor = (() => {
     if (withOverride) line.override = num(inputValue(tr, '.custom-bill-inp'));
     const dayId = rowDayId(tr);
     if (dayId) line.dayId = dayId;
+    // A travel line its day's trip writes (trip-planner task 4): days.js applyTripLines sets its qty.
+    if (tr.dataset.fromTrip) line.fromTrip = tr.dataset.fromTrip;
     // The planner's two marks (B2-10): see planMarks().
     if (tr.dataset.capture) line.capture = tr.dataset.capture === 'true';
     // A tag whose deliverable has gone is dropped (the server refuses one: line_deliverable_unknown).
@@ -513,16 +515,38 @@ const EstimateEditor = (() => {
     const rateLabel = !def ? '—' : perKm ? 'At cost' : def.directCost ? 'Direct' : def.rate > 0 ? fmt(def.rate) : '—';
     const muLabel = !def ? '—' : perKm ? LSCUtil.perKm(def.mu) : def.directCost ? '—' : def.mu !== def.rate ? fmt(def.mu) : 'None';
 
+    /* A line its day's trip writes (trip-planner task 4, T4): its quantity is
+       the trip's, so it reads FROM TRIP, can't be typed in, and stays on its
+       day (no Move to, no ×). Edit trip opens the travel view; Unlink from
+       trip is task 6. The server re-derives the quantity on save anyway. */
+    const linked = line.fromTrip === 'km' || line.fromTrip === 'hours' ? line.fromTrip : '';
+    if (linked) tr.dataset.fromTrip = linked;
+    const qtyName = perKm ? 'Kilometres' : linked ? 'Hours' : 'Quantity';
+
     tr.innerHTML =
-      '<div data-label="Service">' + esc(line.name) + '</div>' +
-      '<div class="right" data-label="' + (perKm ? 'Kilometres' : 'Qty / Cost') + '"><input class="num-inp qty-inp" type="number" min="0" step="0.01" value="' +
-      (line.qty || '') + '" aria-label="' + (perKm ? 'Kilometres' : 'Quantity') + ' for ' + esc(line.name) + '"></div>' +
+      '<div data-label="Service">' + esc(line.name) +
+      (linked
+        ? '<div class="from-trip"><span class="from-trip-chip">From trip</span>' +
+          '<button type="button" class="btn btn-quiet btn-sm from-trip-edit" aria-label="Edit trip for ' + esc(line.name) + '">Edit trip</button></div>'
+        : '') +
+      '</div>' +
+      '<div class="right" data-label="' + (perKm ? 'Kilometres' : linked ? 'Hours' : 'Qty / Cost') + '"><input class="num-inp qty-inp" type="number" min="0" step="0.01" value="' +
+      (line.qty || '') + '"' + (linked ? ' readonly' : '') + ' aria-label="' + qtyName + ' for ' + esc(line.name) +
+      (linked ? ', from the trip' : '') + '"></div>' +
       '<div class="right muted-td" data-label="Rate">' + rateLabel + '</div>' +
       '<div class="right muted-td" data-label="Mark-Up">' + muLabel + '</div>' +
       '<div class="right" data-label="Client bill"><span class="bill-cell">—</span></div>' +
-      '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' +
-      esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button></div>';
+      '<div class="del-cell">' + (linked ? '' : '<button type="button" class="del-btn" title="Remove ' +
+      esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button>') + '</div>';
 
+    if (linked) {
+      tr.firstElementChild.classList.add('lab-svc');
+      tr.querySelector('.from-trip-edit').addEventListener('click', () => {
+        const dayId = rowDayId(tr);
+        if (dayId) defineTravel(dayId);
+      });
+      return tr;
+    }
     bindRow(tr, ['.qty-inp']);
     addLineControls(tr, 'travel');
     return tr;
@@ -1271,17 +1295,110 @@ const EstimateEditor = (() => {
     trip.view = TripPlanner.mount({
       day,
       trip: booking.tripOf(dayId),
-      // Each placed, changed or removed stop: the day's trip, saved with the estimate (the bar's Save until autosave, task 8).
+      /* Each placed, changed or removed stop, and each route that comes back:
+         the day's trip, saved with the estimate (the bar's Save until
+         autosave, task 8), and its two linked lines written from it. */
       onChange: (next) => {
         // A stop's Undo can come from a toast after the editor has gone.
-        if (booking && onScreen()) booking.setTrip(dayId, next);
+        if (!booking || !onScreen()) return;
+        booking.setTrip(dayId, next);
+        syncTripLines(dayId, next);
       },
+      lines: () => tripLinesInfo(dayId),
       onBack: leaveTrip,
     });
     booking.showTrip(trip.view.el);
     trip.view.el.scrollIntoView({ block: 'start' });
     trip.view.focus();
     return true;
+  }
+
+  /* ── The lines a trip writes (trip-planner task 4, T3, T4) ──
+     While a day's trip has a route (one leg or more), its travel group holds
+     one line of each kind the Rate Card can price: km on the first per-km
+     row, drive time on the first own-time row (calc.js tripKindOf), each
+     marked `fromTrip` with its quantity from the trip (calc.js tripLineQty:
+     km up to the whole km, minutes up to the quarter hour). A line is made
+     the first time it's needed, priced as one added from the menu is
+     (unitSnap, markOwn), and after that only its quantity follows the trip.
+     With no route (a start alone, or no trip) the linked lines go: they
+     would bill nothing. A row with no price yet adds no line; the trip's
+     totals say why (tripLinesInfo). The server derives the same quantities
+     on save (days.js applyTripLines), so this only has to be right for
+     what's on screen in between. */
+  const tripHasRoute = (t) => Boolean(t && Array.isArray(t.legs) && t.legs.length > 0);
+  const TRIP_KINDS = ['km', 'hours'];
+
+  function syncTripLines(dayId, t) {
+    const body = groupBody(panelFor(dayId), 'travel');
+    if (!body) return;
+    const defs = (LSCData.pricing() || {}).travelRows || [];
+    let moved = false;
+    TRIP_KINDS.forEach((kind) => {
+      const linked = Array.from(body.querySelectorAll(':scope > [data-from-trip="' + kind + '"]'));
+      if (!tripHasRoute(t)) {
+        linked.forEach(removeRow);
+        return;
+      }
+      linked.slice(1).forEach(removeRow); // one per kind; the server would unlink a second
+      const qty = LSCCalc.tripLineQty(t, kind);
+      if (linked[0]) {
+        const input = linked[0].querySelector('.qty-inp');
+        if (num(input.value) !== qty) {
+          input.value = qty ? String(qty) : '';
+          moved = true;
+        }
+        return;
+      }
+      const row = defs.find((r) => LSCCalc.tripKindOf(r) === kind);
+      const picked = row ? unitSnap('', row, 'hour') : null;
+      if (!picked || !picked.snap) return;
+      const tr = buildTravelRow(null, Object.assign({ name: row.name, qty, fromTrip: kind }, picked.snap));
+      markOwn(tr, picked);
+      injectRow(body, tr);
+    });
+    if (moved) recalc();
+  }
+
+  /* What the trip's totals list (TripPlanner's lines()): each linked line
+     as the editor prices it, or why there isn't one; and any line typed by
+     hand on the same day of a kind the trip bills, which could charge the
+     same road twice. */
+  function tripLinesInfo(dayId) {
+    const out = { lines: [], typed: [] };
+    if (!booking || !tripHasRoute(booking.tripOf(dayId))) return out;
+    const pricing = LSCData.pricing();
+    const defs = (pricing && pricing.travelRows) || [];
+    const rows = Array.from(groupBody(panelFor(dayId), 'travel').querySelectorAll(':scope > [data-rid]'));
+    const billOf = (tr) => {
+      const line = lineFrom(tr, false);
+      const bill = travelBill(travelDef(line, pricing), line);
+      return { line, bill: bill === null ? 'no price' : fmt(bill) };
+    };
+    TRIP_KINDS.forEach((kind) => {
+      const tr = rows.find((r) => r.dataset.fromTrip === kind);
+      if (tr) {
+        const { line, bill } = billOf(tr);
+        const qty = num(line.qty);
+        out.lines.push({ name: line.name, qty: kind === 'km' ? qty.toLocaleString('en-AU') + ' km' : qty + ' h', bill });
+      } else {
+        const row = defs.find((r) => LSCCalc.tripKindOf(r) === kind);
+        const what = kind === 'km' ? 'No km line' : 'No drive-time line';
+        let why;
+        if (!row) why = kind === 'km' ? 'the Rate Card has no per-km travel item.' : 'the Rate Card has no travel item billed as your time.';
+        else if (kind === 'km') why = row.name + ' has no price yet. Set the vehicle’s running costs on Overhead.';
+        else why = row.name + ' has no price yet: it needs ' + LSCData.autoPriceBlocker().screen + '.';
+        out.lines.push({ missing: what + ': ' + why });
+      }
+      rows.forEach((r) => {
+        if (r.dataset.fromTrip) return;
+        // A line with no snapshot (saved before snapshots, or from a row with no price yet) is known by its card row.
+        const snap = snapOf(r);
+        if (LSCCalc.tripKindOf(snap || cardRowFor('', null, r.dataset.name)) !== kind) return;
+        out.typed.push({ name: r.dataset.name, bill: billOf(r).bill });
+      });
+    });
+    return out;
   }
 
   function dropTripView() {
@@ -1643,6 +1760,8 @@ const EstimateEditor = (() => {
         if (kind === 'prod' || kind === 'travel') {
           const line = lineFrom(tr, kind === 'prod');
           delete line.dayId;
+          // The copy starts with no trip (trip-planner task 6 copies both), so its travel lines are ordinary ones.
+          delete line.fromTrip;
           fresh = kind === 'prod'
             ? buildLabourRow(prod, labourDef(prod, line, pricing), line)
             : buildTravelRow(travelDef(line, pricing), line);
@@ -3319,6 +3438,8 @@ const EstimateEditor = (() => {
     // A new price, not a new line: it keeps its Capture tick and its deliverable (planMarks).
     if (tr.dataset.capture) line.capture = tr.dataset.capture === 'true';
     if (tr.dataset.deliverableId) line.deliverableId = tr.dataset.deliverableId;
+    // A line its trip writes stays linked (trip-planner task 4).
+    if (tr.dataset.fromTrip) line.fromTrip = tr.dataset.fromTrip;
     const fresh = section ? buildLabourRow(section, null, line) : buildTravelRow(null, line);
     if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
     if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
