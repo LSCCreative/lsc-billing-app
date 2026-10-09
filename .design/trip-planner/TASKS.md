@@ -133,7 +133,7 @@ starting. **Frontend** marks anything a person looks at.
   the conflict, the draft-only refusal, and the throttle (fake clock), and the existing backup tests
   still pass. _Modifies: `backup.js`, `app.js`, `routes/estimates.js`._
 
-- [x] **8. Autosave in the editor** *(frontend: Opus/high, money: it stores prices)*: **Done `COMMIT8`.** Status + Done for drafts, Save for sent; new estimate saves and renames its address; conflict pauses with Reload; Undo restores days, trips and lines. Original spec:
+- [x] **8. Autosave in the editor** *(frontend: Opus/high, money: it stores prices)*: **Done `8f92a09`.** Status + Done for drafts, Save for sent; new estimate saves and renames its address; conflict pauses with Reload; Undo restores days, trips and lines. Original spec:
   `web/js/autosave.js` (debounce 1.5 s, flush on blur, panel open and Done, one request in flight,
   coalescing). The sticky bar shows the status (Saving… / Saved 2:41 pm / Not saved: reason →
   field link / Not saved yet: add a project name and UPID) and **Done** for unsent estimates; sent

@@ -49,7 +49,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   (headless), no overflow. 594 server tests pass.
 - [x] **Task 7** autosave on the server, `ff61ec7`. 600 server tests pass (`test-autosave.js`, and
   the throttle with a fake clock in `test-backup.js`). No schema change.
-- [x] **Task 8** autosave in the editor, `COMMIT8`. **Stage B is done.** Verified in the pane on
+- [x] **Task 8** autosave in the editor, `8f92a09`. **Stage B is done.** Verified in the pane on
   scratch (dispatched events; the pane was hidden, so focus/blur were dispatched `focusout`s):
   a blank new estimate saved with no click once it had a name and UPID, and its address became
   `#/projects/<id>/estimate` with no re-render; nothing sent mid-typing, one PUT after the pause,
