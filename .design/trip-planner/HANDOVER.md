@@ -3,9 +3,9 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Model: Opus, effort high. Frontend task** (task 5 next; tasks 4 and 6 are money too).
+**Model: Opus, effort high. Frontend task** (task 6 next; it's money too).
 
-## State as of 2026-10-09 (task 4)
+## State as of 2026-10-09 (task 5)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -29,16 +29,48 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   $95 × 19 h; then 1,752 km and 18.5 h without traffic), and the server's derived qty matched after
   each save. No Routes call on open; Undo restores route + lines with no call; a slow reply after
   an Undo is dropped. Shots at 1280/800/375 (headless), no overflow. 593 server tests pass.
-- [ ] **Next: task 5**, destination details, time on location and reordering. *Frontend:
-  Opus/high.* **Frontend task.** `minutesOnSite` already feeds the route (dwell before the next
-  leg, and the stop signature), so a time-on-location edit must go through the view's
-  `changed()` to re-route. A reorder likewise.
+- [x] **Task 5** destination details, time on location and reordering, `COMMIT5`. Verified on a
+  five-destination Sydney day: + Add details ▾ (used items leave the menu), blocks open/close in
+  place with a one-line excerpt, Remove in the block's ⋯ with Undo; time on location parsed,
+  re-routed and the clock times shifted by it; reorder by ⋯ Move up/down and Alt+↑/↓ (pane,
+  dispatched events), by a real mouse drag at 1280 and a real finger drag at 375 (headless
+  Chrome); each re-routed and announced "… moved to stop N of 7". Details and minutes saved to
+  the server. Shots at 1280/800/375, no overflow. No server change.
+- [ ] **Next: task 6**, trip lifecycle around the day, and Home base. *Frontend: Opus/high, money
+  for unlink/clear.* **Frontend task.** Unlink needs a way for the trip to remember an unlinked
+  kind (see task 4's "not adopted" decision): an unlinked line has no `fromTrip`, so
+  `syncTripLines` would make a new linked line beside it on the next route. Probably a trip-level
+  `unlinked: ['km']` (a days.js parseTrip change + test) that `syncTripLines` and the totals read.
 
-**Scratch state (for testing):** the scratch card now prices both trip rows (Overhead
-`vehicleCostPerKm` 0.9; Transport & Logistics Hrs typed $95). Setting the vehicle figure through
-`PUT /api/goals` also filled in Capacity defaults. `est_43f5777a` day `d_nbk1` is saved as START
-→ Bondi → RETURN with **no start time** (traffic-unaware route), and still has the hand-typed
-"Vehicle — per km" (qty 120) line that sets off the double-billing note.
+**Scratch state (for testing):** the scratch card prices both trip rows (Overhead
+`vehicleCostPerKm` 0.9; Transport & Logistics Hrs typed $95; setting the vehicle figure through
+`PUT /api/goals` also filled in Capacity defaults). `est_43f5777a` day `d_nbk1` (start 08:00) is
+saved as a five-destination Sydney day from Marrickville Metro, with details and times on
+location, and still has the hand-typed "Vehicle — per km" (qty 120) line that sets off the
+double-billing note. A PUT straight to the API needs `pricingShape` from `GET /api/pricing`.
+
+## Decisions made in task 5 (agent's, within the brief)
+
+- **Cell layout by the column's width** (container query on `.trip-cells`, 440px): narrow, the
+  chip and actions share a row and the address goes full width under them; wide, one row. The
+  stops column is ~340px at both 375 and 800, so the narrow layout is the common one.
+- A destination cell: handle (only while there's another destination), chip, address, Change,
+  ⋯ (Move up / Move down, only while there's another destination), ×; then, once placed, its
+  detail blocks and a footer with **Time on location** and **+ Add details ▾**. START and RETURN
+  keep task 3's controls; an empty handle column keeps the chips aligned.
+- **Detail blocks with text start closed**, blank ones open; the state is kept per stop for the
+  page session (module-level `detailOpen`). Open/close happens in place, no redraw.
+- Detail text saves on each keystroke (`emit()`, never re-routes: the route doesn't read it).
+  Removing a block with text offers Undo (toast); a blank one goes quietly.
+- **Time on location is typed** ("3 h", "1 h 30", "90 min", "1:30"; a bare number is hours up
+  to 24, minutes above) and committed on Enter or leaving the field, then typed back
+  ("2 h 15"). Unreadable → an inline message, nothing saved. ≤ 24 h. It re-routes (it moves
+  departures and is in the stop signature).
+- One `moveDest(from, to)` for drag, Alt+↑/↓ (sortable.js) and ⋯; focus stays on the moved
+  stop's handle; announced by short name ("Bondi Pavilion moved to stop 3 of 7"). No Undo for a
+  move (it's one more move back).
+- `paint()` restores focus by `data-f` / `data-act` (caret and an uncommitted time kept), and
+  waits while a drag is lifted (a route can land mid-drag).
 
 ## Decisions made in task 4 (agent's, within the brief)
 

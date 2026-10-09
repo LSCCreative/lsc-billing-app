@@ -359,7 +359,10 @@
 }
 
 /* The stops, in order. */
+/* The list is a size container: a cell lays itself out by the column's
+   width, not the window's (the stops column is ~340px at 375 and at 800). */
 .trip-cells {
+  position: relative; /* sortable.js's drop line is placed inside it */
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -367,19 +370,53 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  container: trip-stops / inline-size;
 }
 .trip-cells[hidden] {
   display: none;
 }
+/* Narrow (the default): the chip and the actions on one row, the address
+   full width under them, then a destination's details. Wide: one row, as
+   task 3 drew it. The handle's column is there for every cell, empty on
+   START and RETURN, so the chips line up. */
 .trip-cell {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 24px auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'handle chip . acts'
+    '. body body body'
+    '. more more more';
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   min-height: 52px;
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-2);
   border-radius: var(--radius-md);
   background: var(--color-bg-inset);
+}
+.trip-cell > .trip-handle,
+.trip-cell > .trip-handle-none {
+  grid-area: handle;
+}
+.trip-cell > .trip-chip {
+  grid-area: chip;
+}
+.trip-cell > .trip-cell-body {
+  grid-area: body;
+}
+.trip-cell > .trip-cell-acts {
+  grid-area: acts;
+  justify-self: end;
+}
+.trip-cell > .trip-cell-more-area {
+  grid-area: more;
+}
+@container trip-stops (min-width: 440px) {
+  .trip-cell {
+    grid-template-columns: 24px 64px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'handle chip body acts'
+      '. more more more';
+  }
 }
 /* Not placed yet: an outline to fill. Waiting: the outline the search is filling. */
 .trip-cell.is-empty {
@@ -433,6 +470,202 @@
   padding-right: 0;
   font-size: var(--font-size-lg);
   line-height: 1;
+}
+
+/* ── Reordering, details and time on location (task 5) ─────────────────── */
+
+/* The drag handle: two columns of dots (settings.css .clause-grip), a 44px
+   target on a phone (it overhangs its 24px column; 24 × 32 from 768),
+   touch-action none so a finger on it drags rather than scrolls. */
+.trip-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin: 0 -10px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none;
+}
+.trip-handle:hover {
+  color: var(--color-text-primary);
+}
+.trip-handle:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+.trip-grip {
+  width: 8px;
+  height: 14px;
+  background: radial-gradient(circle, currentColor 1.25px, transparent 1.5px) 0 0 / 4px 5px;
+}
+.trip-cell.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+.trip-cell-more,
+.trip-detail-more {
+  min-width: var(--control-h-sm);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+/* Under a placed destination: its detail blocks, then Time on location and + Add details. */
+.trip-cell-more-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-2);
+}
+.trip-detail {
+  border-top: 1px solid var(--color-border-hairline);
+}
+.trip-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* The block's title row is its disclosure: closed, it shows the text's first line. */
+.trip-detail-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--control-h-sm);
+  padding: var(--space-2) 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font: var(--font-weight-normal) var(--font-size-sm) / var(--line-height-snug) var(--font-family-body);
+  text-align: left;
+  cursor: pointer;
+}
+.trip-detail-toggle:hover .trip-detail-title {
+  color: var(--color-text-primary);
+}
+.trip-detail-toggle:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+.trip-detail-chev {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 var(--space-1);
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--duration-fast) var(--easing-default);
+}
+.trip-detail.is-open .trip-detail-chev {
+  transform: rotate(45deg);
+}
+.trip-detail-title {
+  flex: none;
+}
+.trip-detail-excerpt {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trip-detail-excerpt i {
+  font-style: normal;
+  color: var(--color-text-tertiary);
+}
+.trip-detail-body {
+  padding: 0 0 var(--space-3);
+}
+.trip-detail-body[hidden] {
+  display: none;
+}
+.trip-detail-text,
+.trip-onsite-in {
+  width: 100%;
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg);
+  color: var(--color-text-primary);
+  font: var(--font-weight-normal) var(--font-size-md) / var(--line-height-normal) var(--font-family-body);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default);
+}
+.trip-detail-text {
+  display: block;
+  min-height: 72px;
+  padding: var(--space-3) var(--space-4);
+  resize: vertical;
+}
+.trip-detail-text:focus,
+.trip-onsite-in:focus {
+  border-color: var(--color-border-focus);
+}
+.trip-detail-text:focus-visible,
+.trip-onsite-in:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+.trip-cell-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.trip-detail + .trip-cell-foot {
+  border-top: 0;
+}
+.trip-onsite {
+  display: grid;
+  grid-template-columns: auto 7.5em;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+.trip-onsite-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+/* A figure: mono, like the legs it moves. */
+.trip-onsite-in {
+  min-height: var(--control-h-sm);
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-family-mono);
+}
+.trip-onsite-in::placeholder {
+  color: var(--color-text-tertiary);
+}
+.trip-onsite-in[aria-invalid='true'] {
+  border-color: var(--color-status-error);
+}
+.trip-onsite-msg {
+  grid-column: 1 / -1;
+  max-width: 40ch;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-status-error-text);
+}
+.trip-onsite-msg:empty {
+  display: none;
+}
+.trip-add-details {
+  margin-right: calc(-1 * var(--space-3));
 }
 
 /* + Add start location, + Destination, Return trip: translucent ghosts.
@@ -703,10 +936,18 @@
   .trip-stops {
     align-items: flex-start;
   }
-  .trip-q {
+  .trip-q,
+  .trip-detail-text,
+  .trip-onsite-in {
     font-size: var(--font-size-base);
   }
+  .trip-handle {
+    width: 24px;
+    height: 32px;
+    margin: 0;
+  }
 }
+
 
 @media (min-width: 1100px) {
   .trip-view {

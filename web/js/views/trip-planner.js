@@ -206,6 +206,55 @@ const TripPlanner = (() => {
     return new Date(t);
   }
 
+  // ── A destination's details and time on location (task 5) ─────────────────
+
+  /* The three detail fields, in the user's words (IA Naming), in the order
+     a call sheet prints them. days.js MAX_TRIP_TEXT caps each. */
+  const DETAILS = [
+    ['capture', 'Capture details'],
+    ['description', 'Location description'],
+    ['access', 'Access details'],
+  ];
+  const DETAIL_NAME = Object.fromEntries(DETAILS);
+  const MAX_DETAIL = 2000;
+  const MAX_ON_SITE = 1440; // days.js: minutesOnSite is a whole number of minutes in a day
+
+  /* Which detail blocks are open, by "stopId:key", for this page's session:
+     a block keeps its state across Back and a reopen (the brief). Blocks with
+     text start closed, so a five-stop day reads as a list of stops. */
+  const detailOpen = new Map();
+  function isDetailOpen(cell, key) {
+    const k = cell.id + ':' + key;
+    if (!detailOpen.has(k)) detailOpen.set(k, !(cell.details && cell.details[key]));
+    return detailOpen.get(k);
+  }
+
+  /* "3 h", "1 h 30", "45 min": a time on location as typed back. */
+  function onSiteText(minutes) {
+    if (minutes < 60) return minutes + ' min';
+    return Math.floor(minutes / 60) + ' h' + (minutes % 60 ? ' ' + String(minutes % 60).padStart(2, '0') : '');
+  }
+
+  /* A typed time on location in minutes: null for blank, NaN for unreadable.
+     Takes "3" or "2.5" (hours), "45" (minutes), "3 h", "1 h 30", "1h30m",
+     "90 min", "1:30". */
+  function parseOnSite(text) {
+    const t = String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!t) return null;
+    let m;
+    let minutes = NaN;
+    // A bare number is hours up to 24 ("3", "2.5"), minutes above ("30", "90"): the field types it back either way.
+    if ((m = /^(\d+(?:\.\d+)?)$/.exec(t))) minutes = parseFloat(m[1]) <= 24 ? parseFloat(m[1]) * 60 : parseFloat(m[1]);
+    else if ((m = /^(\d+):([0-5]\d)$/.exec(t))) minutes = Number(m[1]) * 60 + Number(m[2]);
+    else if ((m = /^(?:(\d+(?:\.\d+)?) ?h(?:ours?|rs?)?)? ?(?:(\d+) ?m?(?:in(?:ute)?s?)?)?$/.exec(t)) && (m[1] || m[2])) {
+      // "1 h 30" reads the trailing 30 as minutes.
+      minutes = (m[1] ? parseFloat(m[1]) * 60 : 0) + (m[2] ? Number(m[2]) : 0);
+    }
+    if (!Number.isFinite(minutes)) return NaN;
+    minutes = Math.round(minutes);
+    return minutes > MAX_ON_SITE ? NaN : minutes || null;
+  }
+
   /* Show trip details is remembered in this browser (the brief). */
   const DETAILS_KEY = 'lsc.trip.details';
   function detailsPref() {
@@ -274,6 +323,8 @@ const TripPlanner = (() => {
       '</div>' +
       '<p class="trip-empty">No stops yet. A trip starts where the day starts: home, the studio, or the first pickup.</p>' +
       '<ol class="trip-cells" aria-label="Stops"></ol>' +
+      '<p class="sr-only" id="trip-howto">Drag a destination by its handle to reorder it, or focus the handle and press Alt with the up or down arrow. ' +
+      'Start and return stay first and last.</p>' +
       '<div class="trip-adds"></div>' +
       '<p class="trip-cap" hidden>23 destinations is the most Google can route in one trip.</p>' +
       // The outcome, last (IA Content Hierarchy): figures, the lines they bill, and why when they can't.
@@ -297,15 +348,25 @@ const TripPlanner = (() => {
 
   /* A cell. `leg` is the drive to it from the stop before, spoken with the
      cell when Show trip details is on (the line drawn above it is hidden
-     from screen readers, so the list counts stops only). */
+     from screen readers, so the list counts stops only).
+
+     A destination has more than START and RETURN (task 5): a drag handle
+     while there's another destination to swap with, a ⋯ with Move up /
+     Move down, and once it's placed, its footer (Time on location,
+     + Add details ▾) and the detail blocks it has. Every control carries
+     data-f, so paint() can hand focus back to the same one after a redraw. */
   function cellMarkup(cells, cell, waiting, startCell, leg) {
     const name = nameOf(cells, cell);
     const placed = cell.role === 'return' ? Boolean(startCell && isPlaced(startCell)) : isPlaced(cell);
     const isWaiting = waiting === cell.id;
     const address = cell.role === 'return' ? (startCell && startCell.address) || '' : cell.address || '';
+    const dests = cells.filter((c) => c.role === 'stop');
+    const isDest = cell.role === 'stop';
+    const at = dests.indexOf(cell);
     // START goes only on its own: without it, the stops after it couldn't be saved (see the head).
     const removable = cell.role !== 'start' || cells.length === 1;
     const cls = 'trip-cell is-' + cell.role + (placed ? '' : ' is-empty') + (isWaiting ? ' is-waiting' : '');
+    const said = esc(name) + (placed && address ? ', ' + esc(shortName(address)) : '');
     let body;
     if (placed) {
       body = '<p class="trip-addr">' + esc(address) + '</p>';
@@ -320,19 +381,80 @@ const TripPlanner = (() => {
         ? '<button type="button" class="btn btn-quiet btn-sm" data-act="change" aria-label="Change ' + esc(name) + '’s location">Change</button>'
         : '<button type="button" class="btn btn-quiet btn-sm" data-act="place" aria-label="Place ' + esc(name) + '">Place</button>';
     }
+    if (isDest && dests.length > 1) {
+      acts += '<button type="button" class="btn btn-quiet btn-sm trip-cell-more" data-act="more" aria-haspopup="menu" aria-expanded="false" ' +
+        'aria-label="More for ' + said + '"><span aria-hidden="true">⋯</span></button>';
+    }
     if (removable) {
       acts += '<button type="button" class="btn btn-quiet btn-sm trip-x" data-act="remove" aria-label="Remove ' + esc(name) + '">' +
         '<span aria-hidden="true">×</span></button>';
     }
+    const handle = isDest && dests.length > 1
+      ? '<button type="button" class="trip-handle" data-f="handle" aria-label="Reorder ' + said + ', stop ' + (at + 2) + '" ' +
+        'aria-describedby="trip-howto" title="Drag to reorder, or Alt+↑ / Alt+↓"><span class="trip-grip" aria-hidden="true"></span></button>'
+      : '<span class="trip-handle-none" aria-hidden="true"></span>';
     return (
       '<li class="' + cls + '" data-stop-id="' + esc(cell.id) + '">' +
+      handle +
       '<span class="trip-chip" aria-hidden="true">' + esc(chipOf(cells, cell)) + '</span>' +
       '<div class="trip-cell-body"><span class="sr-only">' + esc(name) + ': </span>' + body +
       (leg ? '<span class="sr-only"> ' + esc(leg) + '</span>' : '') + '</div>' +
       (acts ? '<div class="trip-cell-acts">' + acts + '</div>' : '') +
+      (isDest && placed && !isWaiting ? moreMarkup(cell, name) : '') +
       '</li>'
     );
   }
+
+  /* A placed destination's footer and detail blocks. */
+  function moreMarkup(cell, name) {
+    const d = cell.details || {};
+    const base = 'trip-' + cell.id;
+    const unused = DETAILS.filter(([key]) => !Object.prototype.hasOwnProperty.call(d, key));
+    const time = typeof cell.minutesOnSite === 'number' ? onSiteText(cell.minutesOnSite) : '';
+    const blocks = DETAILS.filter(([key]) => Object.prototype.hasOwnProperty.call(d, key)).map(([key, title]) => {
+      const open = isDetailOpen(cell, key);
+      const text = d[key] || '';
+      const first = text.split('\n').find((line) => line.trim()) || '';
+      const id = base + '-' + key;
+      return (
+        '<div class="trip-detail' + (open ? ' is-open' : '') + '" data-key="' + key + '">' +
+        '<div class="trip-detail-head">' +
+        '<button type="button" class="trip-detail-toggle" data-f="toggle:' + key + '" aria-expanded="' + open + '" aria-controls="' + id + '">' +
+        '<span class="trip-detail-chev" aria-hidden="true"></span>' +
+        '<span class="trip-detail-title">' + esc(title) + '</span>' +
+        '<span class="trip-detail-excerpt">' + (open ? '' : first ? esc(first.trim()) : '<i>Empty</i>') + '</span></button>' +
+        '<button type="button" class="btn btn-quiet btn-sm trip-detail-more" data-f="dmore:' + key + '" data-dmore="' + key + '" ' +
+        'aria-haspopup="menu" aria-expanded="false" aria-label="More for ' + esc(title) + '"><span aria-hidden="true">⋯</span></button>' +
+        '</div>' +
+        '<div class="trip-detail-body" id="' + id + '"' + (open ? '' : ' hidden') + '>' +
+        '<label class="sr-only" for="' + id + '-t">' + esc(title) + ' for ' + esc(name) + '</label>' +
+        '<textarea class="trip-detail-text" id="' + id + '-t" data-f="text:' + key + '" data-detail="' + key + '" rows="3" maxlength="' + MAX_DETAIL + '"' +
+        ' spellcheck="true">' + esc(text) + '</textarea>' +
+        '</div>' +
+        '</div>'
+      );
+    }).join('');
+    return (
+      '<div class="trip-cell-more-area">' +
+      blocks +
+      '<div class="trip-cell-foot">' +
+      '<div class="trip-onsite">' +
+      '<label class="trip-onsite-label" for="' + base + '-time">Time on location</label>' +
+      '<input class="trip-onsite-in" id="' + base + '-time" type="text" inputmode="text" autocomplete="off" spellcheck="false" ' +
+      'data-f="time" placeholder="e.g. 3 h" value="' + esc(time) + '" aria-describedby="' + base + '-time-msg">' +
+      '<p class="trip-onsite-msg" id="' + base + '-time-msg" role="status"></p>' +
+      '</div>' +
+      (unused.length
+        ? '<button type="button" class="btn btn-quiet btn-sm trip-add-details" data-f="add-details" aria-haspopup="menu" aria-expanded="false" ' +
+          'aria-label="Add details to ' + esc(name) + '">+ Add details<span class="menu-caret" aria-hidden="true"></span></button>'
+        : '') +
+      '</div>' +
+      '</div>'
+    );
+  }
+
+  /* "Bondi Pavilion" from "Bondi Pavilion, Queen Elizabeth Drive, Bondi Beach NSW". */
+  const shortName = (address) => String(address || '').split(',')[0].trim();
 
   /* A pin's face: the stop's chip, in terracotta (the brief's one accent on the map). */
   function pinEl(text, extra) {
@@ -772,18 +894,33 @@ const TripPlanner = (() => {
         (leg.departAt && leg.arriveAt ? ', leaving ' + clockText(leg.departAt) + ', arriving ' + clockText(leg.arriveAt) : '') + '.';
     }
 
+    let paintLater = 0;
+
     function paint() {
+      // Not under a drag: the lifted cell would be pulled out from under the pointer. Once it's dropped.
+      if (listEl.classList.contains('sort-active')) {
+        clearTimeout(paintLater);
+        paintLater = setTimeout(() => alive && paint(), 200);
+        return;
+      }
       const start = startCell();
       const legs = legsByCell();
-      // A route can come back while focus is on a cell's button: the rebuilt cell gets it back.
+      /* A route can come back while focus is in a cell (a button, a detail
+         being typed): the rebuilt cell gets it back, caret and all. */
       const had = listEl.contains(document.activeElement) ? document.activeElement : null;
       const hadCell = had && had.closest('[data-stop-id]');
-      const hadAct = had && had.dataset.act;
+      const hadKey = had && (had.dataset.f || had.dataset.act);
+      const caret = had && typeof had.selectionStart === 'number' ? [had.selectionStart, had.selectionEnd] : null;
+      const typedTime = had && had.dataset.f === 'time' ? had.value : null;
       listEl.innerHTML = cells.map((c) => {
         const leg = legs.get(c.id);
         return (leg ? legMarkup(leg) : '') + cellMarkup(cells, c, waiting, start, leg ? legSpoken(leg) : '');
       }).join('');
-      if (hadCell && !listEl.contains(document.activeElement)) focusIn(hadCell.dataset.stopId, hadAct);
+      if (hadCell && !listEl.contains(document.activeElement)) {
+        const again = focusIn(hadCell.dataset.stopId, hadKey);
+        if (again && typedTime !== null) again.value = typedTime; // not committed yet: kept as typed
+        if (again && caret && typeof again.setSelectionRange === 'function') again.setSelectionRange(caret[0], caret[1]);
+      }
       const toggle = q('.trip-details-btn');
       toggle.setAttribute('aria-pressed', String(details));
       listEl.hidden = !cells.length;
@@ -813,11 +950,14 @@ const TripPlanner = (() => {
       paintRoute();
     }
 
-    function focusIn(id, act) {
+    /* Focus a cell's control by its data-f or data-act (its first button
+       if that's gone). Returns the element, or null. */
+    function focusIn(id, key) {
       const li = id && listEl.querySelector('[data-stop-id="' + CSS.escape(id) + '"]');
-      const btn = li && (li.querySelector('[data-act="' + act + '"]') || li.querySelector('button'));
-      if (btn) btn.focus();
-      return Boolean(btn);
+      const k = key ? CSS.escape(key) : '';
+      const el = li && ((k && li.querySelector('[data-f="' + k + '"], [data-act="' + k + '"]')) || li.querySelector('button'));
+      if (el) el.focus();
+      return el || null;
     }
 
     /* After a stop is set: the next thing to do, in the order the brief adds them. */
@@ -1232,12 +1372,174 @@ const TripPlanner = (() => {
       if (!next || !focusIn(next.id, 'remove')) focusNext();
     }
 
+    // ── Reordering destinations (task 5) ───────────────────────────────────
+    /* One move for the handle's drag, its Alt+↑/↓ (sortable.js) and the
+       cell's ⋯ Move up / Move down. `from` and `to` index the destinations:
+       START and RETURN aren't sortable items, so they stay first and last.
+       The stops' order is the route's, so a move re-routes (changed()). */
+    function moveDest(from, to) {
+      const dests = destinations();
+      if (from === to || from < 0 || to < 0 || from >= dests.length || to >= dests.length) return;
+      const cell = dests[from];
+      const rest = dests.filter((c) => c !== cell);
+      cells = cells.filter((c) => c !== cell);
+      const anchor = rest[to]; // lands before it; after the last destination when there's none
+      const at = anchor ? cells.indexOf(anchor) : cells.reduce((last, c, i) => (c.role === 'stop' || c.role === 'start' ? i : last), -1) + 1;
+      cells.splice(at, 0, cell);
+      paint();
+      focusIn(cell.id, 'handle') || focusIn(cell.id, 'more');
+      changed();
+      say((isPlaced(cell) ? shortName(cell.address) : nameOf(cells, cell)) + ' moved to stop ' + (cells.indexOf(cell) + 1) + ' of ' + cells.length + '.');
+    }
+
+    LSCSortable.attach(listEl, { item: '.trip-cell.is-stop', handle: '.trip-handle', onMove: moveDest });
+
+    function cellMenu(id, opener) {
+      const dests = destinations();
+      const i = dests.findIndex((c) => c.id === id);
+      LSCMenu.open(opener, {
+        label: 'More for ' + nameOf(cells, dests[i]),
+        items: [
+          i > 0 && { text: 'Move up', act: 'up' },
+          i < dests.length - 1 && { text: 'Move down', act: 'down' },
+        ],
+        onSelect: (it) => moveDest(i, it.act === 'up' ? i - 1 : i + 1),
+      });
+    }
+
+    // ── Details and time on location (task 5) ──────────────────────────────
+
+    function addDetailMenu(id, opener) {
+      const cell = cellById(id);
+      const d = (cell && cell.details) || {};
+      LSCMenu.open(opener, {
+        label: 'Add details to ' + nameOf(cells, cell),
+        items: DETAILS.filter(([key]) => !Object.prototype.hasOwnProperty.call(d, key)).map(([key, text]) => ({ text, key })),
+        onSelect: (it) => addDetail(id, it.key),
+      });
+    }
+
+    /* A detail block, added open with focus in its field. A key present is
+       a block shown, even blank (days.js), so it saves at once. */
+    function addDetail(id, key) {
+      const cell = cellById(id);
+      if (!cell) return;
+      cell.details = Object.assign({}, cell.details, { [key]: '' });
+      detailOpen.set(id + ':' + key, true);
+      paint();
+      emit();
+      focusIn(id, 'text:' + key);
+    }
+
+    function removeDetail(id, key) {
+      const cell = cellById(id);
+      if (!cell || !cell.details || !Object.prototype.hasOwnProperty.call(cell.details, key)) return;
+      const text = cell.details[key];
+      const rest = Object.assign({}, cell.details);
+      delete rest[key];
+      if (Object.keys(rest).length) cell.details = rest;
+      else delete cell.details;
+      paint();
+      emit();
+      focusIn(id, 'add-details') || focusIn(id, 'time');
+      say(DETAIL_NAME[key] + ' removed.');
+      if (!text) return;
+      // Typed text is worth an Undo: the block comes back with it.
+      Toast.ok(DETAIL_NAME[key] + ' removed', {
+        action: {
+          label: 'Undo',
+          run: () => {
+            const again = alive && cellById(id);
+            if (!again) return;
+            again.details = Object.assign({}, again.details, { [key]: text });
+            paint();
+            emit();
+          },
+        },
+      });
+    }
+
+    function detailMenu(id, key, opener) {
+      LSCMenu.open(opener, {
+        label: 'More for ' + DETAIL_NAME[key],
+        items: [{ text: 'Remove ' + DETAIL_NAME[key], danger: true }],
+        onSelect: () => removeDetail(id, key),
+      });
+    }
+
+    /* Open or close a block in place (no redraw, so nothing else moves). */
+    function toggleDetail(li, key) {
+      const block = li.querySelector('.trip-detail[data-key="' + key + '"]');
+      const btn = block.querySelector('.trip-detail-toggle');
+      const open = btn.getAttribute('aria-expanded') !== 'true';
+      detailOpen.set(li.dataset.stopId + ':' + key, open);
+      btn.setAttribute('aria-expanded', String(open));
+      block.classList.toggle('is-open', open);
+      block.querySelector('.trip-detail-body').hidden = !open;
+      const text = block.querySelector('textarea').value;
+      const first = text.split('\n').find((line) => line.trim()) || '';
+      const excerpt = block.querySelector('.trip-detail-excerpt');
+      if (open) excerpt.textContent = '';
+      else if (first) excerpt.textContent = first.trim();
+      else excerpt.innerHTML = '<i>Empty</i>';
+    }
+
+    /* Time on location, taken on Enter or on leaving the field (T11). It
+       changes when the next leg leaves, so it re-routes; blank removes it. */
+    function commitTime(input) {
+      const li = input.closest('[data-stop-id]');
+      const cell = li && cellById(li.dataset.stopId);
+      if (!cell) return;
+      const msgEl = li.querySelector('.trip-onsite-msg');
+      const minutes = parseOnSite(input.value);
+      if (Number.isNaN(minutes)) {
+        input.setAttribute('aria-invalid', 'true');
+        msgEl.textContent = 'Use hours and minutes, like 3 h, 1 h 30 or 45 min (up to 24 h).';
+        return;
+      }
+      input.removeAttribute('aria-invalid');
+      msgEl.textContent = '';
+      const before = typeof cell.minutesOnSite === 'number' ? cell.minutesOnSite : null;
+      input.value = minutes === null ? '' : onSiteText(minutes);
+      if (minutes === before) return;
+      if (minutes === null) delete cell.minutesOnSite;
+      else cell.minutesOnSite = minutes;
+      changed();
+      say('Time on location at ' + shortName(cell.address) + (minutes === null ? ' removed.' : ': ' + durationSpoken(minutes) + '.'));
+    }
+
     listEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      const id = btn.closest('[data-stop-id]').dataset.stopId;
-      if (btn.dataset.act === 'remove') removeCell(id);
-      else startWaiting(id);
+      const btn = e.target.closest('button');
+      const li = btn && btn.closest('[data-stop-id]');
+      if (!li) return;
+      const id = li.dataset.stopId;
+      const act = btn.dataset.act;
+      if (act === 'remove') removeCell(id);
+      else if (act === 'change' || act === 'place') startWaiting(id);
+      else if (act === 'more') cellMenu(id, btn);
+      else if (btn.dataset.f === 'add-details') addDetailMenu(id, btn);
+      else if (btn.dataset.dmore) detailMenu(id, btn.dataset.dmore, btn);
+      else if (btn.classList.contains('trip-detail-toggle')) toggleDetail(li, btn.closest('.trip-detail').dataset.key);
+    });
+
+    // A detail as it's typed: saved with the trip, never re-routed (the route doesn't read it).
+    listEl.addEventListener('input', (e) => {
+      const area = e.target.closest('textarea[data-detail]');
+      if (!area) return;
+      const cell = cellById(area.closest('[data-stop-id]').dataset.stopId);
+      if (!cell) return;
+      cell.details = Object.assign({}, cell.details, { [area.dataset.detail]: area.value.slice(0, MAX_DETAIL) });
+      emit();
+    });
+
+    listEl.addEventListener('change', (e) => {
+      if (e.target.matches('.trip-onsite-in')) commitTime(e.target);
+    });
+    listEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.matches('.trip-onsite-in')) {
+        e.preventDefault();
+        commitTime(e.target);
+      }
     });
 
     adds.addEventListener('click', (e) => {

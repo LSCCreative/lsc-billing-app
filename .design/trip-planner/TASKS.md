@@ -100,7 +100,7 @@ starting. **Frontend** marks anything a person looks at.
   `trip-planner.js`, `maps.js`, `estimate-editor.js` (`buildTravelRow`, line state)._ _Depends
   on: 3._
 
-- [ ] **5. Destination details, time on location and reordering** *(frontend: Opus/high)*:
+- [x] **5. Destination details, time on location and reordering** *(frontend: Opus/high)*: **Done COMMIT5.** Details menu + collapsible blocks, time on location re-routes, drag (mouse and touch) / Alt+arrows / ⋯ Move up/down. Original spec:
   **+ Add details ▾** (`menu.js`) with Capture details / Location description / Access details. Each
   adds a titled textarea once (a used item leaves the menu), collapsible from its title row with a
   one-line excerpt when closed and remove in its ⋯. **Time on location** is a duration field that
