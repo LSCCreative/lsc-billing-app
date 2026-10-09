@@ -29,7 +29,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   $95 × 19 h; then 1,752 km and 18.5 h without traffic), and the server's derived qty matched after
   each save. No Routes call on open; Undo restores route + lines with no call; a slow reply after
   an Undo is dropped. Shots at 1280/800/375 (headless), no overflow. 593 server tests pass.
-- [x] **Task 5** destination details, time on location and reordering, `COMMIT5`. Verified on a
+- [x] **Task 5** destination details, time on location and reordering, `5f2c1d1`. Verified on a
   five-destination Sydney day: + Add details ▾ (used items leave the menu), blocks open/close in
   place with a one-line excerpt, Remove in the block's ⋯ with Undo; time on location parsed,
   re-routed and the clock times shifted by it; reorder by ⋯ Move up/down and Alt+↑/↓ (pane,
