@@ -152,7 +152,7 @@ starting. **Frontend** marks anything a person looks at.
 
 ## Stage C: Call sheet
 
-- [ ] **9. Call sheet data, links and the static map** *(backend: Sonnet/high)*: The
+- [x] **9. Call sheet data, links and the static map** *(backend: Sonnet/high)*: **Done `e9b7d0b`.** `callSheetView`, `google.js`, owner GET + link POST, public GET; 617 tests pass, leak test included; PDF and email routes stay with tasks 10 and 11. Original spec: The
   `callSheetView` allow-list (IA appendix). `server/src/google.js` → Maps Static with
   `GOOGLE_MAPS_SERVER_KEY` (path from the polyline, numbered markers), cached in `static_maps` by
   hash, embedded as a data URI. Owner `GET /api/estimates/:id/call-sheet`, `POST …/call-sheet/link

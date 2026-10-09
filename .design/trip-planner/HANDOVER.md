@@ -3,10 +3,11 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 9, Sonnet, effort high: backend** (call sheet data, links and the static map; no
-frontend). Stage A (the trip planner) and stage B (autosave) are done.
+**Next: task 10, Opus, effort high: FRONTEND task** (the call sheet page, public page and PDF; load
+`/frontend-design` first). Stage A (the trip planner), stage B (autosave) and task 9 (the call sheet's
+server side) are done.
 
-## State as of 2026-10-10 (task 8)
+## State as of 2026-10-10 (task 9)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -64,7 +65,65 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   the project; a stubbed `autosave_not_draft` switched the bar to Save; Delete waited for the
   save on its way. Shots at 1280/800/375 (headless), no overflow. 600 server tests pass (no
   server change).
-- [ ] **Next: task 9**, call sheet data, links and the static map. *Sonnet/high, backend.*
+- [x] **Task 9** call sheet data, links and the static map, `e9b7d0b`. 617 server tests pass
+  (`test-call-sheet.js`, 17). Verified: the unit tests with Maps Static stubbed, and **one live
+  Static request** with the server key (`google.fetchStaticMap`): numbered pins, a terracotta S,
+  the route line, 142 KB PNG (a throwaway script in the session scratchpad; no key printed).
+  No schema change (v16 already had the token, flag and `static_maps`).
+- [ ] **Next: task 10**, call sheet page, public page and PDF. *Opus/high, **frontend**.*
+
+## Decisions made in task 9 (agent's, within the brief)
+
+- **What it is.** `GET /api/estimates/:id/call-sheet` → `{ callSheet, link: {on, token, url},
+  editDay }`; `POST …/call-sheet/link {on}` → `{ token, on, url }`; public `GET
+  /public/call-sheets/:token` → `{ callSheet }`. The owner's `callSheet` and the public one are the
+  same object (a test holds them equal). `url` is `${APP_URL}c/#s/<token>`, or null with no APP_URL.
+  **No PDF and no email routes yet**: they are tasks 10 and 11.
+- **`callSheetView` (public.js) is the allow-list**; `test-call-sheet.js` asserts its keys level by
+  level, so a new field must be added there on purpose. Shape: `{ kind:'call-sheet', upid, name,
+  client:{businessName}, business:{name,email,phone}, updatedAt, summary:{days,km}, days:[{ date,
+  startTime, routed, totals:{km,minutes}, legs:[{km,minutes,departAt,arriveAt}], stops:[{ role,
+  n, mapLabel, address, lat, lng, mapsUrl, arriveAt, leaveAt, + for destinations minutesOnSite,
+  details }], map }] }`. No ids at all (day, stop, estimate). `details` holds only the fields with
+  text. `n` numbers destinations 1…; START and RETURN have `n: null`.
+- **`arriveAt` / `leaveAt` are on each stop** (arrive = the leg in, leave = the leg out; the stored
+  times already include the time on location), and `legs` gives the "— 42 km · 48 min —" lines.
+  The renderer needs no arithmetic.
+- **`routed: false`** when the stored legs don't number stops − 1 (a re-route failed): `legs: []`
+  and no times, the stops still listed. The server can't see the browser's stop signature
+  (`routedFor.stops`), so a trip whose stops changed *without* changing the leg count still shows
+  its old times; the owner sees that in the editor ("Recalculate"). Task 10 may say nothing more.
+- **Days shown** = days whose trip has ≥ 1 destination (a start alone is no trip), date order,
+  Date TBC last, editor order within a date. `summary.km` is the sum of the stored totals, rounded
+  to the whole km (the row's "3 days · 412 km").
+- **"Updated" (T18)** = the newest `production_days.updated_at` of the estimate, else the
+  estimate's own. **`days.js replaceDays` now keeps a day's `updated_at` when a save changed
+  nothing in it**, since every save replaces the days whole and autosave would otherwise restamp
+  them on any edit. Deleting a day doesn't move it. Confirming a day (projects.js) does.
+- **Link toggling doesn't touch `estimates.updated_at`** (it's the editor's `baseUpdatedAt`; a
+  test saves with the pre-share stamp after sharing). Off keeps the token; on again reuses it.
+  Turning on with no trip day is refused `409 no_trips`; off is always allowed; a non-boolean `on`
+  is `400 invalid_on`. A link that is off, never made or malformed is one `404 not_found`.
+- **The static map** (`google.js`): 640×360 at scale 2 (1280×720 PNG8, ~140 KB), roadmap,
+  terracotta route line, black numbered pins, terracotta **S** for START (RETURN has no pin).
+  A Static pin label is one character, so destinations 10–23 are **A–N**; each stop carries its
+  `mapLabel` so the schedule can print the same character as the pin. The stored polyline (up to
+  50k characters) is thinned by Douglas–Peucker to ≤ 4,500 encoded characters so the GET stays
+  under the URL cap (a test builds 23 pins and a 40k route: ~7 KB).
+- **Cache** `static_maps` keyed by day, valid while the hash of the thinned line + pins + render
+  version matches. Words, time on location and totals don't change it. Fetched lazily on the
+  first view after a trip changes (owner or public), in parallel, 8 s timeout. A failure or no
+  key = `map: null` and a 200; not retried for 60 s per picture (in memory). Orphans are swept on
+  each insert. A cached image is never shown for a changed trip.
+- **Wiring:** `createApp` opts `mapsKey` / `mapsFetch` (tests); the key defaults to
+  `GOOGLE_MAPS_SERVER_KEY` (and to empty under `NODE_ENV=test`, as the mailer's does).
+  `registerEstimateRoutes(app, db, { maps, appUrl })`.
+- **Leaving a gap for task 11:** `GET /api/estimates` (and the project folder) carry no call
+  sheet state yet. Task 11's Documents row needs "has trips, N days · km, link on" — add it there
+  from `callSheetDays` / `summary` (exported from public.js: `callSheetDays`, `hasDestination`).
+- **Backups:** each cached PNG (~140 KB) lives in billing.db, and every mutating request
+  snapshots the whole DB. A few dozen trip days is a few MB per snapshot; fine, but if backups
+  swell, move the PNGs to files beside the DB.
 
 ## Decisions made in task 8 (agent's, within the brief)
 
