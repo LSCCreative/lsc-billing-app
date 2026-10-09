@@ -41,7 +41,7 @@ starting. **Frontend** marks anything a person looks at.
 
 ## Stage A: Trip planner
 
-- [ ] **1. Trip storage and the km/hours rule** *(money: Opus/high)*: Schema **v16** (additive):
+- [x] **1. Trip storage and the km/hours rule** *(money: Opus/high)*: **Done `fc331dc`.** v16, `parseTrip`, `applyTripLines`, `tripLineQty`/`tripKindOf`/`tripRows`; 593 tests pass. Original spec: Schema **v16** (additive):
   `production_days.trip_json`, `estimates.call_sheet_token` / `call_sheet_on`,
   `google_account`, `google_event_sync`, `static_maps` (IA appendix). `days.js` reads, validates
   (`trip_invalid`, `trip_too_many_stops`, `trip_text_too_long`; RETURN mirrors START) and writes

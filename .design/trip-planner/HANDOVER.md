@@ -5,15 +5,31 @@ Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the 
 
 **Model: Opus, effort high. Frontend task** (also writes priced travel lines → money bucket).
 
-## State as of 2026-10-08
+## State as of 2026-10-09
 
-Running through `/design-flow`:
-- [x] Phase 1 Grill Me: decisions in DECISIONS.md.
-- [x] Phase 2 Design Brief: `DESIGN_BRIEF.md` (Google Calendar added before IA, G1–G5).
-- [x] Phase 3 Information Architecture: `INFORMATION_ARCHITECTURE.md` (incl. the Data & API appendix). "Travel brief" is now **Call sheet** (I4).
-- Phase 4 Design Tokens: **skipped** (ui-clarity's `tokens.css` covers it).
-- [x] Phase 5 Brief to Tasks: `TASKS.md` (20 tasks, stages A trip planner → B autosave → C call sheet → D Google Calendar → E polish/review/deploy).
-- [ ] **Phase 6 Build: next is task 1** (trip storage and the km/hours rule, *money: Opus/high*), on branch `trip-planner` off `ui-clarity` (not created yet).
+Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
+**`trip-planner`** (off `ui-clarity`, unpushed).
+
+- [x] **Task 1** trip storage and the km/hours rule, `fc331dc`. Schema v16, server derivation,
+  calc functions, 19 new tests (`test-trips.js`, plus `test-calc.js` and `test-db.js`).
+- [ ] **Next: task 2**, the Maps loader and the travel view shell. *Frontend: Opus/high.*
+  **Frontend task.** Before building, ask the user to approve creating the default-style Map ID.
+
+## Decisions made in task 1 (agent's, within the brief)
+
+- **A day sent without a `trip` key keeps its stored trip**; `trip: null` clears it. The editor
+  rebuilds days from scratch (`booking-block.js` `norm()` drops unknown keys), so today's build and
+  any cached old one would otherwise wipe trips on save. Task 3 must send `trip` for every day it
+  knows (null to clear). A new day id never inherits a trip.
+- **`fromTrip` is dropped** (line left at the qty sent) when the line isn't in Travel, sits on no
+  day or a day with no trip, names a kind its own snapshot isn't (`tripKindOf`: km only on a
+  `perKm` line, hours only on an own-time line), or is a second line of the same kind on that day.
+- Legs and totals are stored as sent; **totals are what bill**. Leg count needn't match the stops
+  (a failed re-route keeps the last good figures). Unrouted trip = totals 0 = qty 0.
+- `tripRows(pricing, ctx)` returns resolved rows (`travelRowDef`); `mu === null` means unpriced.
+- Duplicate estimate strips `fromTrip` with the day (the line keeps its qty).
+- A trip-only edit on a sent estimate doesn't need a resend (`changedSince` compares the client
+  view); a changed km/hours qty does, correctly.
 
 ## Google setup (done 2026-10-08)
 
@@ -37,3 +53,7 @@ secret, correctly. **The user creates it and pastes the client ID and secret int
 - Autosave vs `backup.js` preWriteBackup: every mutating request snapshots the whole DB. Autosave
   PUTs must be throttled (I2), or recovery points collapse to seconds.
 - New schema (v16): NAS before Pages, and the NAS is offline as of 2026-10-08.
+- `GET /api/estimates` (the list) now carries every day's trip, polyline included (≤ 50k chars
+  each). Fine at today's volume. If the list slows, strip `polyline` there, not in `readDays`.
+- Limits in `days.js`: 23 destinations, 2000 chars per detail, 300 per address, 50k polyline,
+  `minutesOnSite` a whole number ≤ 1440.
