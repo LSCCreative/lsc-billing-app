@@ -69,7 +69,7 @@ starting. **Frontend** marks anything a person looks at.
   Modifies: `booking-block.js` (menu host → `.is-trip`), `estimate-editor.js` (menu footer,
   route query), `router` use, `deploy-pages.yml`, `config.example.js`._
 
-- [ ] **3. Placing stops** *(frontend: Opus/high)*: START, destination and RETURN cells per the
+- [x] **3. Placing stops** *(frontend: Opus/high)*: **Done `7df0e05`.** Built by mouse and keyboard, saved, reloaded; 1280/800/375. Original spec: START, destination and RETURN cells per the
   brief. The search bar appears above the map while a cell waits, with Places Autocomplete
   suggestions (AU-biased, a session token per search), Search/Enter for the best match, a pending
   hollow pin with the address and "Use this location", and a click anywhere for a reverse-geocoded
