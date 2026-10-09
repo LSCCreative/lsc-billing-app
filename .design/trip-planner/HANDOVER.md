@@ -36,7 +36,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   dispatched events), by a real mouse drag at 1280 and a real finger drag at 375 (headless
   Chrome); each re-routed and announced "… moved to stop N of 7". Details and minutes saved to
   the server. Shots at 1280/800/375, no overflow. No server change.
-- [x] **Task 6** trip lifecycle around the day, and Home base, `COMMIT6`. **Stage A is done.**
+- [x] **Task 6** trip lifecycle around the day, and Home base, `5c0563f`. **Stage A is done.**
   Verified in the pane on the scratch estimate, each answer saved and checked on the server:
   Unlink (dialog → ordinary line, `unlinked: ['km']`, no new linked line on the next route, the
   totals say "billed as typed"), Relink (trip's 109 km back on the line), Clear trip → Remove
