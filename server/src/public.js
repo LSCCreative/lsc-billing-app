@@ -27,6 +27,7 @@ const { readRentals } = require('./rentals');
 const { readPricing, readSettings } = require('./ratecard');
 const { docSettings } = require('./documents');
 const { invoiceJson } = require('./invoices');
+const { staticMapFor, pinLabel } = require('./google');
 const {
   serviceGroups, daysWithItems, qtyText, dayIdsOf, hasProposedDay, PROPOSED_DISCLAIMER,
   buildAgreementHtml, renderPdfBuffer, invoiceTreatment, extraItems, acceptedEstimate,
@@ -579,8 +580,185 @@ function publicInvoicePdfSource(db, token) {
   return row ? invoiceJson(db, row) : null;
 }
 
+/* ── The call sheet (trip-planner task 9; T12, T13, T18, I4) ────────────────
+ *
+ * One per estimate: the schedule of its days' trips, for the owner's page and
+ * for crew with the link. Like the client view this is an ALLOW-LIST: every
+ * field is named here and nothing is spread. No price, rate or total of money,
+ * no client contact, no internal figure, no stored id or token, and no part of
+ * the estimate except its UPID and names. It is built live from the saved
+ * trips (T18: always the latest), not frozen on a send. test-call-sheet.js's
+ * leak test holds it to that.
+ */
+
+const CALL_SHEET_DETAIL_KEYS = ['capture', 'description', 'access'];
+
+/* A Google Maps page for one stop: the named place when we have its id (the
+   address is still sent, as Google requires a query beside it), else the
+   coordinates. Built here from the stored place, so the page and the PDF need
+   no logic of their own. */
+function mapsLinkOf(stop) {
+  const place = typeof stop.placeId === 'string' && stop.placeId
+    ? `&query_place_id=${encodeURIComponent(stop.placeId)}` : '';
+  const query = place && str(stop.address).trim() ? str(stop.address).trim() : `${stop.lat},${stop.lng}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}${place}`;
+}
+
+/* A day takes part once it has somewhere to go: a start alone is no trip (the
+   editor writes no lines for one either). */
+const hasDestination = (trip) => !!(trip && Array.isArray(trip.stops) && trip.stops.some((s) => s.role === 'stop'));
+
+/**
+ * The days a call sheet shows: those with a trip, in date order, Date TBC days
+ * last, the editor's order within a date.
+ */
+function callSheetDays(days) {
+  return (Array.isArray(days) ? days : [])
+    .map((d, i) => ({ d, i }))
+    .filter(({ d }) => hasDestination(d.trip))
+    .sort((a, b) => {
+      if (a.d.date && !b.d.date) return -1;
+      if (!a.d.date && b.d.date) return 1;
+      if (a.d.date !== b.d.date) return a.d.date < b.d.date ? -1 : 1;
+      return a.i - b.i;
+    })
+    .map(({ d }) => d);
+}
+
+const callSheetNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const callSheetClock = (v) => (typeof v === 'string' && v ? v : null);
+
+function callSheetDay(day, mapUri) {
+  const trip = day.trip;
+  const legsFit = Array.isArray(trip.legs) && trip.legs.length === trip.stops.length - 1;
+  const legs = legsFit
+    ? trip.legs.map((l) => ({
+      km: callSheetNumber(l.km),
+      minutes: callSheetNumber(l.minutes),
+      departAt: callSheetClock(l.departAt),
+      arriveAt: callSheetClock(l.arriveAt),
+    }))
+    : [];
+  let destination = 0;
+  const stops = trip.stops.map((s, i) => {
+    const out = {
+      role: s.role,
+      n: null,
+      mapLabel: s.role === 'start' || s.role === 'return' ? 'S' : null,
+      address: str(s.address),
+      lat: callSheetNumber(s.lat),
+      lng: callSheetNumber(s.lng),
+      mapsUrl: mapsLinkOf(s),
+      // Arrive = the leg in, leave = the leg out; the stored times already
+      // include the time on location (T5, T11).
+      arriveAt: legsFit && i > 0 ? legs[i - 1].arriveAt : null,
+      leaveAt: legsFit && i < legs.length ? legs[i].departAt : null,
+    };
+    if (s.role === 'stop') {
+      destination += 1;
+      out.n = destination;
+      out.mapLabel = pinLabel(destination);
+      out.minutesOnSite = Number.isInteger(s.minutesOnSite) && s.minutesOnSite > 0 ? s.minutesOnSite : null;
+      // In full, and only what has text: a field the owner opened and left
+      // blank isn't a heading over nothing.
+      out.details = {};
+      CALL_SHEET_DETAIL_KEYS.forEach((k) => {
+        const text = s.details && typeof s.details[k] === 'string' ? s.details[k].trim() : '';
+        if (text) out.details[k] = text;
+      });
+    }
+    return out;
+  });
+  const totals = trip.totals || {};
+  return {
+    date: day.date || null,
+    startTime: day.startTime || null,
+    // Whether the legs are the ones for these stops. False after a re-route
+    // that failed: the page then shows the stops without drive times.
+    routed: legsFit && legs.length > 0,
+    totals: { km: callSheetNumber(totals.km), minutes: callSheetNumber(totals.minutes) },
+    legs,
+    stops,
+    map: typeof mapUri === 'string' ? mapUri : null,
+  };
+}
+
+/**
+ * The call sheet's content, for the owner's page and the public link alike.
+ *
+ * @param {object} estimate  { upid, name, client, days } (loadEstimate's shape)
+ * @param {object} business  settings.business
+ * @param {Map<string,string>} maps  day id → data URI of its route image
+ * @param {string} updatedAt  when the trips were last saved (T18)
+ */
+function callSheetView(estimate, business, maps, updatedAt) {
+  const days = callSheetDays(estimate.days).map((d) => callSheetDay(d, maps && maps.get(d.id)));
+  const b = business || {};
+  return {
+    kind: 'call-sheet',
+    upid: str(estimate.upid),
+    name: str(estimate.name),
+    client: { businessName: str(estimate.client && estimate.client.businessName) },
+    business: { name: str(b.name), email: str(b.email), phone: str(b.phone) },
+    updatedAt: str(updatedAt),
+    summary: { days: days.length, km: Math.round(days.reduce((sum, d) => sum + d.totals.km, 0)) },
+    days,
+  };
+}
+
+/* When the trips were last saved: the newest of the estimate's days (days.js
+   replaceDays keeps a day's stamp when a save changed nothing in it), or the
+   estimate's own save when it has none. */
+function callSheetUpdatedAt(db, row) {
+  const d = db.prepare('SELECT MAX(updated_at) AS at FROM production_days WHERE estimate_id = ?').get(row.id);
+  return (d && d.at) || row.updated_at;
+}
+
+/**
+ * The call sheet of one estimate row, with its route images (fetched on first
+ * need and cached, google.js).
+ *
+ * @param {{key:string, fetchImpl?:function}} maps  the Maps Static settings
+ */
+async function buildCallSheet(db, row, maps) {
+  const days = callSheetDays(readDays(db, row.id));
+  const uris = await Promise.all(days.map((d) => staticMapFor(db, d, maps)));
+  const images = new Map();
+  days.forEach((d, i) => images.set(d.id, uris[i]));
+  const estimate = { upid: row.upid, name: row.name, client: JSON.parse(row.client_json || '{}'), days };
+  return callSheetView(estimate, readSettings(db).business, images, callSheetUpdatedAt(db, row));
+}
+
+/**
+ * Turns an estimate's call sheet link on or off (T13). The first time on makes
+ * the token; off keeps it, so turning it on again gives the same link. Only
+ * the link's own two columns change: the estimate's `updated_at` is the
+ * editor's `baseUpdatedAt`, and sharing a link must not read as an edit made
+ * elsewhere.
+ *
+ * @returns {{token:string, on:boolean}}
+ */
+function setCallSheetLink(db, estimateId, on) {
+  db.prepare(`
+    UPDATE estimates SET call_sheet_token = COALESCE(call_sheet_token, ?), call_sheet_on = ? WHERE id = ?
+  `).run(newToken(), on ? 1 : 0, estimateId);
+  const row = db.prepare('SELECT call_sheet_token, call_sheet_on FROM estimates WHERE id = ?').get(estimateId);
+  return { token: row.call_sheet_token, on: row.call_sheet_on === 1 };
+}
+
+/**
+ * The estimate a public call sheet link is for, or null: no such link, and one
+ * turned off, are the same answer, and the page can't tell them apart.
+ */
+function callSheetRowOfLink(db, token) {
+  const t = String(token || '');
+  if (!t) return null;
+  return db.prepare('SELECT * FROM estimates WHERE call_sheet_token = ? AND call_sheet_on = 1').get(t) || null;
+}
+
 module.exports = {
   publicInvoice, publicInvoicePdfSource, invoiceOfLink,
   newToken, clientView, freezeVersion, liveVersion, changedSince, takenDays, versionsOf, publicEstimate, publicPdfSource, quoteDates, logOpened, OPENED_EVERY_MS,
   signatureRow, signatureOfLink, signaturePdf,
+  callSheetView, callSheetDays, buildCallSheet, setCallSheetLink, callSheetRowOfLink, hasDestination,
 };

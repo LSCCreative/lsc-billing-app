@@ -435,7 +435,7 @@ function lockedDay(db, estimateId, days, storedDays) {
  */
 function replaceDays(db, estimateId, days, now) {
   const stored = new Map();
-  for (const r of db.prepare('SELECT id, date, rebook, created_at FROM production_days WHERE estimate_id = ?').all(estimateId)) {
+  for (const r of db.prepare('SELECT * FROM production_days WHERE estimate_id = ?').all(estimateId)) {
     stored.set(r.id, r);
   }
   db.prepare('DELETE FROM production_days WHERE estimate_id = ?').run(estimateId);
@@ -447,8 +447,16 @@ function replaceDays(db, estimateId, days, now) {
   days.forEach((d, i) => {
     const was = stored.get(d.id);
     const rebook = was && was.rebook === 1 && was.date === d.date && !d.overrideNote ? 1 : 0;
+    const tripJson = d.trip ? JSON.stringify(d.trip) : null;
+    // A day saved as it already was keeps its `updated_at`. Every save
+    // replaces the days whole, so without this each autosave of anything would
+    // restamp them, and the call sheet's "Updated" (public.js
+    // callSheetUpdatedAt, T18) would move on an edit to a price.
+    const unchanged = was && was.date === d.date && was.status === d.status && was.start_time === d.startTime &&
+      was.end_time === d.endTime && was.override_note === d.overrideNote && was.sort === i &&
+      was.rebook === rebook && was.trip_json === tripJson;
     insert.run(d.id, estimateId, d.date, d.status, d.startTime, d.endTime, d.overrideNote, i, rebook,
-      d.trip ? JSON.stringify(d.trip) : null, (was && was.created_at) || now, now);
+      tripJson, (was && was.created_at) || now, unchanged ? was.updated_at : now);
   });
 }
 

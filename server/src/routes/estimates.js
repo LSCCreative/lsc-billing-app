@@ -12,7 +12,9 @@ const {
   readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
 } = require('../rentals');
 const { planProjectWrite, applyProjectWrite, dropEmptyProject, upidLocked } = require('../projects');
-const { versionsOf, liveVersion, changedSince } = require('../public');
+const {
+  versionsOf, liveVersion, changedSince, buildCallSheet, callSheetDays, setCallSheetLink,
+} = require('../public');
 const { resendNeeded, updateRequest, sendUpdate, todayOf, localToday } = require('./projects');
 
 /* Thrown inside the save's transaction to roll it back when it would change a
@@ -139,7 +141,12 @@ function prepareWrite(db, body, existing) {
   return { fields: { days, rentals, gstFree, shortNotice, surcharges, activeRows, totals, sectionLabels } };
 }
 
-function registerEstimateRoutes(app, db) {
+/**
+ * @param {object} [opts]
+ * @param {{key:string, fetchImpl?:function}} [opts.maps]  Maps Static, for the call sheet's route images
+ * @param {string} [opts.appUrl]  where client pages are served, with a trailing slash
+ */
+function registerEstimateRoutes(app, db, opts = {}) {
   // `upidLocked` (D36, task 19): the editor shows the UPID read-only once the
   // project has an invoice the app made, as planProjectWrite refuses a change.
   // `versions` (task 25, D34): what of it has been sent, for the editor's
@@ -173,6 +180,47 @@ function registerEstimateRoutes(app, db) {
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'not_found' });
     res.json({ ok: true, estimate: loadJson(row) });
+  });
+
+  /* The call sheet (trip-planner task 9, T12, T13). The owner's reply is the
+     same allow-listed content crew see (public.js callSheetView), plus the
+     link's state. `editDay` is the first day with a trip, for "Edit trips". */
+  const linkUrl = (token) => (opts.appUrl && token ? `${opts.appUrl}c/#s/${token}` : null);
+
+  app.get('/api/estimates/:id/call-sheet', async (req, res, next) => {
+    try {
+      const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
+      if (!row) return res.status(404).json({ error: 'not_found' });
+      const callSheet = await buildCallSheet(db, row, opts.maps);
+      const first = callSheetDays(readDays(db, row.id))[0];
+      return res.json({
+        ok: true,
+        callSheet,
+        link: { on: row.call_sheet_on === 1, token: row.call_sheet_token || null, url: linkUrl(row.call_sheet_token) },
+        editDay: first ? first.id : null,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.post('/api/estimates/:id/call-sheet/link', (req, res) => {
+    const row = db.prepare('SELECT id FROM estimates WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    const on = (req.body || {}).on;
+    if (typeof on !== 'boolean') {
+      return res.status(400).json({ error: 'invalid_on', message: 'Say whether the link is on or off.' });
+    }
+    // Nothing to share until a day has somewhere to go. Turning a link off is
+    // always allowed.
+    if (on && !callSheetDays(readDays(db, row.id)).length) {
+      return res.status(409).json({
+        error: 'no_trips',
+        message: 'Plan a trip on one of the days first. There is nothing for a call sheet to show yet.',
+      });
+    }
+    const link = setCallSheetLink(db, row.id, on);
+    return res.json({ ok: true, token: link.token, on: link.on, url: linkUrl(link.token) });
   });
 
   app.post('/api/estimates', (req, res) => {

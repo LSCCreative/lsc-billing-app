@@ -95,9 +95,17 @@ function createApp(db, opts = {}) {
     }
   });
 
+  // The call sheet's route images (trip-planner task 9). A test never reaches
+  // Google, whatever the developer's .env holds, unless it passes its own key
+  // and a stub fetch.
+  const maps = {
+    key: opts.mapsKey !== undefined ? opts.mapsKey : (config.isTest ? '' : config.googleMapsServerKey),
+    fetchImpl: opts.mapsFetch,
+  };
+
   // ── The client's pages (stage E): no session, by unguessable link, and
   // outside /api so no owner route can be reached through them.
-  registerPublicRoutes(app, db, { ...opts, outbox, ownerEmail: mailer.replyTo });
+  registerPublicRoutes(app, db, { ...opts, outbox, ownerEmail: mailer.replyTo, maps });
 
   // ── Auth. /api/login, /api/logout, /api/session and /api/password/* handle
   // their own session state and must be registered before the gate below.
@@ -121,7 +129,10 @@ function createApp(db, opts = {}) {
   app.use('/api', preWriteBackup(db, config.backupDir));
 
   registerAccountRoutes(app, db);
-  registerEstimateRoutes(app, db);
+  registerEstimateRoutes(app, db, {
+    maps,
+    appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
+  });
   registerClientRoutes(app, db);
   registerPricingRoutes(app, db);
   registerSettingsRoutes(app, db);

@@ -21,6 +21,7 @@ const { nowIso } = require('../db');
 const { readPricing, readSettings } = require('../ratecard');
 const {
   publicEstimate, publicPdfSource, logOpened, signatureOfLink, signaturePdf, publicInvoice, publicInvoicePdfSource,
+  callSheetRowOfLink, buildCallSheet,
 } = require('../public');
 const { signEstimate, agreementOffer } = require('../signing');
 const { localToday } = require('./projects');
@@ -97,6 +98,7 @@ const notFound = (res) => res.status(404).json({ error: 'not_found' });
  * @param {function} [opts.renderPdf]   html → PDF buffer, for tests (pdf.js renderPdfBuffer)
  * @param {{kick:function}} [opts.outbox]  the send queue's worker; a signature kicks it (task 28)
  * @param {string} [opts.ownerEmail]    where "a client signed" goes (the mailer's Reply-To)
+ * @param {{key:string, fetchImpl?:function}} [opts.maps]  Maps Static, for a call sheet's route images
  */
 function registerPublicRoutes(app, db, opts = {}) {
   const limits = Object.assign({
@@ -210,6 +212,20 @@ function registerPublicRoutes(app, db, opts = {}) {
     res.attachment(invoiceFilename(doc));
     res.type('application/pdf');
     return res.send(buffer);
+  });
+
+  /* A call sheet (trip-planner task 9, T13, T18): the schedule of the trips
+     as last saved, for crew with the link. A link that is off, or was never
+     made, is the same 404 as any wrong one (the page says "isn't active"). The
+     reply is public.js's allow-list: no price, no client contact. */
+  app.get('/public/call-sheets/:token', async (req, res, next) => {
+    try {
+      const row = callSheetRowOfLink(db, req.params.token);
+      if (!row) return notFound(res);
+      return res.json({ callSheet: await buildCallSheet(db, row, opts.maps) });
+    } catch (err) {
+      return next(err);
+    }
   });
 
   // Anything else under /public is a 404 in the same shape.

@@ -65,6 +65,10 @@ const config = {
   // trailing slash: emails link to `${appUrl}c/#e/<token>` and
   // `${appUrl}#/projects/<id>`.
   appUrl: appUrlOf(process.env.APP_URL),
+  // The call sheet's route images (trip-planner task 9, T1a): the Maps Static
+  // key. It stays here and in the one request google.js makes; no reply, log
+  // or page ever carries it. Empty = the call sheet simply has no map image.
+  googleMapsServerKey: (process.env.GOOGLE_MAPS_SERVER_KEY || '').trim(),
   isTest: process.env.NODE_ENV === 'test',
 };
 
