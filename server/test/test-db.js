@@ -816,8 +816,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v15', () => {
-  assert.equal(LATEST_VERSION, 15);
+test('the schema knows it is at v16', () => {
+  assert.equal(LATEST_VERSION, 16);
 });
 
 /**
@@ -1290,7 +1290,7 @@ test('v15 gives the account an unset email and an empty reset table, changing no
               VALUES (1, 'lachlan', 'hash', 'x', 'x')`).run();
   const before = dump(db, 'account');
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 15 });
   assert.deepEqual([result.from, result.to, result.applied], [14, 15, 1]);
   const after = dump(db, 'account');
   assert.equal(after[0].email, '');
@@ -1298,7 +1298,57 @@ test('v15 gives the account an unset email and an empty reset table, changing no
   assert.deepEqual(dump(db, 'password_resets'), []);
 
   db.prepare('DELETE FROM schema_version WHERE version >= 15').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 15 }).applied, 1);
   assert.deepEqual(dump(db, 'account'), after);
+  db.close();
+});
+
+/**
+ * MIGRATION v16 — trips, call sheet links and the Google Calendar tables
+ * (.design/trip-planner/ task 1). Additive: every v15 day reads as having no
+ * trip, every estimate as having no call sheet link (off), the three new
+ * tables start empty, and running it again changes nothing.
+ */
+test('v16 adds an unset trip to every day, an off call sheet link and three empty tables', () => {
+  const db = v12Fixture();
+  migrate(db, { to: 15 });
+  const tables = ['projects', 'estimates', 'invoices', 'production_days', 'rentals'];
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(before.production_days.length, 'the fixture has days to carry across');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [15, 16, 1]);
+  const after = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(after.production_days.every((r) => r.trip_json === null), 'no day has a trip');
+  assert.deepEqual(after.production_days.map(({ trip_json: _t, ...rest }) => rest), before.production_days);
+  assert.ok(after.estimates.every((r) => r.call_sheet_token === null && r.call_sheet_on === 0), 'every link unset and off');
+  assert.deepEqual(after.estimates.map(({ call_sheet_token: _t, call_sheet_on: _o, ...rest }) => rest), before.estimates);
+  for (const t of ['projects', 'invoices', 'rentals']) assert.deepEqual(after[t], before[t], t);
+  for (const t of ['google_account', 'google_event_sync', 'static_maps']) assert.deepEqual(dump(db, t), [], t);
+
+  // Run again: nothing moves, and no column is added twice.
+  db.prepare('DELETE FROM schema_version WHERE version >= 16').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(dump(db, 'production_days'), after.production_days);
+  assert.deepEqual(dump(db, 'estimates'), after.estimates);
+
+  // A call sheet link is unique; there is only ever one Google account.
+  const [a, b] = after.estimates;
+  db.prepare("UPDATE estimates SET call_sheet_token = 'cs' WHERE id = ?").run(a.id);
+  assert.throws(() => db.prepare("UPDATE estimates SET call_sheet_token = 'cs' WHERE id = ?").run(b.id), /UNIQUE/);
+  const account = db.prepare("INSERT INTO google_account (id, refresh_token, connected_at) VALUES (?, 'r', 'x')");
+  account.run(1);
+  assert.throws(() => account.run(2), /CHECK/);
+
+  // A sync row outlives its day and its estimate: it is how the event gets
+  // deleted, and a save replaces the days whole.
+  const day = after.production_days.find((d) => d.estimate_id === a.id) || after.production_days[0];
+  db.prepare(`INSERT INTO google_event_sync (day_id, estimate_id, event_id, state, updated_at)
+              VALUES (?, ?, 'ev1', 'synced', 'x')`).run(day.id, day.estimate_id);
+  assert.throws(() => db.prepare(`INSERT INTO google_event_sync (day_id, estimate_id, state, updated_at)
+              VALUES ('d_other', 'e', 'lost', 'x')`).run(), /CHECK/);
+  db.prepare('DELETE FROM estimates WHERE id = ?').run(day.estimate_id);
+  assert.equal(db.prepare('SELECT event_id FROM google_event_sync WHERE day_id = ?').get(day.id).event_id, 'ev1');
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
   db.close();
 });

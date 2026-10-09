@@ -249,6 +249,25 @@
  *
  * A `perKm` row is never also Your time or Direct (PUT /api/pricing refuses
  * that); if one ever were, `perKm` decides.
+ *
+ * A DAY'S TRIP SETS TWO TRAVEL QUANTITIES (2026-10-09, .design/trip-planner/
+ * task 1; the user's decisions T3, T4). A production day may carry a planned
+ * trip (days.js parseTrip), and a travel line on that day marked
+ * `fromTrip: 'km' | 'hours'` takes its quantity from the trip's totals, never
+ * from the browser. No new money math: the line is priced from its own
+ * snapshot exactly as a typed one is; only its quantity is derived.
+ *
+ *   - KM IS ROUNDED UP TO THE WHOLE KM, drive time UP TO THE QUARTER HOUR
+ *     (tripLineQty). Up, as an auto price is, because rounding down would bill
+ *     less road than was driven. A hair of float noise is forgiven first, so
+ *     legs summing to 186.0000000001 km bill 186, not 187.
+ *   - WHICH ROW: the first `perKm` row for km, the first own-time row (Your
+ *     time, not Direct, not per km) for hours (tripRows). A line may be linked
+ *     only as the kind its own snapshot says it is (tripKindOf), so a km figure
+ *     can never land on an hourly line.
+ *   - THE SERVER DERIVES IT on every estimate write (days.js applyTripLines),
+ *     overriding whatever quantity was sent, and drops `fromTrip` from a line
+ *     whose day has no trip.
  */
 
 /** Money is stored and compared at cent precision, never as raw float sums. */
@@ -1703,6 +1722,65 @@ function travelRowDef(row, ctx) {
  *   rowIndex (its index in travelRows), name, travel: true, units: { hour } },
  *   the unit as serviceFloorComparison's.
  */
+/* Float noise forgiven before a trip's figures are rounded up (tripLineQty). */
+const TRIP_NOISE = 1e-9;
+
+/**
+ * The quantity a trip bills on its day's linked travel line (T3): `'km'` is
+ * the trip's total km rounded up to the whole km; `'hours'` is its total drive
+ * minutes rounded up to the quarter hour, in hours. See A DAY'S TRIP in the
+ * header.
+ *
+ * No trip, no totals, or any other kind is 0: nothing to bill. A trip whose
+ * route hasn't been worked out yet has totals of 0 and bills 0, never a guess.
+ *
+ * @param {object|null} trip — a day's trip (days.js parseTrip's shape).
+ * @param {'km'|'hours'} kind
+ * @returns {number}
+ */
+function tripLineQty(trip, kind) {
+  const totals = trip && typeof trip === 'object' ? trip.totals : null;
+  if (!totals || typeof totals !== 'object') return 0;
+  if (kind === 'km') return Math.max(0, Math.ceil(nonNeg(totals.km) - TRIP_NOISE));
+  if (kind === 'hours') return Math.max(0, Math.ceil(nonNeg(totals.minutes) / 15 - TRIP_NOISE)) / 4;
+  return 0;
+}
+
+/**
+ * Which kind of trip line a travel line or row can be: `'km'` for the car
+ * (perKm), `'hours'` for an own-time row (Your time, not Direct, not per km),
+ * otherwise null — a resold or at-cost row, which a trip never sets. Reads
+ * the flags lineSnapshot copies, so it answers the same for a rate-card row
+ * and a line saved from it.
+ */
+function tripKindOf(def) {
+  if (!def || typeof def !== 'object') return null;
+  if (def.perKm) return 'km';
+  if (def.ownTime === true && !def.directCost) return 'hours';
+  return null;
+}
+
+/**
+ * The Rate Card rows a trip writes its two lines from: the first `perKm` row
+ * for km and the first own-time row for hours, each resolved as the estimator
+ * prices it (travelRowDef). Null for a kind the card has no row for.
+ *
+ * A resolved row whose `mu` is null has no price yet (no per-km figure on
+ * Overhead, or an auto own-time row with no income floor): the trip adds no
+ * line for it and says why, rather than adding a $0 one. Without ctx, both
+ * auto kinds read as unpriced, as everywhere on the server.
+ *
+ * @param {object} pricing — the rate card.
+ * @param {object} [ctx] — as travelRowDef's.
+ * @returns {{km: object|null, hours: object|null}}
+ */
+function tripRows(pricing, ctx) {
+  const rows = pricing && Array.isArray(pricing.travelRows) ? pricing.travelRows : [];
+  const km = rows.find((r) => tripKindOf(r) === 'km') || null;
+  const hours = rows.find((r) => tripKindOf(r) === 'hours') || null;
+  return { km: km ? travelRowDef(km, ctx) : null, hours: hours ? travelRowDef(hours, ctx) : null };
+}
+
 function travelFloorComparison(pricing, settings, floorPerHour) {
   const perHour = numOrNull(floorPerHour);
   const hasFloor = perHour !== null && perHour > 0;
@@ -2998,6 +3076,9 @@ if (typeof module === 'object' && module.exports) {
     serviceFloorComparison,
     travelRowDef,
     travelFloorComparison,
+    tripLineQty,
+    tripKindOf,
+    tripRows,
     unitHours,
     serviceDayOk,
     suggestedPrice,
@@ -3063,6 +3144,9 @@ if (typeof module === 'object' && module.exports) {
     serviceFloorComparison,
     travelRowDef,
     travelFloorComparison,
+    tripLineQty,
+    tripKindOf,
+    tripRows,
     unitHours,
     serviceDayOk,
     suggestedPrice,

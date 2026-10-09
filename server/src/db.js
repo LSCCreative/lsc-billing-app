@@ -804,6 +804,71 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 16,
+    name: 'trips, call sheet links and the Google Calendar tables',
+    up(db) {
+      // .design/trip-planner/ task 1 (IA "Data & API" appendix). Additive
+      // only: nullable or defaulted columns and new tables, so no rebuild.
+      //
+      // A day's planned trip (days.js parseTrip); null is no trip.
+      const addColumn = (table, column, ddl) => {
+        const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+        if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl};`);
+      };
+      addColumn('production_days', 'trip_json', 'trip_json TEXT');
+      // One call sheet link per estimate (T12, T13): a token made the first
+      // time the link is turned on, kept when it is turned off, so turning it
+      // back on gives the same link.
+      addColumn('estimates', 'call_sheet_token', 'call_sheet_token TEXT');
+      addColumn('estimates', 'call_sheet_on', 'call_sheet_on INTEGER NOT NULL DEFAULT 0');
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_estimates_call_sheet_token ON estimates(call_sheet_token)
+          WHERE call_sheet_token IS NOT NULL;
+
+        -- The one Google account the NAS writes the calendar with (G1). The
+        -- refresh token is stored plain (I3) and never leaves the NAS.
+        CREATE TABLE IF NOT EXISTS google_account (
+          id                INTEGER PRIMARY KEY CHECK (id = 1),
+          email             TEXT NOT NULL DEFAULT '',
+          refresh_token     TEXT NOT NULL,
+          access_token      TEXT,
+          access_expires_at TEXT,
+          calendars_json    TEXT NOT NULL DEFAULT '[]',
+          connected_at      TEXT NOT NULL
+        );
+
+        -- Which Google event each booked day is (G4). NO FOREIGN KEYS, on
+        -- purpose: an estimate save replaces its days whole (days.js
+        -- replaceDays), so a cascade from production_days would forget every
+        -- event on every save, and a deleted day or estimate still needs its
+        -- row to find the event to delete.
+        CREATE TABLE IF NOT EXISTS google_event_sync (
+          day_id      TEXT PRIMARY KEY,
+          estimate_id TEXT NOT NULL,
+          event_id    TEXT,
+          pushed_hash TEXT,
+          state       TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('synced', 'pending', 'error')),
+          error       TEXT,
+          attempts    INTEGER NOT NULL DEFAULT 0,
+          next_try_at TEXT,
+          updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_google_event_sync_estimate ON google_event_sync(estimate_id);
+        CREATE INDEX IF NOT EXISTS idx_google_event_sync_due ON google_event_sync(state, next_try_at);
+
+        -- The call sheet's route images (Maps Static), cached by what they
+        -- show. No foreign key, for the same reason as above: the hash decides
+        -- whether a cached image still fits its day.
+        CREATE TABLE IF NOT EXISTS static_maps (
+          day_id     TEXT PRIMARY KEY,
+          hash       TEXT NOT NULL,
+          png        BLOB NOT NULL,
+          fetched_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 /**

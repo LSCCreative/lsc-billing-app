@@ -6,7 +6,7 @@ const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeL
 const { loadEstimate } = require('../estimate');
 const {
   readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, lineDeliverableProblem, dayIdTakenElsewhere,
-  lockedDay, replaceDays,
+  lockedDay, replaceDays, applyTripLines,
 } = require('../days');
 const {
   readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
@@ -67,6 +67,12 @@ const outdated = (body) => body.pricingShape !== PRICING_SHAPE;
  * the same reason as days. Either way a rental whose vendor is on none of the
  * equipment lines being saved is dropped (rentals.js rentalsWithGear).
  *
+ * TRIPS (trip-planner task 1). A day's `trip` is checked with it (days.js
+ * parseTrip); a day sent without one keeps its stored trip. Each travel line
+ * marked `fromTrip` then takes its quantity from its day's trip, before
+ * anything is priced (days.js applyTripLines), so the totals are always of
+ * the derived quantity, never the one sent.
+ *
  * @returns {{status:number, body:object}|{fields:object}} a refusal, or the fields.
  */
 function prepareWrite(db, body, existing) {
@@ -78,7 +84,7 @@ function prepareWrite(db, body, existing) {
   const storedDays = existing ? readDays(db, existing.id) : [];
   let days = storedDays;
   if (body.days !== undefined || !existing) {
-    const parsed = parseDays(body.days === undefined ? [] : body.days);
+    const parsed = parseDays(body.days === undefined ? [] : body.days, storedDays);
     if (parsed.error) return { status: 400, body: { error: parsed.error } };
     days = parsed.days;
   }
@@ -123,7 +129,7 @@ function prepareWrite(db, body, existing) {
   // surchargedPriceOf), so it needs the settings pinned even with no days.
   const surcharges = days.length || shortNotice ? surchargeSnapshot(days, pricing, readHolidays(db), prior) : {};
   const options = { gstFree, overheadRate: readOverheadRate(db), days, surcharges, shortNotice };
-  const activeRows = stampSurchargedPrices(body.activeRows || {}, pricing, options);
+  const activeRows = stampSurchargedPrices(applyTripLines(body.activeRows || {}, days, pricing), pricing, options);
   const totals = computeTotals(activeRows, pricing, readSettings(db), options);
   const sectionLabels = sectionLabelsFor(
     activeRows,
@@ -345,6 +351,10 @@ function registerEstimateRoutes(app, db) {
     // line's Capture flag are copied as they are — they say what's being
     // made, not when.
     //
+    // A line a day's trip set (`fromTrip`, trip-planner task 1) comes off it
+    // with the day, as an ordinary line at the quantity the trip gave it: the
+    // copy has no days, so no trips.
+    //
     // SINCE v13 (task 15) the copy is a new project with no UPID (D60): UPIDs
     // are unique, so the original's can't come with it. It is an estimate,
     // whatever the original's retired doc type (D62), and a draft.
@@ -354,10 +364,11 @@ function registerEstimateRoutes(app, db) {
     Object.keys(rows).forEach((key) => {
       if (!Array.isArray(rows[key])) return;
       rows[key] = rows[key].map((line) => {
-        if (!line || typeof line !== 'object' || (line.dayId === undefined && line.surchargedPrice === undefined)) return line;
+        if (!line || typeof line !== 'object' ||
+          (line.dayId === undefined && line.surchargedPrice === undefined && line.fromTrip === undefined)) return line;
         unbooked = true;
         if (line.dayId !== undefined) offDays += 1;
-        const { dayId, surchargedPrice, ...rest } = line;
+        const { dayId, surchargedPrice, fromTrip, ...rest } = line;
         return rest;
       });
     });

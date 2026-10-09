@@ -3313,3 +3313,96 @@ test('average job value counts accepted estimates; declined and sent ones are no
   );
   assert.equal(averageJobValue([job('declined', '2026-09-01', 9000)], '2026-10-03'), null);
 });
+
+/* ── Trips (.design/trip-planner/ task 1, T3) ──────────────────────────────── */
+
+const { tripLineQty, tripKindOf, tripRows } = require('../src/calc');
+
+const tripOf = (km, minutes) => ({ stops: [], legs: [], totals: { km, minutes } });
+
+test('tripLineQty: km rounds up to the whole km, forgiving float noise', () => {
+  assert.equal(tripLineQty(tripOf(0, 0), 'km'), 0);
+  assert.equal(tripLineQty(tripOf(0.1, 0), 'km'), 1);
+  assert.equal(tripLineQty(tripOf(1, 0), 'km'), 1);
+  assert.equal(tripLineQty(tripOf(1.0001, 0), 'km'), 2);
+  assert.equal(tripLineQty(tripOf(185.2, 0), 'km'), 186);
+  // Legs that sum to a hair over a whole km bill that km, not the next.
+  assert.equal(tripLineQty(tripOf(0.1 + 0.2 + 185.7, 0), 'km'), 186);
+  assert.equal(tripLineQty(tripOf(186 + 1e-12, 0), 'km'), 186);
+});
+
+test('tripLineQty: drive time rounds up to the quarter hour', () => {
+  assert.equal(tripLineQty(tripOf(0, 0), 'hours'), 0);
+  assert.equal(tripLineQty(tripOf(0, 0.5), 'hours'), 0.25);
+  assert.equal(tripLineQty(tripOf(0, 14), 'hours'), 0.25);
+  assert.equal(tripLineQty(tripOf(0, 15), 'hours'), 0.25);
+  assert.equal(tripLineQty(tripOf(0, 16), 'hours'), 0.5);
+  assert.equal(tripLineQty(tripOf(0, 60), 'hours'), 1);
+  assert.equal(tripLineQty(tripOf(0, 160), 'hours'), 2.75);
+  // 900 s / 60 is 15 exactly; a float a hair over stays the quarter.
+  assert.equal(tripLineQty(tripOf(0, 15 + 1e-12), 'hours'), 0.25);
+});
+
+test('tripLineQty: no trip, no totals, a bad figure or another kind bills nothing', () => {
+  assert.equal(tripLineQty(null, 'km'), 0);
+  assert.equal(tripLineQty(undefined, 'hours'), 0);
+  assert.equal(tripLineQty({ stops: [] }, 'km'), 0);
+  assert.equal(tripLineQty(tripOf(-5, -20), 'km'), 0);
+  assert.equal(tripLineQty(tripOf(-5, -20), 'hours'), 0);
+  assert.equal(tripLineQty(tripOf('abc', NaN), 'km'), 0);
+  assert.equal(tripLineQty(tripOf(42, 42), 'fuel'), 0);
+  assert.ok(!Object.is(tripLineQty(tripOf(0, 0), 'km'), -0), 'never −0');
+});
+
+const TRIP_CARD = {
+  travelRows: [
+    { id: 'tolls', name: 'Tolls & Parking', rate: 1, mu: 1, directCost: true },
+    { id: 'meals', name: 'Crew Meals', rate: 30, mu: 30 },
+    { id: 'car', name: 'Vehicle — per km', rate: 0, mu: null, perKm: true, unit: 'km' },
+    { id: 'car2', name: 'Van — per km', rate: 0, mu: null, perKm: true, unit: 'km' },
+    { id: 'tl', name: 'Transport & Logistics Hrs', rate: 25, mu: null, ownTime: true },
+    { id: 'tl2', name: 'Second own-time row', rate: 25, mu: 90, ownTime: true },
+  ],
+};
+
+test('tripKindOf: the car is km, own time is hours, anything else is never set by a trip', () => {
+  const [tolls, meals, car, , tl] = TRIP_CARD.travelRows;
+  assert.equal(tripKindOf(car), 'km');
+  assert.equal(tripKindOf(tl), 'hours');
+  assert.equal(tripKindOf(tolls), null);
+  assert.equal(tripKindOf(meals), null);
+  assert.equal(tripKindOf({ ownTime: true, directCost: true }), null, 'own time that is also Direct is at cost');
+  assert.equal(tripKindOf({ ownTime: true, perKm: true }), 'km', 'perKm decides, as everywhere');
+  assert.equal(tripKindOf(null), null);
+  // A saved line answers the same as the row it was added from.
+  assert.equal(tripKindOf(lineSnapshot(Object.assign({}, car, { mu: 0.9 }))), 'km');
+  assert.equal(tripKindOf(lineSnapshot(Object.assign({}, tl, { mu: 120 }))), 'hours');
+  assert.equal(tripKindOf(lineSnapshot(meals)), null);
+});
+
+test('tripRows: the first per-km row and the first own-time row, resolved as the estimator prices them', () => {
+  const ctx = { floorPerHour: 100, settings: { gst: { registered: false } }, vehicleCostPerKm: 0.9 };
+  const rows = tripRows(TRIP_CARD, ctx);
+  assert.equal(rows.km.id, 'car');
+  assert.equal(rows.km.mu, 0.9);
+  assert.equal(rows.hours.id, 'tl');
+  assert.equal(rows.hours.mu, 100, 'auto own time is the floor, no markup');
+});
+
+test('tripRows: an unpriced row reads as mu null, and a missing row as null', () => {
+  // No per-km figure on Overhead and no floor: both rows exist, neither has a price.
+  const unpriced = tripRows(TRIP_CARD, {});
+  assert.equal(unpriced.km.id, 'car');
+  assert.equal(unpriced.km.mu, null);
+  assert.equal(unpriced.hours.mu, null);
+  // The server has no ctx: the same.
+  assert.equal(tripRows(TRIP_CARD).km.mu, null);
+  // A card without the rows.
+  const bare = tripRows({ travelRows: [TRIP_CARD.travelRows[0], TRIP_CARD.travelRows[1]] }, {});
+  assert.deepEqual(bare, { km: null, hours: null });
+  assert.deepEqual(tripRows(null), { km: null, hours: null });
+  assert.deepEqual(tripRows({}), { km: null, hours: null });
+  // A typed own-time price needs no floor.
+  const typed = tripRows({ travelRows: [TRIP_CARD.travelRows[5]] });
+  assert.equal(typed.hours.mu, 90);
+});

@@ -1,6 +1,6 @@
 'use strict';
 
-const { dayKind } = require('./calc');
+const { dayKind, lineDef, tripKindOf, tripLineQty } = require('./calc');
 
 /**
  * Production days (v11, .design/production-booking/ task 2): an estimate's
@@ -10,6 +10,9 @@ const { dayKind } = require('./calc');
  * A day travels as { id, date, status, startTime, endTime, overrideNote }.
  * The id is made by the browser, because the editor's production lines point
  * at their day (`dayId`) before the estimate has ever been saved.
+ *
+ * Since v16 (.design/trip-planner/ task 1) a day may also carry `trip`, its
+ * planned drive (parseTrip), or null for none.
  */
 
 const DAY_STATUSES = ['confirmed', 'pencilled', 'proposed'];
@@ -17,6 +20,20 @@ const DAY_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 const MAX_DAYS = 200;
 const MAX_NOTE = 500;
+
+/* A trip's limits (trip-planner task 1). 23 destinations is Google's waypoint
+   limit (the brief's default), plus the start and the return. The caps on
+   figures are sanity bounds, not policy: nothing real comes near them. */
+const MAX_TRIP_DESTINATIONS = 23;
+const MAX_TRIP_TEXT = 2000;
+const MAX_ADDRESS = 300;
+const MAX_PLACE_ID = 300;
+const MAX_POLYLINE = 50000;
+const MAX_TRIP_KM = 100000;
+const MAX_TRIP_MINUTES = 100000;
+const MAX_MINUTES_ON_SITE = 24 * 60;
+const MAX_STAMP = 40;
+const DETAIL_KEYS = ['capture', 'description', 'access'];
 
 function dayFromRow(r) {
   return {
@@ -26,6 +43,7 @@ function dayFromRow(r) {
     startTime: r.start_time || null,
     endTime: r.end_time || null,
     overrideNote: r.override_note || '',
+    trip: r.trip_json ? JSON.parse(r.trip_json) : null,
   };
 }
 
@@ -57,13 +75,148 @@ function clockOrNull(v) {
   return CLOCK.test(t) ? t.slice(0, 5) : undefined;
 }
 
+/* A finite number in [lo, hi], or undefined. */
+function numberIn(v, lo, hi) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi ? v : undefined;
+}
+
+/* An optional short stamp (a leg's clock time, routedAt): a string up to
+   MAX_STAMP, or null. Undefined for anything else. */
+function stampOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  return typeof v === 'string' && v.length <= MAX_STAMP ? v : undefined;
+}
+
+/**
+ * A day's `trip` (IA "Data & API" appendix), checked and normalised: the
+ * fields it names and no others. Null or an empty stop list is no trip.
+ *
+ * STOPS run START, then up to 23 destinations ('stop'), then an optional
+ * RETURN, which needs a destination before it. A RETURN has no place of its
+ * own: it always mirrors START, so whatever it was sent with is replaced by
+ * START's address, coordinates and place id here. Only destinations carry
+ * `minutesOnSite` and `details` (a details key present means its field is
+ * shown, even blank).
+ *
+ * LEGS and TOTALS are stored as sent: they come from the last good route, and
+ * after a failed re-route the browser keeps the last good figures (task 4), so
+ * the leg count needn't match the stops. TOTALS are what bills (calc.js
+ * tripLineQty).
+ *
+ * @returns {{trip:object|null}|{error:string}}
+ */
+function parseTrip(raw) {
+  if (raw === null) return { trip: null };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Array.isArray(raw.stops)) return { error: 'trip_invalid' };
+  if (!raw.stops.length) return { trip: null };
+  if (raw.stops.filter((s) => s && s.role === 'stop').length > MAX_TRIP_DESTINATIONS) return { error: 'trip_too_many_stops' };
+  if (raw.stops.length > MAX_TRIP_DESTINATIONS + 2) return { error: 'trip_invalid' };
+
+  const ids = new Set();
+  const stops = [];
+  for (let i = 0; i < raw.stops.length; i += 1) {
+    const s = raw.stops[i];
+    if (!s || typeof s !== 'object') return { error: 'trip_invalid' };
+    const last = i === raw.stops.length - 1;
+    // START first and only first; RETURN last, never straight after START.
+    const roleOk = i === 0 ? s.role === 'start'
+      : s.role === 'stop' || (s.role === 'return' && last && i >= 2);
+    if (!roleOk) return { error: 'trip_invalid' };
+    if (typeof s.id !== 'string' || !DAY_ID.test(s.id) || ids.has(s.id)) return { error: 'trip_invalid' };
+    ids.add(s.id);
+    if (s.role === 'return') {
+      const start = stops[0];
+      stops.push({ id: s.id, role: 'return', address: start.address, lat: start.lat, lng: start.lng, placeId: start.placeId });
+      continue;
+    }
+
+    if (typeof s.address !== 'string') return { error: 'trip_invalid' };
+    const address = s.address.trim();
+    if (address.length > MAX_ADDRESS) return { error: 'trip_text_too_long' };
+    const lat = numberIn(s.lat, -90, 90);
+    const lng = numberIn(s.lng, -180, 180);
+    if (lat === undefined || lng === undefined) return { error: 'trip_invalid' };
+    const placeId = s.placeId === undefined || s.placeId === null ? '' : s.placeId;
+    if (typeof placeId !== 'string' || placeId.length > MAX_PLACE_ID) return { error: 'trip_invalid' };
+    const stop = { id: s.id, role: s.role, address, lat, lng, placeId };
+
+    if (s.role === 'stop') {
+      if (s.minutesOnSite !== undefined && s.minutesOnSite !== null) {
+        const m = numberIn(s.minutesOnSite, 0, MAX_MINUTES_ON_SITE);
+        if (m === undefined || !Number.isInteger(m)) return { error: 'trip_invalid' };
+        stop.minutesOnSite = m;
+      }
+      if (s.details !== undefined && s.details !== null) {
+        if (typeof s.details !== 'object' || Array.isArray(s.details)) return { error: 'trip_invalid' };
+        const details = {};
+        for (const key of DETAIL_KEYS) {
+          if (s.details[key] === undefined) continue;
+          if (typeof s.details[key] !== 'string') return { error: 'trip_invalid' };
+          if (s.details[key].length > MAX_TRIP_TEXT) return { error: 'trip_text_too_long' };
+          details[key] = s.details[key];
+        }
+        stop.details = details;
+      }
+    }
+    stops.push(stop);
+  }
+
+  const rawLegs = raw.legs === undefined || raw.legs === null ? [] : raw.legs;
+  if (!Array.isArray(rawLegs) || rawLegs.length > MAX_TRIP_DESTINATIONS + 1) return { error: 'trip_invalid' };
+  const legs = [];
+  for (const l of rawLegs) {
+    if (!l || typeof l !== 'object') return { error: 'trip_invalid' };
+    const km = numberIn(l.km, 0, MAX_TRIP_KM);
+    const minutes = numberIn(l.minutes, 0, MAX_TRIP_MINUTES);
+    const departAt = stampOrNull(l.departAt);
+    const arriveAt = stampOrNull(l.arriveAt);
+    if (km === undefined || minutes === undefined || departAt === undefined || arriveAt === undefined) return { error: 'trip_invalid' };
+    const leg = { km, minutes };
+    if (departAt !== null) leg.departAt = departAt;
+    if (arriveAt !== null) leg.arriveAt = arriveAt;
+    legs.push(leg);
+  }
+
+  const rawTotals = raw.totals === undefined || raw.totals === null ? { km: 0, minutes: 0 } : raw.totals;
+  if (typeof rawTotals !== 'object') return { error: 'trip_invalid' };
+  const totals = { km: numberIn(rawTotals.km, 0, MAX_TRIP_KM), minutes: numberIn(rawTotals.minutes, 0, MAX_TRIP_MINUTES) };
+  if (totals.km === undefined || totals.minutes === undefined) return { error: 'trip_invalid' };
+
+  const polyline = raw.polyline === undefined || raw.polyline === null ? '' : raw.polyline;
+  if (typeof polyline !== 'string' || polyline.length > MAX_POLYLINE) return { error: 'trip_invalid' };
+
+  let routedFor = null;
+  if (raw.routedFor !== undefined && raw.routedFor !== null) {
+    const f = raw.routedFor;
+    if (typeof f !== 'object') return { error: 'trip_invalid' };
+    const date = f.date === undefined || f.date === null || f.date === '' ? null : String(f.date);
+    if (date !== null && dayKind(date, {}, []) === null) return { error: 'trip_invalid' };
+    const startTime = clockOrNull(f.startTime);
+    if (startTime === undefined || typeof f.traffic !== 'boolean') return { error: 'trip_invalid' };
+    routedFor = { date, startTime, traffic: f.traffic };
+  }
+  const routedAt = stampOrNull(raw.routedAt);
+  if (routedAt === undefined || (routedAt !== null && Number.isNaN(Date.parse(routedAt)))) return { error: 'trip_invalid' };
+
+  return { trip: { stops, legs, totals, polyline, routedFor, routedAt } };
+}
+
 /**
  * A request's `days`, checked and normalised.
+ *
+ * A day sent with no `trip` key keeps the trip its id had (`storedDays`),
+ * and `trip: null` removes it. Every save replaces the days whole, and a
+ * browser built before trips existed (a cached Pages copy) sends none: losing
+ * a planned trip is the expensive direction, as losing days is
+ * (routes/estimates.js prepareWrite).
+ *
+ * @param {Array<object>} [storedDays] — the estimate's days as stored.
  * @returns {{days:Array<object>}|{error:string}}
  */
-function parseDays(raw) {
+function parseDays(raw, storedDays) {
   if (!Array.isArray(raw)) return { error: 'days_not_a_list' };
   if (raw.length > MAX_DAYS) return { error: 'too_many_days' };
+  const stored = new Map((storedDays || []).map((d) => [d.id, d]));
   const seen = new Set();
   const days = [];
   for (const d of raw) {
@@ -87,7 +240,16 @@ function parseDays(raw) {
     const note = typeof d.overrideNote === 'string' ? d.overrideNote.trim() : '';
     if (note.length > MAX_NOTE) return { error: 'day_note_too_long' };
 
-    days.push({ id, date, status: d.status, startTime, endTime, overrideNote: note });
+    let trip = null;
+    if (d.trip === undefined) {
+      trip = stored.has(id) ? stored.get(id).trip || null : null;
+    } else {
+      const parsed = parseTrip(d.trip);
+      if (parsed.error) return { error: parsed.error };
+      trip = parsed.trip;
+    }
+
+    days.push({ id, date, status: d.status, startTime, endTime, overrideNote: note, trip });
   }
   return { days };
 }
@@ -116,6 +278,50 @@ function lineDayProblem(activeRows, days) {
     }
   }
   return null;
+}
+
+/**
+ * The travel lines a trip sets (trip-planner task 1, T3, T4; calc.js A DAY'S
+ * TRIP): a copy of `activeRows` in which each line marked `fromTrip` takes its
+ * quantity from its day's trip (calc.js tripLineQty), whatever quantity was
+ * sent.
+ *
+ * `fromTrip` is dropped, leaving the line as an ordinary one at the quantity
+ * sent, from a line that:
+ *   - isn't in Travel;
+ *   - sits on no day, or on a day with no trip;
+ *   - names a kind other than 'km' or 'hours', or one its own snapshot isn't
+ *     (calc.js tripKindOf: a km figure never lands on an hourly line);
+ *   - is a second line of the same kind on the same day: one trip bills its
+ *     road once.
+ *
+ * Call after lineDayProblem has passed, with the days being saved.
+ */
+function applyTripLines(activeRows, days, pricing) {
+  const rows = activeRows || {};
+  const trips = new Map(days.filter((d) => d.trip).map((d) => [d.id, d.trip]));
+  const travelDefs = (pricing && pricing.travelRows) || [];
+  const linked = new Set();
+  const out = {};
+  for (const key of Object.keys(rows)) {
+    if (!Array.isArray(rows[key])) {
+      out[key] = rows[key];
+      continue;
+    }
+    out[key] = rows[key].map((line) => {
+      if (!line || typeof line !== 'object' || !Object.prototype.hasOwnProperty.call(line, 'fromTrip')) return line;
+      const { fromTrip, ...rest } = line;
+      if (key !== 'travel' || (fromTrip !== 'km' && fromTrip !== 'hours')) return rest;
+      const dayId = line.dayId === undefined || line.dayId === null ? '' : String(line.dayId);
+      const trip = trips.get(dayId);
+      if (!trip || tripKindOf(lineDef(travelDefs, line, pricing)) !== fromTrip) return rest;
+      const slot = `${dayId} ${fromTrip}`;
+      if (linked.has(slot)) return rest;
+      linked.add(slot);
+      return Object.assign(rest, { qty: tripLineQty(trip, fromTrip), fromTrip });
+    });
+  }
+  return out;
 }
 
 /**
@@ -211,14 +417,14 @@ function replaceDays(db, estimateId, days, now) {
   db.prepare('DELETE FROM production_days WHERE estimate_id = ?').run(estimateId);
   const insert = db.prepare(`
     INSERT INTO production_days
-      (id, estimate_id, date, status, start_time, end_time, override_note, sort, rebook, created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      (id, estimate_id, date, status, start_time, end_time, override_note, sort, rebook, trip_json, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   `);
   days.forEach((d, i) => {
     const was = stored.get(d.id);
     const rebook = was && was.rebook === 1 && was.date === d.date && !d.overrideNote ? 1 : 0;
     insert.run(d.id, estimateId, d.date, d.status, d.startTime, d.endTime, d.overrideNote, i, rebook,
-      (was && was.created_at) || now, now);
+      d.trip ? JSON.stringify(d.trip) : null, (was && was.created_at) || now, now);
   });
 }
 
@@ -228,8 +434,10 @@ module.exports = {
   readDaysByEstimate,
   readHolidays,
   parseDays,
+  parseTrip,
   ON_SET_KEYS,
   lineDayProblem,
+  applyTripLines,
   lineDeliverableProblem,
   dayIdTakenElsewhere,
   lockedDay,
