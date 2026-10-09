@@ -43,7 +43,8 @@ function corsMiddleware(req, res, next) {
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // The editor's autosave headers (trip-planner task 7) need a preflight pass.
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-LSC-Autosave, X-LSC-Session');
     // Not CORS-safelisted, so without this the page can't read the PDF's filename.
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
   }

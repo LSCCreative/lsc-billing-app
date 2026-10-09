@@ -125,7 +125,7 @@ starting. **Frontend** marks anything a person looks at.
 
 ## Stage B: Editor autosave
 
-- [ ] **7. Autosave on the server** *(backend: Sonnet/high)*: `PUT /api/estimates/:id` accepts
+- [x] **7. Autosave on the server** *(backend: Sonnet/high)*: **Done `TASK7`.** `baseUpdatedAt` 409, draft-only autosave 409, snapshot throttle, CORS headers; 600 tests pass. Original spec: `PUT /api/estimates/:id` accepts
   `baseUpdatedAt` → `409 estimate_changed_elsewhere` on mismatch (all writes). Header
   `X-LSC-Autosave: 1` → `409 autosave_not_draft` for sent or accepted estimates. `preWriteBackup`
   throttle (I2): an autosave snapshots on the first request with a new `X-LSC-Session`, then at

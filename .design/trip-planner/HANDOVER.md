@@ -3,9 +3,10 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 7, Sonnet, effort high, backend** (not a frontend task). Stage A (the trip planner) is done.
+**Next: task 8, Opus, effort high: a frontend task (and money: it stores prices).** Stage A
+(the trip planner) and task 7 (autosave on the server) are done.
 
-## State as of 2026-10-09 (task 6)
+## State as of 2026-10-10 (task 7)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -46,9 +47,27 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   summaries, Settings → Home base (pick by keyboard, saved with coordinates; typed text refused;
   blank removes it) and its one-pick Start in the travel view. Shots at 1280 and 375
   (headless), no overflow. 594 server tests pass.
-- [ ] **Next: task 7**, autosave on the server. *Backend: Sonnet/high.* Not a frontend task.
-  Then task 8 (autosave in the editor, frontend + money, Opus/high), which the trip planner then
-  saves through.
+- [x] **Task 7** autosave on the server, `TASK7`. 600 server tests pass (`test-autosave.js`, and
+  the throttle with a fake clock in `test-backup.js`). No schema change.
+- [ ] **Next: task 8**, autosave in the editor. *Opus/high, **frontend**, money.* The trip planner
+  then saves through it.
+
+## Decisions made in task 7 (agent's, within the brief)
+
+- **Order of the PUT's refusals:** 404, then `autosave_not_draft`, then
+  `estimate_changed_elsewhere`, then validation. The draft check comes first so the editor
+  switches to Save instead of asking for a reload.
+- **`autosave_not_draft` = any status but `draft`** (sent, accepted, declined, invoiced, paid).
+- **`baseUpdatedAt`** is compared to the stored `updated_at` string exactly. Absent or `null` =
+  no check (older clients). The 409 carries `updatedAt` (the latest). The editor sends the
+  `updatedAt` of its last reply as the next base.
+- **The throttle is in memory** (`backup.js`, `seen` per estimate id): an autosave is a PUT to
+  `/estimates/:id` with `X-LSC-Autosave: 1`. It snapshots when the estimate has none in the last
+  10 min, or the `X-LSC-Session` is new to it; no session header = the window alone. A restart
+  costs one extra snapshot. A refused autosave still uses up its slot (harmless).
+- **CORS** allows `X-LSC-Autosave` and `X-LSC-Session` (preflight), or Pages couldn't send them.
+- For task 8: a fresh `X-LSC-Session` per editor mount (random); `Undo changes since I opened
+  this` goes through the autosave path, so on a sent estimate it must use the plain PUT.
 
 **Scratch state (for testing):** the scratch card prices both trip rows (Overhead
 `vehicleCostPerKm` 0.9; Transport & Logistics Hrs typed $95; setting the vehicle figure through

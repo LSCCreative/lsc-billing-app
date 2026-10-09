@@ -9,6 +9,7 @@ const path = require('path');
 // away from undone. Kept short since pre-write snapshots pile up fast under
 // normal use — the point is a recent recovery point, not a full history.
 const RETENTION = { nightly: 14, prewrite: 10 };
+const AUTOSAVE_WINDOW_MS = 10 * 60 * 1000;
 const NIGHTLY_HOUR = 2; // low-traffic window for a single-user app
 
 function timestampSlug(date) {
@@ -60,10 +61,32 @@ function pruneBackups(backupDir, kind) {
  * write — this is a single-user app, and refusing writes because the
  * safety net itself failed would be worse than the risk it guards against.
  */
-function preWriteBackup(db, backupDir) {
+function preWriteBackup(db, backupDir, { now = Date.now } = {}) {
   const MUTATING = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
+  // Editor autosave (trip-planner I2): a PUT to one estimate carrying
+  // `X-LSC-Autosave: 1` snapshots on the first request of a new
+  // `X-LSC-Session` (the editor opening), then at most once per window per
+  // estimate, so autosaves can't push real recovery points out of the 10
+  // kept. Every other write snapshots as before. In memory: a restart just
+  // means one extra snapshot.
+  const seen = new Map(); // estimate id -> { at, sessions: Set }
+  function autosaveSkips(req) {
+    if (req.method !== 'PUT' || !req.get || req.get('X-LSC-Autosave') !== '1') return false;
+    const match = /^\/estimates\/([^/]+)\/?$/.exec(req.path || '');
+    if (!match) return false;
+    const session = req.get('X-LSC-Session') || '';
+    const t = now();
+    const entry = seen.get(match[1]);
+    if (entry && (!session || entry.sessions.has(session)) && t - entry.at < AUTOSAVE_WINDOW_MS) return true;
+    const sessions = entry ? entry.sessions : new Set();
+    if (sessions.size > 50) sessions.clear();
+    if (session) sessions.add(session);
+    seen.set(match[1], { at: t, sessions });
+    return false;
+  }
   return (req, res, next) => {
     if (!MUTATING.has(req.method)) return next();
+    if (autosaveSkips(req)) return next();
     createBackup(db, backupDir, 'prewrite').then(
       () => next(),
       (err) => {
@@ -103,4 +126,4 @@ function scheduleNightlyBackups(db, backupDir, { hour = NIGHTLY_HOUR } = {}) {
   return { stop: () => clearTimeout(timer) };
 }
 
-module.exports = { createBackup, pruneBackups, preWriteBackup, scheduleNightlyBackups, RETENTION };
+module.exports = { createBackup, pruneBackups, preWriteBackup, scheduleNightlyBackups, RETENTION, AUTOSAVE_WINDOW_MS };

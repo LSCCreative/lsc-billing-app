@@ -218,6 +218,27 @@ function registerEstimateRoutes(app, db) {
     const existing = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'not_found' });
 
+    // Editor autosave (trip-planner task 7): only a draft is saved behind the
+    // owner's back; a sent or accepted estimate keeps its explicit Save and
+    // the resend dialog. Checked before the conflict so the editor can tell
+    // "switch to Save" from "reload".
+    if (req.get('X-LSC-Autosave') === '1' && existing.status !== 'draft') {
+      return res.status(409).json({
+        error: 'autosave_not_draft',
+        message: 'This estimate has been sent, so it is saved with the Save button, not automatically.',
+      });
+    }
+    // `baseUpdatedAt` is the `updatedAt` the editor last held. A different
+    // value means another tab or device wrote since (every write, not only
+    // autosaves). Absent (or null) keeps today's behaviour for older clients.
+    if (req.body && req.body.baseUpdatedAt != null && req.body.baseUpdatedAt !== existing.updated_at) {
+      return res.status(409).json({
+        error: 'estimate_changed_elsewhere',
+        updatedAt: existing.updated_at,
+        message: 'This estimate was changed in another tab or device. Reload to see the latest.',
+      });
+    }
+
     const body = req.body || {};
     const now = nowIso();
     // gstFree: absent means false, matching every other field here (days and
