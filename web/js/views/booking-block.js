@@ -27,6 +27,8 @@
  *   booking.setHolidays(list)  // GET /api/holidays' list, shaded on the calendar (task 33 DR4)
  *   booking.showTrip(el)       // the travel view takes the body (.is-trip; trip-planner task 2)
  *   booking.hideTrip()         // and gives it back
+ *   booking.tripOf(id)         // a day's trip, or null (trip-planner task 3)
+ *   booking.setTrip(id, trip)  // the travel view's edit: replaces it whole, then onChange()
  * Duplicate day (B2-5) is the card's own action: it adds the copy, then calls
  * opts.onDuplicate(sourceId, newId) for the editor to copy the lines.
  *
@@ -108,6 +110,8 @@ const BookingBlock = (() => {
     startTime: d.startTime || '',
     endTime: d.endTime || '',
     overrideNote: d.overrideNote || '',
+    // Its planned drive (trip-planner), kept as the server sent it; the travel view replaces it whole.
+    trip: d.trip && typeof d.trip === 'object' ? d.trip : null,
   });
 
   // Dated days by date, then Date TBC days, each group keeping its order.
@@ -635,7 +639,7 @@ const BookingBlock = (() => {
         trigger,
         ({ status, overrideNote }) => {
           if (!alive()) return;
-          const day = { id: newDayId(), date, status, startTime: '', endTime: '', overrideNote };
+          const day = { id: newDayId(), date, status, startTime: '', endTime: '', overrideNote, trip: null };
           days = sortDays(days.concat(day));
           paint();
           onChange();
@@ -647,7 +651,7 @@ const BookingBlock = (() => {
     }
 
     function addTbc() {
-      const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: '', endTime: '', overrideNote: '' };
+      const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: '', endTime: '', overrideNote: '', trip: null };
       days = sortDays(days.concat(day));
       if (!open) setOpen(true);
       else paint();
@@ -709,7 +713,8 @@ const BookingBlock = (() => {
       if (i === -1) return;
       const src = days[i];
       const srcTitle = titleOf(src, i + 1);
-      const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: src.startTime, endTime: src.endTime, overrideNote: '' };
+      // The copy's trip is trip-planner task 6 (T2); until then it starts without one.
+      const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: src.startTime, endTime: src.endTime, overrideNote: '', trip: null };
       days.splice(i + 1, 0, day);
       days = sortDays(days);
       const n = onDuplicate(src.id, day.id);
@@ -768,6 +773,10 @@ const BookingBlock = (() => {
           startTime: d.startTime || null,
           endTime: d.endTime || null,
           overrideNote: d.overrideNote.trim(),
+          /* Always sent, null for none: the server keeps a stored trip for a
+             day sent without the key (days.js parseDays), so leaving it out
+             could never clear one. */
+          trip: d.trip || null,
         })),
 
       /** The first day the server would refuse as it stands, opened up and ready to point at. */
@@ -806,6 +815,19 @@ const BookingBlock = (() => {
         })),
 
       addTbc,
+
+      /** A day's trip as it stands (null for none), and its replacement from the
+          travel view (trip-planner task 3). setTrip(id, null) clears it. */
+      tripOf: (id) => {
+        const day = days.find((d) => d.id === id);
+        return day ? day.trip : null;
+      },
+      setTrip(id, trip) {
+        const day = days.find((d) => d.id === id);
+        if (!day) return;
+        day.trip = trip || null;
+        onChange();
+      },
 
       /** Open the block and bring a day's card into view; the caller moves focus. */
       showDay(id) {

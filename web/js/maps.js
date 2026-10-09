@@ -132,9 +132,202 @@ const LSCMaps = (() => {
     }, mapId ? { mapId } : {}));
   }
 
+  // ── Places: address search (task 3, T10) ───────────────────────────────────
+  /* Places Autocomplete (New), Australian addresses and places, nudged
+     towards what the map is showing. Google bills autocomplete by SESSION:
+     the suggestions typed for one stop and the one place looked up at the
+     end are one session when they share a token. So a caller makes a token
+     with newSession() when a search starts, passes it to every suggest() and
+     to the place() that ends it, and makes a fresh one for the next search.
+
+     A stop's address is the suggestion's own full text ("Bondi Pavilion,
+     Queen Elizabeth Drive, Bondi Beach NSW"), which names the place as well
+     as the street, less the country every stop shares. The place lookup then
+     asks for its location only, the cheapest field there is. */
+
+  const searchFailed = () => fail('search', 'Couldn’t search Google Maps. Check the connection and try again.');
+  const COUNTRY = /,\s*Australia$/;
+  const tidy = (text) => String(text || '').replace(COUNTRY, '').trim().slice(0, 300);
+
+  async function places() {
+    await load();
+    return window.google.maps.importLibrary('places');
+  }
+
+  async function newSession() {
+    const { AutocompleteSessionToken } = await places();
+    return new AutocompleteSessionToken();
+  }
+
+  /**
+   * Suggestions for `query`: [{ placeId, label, main, sub, prediction }].
+   * `bias` is the map (its bounds) or nothing (Home view). Rejects with
+   * code 'search' when Google can't be asked.
+   */
+  async function suggest(query, options) {
+    const opts = options || {};
+    let lib;
+    try {
+      lib = await places();
+    } catch (err) {
+      throw err.code ? err : searchFailed();
+    }
+    const request = {
+      input: query,
+      includedRegionCodes: ['au'],
+      region: 'au',
+      language: 'en-AU',
+    };
+    if (opts.session) request.sessionToken = opts.session;
+    const bounds = opts.map && opts.map.getBounds && opts.map.getBounds();
+    request.locationBias = bounds || { center: HOME_VIEW.center, radius: 50000 };
+    let reply;
+    try {
+      reply = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+    } catch (err) {
+      console.error(err);
+      throw searchFailed();
+    }
+    return (reply.suggestions || [])
+      .map((s) => s.placePrediction)
+      .filter(Boolean)
+      .map((p) => ({
+        placeId: p.placeId,
+        label: tidy(p.text && p.text.text),
+        main: (p.mainText && p.mainText.text) || '',
+        sub: tidy(p.secondaryText && p.secondaryText.text),
+        prediction: p,
+      }))
+      .filter((s) => s.label);
+  }
+
+  /** The suggestion as a stop's place: { address, lat, lng, placeId }. Ends its session. */
+  async function place(suggestion) {
+    let found;
+    try {
+      found = suggestion.prediction.toPlace();
+      await found.fetchFields({ fields: ['location'] });
+    } catch (err) {
+      console.error(err);
+      throw searchFailed();
+    }
+    if (!found.location) throw searchFailed();
+    return { address: suggestion.label, lat: found.location.lat(), lng: found.location.lng(), placeId: suggestion.placeId || '' };
+  }
+
+  // ── Geocoding (task 3, T10) ─────────────────────────────────────────────────
+  /* The two directions: a typed address nothing suggested (Search with no
+     suggestion, a pasted address), and a spot clicked on the map. Google
+     answers "nothing there" with an error, not an empty list; that's an empty
+     list here, and only a failure to reach it is an error. */
+
+  async function geocoder() {
+    await load();
+    const { Geocoder } = await window.google.maps.importLibrary('geocoding');
+    return new Geocoder();
+  }
+
+  async function geocodeRequest(request) {
+    let gc;
+    try {
+      gc = await geocoder();
+    } catch (err) {
+      throw err.code ? err : searchFailed();
+    }
+    try {
+      const reply = await gc.geocode(request);
+      return (reply && reply.results) || [];
+    } catch (err) {
+      if (err && err.code === 'ZERO_RESULTS') return [];
+      console.error(err);
+      throw searchFailed();
+    }
+  }
+
+  const fromResult = (r) => ({
+    address: tidy(r.formatted_address),
+    lat: r.geometry.location.lat(),
+    lng: r.geometry.location.lng(),
+    placeId: r.place_id || '',
+  });
+
+  /* Too coarse to drive to: restricted to Australia, a query Google can't
+     read comes back as "Australia" (or a state) rather than as nothing. */
+  const COARSE = ['country', 'administrative_area_level_1', 'colloquial_area'];
+  const types = (r) => r.types || [];
+  const usable = (r) => !types(r).some((t) => COARSE.indexOf(t) !== -1);
+
+  /** The best place for a typed address in Australia, or null. */
+  async function geocode(query) {
+    const results = (await geocodeRequest({ address: query, region: 'au', componentRestrictions: { country: 'AU' } })).filter(usable);
+    return results.length ? fromResult(results[0]) : null;
+  }
+
+  /** The address at a spot, or null when Google has none (open water, the bush). A
+      street address is preferred to a Plus Code ("P6GR+37 Newnes Plateau"), which
+      is what Google puts first where there's no street. */
+  async function reverseGeocode(at) {
+    const results = (await geocodeRequest({ location: at })).filter(usable);
+    if (!results.length) return null;
+    const best = results.find((r) => types(r).indexOf('plus_code') === -1) || results[0];
+    return Object.assign(fromResult(best), { lat: at.lat, lng: at.lng });
+  }
+
+  // ── Pins (task 3) ───────────────────────────────────────────────────────────
+  /* Advanced Markers, which need the Map ID (LSC_MAPS_ID). Their look is the
+     element they're given, so the caller styles it with tokens like any
+     other element (css/trip.css .trip-pin). Without a Map ID there are no
+     pins, and the stop list still carries every stop. */
+
+  const canPin = () => Boolean(String(window.LSC_MAPS_ID || '').trim());
+
+  /** A pin on `map` at `at`, drawn as `el`. Returns the marker; marker.map = null removes it. */
+  async function pin(map, at, el, options) {
+    if (!canPin()) return null;
+    const opts = options || {};
+    const { AdvancedMarkerElement } = await window.google.maps.importLibrary('marker');
+    const marker = new AdvancedMarkerElement({
+      map,
+      position: at,
+      content: el,
+      title: opts.title || '',
+      zIndex: opts.zIndex || null,
+      gmpClickable: Boolean(opts.onClick),
+    });
+    if (opts.onClick) marker.addEventListener('gmp-click', opts.onClick);
+    return marker;
+  }
+
+  /**
+   * Bring `points` ([{ lat, lng }]) into view: one is centred at street
+   * level, several are fitted with room round the pins. `animate` pans
+   * rather than jumps, where Google can (off for reduced motion).
+   */
+  function show(map, points, options) {
+    if (!map || !points.length) return;
+    const animate = Boolean(options && options.animate);
+    if (points.length === 1) {
+      if (animate) map.panTo(points[0]);
+      else map.setCenter(points[0]);
+      if ((map.getZoom() || 0) < 14) map.setZoom(15);
+      return;
+    }
+    const bounds = new window.google.maps.LatLngBounds();
+    points.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, 56);
+  }
+
   return {
     load,
     createMap,
+    show,
+    newSession,
+    suggest,
+    place,
+    geocode,
+    reverseGeocode,
+    canPin,
+    pin,
     /** fn(err) once Google refuses the key; returns a function that stops listening. */
     onRefused(fn) {
       refusedListeners.add(fn);

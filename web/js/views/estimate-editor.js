@@ -1268,7 +1268,16 @@ const EstimateEditor = (() => {
     if (trip.view && trip.view.dayId === dayId) return true;
     dropTripView();
     closeMenu(false);
-    trip.view = TripPlanner.mount({ day, onBack: leaveTrip });
+    trip.view = TripPlanner.mount({
+      day,
+      trip: booking.tripOf(dayId),
+      // Each placed, changed or removed stop: the day's trip, saved with the estimate (the bar's Save until autosave, task 8).
+      onChange: (next) => {
+        // A stop's Undo can come from a toast after the editor has gone.
+        if (booking && onScreen()) booking.setTrip(dayId, next);
+      },
+      onBack: leaveTrip,
+    });
     booking.showTrip(trip.view.el);
     trip.view.el.scrollIntoView({ block: 'start' });
     trip.view.focus();

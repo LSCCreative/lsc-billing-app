@@ -3,7 +3,8 @@
 
    No new visual language (brief, Aesthetic Direction): the panel system
    holding a map. tokens.css names only. Terracotta is kept off the shell:
-   from task 3 it marks the pins and the route line, and nothing else here.
+   it marks the pins (task 3) and the route line (task 4), and the one
+   action a pending pin asks for, Use this location.
 
    Written phone first: header, map, stops, stacked. From 768px the map and
    the stops sit side by side; from 1100px at 55/45, with the map sticky
@@ -144,6 +145,323 @@
   color: var(--color-text-secondary);
 }
 
+/* ── Placing stops (task 3) ───────────────────────────────────────────────── */
+
+/* The search bar, above the map while a cell waits for a location. */
+.trip-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.trip-search[hidden] {
+  display: none;
+}
+.trip-search-label {
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.trip-search-for {
+  color: var(--color-text-primary);
+}
+.trip-search-row {
+  display: flex;
+  gap: var(--space-4);
+}
+.trip-combo {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.trip-q {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg);
+  color: var(--color-text-primary);
+  font: var(--font-weight-normal) var(--font-size-md) / var(--line-height-snug) var(--font-family-body);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default);
+}
+.trip-q::placeholder {
+  color: var(--color-text-tertiary);
+}
+.trip-q:focus {
+  border-color: var(--color-border-focus);
+}
+.trip-q:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+.trip-q-msg {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+.trip-q-msg:empty {
+  margin-top: calc(-1 * var(--space-3));
+}
+
+/* Its suggestions: over the map, like any menu. */
+.trip-suggest {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 300px;
+  margin: 0;
+  padding: var(--space-2) 0;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: var(--menu-radius);
+  background: var(--color-bg-float);
+  box-shadow: var(--menu-shadow);
+}
+.trip-suggest[hidden] {
+  display: none;
+}
+.trip-suggest li {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--touch-min);
+  padding: var(--space-3) var(--space-5);
+  cursor: pointer;
+}
+.trip-suggest li:hover {
+  background: var(--color-bg-hover);
+}
+.trip-suggest li[aria-selected='true'] {
+  background: var(--color-bg-selected);
+}
+.trip-suggest li.is-home {
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.trip-sug-main {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+}
+.trip-sug-sub {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+
+/* The pending pin's card, along the map's foot (the pin is centred above
+   it). It stands clear of what Google needs left visible: its logo and
+   attribution along the bottom edge, and the zoom buttons on the right. */
+.trip-pending {
+  position: absolute;
+  left: var(--space-5);
+  right: 60px;
+  bottom: var(--space-8);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-5);
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-md);
+}
+.trip-pending[hidden] {
+  display: none;
+}
+.trip-pending-addr {
+  flex: 1 1 16em;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.trip-pending-acts {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* The pins: the stop's chip as a terracotta drop, its tail on the spot.
+   White on --color-accent-primary is 4.98:1; the white rim keeps it clear
+   of any map colour under it. */
+.trip-pin {
+  position: relative;
+  padding-bottom: 7px;
+  cursor: default;
+}
+.trip-pin::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top: 8px solid var(--color-text-on-accent);
+}
+.trip-pin-face {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 2px solid var(--color-text-on-accent);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-primary);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-on-accent);
+  font: var(--font-weight-normal) var(--font-size-sm) / 1 var(--font-family-mono);
+}
+/* START with a return trip: RETURN shares its spot, so its pin says both. */
+.trip-pin.is-loop .trip-pin-face::after {
+  content: 'R';
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--color-text-on-accent);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-primary-active);
+  font-size: 10px;
+}
+/* The pending pin: hollow until it's used. */
+.trip-pin.is-pending {
+  cursor: pointer;
+}
+.trip-pin.is-pending .trip-pin-face {
+  width: 30px;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 4px solid var(--color-accent-primary);
+  background: var(--color-text-on-accent);
+  box-shadow: 0 0 0 2px var(--color-text-on-accent), var(--shadow-sm);
+}
+.trip-pin.is-pending::after {
+  border-top-color: var(--color-accent-primary);
+}
+
+/* The stops, in order. */
+.trip-cells {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trip-cells[hidden] {
+  display: none;
+}
+.trip-cell {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 52px;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-inset);
+}
+/* Not placed yet: an outline to fill. Waiting: the outline the search is filling. */
+.trip-cell.is-empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+.trip-cell.is-waiting {
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+}
+.trip-chip {
+  justify-self: start;
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
+  background: var(--color-bg-float);
+  color: var(--color-text-secondary);
+  font: var(--chip-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+.trip-cell.is-empty .trip-chip {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+.trip-cell-body {
+  min-width: 0;
+}
+.trip-addr {
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.trip-cell.is-empty .trip-addr {
+  color: var(--color-text-secondary);
+}
+.trip-cell-note {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+.trip-cell-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.trip-x {
+  min-width: var(--control-h-sm);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+/* + Add start location, + Destination, Return trip: translucent ghosts.
+   The dashed edge (--color-border-strong) holds 3:1 on the panel, and the
+   label is secondary text (well over 4.5:1). */
+.trip-adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.trip-adds[hidden] {
+  display: none;
+}
+.btn.trip-add {
+  border: 1px dashed var(--color-border-strong);
+  background: color-mix(in srgb, var(--color-bg-inset) 45%, transparent);
+  box-shadow: none;
+}
+.trip-cap {
+  max-width: 46ch;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.trip-cap[hidden],
+.trip-empty[hidden] {
+  display: none;
+}
+
 @media (min-width: 768px) {
   .trip-view {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -159,6 +477,9 @@
   }
   .trip-stops {
     align-items: flex-start;
+  }
+  .trip-q {
+    font-size: var(--font-size-base);
   }
 }
 
@@ -176,6 +497,10 @@
      it sticks. */
   .trip-map {
     height: clamp(360px, calc(100vh - 64px - 76px - var(--ed-bar-h, 88px) - var(--space-5)), 620px);
+  }
+  /* The search bar takes its height (~90px) from the map, so both stay on screen. */
+  .trip-map-pane:has(> .trip-search:not([hidden])) .trip-map {
+    height: clamp(300px, calc(100vh - 64px - 76px - var(--ed-bar-h, 88px) - var(--space-5) - 90px), 620px);
   }
 }
 
