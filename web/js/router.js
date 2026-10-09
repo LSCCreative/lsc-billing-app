@@ -24,6 +24,16 @@
  * back off it is the undo. Landing on the path already on screen renders
  * nothing, which is what makes the undo silent.
  *
+ * A SCREEN CAN OWN PART OF ITS ADDRESS (trip-planner task 2, I1)
+ * The editor's travel view is `?trip=<dayId>` on the editor's own path: a
+ * reload reopens it and Back closes it, but it must never re-render the
+ * editor, which would lose what's typed. The screen on show claims such moves
+ * (claim(fn)): a Back, Forward or typed hash that keeps the path and changes
+ * only the query is offered to it first, and when it takes it nothing renders
+ * and nothing asks about unsaved edits, because nothing is left. mark() is the
+ * other direction: the screen moving its own address without a render. A claim
+ * lasts until the next render.
+ *
  * MODALS ARE NOT ROUTES
  * Back while a dialog is open closes the dialog and stays put. Each modal's own
  * Escape handling does the closing, so a dialog with edits in it asks about them
@@ -41,6 +51,7 @@ const LSCRouter = (() => {
   let skipGuardOnce = false;
   let pending = null; // in-memory state handed to the next render only
   let ticket = 0;
+  let claimant = null; // the screen's (route) => boolean for query-only moves, or null
 
   /* '#/projects?stage=sent' -> { path: '/projects', segments, query,
      key: '/projects?stage=sent' }. The area is lowercased (the IA's URLs are
@@ -80,6 +91,7 @@ const LSCRouter = (() => {
 
   function show(path) {
     ticket += 1;
+    claimant = null;
     rendered = path;
     const state = pending;
     pending = null;
@@ -142,13 +154,34 @@ const LSCRouter = (() => {
 
     if (skipGuardOnce) {
       skipGuardOnce = false; // leaveTo() already asked
-    } else if (closeOpenModal() || !LSCUnsaved.confirmLeave()) {
+    } else if (closeOpenModal()) {
+      undo(newIdx);
+      return;
+    } else if (claimed(path)) {
+      record(path, newIdx);
+      rendered = path;
+      return;
+    } else if (!LSCUnsaved.confirmLeave()) {
       undo(newIdx);
       return;
     }
 
     record(path, newIdx);
     show(path);
+  }
+
+  /* Does the screen on show take this move itself? Only one that keeps the
+     path it was rendered at and changes the query. */
+  function claimed(key) {
+    if (!claimant || rendered === null) return false;
+    const route = parse(key);
+    if (route.path !== parse(rendered).path) return false;
+    try {
+      return claimant(route) === true;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
   }
 
   /* Back or Forward between two entries with the same address fires popstate
@@ -213,6 +246,27 @@ const LSCRouter = (() => {
     return true;
   }
 
+  /* The screen moves its own address without a render: `path` must keep the
+     rendered path (only the query changes). A new entry unless `replace`.
+     False when it isn't the same screen, or the router isn't running. */
+  function mark(path, options) {
+    const opts = options || {};
+    if (!active || rendered === null) return false;
+    const key = parse(path).key;
+    if (parse(key).path !== parse(rendered).path) return false;
+    if (key === rendered) return true;
+    if (opts.replace) {
+      history.replaceState({ lscIdx: index }, '', '#' + key);
+    } else {
+      index += 1;
+      history.pushState({ lscIdx: index }, '', '#' + key);
+      forgetForward();
+    }
+    trail.set(index, key);
+    rendered = key;
+    return true;
+  }
+
   return {
     parse,
 
@@ -257,6 +311,18 @@ const LSCRouter = (() => {
 
     go,
     leaveTo,
+    mark,
+
+    /* The screen on show takes query-only moves on its own path: fn(route)
+       returns true when it has dealt with one. Cleared by the next render.
+       The move is recorded after fn returns, so fn mustn't mark() the
+       address itself; it defers that (queueMicrotask). */
+    claim(fn) {
+      claimant = typeof fn === 'function' ? fn : null;
+    },
+
+    /* The address on show, parsed, as render() was given it. */
+    current: () => (rendered === null ? null : parse(rendered)),
 
     /* An async screen captures one of these before it awaits and checks it
        after, so a slow fetch can't mount over the screen the user moved on

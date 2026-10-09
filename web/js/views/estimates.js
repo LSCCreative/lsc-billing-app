@@ -139,19 +139,21 @@ const EstimatesView = (() => {
   /* projectId null for a new project. A held estimate (the folder's, or the
      copy Duplicate just made) is used as it is, so Edit doesn't wait on a
      second fetch of what is on screen; a reload or a deep link reads it. */
-  async function showEditor(projectId, eid, state) {
+  async function showEditor(projectId, eid, state, query) {
     window.scrollTo(0, 0);
+    // The travel view's address (trip-planner I1): `?trip=<dayId>`.
+    const trip = (query && query.get('trip')) || null;
     if (!projectId) {
       EstimateEditor.mount(root, null, handlers(null), {});
       return;
     }
-    const found = await resolve(projectId, eid, state, () => showEditor(projectId, eid));
+    const found = await resolve(projectId, eid, state, () => showEditor(projectId, eid, null, query));
     if (!found) return;
     // Only for the copy Duplicate just made: a reload of its editor is an
     // ordinary edit, and the blank UPID still can't be saved.
     const copiedFrom = found.held ? state.copiedFrom || null : null;
     const focusDay = found.held ? state.focusDay || null : null;
-    EstimateEditor.mount(root, found.estimate, handlers(found.project), { copiedFrom, focusDay });
+    EstimateEditor.mount(root, found.estimate, handlers(found.project), { copiedFrom, focusDay, trip });
   }
 
   /* #/estimates/<eid>[/edit] from before the folder: an old bookmark, or an
@@ -187,12 +189,12 @@ const EstimatesView = (() => {
 
     /* #/projects/<id>/estimate/…: `rest` is the route after 'estimate'. False
        for a shape this area doesn't have, which app.js treats as unknown. */
-    showInProject(projectId, rest, state) {
+    showInProject(projectId, rest, state, query) {
       const [a, b, extra] = rest;
       if (extra !== undefined) return false;
-      if (a === undefined) showEditor(projectId, null, state);
+      if (a === undefined) showEditor(projectId, null, state, query);
       else if (a === 'view' && b === undefined) showDetail(projectId, null, state);
-      else if (b === undefined) showEditor(projectId, a, state);
+      else if (b === undefined) showEditor(projectId, a, state, query);
       else if (b === 'view') showDetail(projectId, a, state);
       else return false;
       return true;

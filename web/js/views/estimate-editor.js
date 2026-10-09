@@ -103,6 +103,7 @@ const EstimateEditor = (() => {
   const { sectionsFor, labourDef, travelDef, labourBill, travelBill, costBill } = LSCRows;
 
   let root = null;
+  let barWatch = null; // the sticky bar's ResizeObserver: --ed-bar-h, what sticky feet sit above
   let handlers = null;
   let existing = null; // the estimate being edited, or null for a new one
   let copiedFrom = null; // { upid, name } when Duplicate just made this one (D60)
@@ -1110,6 +1111,11 @@ const EstimateEditor = (() => {
           '<span class="bb-chevron" aria-hidden="true">▶</span>' + label + '</button>' +
           '<div class="dm-gbody" id="dm-g-' + kind + '"' + (isOpen ? '' : ' hidden') + '>' + menuGroupBody(kind) + '</div></div>';
       }).join('') +
+      // A day's trip (trip-planner T8): the menu's fixed foot. Not on a day has none (T2).
+      (menu.target === OFF_DAY
+        ? ''
+        : '<div class="dm-foot"><button type="button" class="btn dm-travel">Define travel' +
+          '<span class="dm-travel-go" aria-hidden="true">→</span></button></div>') +
       '</section>'
     );
   }
@@ -1230,8 +1236,105 @@ const EstimateEditor = (() => {
   }
   window.matchMedia('(max-width: 767px)').addEventListener('change', onMenuModeChange);
 
+  // ── The travel view (trip-planner task 2, T8, I1) ──────────────────────────
+  /* A day's service menu → Define travel opens that day's travel view in the
+     Production booking panel's body (BookingBlock.showTrip; TripPlanner draws
+     it). It has an address, `?trip=<dayId>` on this screen's own path: a
+     reload reopens it, and Back, the view's or the browser's, closes it and
+     reopens the day's menu with focus on Define travel.
+
+     The address moves without re-rendering the editor (LSCRouter.mark), and
+     the editor claims Back and Forward between its own `?trip` addresses
+     (LSCRouter.claim), so nothing typed is lost and the unsaved guard isn't
+     asked. An unknown day id in the address is dropped with a replace. */
+  const trip = { view: null, pushed: false };
+
+  /* This screen's address with `?trip` set to dayId, or without it. */
+  function tripAddress(dayId) {
+    const here = LSCRouter.current() || LSCRouter.parse(location.hash);
+    const query = new URLSearchParams(here.query);
+    if (dayId) query.set('trip', dayId);
+    else query.delete('trip');
+    const qs = query.toString();
+    return here.path + (qs ? '?' + qs : '');
+  }
+
+  const dayOf = (dayId) => (booking && dayId ? booking.list().find((d) => d.id === dayId) : null) || null;
+
+  /* Draws the view for dayId. False for a day this estimate doesn't have. */
+  function openTrip(dayId) {
+    const day = dayOf(dayId);
+    if (!day) return false;
+    if (trip.view && trip.view.dayId === dayId) return true;
+    dropTripView();
+    closeMenu(false);
+    trip.view = TripPlanner.mount({ day, onBack: leaveTrip });
+    booking.showTrip(trip.view.el);
+    trip.view.el.scrollIntoView({ block: 'start' });
+    trip.view.focus();
+    return true;
+  }
+
+  function dropTripView() {
+    if (!trip.view) return;
+    trip.view.destroy();
+    trip.view = null;
+    if (booking) booking.hideTrip();
+  }
+
+  /* The view goes, and the day's menu comes back with focus on Define travel
+     (the brief's Back). A day that has gone in the meantime just closes. */
+  function closeTrip() {
+    const dayId = trip.view && trip.view.dayId;
+    dropTripView();
+    trip.pushed = false;
+    if (!dayOf(dayId)) return;
+    const panel = panelFor(dayId);
+    openMenu(dayId, panel && panel.querySelector('.day-menu-btn'));
+    const travel = menu.el && menu.el.querySelector('.dm-travel');
+    if (travel) travel.focus({ preventScroll: !menu.sheet });
+  }
+
+  function defineTravel(dayId) {
+    if (!dayOf(dayId)) return;
+    if (!LSCRouter.mark(tripAddress(dayId))) return;
+    trip.pushed = true;
+    openTrip(dayId);
+  }
+
+  /* Back in the view: the browser's own Back when this view pushed the
+     entry (so Forward reopens it), otherwise (a reload, a link) the address
+     loses `?trip` in place. Either way closeTrip() runs once. */
+  function leaveTrip() {
+    if (trip.pushed) {
+      history.back();
+      return;
+    }
+    LSCRouter.mark(tripAddress(null), { replace: true });
+    closeTrip();
+  }
+
+  /* LSCRouter.claim: Back, Forward or a typed `?trip` on this screen. */
+  function onTripRoute(route) {
+    if (!booking || !onScreen()) return false;
+    const want = route.query.get('trip') || null;
+    const showing = trip.view ? trip.view.dayId : null;
+    if (want === showing) return true;
+    if (!want) {
+      closeTrip();
+      return true;
+    }
+    // Forward onto a trip this view pushed earlier counts as pushed again.
+    if (openTrip(want)) trip.pushed = true;
+    // A day this estimate doesn't have: dropped once the router has recorded the move (LSCRouter.claim).
+    else queueMicrotask(() => LSCRouter.mark(tripAddress(null), { replace: true }));
+    return true;
+  }
+
   function bindMenu(el) {
     el.querySelector('.day-menu-done').addEventListener('click', () => closeMenu(true));
+    const travel = el.querySelector('.dm-travel');
+    if (travel) travel.addEventListener('click', () => defineTravel(menu.target));
     const filter = el.querySelector('.dm-filter');
     if (filter) {
       filter.addEventListener('input', () => {
@@ -3916,6 +4019,10 @@ const EstimateEditor = (() => {
 
     booking = null;
     closeMenu(false);
+    // The last estimate's travel view went with its form.
+    if (trip.view) trip.view.destroy();
+    trip.view = null;
+    trip.pushed = false;
     LSCMenu.close(false);
     endDrag(false);
     dayPanels.clear();
@@ -3993,12 +4100,36 @@ const EstimateEditor = (() => {
       dirty: () => snapshot() !== baseline,
     });
 
+    watchBar();
+    LSCRouter.claim(onTripRoute);
+    // A reload or a link to `?trip=<dayId>` (I1) reopens that day's travel view; an unknown day is dropped.
+    const tripDay = options && options.trip;
+    if (tripDay) {
+      if (openTrip(tripDay)) return;
+      LSCRouter.mark(tripAddress(null), { replace: true });
+    }
+
     const day = options && options.focusDay ? booking.showDay(options.focusDay) : null;
     const dayField = day && day.querySelector('[data-f="date"]');
     if (dayField) dayField.focus();
     // Job details is closed on an existing estimate: its head, whose summary names the job, takes focus.
     else if ($('ed-job-body').hidden) $('ed-job').querySelector('.panel-toggle').focus();
     else $('f-upid').focus();
+  }
+
+  /* The sticky bar's height, as --ed-bar-h on the shell, for anything that
+     sticks to the bottom of the page above it (the day menu's Define travel
+     foot). The bar wraps and grows with an error, so it is watched. */
+  function watchBar() {
+    if (barWatch) barWatch.disconnect();
+    barWatch = null;
+    const shell = root.querySelector('.ed-shell');
+    const bar = $('ed-bar');
+    if (!shell || !bar || typeof ResizeObserver !== 'function') return;
+    const measure = () => shell.style.setProperty('--ed-bar-h', bar.offsetHeight + 'px');
+    measure();
+    barWatch = new ResizeObserver(measure);
+    barWatch.observe(bar);
   }
 
   return { mount };

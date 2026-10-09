@@ -242,7 +242,7 @@
       if (id === undefined) shown = ProjectsView.show(route);
       else if (id === 'new') shown = sub === undefined && EstimatesView.showNew();
       else if (sub === undefined) shown = ProjectFolder.show(id);
-      else if (sub === 'estimate') shown = EstimatesView.showInProject(id, more, state);
+      else if (sub === 'estimate') shown = EstimatesView.showInProject(id, more, state, route.query);
       else if (sub === 'invoices') shown = InvoiceView.show(id, more, state);
     } else if (area === 'estimates') {
       /* The addresses before the folder: #/estimates was the list (D58), and

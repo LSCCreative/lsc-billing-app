@@ -14,3 +14,12 @@
  * No trailing slash.
  */
 window.LSC_API_BASE = 'http://localhost:8080';
+
+/* The trip planner's Google Maps (.design/trip-planner/). Optional: without a
+ * key the travel view says Google Maps isn't set up. The key is the "LSC
+ * Billing — browser" key, website-restricted to the Pages origin and
+ * http://localhost:5173 (so preview locally on that port). The Map ID is what
+ * numbered map pins need. Values: .credentials.local.md, never a tracked file.
+ */
+window.LSC_MAPS_KEY = '';
+window.LSC_MAPS_ID = '';

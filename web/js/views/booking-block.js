@@ -25,6 +25,8 @@
  *   booking.showDay(id)        // open the block and scroll that day's card into view
  *   booking.addTbc()           // add a Date TBC day; returns its id
  *   booking.setHolidays(list)  // GET /api/holidays' list, shaded on the calendar (task 33 DR4)
+ *   booking.showTrip(el)       // the travel view takes the body (.is-trip; trip-planner task 2)
+ *   booking.hideTrip()         // and gives it back
  * Duplicate day (B2-5) is the card's own action: it adds the copy, then calls
  * opts.onDuplicate(sourceId, newId) for the editor to copy the lines.
  *
@@ -831,6 +833,27 @@ const BookingBlock = (() => {
 
       /** The calendar's column, where the editor's service menu swaps in (B2-4). */
       menuHost: () => slot.querySelector('.booking-cal-col'),
+
+      /** The travel view (trip-planner task 2) takes the whole body: both
+          columns and the rentals are hidden, not destroyed, so what's typed in
+          them survives. Opens the block first. One view at a time. */
+      showTrip(el) {
+        const body = $('booking-body');
+        body.querySelectorAll(':scope > .trip-view').forEach((v) => {
+          if (v !== el) v.remove();
+        });
+        reveal();
+        body.classList.add('is-trip');
+        if (el.parentNode !== body) body.appendChild(el);
+      },
+
+      /** Back to the calendar and the cards. */
+      hideTrip() {
+        const body = $('booking-body');
+        if (!body) return;
+        body.querySelectorAll(':scope > .trip-view').forEach((v) => v.remove());
+        body.classList.remove('is-trip');
+      },
 
       /** Edge the card the menu is adding to: a day id, BookingBlock.OFF, or null for none. */
       setTarget(id) {

@@ -1,0 +1,207 @@
+/* The travel view (js/views/trip-planner.js) and the day menu's Define travel
+   foot (.design/trip-planner/, T8; task 2).
+
+   No new visual language (brief, Aesthetic Direction): the panel system
+   holding a map. tokens.css names only. Terracotta is kept off the shell:
+   from task 3 it marks the pins and the route line, and nothing else here.
+
+   Written phone first: header, map, stops, stacked. From 768px the map and
+   the stops sit side by side; from 1100px at 55/45, with the map sticky
+   while the stops scroll past it. */
+
+/* ── The booking panel's body while it shows the view ─────────────────────── */
+
+.booking-body.is-trip {
+  grid-template-columns: minmax(0, 1fr);
+}
+.booking-body.is-trip > .booking-cal-col,
+.booking-body.is-trip > .booking-days-col,
+.booking-body.is-trip > .booking-rentals-slot {
+  display: none;
+}
+
+/* ── The view ──────────────────────────────────────────────────────────────── */
+
+.trip-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'head'
+    'map'
+    'stops';
+  gap: var(--space-6);
+  /* Opened with its head just under the page header (52px). */
+  scroll-margin-top: 64px;
+  animation: trip-in var(--duration-fast) var(--easing-out);
+}
+@keyframes trip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.trip-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+/* The label's edge lines up with the content below it, not the button's. */
+.trip-back {
+  flex: none;
+  margin-left: calc(-1 * var(--space-4));
+}
+.trip-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+  margin: 0;
+  font: var(--font-weight-bold) var(--font-size-lg) / var(--line-height-tight) var(--font-family-display);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--color-text-primary);
+}
+.trip-title:focus {
+  outline: none;
+}
+.trip-title:focus-visible {
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-focus);
+}
+.trip-kicker {
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+/* The map: an inset well until Google has drawn into it. */
+.trip-map-pane {
+  grid-area: map;
+  min-width: 0;
+}
+.trip-map {
+  position: relative;
+  height: 45vh;
+  min-height: 260px;
+  max-height: 440px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-inset);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+.trip-map-canvas {
+  position: absolute;
+  inset: 0;
+}
+.trip-map-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-7);
+  background: var(--color-bg-inset);
+  text-align: center;
+}
+.trip-map-state[hidden],
+.trip-map-retry[hidden] {
+  display: none;
+}
+.trip-map-msg {
+  max-width: 44ch;
+  margin: 0;
+  font: var(--font-weight-normal) var(--font-size-sm) / var(--line-height-normal) var(--font-family-body);
+  color: var(--color-text-secondary);
+}
+
+/* The stops. */
+.trip-stops {
+  grid-area: stops;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.trip-stops-h {
+  margin: 0;
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.trip-empty {
+  max-width: 46ch;
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+  .trip-view {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'head head'
+      'map stops';
+    column-gap: var(--space-7);
+    align-items: start;
+  }
+  .trip-map {
+    height: clamp(360px, 55vh, 520px);
+    max-height: none;
+  }
+  .trip-stops {
+    align-items: flex-start;
+  }
+}
+
+@media (min-width: 1100px) {
+  .trip-view {
+    grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
+  }
+  /* Sticky under the page header (52px) and clear of the editor's bar. */
+  .trip-map-pane {
+    position: sticky;
+    top: 64px;
+  }
+  /* Whole on screen as the view opens (its head under the page header,
+     ~76px of head and gap above the map, the bar below), and so whole while
+     it sticks. */
+  .trip-map {
+    height: clamp(360px, calc(100vh - 64px - 76px - var(--ed-bar-h, 88px) - var(--space-5)), 620px);
+  }
+}
+
+/* ── The day menu's foot: Define travel (T8) ─────────────────────────────────
+   Fixed at the menu's foot: in the column it sticks above the editor's bar
+   (--ed-bar-h, set by the editor) while the menu is taller than the screen;
+   in the phone sheet, at the sheet's bottom edge. Out to the menu's edges. */
+.dm-foot {
+  position: sticky;
+  bottom: var(--ed-bar-h, 0px);
+  z-index: 1;
+  margin: var(--space-4) -14px -12px;
+  padding: var(--space-4) 14px 12px;
+  border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-panel);
+}
+.dm-travel {
+  justify-content: space-between;
+  width: 100%;
+}
+.dm-travel-go {
+  color: var(--color-text-secondary);
+}
+.day-menu.is-sheet .dm-foot {
+  bottom: 0;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4) 0 0;
+  background: var(--surface);
+}
