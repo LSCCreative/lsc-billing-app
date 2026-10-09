@@ -22,7 +22,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   saved and reloaded (server stores it, no dirty flag on reopen); map click by a real click;
   Escape ×2; Change + Escape keeps the old spot; 23 cap; no results; search failure (stubbed);
   Home base (stubbed in memory). 593 server tests pass (no server change).
-- [x] **Task 4** routing, legs, totals and the linked lines, `COMMIT4`. Routes API, Show trip
+- [x] **Task 4** routing, legs, totals and the linked lines, `a2f040f`. Routes API, Show trip
   details, Trip totals, FROM TRIP lines, Recalculate (⋯ and the message), Day changed, failure +
   Try again, the live region. Verified on the scratch trip (Fitzroy North VIC → Bondi → Eveleigh
   → return, ~1,750 km): editor total = Rate Card price × rounded quantities ($0.90 × 1,751 km,
