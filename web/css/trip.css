@@ -883,6 +883,13 @@
   font-family: var(--font-figures);
   text-align: right;
 }
+/* An unlinked line (task 6): under its figures, why the trip doesn't set them. */
+.trip-line-note {
+  grid-column: 1 / -1;
+  margin-top: calc(-1 * var(--space-2));
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
 .trip-line.is-missing {
   display: block;
   font-size: var(--font-size-sm);
@@ -968,6 +975,58 @@
   .trip-map-pane:has(> .trip-search:not([hidden])) .trip-map {
     height: clamp(300px, calc(100vh - 64px - 76px - var(--ed-bar-h, 88px) - var(--space-5) - 90px), 620px);
   }
+}
+
+/* ── Around the day (task 6) ────────────────────────────────────────────────── */
+
+/* The day card's trip: one line under the fields, opening the travel view. */
+.day-trip {
+  justify-content: flex-start;
+  gap: var(--space-3);
+  max-width: 100%;
+  margin-top: var(--space-3);
+  margin-left: calc(-1 * var(--space-3));
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+}
+.day-trip[hidden] {
+  display: none;
+}
+.day-trip-go {
+  color: var(--color-text-secondary);
+}
+
+/* A linked line's ⋯ (Unlink from trip), and an ordinary line's Link to trip. */
+.from-trip-more {
+  min-width: var(--control-h-sm);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+.btn.trip-link {
+  margin-top: var(--space-2);
+  margin-left: calc(-1 * var(--space-3));
+}
+.btn.trip-link[hidden] {
+  display: none;
+}
+
+/* Unlink and Clear trip's dialog. Three buttons wrap on a phone, Cancel first. */
+.trip-dialog {
+  max-width: 460px;
+}
+.tripd-desc {
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+.trip-dialog .modal-actions {
+  flex-wrap: wrap;
 }
 
 /* ── The day menu's foot: Define travel (T8) ─────────────────────────────────

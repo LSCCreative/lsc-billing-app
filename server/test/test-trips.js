@@ -290,6 +290,25 @@ test('duplicating an estimate takes its trip lines off their days as ordinary li
   assert.equal(dup.estimate.totals.expenseTotal, round2(90 * 0.9 + 0.75 * 120));
 });
 
+test('an unlinked kind is stored with the trip; its line bills as typed, the other stays derived', async () => {
+  // 185.2 km and 2 h 26 min; the km line unlinked at 200 km, the hours line still linked.
+  const { status, body } = await create([day('dU', tripOf(185.2, 146, { unlinked: ['km'] }))],
+    [kmLine('dU', 200, { fromTrip: undefined }), hoursLine('dU', 1)]); // undefined: not sent
+  assert.equal(status, 201);
+  const est = body.estimate;
+  assert.deepEqual(est.days[0].trip.unlinked, ['km']);
+  const [km, hours] = travelOf(est);
+  assert.equal(km.qty, 200);
+  assert.equal(km.fromTrip, undefined);
+  assert.equal(hours.qty, 2.5);
+  assert.equal(hours.fromTrip, 'hours');
+  // Relinked: fromTrip back on the line, the kind off the list, the trip's figure billed.
+  const again = await put(est.id, [day('dU', tripOf(185.2, 146))], [kmLine('dU', 200), hoursLine('dU', 1)]);
+  assert.equal(again.status, 200);
+  assert.equal(again.body.estimate.days[0].trip.unlinked, undefined);
+  assert.equal(travelOf(again.body.estimate)[0].qty, 186);
+});
+
 test('a bad trip is refused with its code, and nothing is saved', async () => {
   const refused = async (trip, code) => {
     const res = await create([day(`dJ${counter}`, trip)], []);
@@ -355,6 +374,12 @@ test('parseTrip keeps only the fields it names, and 23 destinations is allowed',
   assert.deepEqual(trip.stops[1].details, { capture: 'Wide', access: '' }, 'a present key is kept, even blank');
   assert.equal(trip.legs[0].departAt, '07:00');
   assert.deepEqual(trip.routedFor, { date: '2026-11-03', startTime: '07:00', traffic: true }, 'no stop signature, no key');
+
+  assert.equal(trip.unlinked, undefined, 'nothing unlinked, no key');
+  assert.deepEqual(parseTrip(tripOf(10, 10, { unlinked: ['hours', 'km', 'hours'] })).trip.unlinked, ['km', 'hours']);
+  assert.equal(parseTrip(tripOf(10, 10, { unlinked: [] })).trip.unlinked, undefined);
+  assert.deepEqual(parseTrip(tripOf(10, 10, { unlinked: ['fuel'] })), { error: 'trip_invalid' });
+  assert.deepEqual(parseTrip(tripOf(10, 10, { unlinked: 'km' })), { error: 'trip_invalid' });
 
   const signed = tripOf(10, 10, { routedFor: { date: null, startTime: null, traffic: false, stops: 'r1a2b3c4d', extra: 'x' } });
   assert.deepEqual(parseTrip(signed).trip.routedFor, { date: null, startTime: null, traffic: false, stops: 'r1a2b3c4d' });

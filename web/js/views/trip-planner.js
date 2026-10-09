@@ -9,7 +9,7 @@
  * opens and closes (the `?trip=<dayId>` address, I1); this file owns what's
  * inside.
  *
- *   const view = TripPlanner.mount({ day, trip, onChange, onBack, lines });
+ *   const view = TripPlanner.mount({ day, trip, onChange, onBack, lines, onClear });
  *   view.el        // the view's element, for BookingBlock.showTrip
  *   view.dayId
  *   view.focus()   // its heading, as the view opens
@@ -22,9 +22,13 @@
  * editor stores it on the day, writes the day's linked travel lines from it,
  * and it saves with the estimate. onBack() is the Back button: the editor
  * drops `?trip` and returns to the day's service menu. lines() is what the
- * Trip totals list: { lines: [{ name, qty, bill } | { missing }], typed:
+ * Trip totals list: { lines: [{ name, qty, bill, note? } | { missing }], typed:
  * [{ name, bill }] }, the day's linked lines (or why one couldn't be added)
  * and any typed line of the same kind, as the editor holds them.
+ * onClear(opener) is the ⋯'s Clear trip: the editor asks what becomes of
+ * the lines (T7), clears the day's trip, and draws this view afresh.
+ *
+ *   TripPlanner.summaryText(trip)  // "Trip · 4 stops · 186 km · 2 h 40", '' for none
  *
  * LAYOUT (brief, Responsive Behavior): header across the top; the map and
  * the stops side by side from 768px (55/45 from 1100px, the map sticky as the
@@ -103,7 +107,7 @@ const TripPlanner = (() => {
       stops.push({ id: ret.id, role: 'return', address: start.address, lat: start.lat, lng: start.lng, placeId: start.placeId || '' });
     }
     const b = base || {};
-    return {
+    const trip = {
       stops,
       legs: Array.isArray(b.legs) ? b.legs : [],
       totals: b.totals || { km: 0, minutes: 0 },
@@ -111,6 +115,9 @@ const TripPlanner = (() => {
       routedFor: b.routedFor || null,
       routedAt: b.routedAt || null,
     };
+    // The kinds of line unlinked in the editor (task 6): kept through every route.
+    if (Array.isArray(b.unlinked) && b.unlinked.length) trip.unlinked = b.unlinked.slice();
+    return trip;
   }
 
   /* "Start", "Destination 2", "Return": what a cell is called in labels and announcements. */
@@ -603,6 +610,9 @@ const TripPlanner = (() => {
       });
     }
 
+    /* A new route's figures, with what the trip already says about unlinked lines. */
+    const withUnlinked = (next) => (base && base.unlinked ? Object.assign(next, { unlinked: base.unlinked.slice() }) : next);
+
     async function reroute() {
       const trip = tripOf(cells, base);
       if (!trip) return;
@@ -614,7 +624,7 @@ const TripPlanner = (() => {
       if (stops.length < 2) {
         // A start alone: nothing to drive, and nothing to ask Google.
         routing = false;
-        base = { legs: [], totals: { km: 0, minutes: 0 }, polyline: '', routedFor, routedAt: new Date().toISOString() };
+        base = withUnlinked({ legs: [], totals: { km: 0, minutes: 0 }, polyline: '', routedFor, routedAt: new Date().toISOString() });
         emit();
         paint();
         return;
@@ -639,7 +649,7 @@ const TripPlanner = (() => {
         km: legs.reduce((sum, l) => sum + l.km, 0),
         minutes: legs.reduce((sum, l) => sum + l.minutes, 0),
       };
-      base = { legs, totals, polyline: found.polyline, routedFor, routedAt: new Date().toISOString() };
+      base = withUnlinked({ legs, totals, polyline: found.polyline, routedFor, routedAt: new Date().toISOString() });
       routing = false;
       emit();
       paint();
@@ -671,7 +681,7 @@ const TripPlanner = (() => {
       const routable = Boolean(trip && trip.stops.length > 1);
       const totalsEl = q('.trip-totals');
       totalsEl.hidden = !routable;
-      q('.trip-more').hidden = !routable;
+      q('.trip-more').hidden = !trip;
       const fitsNow = routable && fits(trip);
       q('.trip-details-btn').hidden = !fitsNow;
       drawRoute(fitsNow);
@@ -717,8 +727,9 @@ const TripPlanner = (() => {
       linesEl.innerHTML = info.lines.map((l) =>
         l.missing
           ? '<li class="trip-line is-missing">' + esc(l.missing) + '</li>'
-          : '<li class="trip-line' + (stale ? ' is-stale' : '') + '"><span class="trip-line-name">' + esc(l.name) + '</span>' +
-            '<span class="trip-line-qty">' + esc(l.qty) + '</span><span class="trip-line-bill">' + esc(l.bill) + '</span></li>'
+          : '<li class="trip-line' + (stale && !l.note ? ' is-stale' : '') + '"><span class="trip-line-name">' + esc(l.name) + '</span>' +
+            '<span class="trip-line-qty">' + esc(l.qty) + '</span><span class="trip-line-bill">' + esc(l.bill) + '</span>' +
+            (l.note ? '<span class="trip-line-note">' + esc(l.note) + '</span>' : '') + '</li>'
       ).join('');
       linesEl.hidden = !info.lines.length;
       const also = q('.trip-also');
@@ -1563,13 +1574,21 @@ const TripPlanner = (() => {
       q('#trip-totals-h').focus();
     });
 
-    // The view's ⋯ (task 6 adds Clear trip).
+    // The view's ⋯: Recalculate, and Clear trip (task 6).
     const more = q('.trip-more');
     more.addEventListener('click', () => {
+      const trip = tripOf(cells, base);
       LSCMenu.open(more, {
         label: 'Travel actions',
-        items: [{ text: 'Recalculate', hint: 'Ask Google again for this day' }],
-        onSelect: () => recalculate(),
+        items: [
+          trip && trip.stops.length > 1 && { text: 'Recalculate', hint: 'Ask Google again for this day', act: 'recalc' },
+          trip && { text: 'Clear trip', danger: true, act: 'clear' },
+        ],
+        onSelect: (it) => {
+          if (it.act === 'recalc') recalculate();
+          // The editor asks about the lines the trip added (T7), then opens this view afresh.
+          else if (it.act === 'clear' && typeof opts.onClear === 'function') opts.onClear(more);
+        },
       });
     });
 
@@ -1615,5 +1634,28 @@ const TripPlanner = (() => {
     return { el, dayId: view.dayId, focus: view.focus, destroy: view.destroy };
   }
 
-  return { mount };
+  /**
+   * A trip in one line, for the day card, the day menu's foot and the Project
+   * page (task 6): { stops, km, time } where `stops` counts the destinations
+   * and km / time are "186 km" / "2 h 40", or '' while it has no route.
+   * Null for no trip.
+   */
+  function summary(trip) {
+    if (!trip || !Array.isArray(trip.stops) || !trip.stops.length) return null;
+    const routed = Array.isArray(trip.legs) && trip.legs.length > 0 && trip.totals;
+    return {
+      stops: trip.stops.filter((s) => s.role === 'stop').length,
+      km: routed ? Math.round(trip.totals.km).toLocaleString('en-AU') + ' km' : '',
+      time: routed ? duration(trip.totals.minutes) : '',
+    };
+  }
+
+  /* "Trip · 4 stops · 186 km · 2 h 40" (IA Naming). */
+  function summaryText(trip) {
+    const s = summary(trip);
+    if (!s) return '';
+    return ['Trip', s.stops + (s.stops === 1 ? ' stop' : ' stops'), s.km, s.time].filter(Boolean).join(' · ');
+  }
+
+  return { mount, summary, summaryText };
 })();

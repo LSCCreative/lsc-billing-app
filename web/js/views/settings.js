@@ -34,6 +34,9 @@
  *   could set them.
  *   business.signer (ui-clarity U22): "Signs for the business", the
  *   agreement's "represented by".
+ *   business.homeBase (trip-planner T9, task 6): { address, lat, lng, placeId },
+ *   picked from a Places search; a trip offers it first for its start. Owner
+ *   only: public.js's clientBusiness never passes it on.
  *
  * THE SERVICE AGREEMENT BUILDER (ui-clarity task 5; IA "Settings → Service
  * agreement")
@@ -96,6 +99,7 @@ const SettingsView = (() => {
     ['set-biz-email', 'businessEmail'],
     ['set-biz-phone', 'businessPhone'],
     ['set-biz-signer', 'businessSigner'],
+    ['set-home-base', 'homeBaseText'],
     ['set-gst-rate', 'rateRaw'],
     ['set-bank-name', 'bankName'],
     ['set-account-name', 'accountName'],
@@ -130,6 +134,13 @@ const SettingsView = (() => {
      a plain ×100 renders 0.07 as 7.000000000000001. */
   const toPercent = (rate) => String(Math.round(num(rate) * 1e8) / 1e6);
 
+  /* A stored home base, as the travel view reads it: an address with a spot. */
+  function homeBaseOf(business) {
+    const hb = business && business.homeBase;
+    if (!hb || !hb.address || typeof hb.lat !== 'number' || typeof hb.lng !== 'number') return null;
+    return { address: String(hb.address), lat: hb.lat, lng: hb.lng, placeId: String(hb.placeId || '') };
+  }
+
   function formFrom(settings) {
     const gst = settings.gst || {};
     const payment = settings.payment || {};
@@ -141,6 +152,9 @@ const SettingsView = (() => {
       businessEmail: business.email || '',
       businessPhone: business.phone || '',
       businessSigner: business.signer || '',
+      // Where days usually start (trip-planner T9): a place picked from the search, or none.
+      homeBase: homeBaseOf(business),
+      homeBaseText: (homeBaseOf(business) || {}).address || '',
       registered: gst.registered === true,
       rateRaw: toPercent(gst.rate),
       pricesIncludeGst: gst.pricesIncludeGst === true,
@@ -212,6 +226,14 @@ const SettingsView = (() => {
           hint: 'Named in the service agreement as the person who represents the business.',
         }) +
       '</div>' +
+      // Searched like a trip's stops (trip-planner T9), and offered first for a trip's start.
+      '<div class="form-grid set-home-base">' +
+        field('set-home-base', 'Home base address', f.homeBaseText, {
+          attrs: ' placeholder="Search for an address" spellcheck="false" aria-describedby="set-home-base-hint set-home-base-msg"',
+          hint: 'Where your shoot days usually start: the studio, or home. A trip offers it first for its start. Never shown to clients.',
+        }) +
+      '</div>' +
+      '<p class="set-hint set-home-base-msg" id="set-home-base-msg" role="status"></p>' +
       '<h3 class="set-group-head">GST</h3>' +
       '<label class="set-check"><input type="checkbox" id="set-gst-reg"' + (f.registered ? ' checked' : '') +
       '><span>Registered for GST</span></label>' +
@@ -667,6 +689,52 @@ const SettingsView = (() => {
     box.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  /* Home base (trip-planner T9): the travel view's address search without
+     the map (Places suggestions through maps.js, in typeahead.js's
+     combobox). A pick stores the place; editing the text afterwards means
+     another pick is needed, which problems() asks for on save. One search
+     session per pick, as Google bills them. */
+  function bindHomeBase() {
+    const input = $('set-home-base');
+    const msg = $('set-home-base-msg');
+    let session = null;
+    input.addEventListener('input', () => {
+      if (!input.value.trim()) form.homeBase = null;
+    });
+    ClientTypeahead.attach(input, {
+      fetch: async (query) => {
+        if (query.trim().length < 3) return [];
+        try {
+          if (!session) session = await LSCMaps.newSession();
+          const items = await LSCMaps.suggest(query, { session });
+          msg.textContent = '';
+          return items;
+        } catch (err) {
+          msg.textContent = err.message;
+          return [];
+        }
+      },
+      label: (s) => s.main || s.label,
+      sub: (s) => s.sub,
+      debounce: 250,
+      onPick: async (s) => {
+        msg.textContent = 'Finding ' + s.label + '…';
+        try {
+          const place = await LSCMaps.place(s);
+          session = null;
+          if (!onScreen()) return;
+          form.homeBase = place;
+          form.homeBaseText = place.address;
+          input.value = place.address;
+          msg.textContent = 'Home base set to ' + place.address + '. Save to keep it.';
+          paintState();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      },
+    });
+  }
+
   function bind() {
     TEXT.forEach(([id, key]) => {
       $(id).addEventListener('input', function () {
@@ -676,6 +744,7 @@ const SettingsView = (() => {
         paintState();
       });
     });
+    bindHomeBase();
     CHECKS.forEach(([id, key]) => {
       $(id).addEventListener('change', function () {
         form[key] = this.checked;
@@ -1310,6 +1379,10 @@ const SettingsView = (() => {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       found.push({ msg: 'That email doesn’t look right. It should read like name@example.com.', field: $('set-biz-email') });
     }
+    const homeText = form.homeBaseText.trim();
+    if (homeText && !(form.homeBase && form.homeBase.address === homeText)) {
+      found.push({ msg: 'Choose the home base from the address suggestions, so it has a place on the map.', field: $('set-home-base') });
+    }
     if (form.registered && !abn) {
       found.push({ msg: 'GST registration needs your ABN. Add it under Business.', field: $('set-abn') });
     }
@@ -1356,6 +1429,8 @@ const SettingsView = (() => {
         email: form.businessEmail.trim(),
         phone: form.businessPhone.trim(),
         signer: form.businessSigner.trim(),
+        // Only a picked place (problems() refuses typed text): blank removes it.
+        homeBase: form.homeBaseText.trim() && form.homeBase ? form.homeBase : undefined,
       }),
       gst: Object.assign({}, loaded.gst, {
         registered: form.registered,

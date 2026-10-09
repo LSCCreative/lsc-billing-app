@@ -30,7 +30,11 @@
  *   booking.tripOf(id)         // a day's trip, or null (trip-planner task 3)
  *   booking.setTrip(id, trip)  // the travel view's edit: replaces it whole, then onChange()
  * Duplicate day (B2-5) is the card's own action: it adds the copy, then calls
- * opts.onDuplicate(sourceId, newId) for the editor to copy the lines.
+ * opts.onDuplicate(sourceId, newId) for the editor to copy the lines. The
+ * copy takes the day's trip too (trip-planner task 6, T2).
+ * A DAY'S TRIP (trip-planner task 6): a card with a trip shows its one-line
+ * summary ("Trip · 4 stops · 186 km · 2 h 40", TripPlanner.summaryText), a
+ * button that calls opts.onTrip(dayId) to open its travel view.
  *
  * GEAR RENTALS (B2-7, D82). The editor's rentals panel, `opts.rentals()`, is
  * put once under both columns, like Not on a day's items. `opts.headNotes()`
@@ -275,6 +279,7 @@ const BookingBlock = (() => {
     const itemsFor = typeof opts.itemsFor === 'function' ? opts.itemsFor : () => null;
     const onToggle = typeof opts.onToggle === 'function' ? opts.onToggle : () => {};
     const onDuplicate = typeof opts.onDuplicate === 'function' ? opts.onDuplicate : () => 0;
+    const onTrip = typeof opts.onTrip === 'function' ? opts.onTrip : () => {};
     const headNotes = typeof opts.headNotes === 'function' ? opts.headNotes : () => [];
     const ownRentals = typeof opts.ownRentals === 'function' ? opts.ownRentals : () => [];
     const onRentalFocus = typeof opts.onRentalFocus === 'function' ? opts.onRentalFocus : () => {};
@@ -457,6 +462,7 @@ const BookingBlock = (() => {
         '</div>' +
         '<p class="day-overnight" id="' + k + '-on" hidden>Ends next day: the shoot runs past midnight and belongs to its start date.</p>' +
         '<p class="day-clash" id="' + k + '-clash" hidden></p>' +
+        '<button type="button" class="btn btn-quiet btn-sm day-trip" data-act="trip" hidden></button>' +
         '<div class="day-field day-note" hidden>' +
         '<label for="' + k + '-note">Specification note</label>' +
         '<input type="text" class="text-inp" id="' + k + '-note" data-f="overrideNote" maxlength="' + MAX_NOTE + '"' +
@@ -495,6 +501,13 @@ const BookingBlock = (() => {
       const input = note.querySelector('input');
       if (kind === 'lock') input.setAttribute('aria-invalid', 'true');
       else input.removeAttribute('aria-invalid');
+
+      // The day's trip in one line, opening its travel view (trip-planner task 6).
+      const tripBtn = li.querySelector('.day-trip');
+      const summary = TripPlanner.summaryText(day.trip);
+      tripBtn.hidden = !summary;
+      tripBtn.innerHTML = summary ? esc(summary) + '<span class="day-trip-go" aria-hidden="true">→</span>' : '';
+      tripBtn.setAttribute('aria-label', summary ? summary + '. Edit travel for ' + titleOf(day, days.indexOf(day) + 1) : '');
 
       // A lock is announced once per day and date, as it appears (brief, Live regions).
       const key = day.id + '|' + day.date;
@@ -702,6 +715,11 @@ const BookingBlock = (() => {
       }
     });
 
+    cards.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act="trip"]');
+      if (btn) onTrip(btn.closest('[data-day-id]').dataset.dayId);
+    });
+
     /* Duplicate day (B2-5, D81): a Date TBC day straight after the source,
        Proposed as TBC days start, with the source's times, so the copy is
        the near-identical second day; the editor copies its lines
@@ -713,8 +731,9 @@ const BookingBlock = (() => {
       if (i === -1) return;
       const src = days[i];
       const srcTitle = titleOf(src, i + 1);
-      // The copy's trip is trip-planner task 6 (T2); until then it starts without one.
-      const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: src.startTime, endTime: src.endTime, overrideNote: '', trip: null };
+      // The copy takes the trip (T2), routed for the source's date: it reads "Day changed" until recalculated (T6).
+      const trip = src.trip ? JSON.parse(JSON.stringify(src.trip)) : null;
+      const day = { id: newDayId(), date: null, status: TBC_STATUS, startTime: src.startTime, endTime: src.endTime, overrideNote: '', trip };
       days.splice(i + 1, 0, day);
       days = sortDays(days);
       const n = onDuplicate(src.id, day.id);
@@ -732,10 +751,11 @@ const BookingBlock = (() => {
       const li = btn.closest('[data-day-id]');
       const i = days.findIndex((d) => d.id === li.dataset.dayId);
       const title = titleOf(days[i], i + 1);
-      // Its items go with it — production, travel, crew and gear — so the question says how many.
+      // Its items go with it — production, travel, crew and gear — and its trip, so the question says what.
       const items = itemsFor(li.dataset.dayId);
       const n = items ? items.querySelectorAll('[data-rid]').length : 0;
-      const what = n ? ' Its ' + (n === 1 ? 'item is' : n + ' items are') + ' removed too.' : '';
+      const parts = (days[i].trip ? ['trip'] : []).concat(n ? [n === 1 ? 'item' : n + ' items'] : []);
+      const what = parts.length ? ' Its ' + parts.join(' and ') + (parts.length > 1 || n > 1 ? ' are' : ' is') + ' removed too.' : '';
       if (!window.confirm('Remove ' + title + '?' + what)) return;
       days.splice(i, 1);
       paint();
@@ -826,6 +846,8 @@ const BookingBlock = (() => {
         const day = days.find((d) => d.id === id);
         if (!day) return;
         day.trip = trip || null;
+        const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+        if (li) updateCard(li, day); // its trip summary
         onChange();
       },
 

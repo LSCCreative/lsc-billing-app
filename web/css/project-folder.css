@@ -417,6 +417,14 @@
   display: block;
   font-style: italic;
 }
+/* The day's trip (trip-planner task 6): "Trip · 186 km", set as a figure. */
+.pf-day-trip {
+  display: block;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-text-secondary);
+}
 .pf-day-go {
   grid-column: 2;
   grid-row: 1 / span 2;

@@ -117,9 +117,14 @@
 }
 
 /* Signs for the business (U22): its own row, clear of the contact hint. */
-.set-signer {
+.set-signer,
+.set-home-base {
   margin-top: var(--space-7);
   margin-bottom: 0;
+}
+/* Home base's search message (trip-planner task 6): only while it has one. */
+.set-home-base-msg:empty {
+  display: none;
 }
 
 /* GST's rate and the inclusive tick, which mean nothing unless registered. */

@@ -517,8 +517,10 @@ const EstimateEditor = (() => {
 
     /* A line its day's trip writes (trip-planner task 4, T4): its quantity is
        the trip's, so it reads FROM TRIP, can't be typed in, and stays on its
-       day (no Move to, no ×). Edit trip opens the travel view; Unlink from
-       trip is task 6. The server re-derives the quantity on save anyway. */
+       day (no Move to, no ×). Edit trip opens the travel view; its ⋯ has
+       Unlink from trip (task 6). The server re-derives the quantity on save.
+       An ordinary line carries a Link to trip button, shown by
+       paintTripLinks() only while its day's trip could take it. */
     const linked = line.fromTrip === 'km' || line.fromTrip === 'hours' ? line.fromTrip : '';
     if (linked) tr.dataset.fromTrip = linked;
     const qtyName = perKm ? 'Kilometres' : linked ? 'Hours' : 'Quantity';
@@ -527,8 +529,10 @@ const EstimateEditor = (() => {
       '<div data-label="Service">' + esc(line.name) +
       (linked
         ? '<div class="from-trip"><span class="from-trip-chip">From trip</span>' +
-          '<button type="button" class="btn btn-quiet btn-sm from-trip-edit" aria-label="Edit trip for ' + esc(line.name) + '">Edit trip</button></div>'
-        : '') +
+          '<button type="button" class="btn btn-quiet btn-sm from-trip-edit" aria-label="Edit trip for ' + esc(line.name) + '">Edit trip</button>' +
+          '<button type="button" class="btn btn-quiet btn-sm from-trip-more" aria-haspopup="menu" aria-expanded="false" ' +
+          'aria-label="More for ' + esc(line.name) + '"><span aria-hidden="true">⋯</span></button></div>'
+        : '<button type="button" class="btn btn-quiet btn-sm trip-link" hidden></button>') +
       '</div>' +
       '<div class="right" data-label="' + (perKm ? 'Kilometres' : linked ? 'Hours' : 'Qty / Cost') + '"><input class="num-inp qty-inp" type="number" min="0" step="0.01" value="' +
       (line.qty || '') + '"' + (linked ? ' readonly' : '') + ' aria-label="' + qtyName + ' for ' + esc(line.name) +
@@ -545,8 +549,15 @@ const EstimateEditor = (() => {
         const dayId = rowDayId(tr);
         if (dayId) defineTravel(dayId);
       });
+      const more = tr.querySelector('.from-trip-more');
+      more.addEventListener('click', () => LSCMenu.open(more, {
+        label: 'More for ' + line.name,
+        items: [{ text: 'Unlink from trip', hint: 'Type its quantity yourself' }],
+        onSelect: () => askUnlink(tr, more),
+      }));
       return tr;
     }
+    tr.querySelector('.trip-link').addEventListener('click', () => linkLine(tr));
     bindRow(tr, ['.qty-inp']);
     addLineControls(tr, 'travel');
     return tr;
@@ -1115,6 +1126,14 @@ const EstimateEditor = (() => {
       : '<button type="button" class="btn btn-ghost btn-sm dm-blank" data-add="equip">+ Add hire item</button>';
   }
 
+  /* The menu's foot: "Define travel", or for a day with a trip "Edit travel",
+     with its km once it has a route ("Edit travel · 186 km"). */
+  function travelLabel(dayId) {
+    const s = booking ? TripPlanner.summary(booking.tripOf(dayId)) : null;
+    if (!s) return 'Define travel';
+    return s.km ? 'Edit travel · ' + s.km : 'Edit travel';
+  }
+
   function menuMarkup() {
     const prodRows = (prodSection() || { rows: [] }).rows.length;
     return (
@@ -1138,7 +1157,7 @@ const EstimateEditor = (() => {
       // A day's trip (trip-planner T8): the menu's fixed foot. Not on a day has none (T2).
       (menu.target === OFF_DAY
         ? ''
-        : '<div class="dm-foot"><button type="button" class="btn dm-travel">Define travel' +
+        : '<div class="dm-foot"><button type="button" class="btn dm-travel">' + esc(travelLabel(menu.target)) +
           '<span class="dm-travel-go" aria-hidden="true">→</span></button></div>') +
       '</section>'
     );
@@ -1305,6 +1324,7 @@ const EstimateEditor = (() => {
         syncTripLines(dayId, next);
       },
       lines: () => tripLinesInfo(dayId),
+      onClear: (opener) => clearTrip(dayId, opener),
       onBack: leaveTrip,
     });
     booking.showTrip(trip.view.el);
@@ -1313,7 +1333,7 @@ const EstimateEditor = (() => {
     return true;
   }
 
-  /* ── The lines a trip writes (trip-planner task 4, T3, T4) ──
+  /* ── The lines a trip writes (trip-planner tasks 4 and 6, T3, T4, T7) ──
      While a day's trip has a route (one leg or more), its travel group holds
      one line of each kind the Rate Card can price: km on the first per-km
      row, drive time on the first own-time row (calc.js tripKindOf), each
@@ -1325,17 +1345,36 @@ const EstimateEditor = (() => {
      would bill nothing. A row with no price yet adds no line; the trip's
      totals say why (tripLinesInfo). The server derives the same quantities
      on save (days.js applyTripLines), so this only has to be right for
-     what's on screen in between. */
+     what's on screen in between.
+
+     UNLINK (task 6): a linked line's ⋯ → Unlink from trip, after a confirm.
+     It keeps its quantity as an ordinary line, and the kind goes on the
+     trip's `unlinked` list, so the trip makes no new line of that kind. An
+     ordinary line of a kind the trip bills (an unlinked one, or one typed
+     before the trip) shows Relink / Link to trip while the trip has a route
+     and no linked line of that kind: it takes the trip's quantity, and the
+     kind comes off the list. */
   const tripHasRoute = (t) => Boolean(t && Array.isArray(t.legs) && t.legs.length > 0);
   const TRIP_KINDS = ['km', 'hours'];
+  const KIND_NAME = { km: 'Vehicle km', hours: 'Drive time' };
+  const unlinkedOf = (t) => (t && Array.isArray(t.unlinked) ? t.unlinked : []);
+  const travelBody = (dayId) => groupBody(panelFor(dayId), 'travel');
+  const linkedRows = (dayId, kind) => Array.from(travelBody(dayId).querySelectorAll(':scope > [data-from-trip="' + kind + '"]'));
+
+  /* Which kind of trip line a travel row could be: its snapshot's, or (a
+     line with no snapshot: saved before them, or its row has no price yet)
+     its card row's. */
+  function rowTripKind(tr) {
+    return LSCCalc.tripKindOf(snapOf(tr) || cardRowFor('', null, tr.dataset.name));
+  }
 
   function syncTripLines(dayId, t) {
-    const body = groupBody(panelFor(dayId), 'travel');
+    const body = travelBody(dayId);
     if (!body) return;
     const defs = (LSCData.pricing() || {}).travelRows || [];
     let moved = false;
     TRIP_KINDS.forEach((kind) => {
-      const linked = Array.from(body.querySelectorAll(':scope > [data-from-trip="' + kind + '"]'));
+      const linked = linkedRows(dayId, kind);
       if (!tripHasRoute(t)) {
         linked.forEach(removeRow);
         return;
@@ -1350,6 +1389,7 @@ const EstimateEditor = (() => {
         }
         return;
       }
+      if (unlinkedOf(t).indexOf(kind) !== -1) return; // the owner bills this one as typed
       const row = defs.find((r) => LSCCalc.tripKindOf(r) === kind);
       const picked = row ? unitSnap('', row, 'hour') : null;
       if (!picked || !picked.snap) return;
@@ -1361,26 +1401,41 @@ const EstimateEditor = (() => {
   }
 
   /* What the trip's totals list (TripPlanner's lines()): each linked line
-     as the editor prices it, or why there isn't one; and any line typed by
-     hand on the same day of a kind the trip bills, which could charge the
-     same road twice. */
+     as the editor prices it; an unlinked kind's line, billed as typed; or
+     why there isn't one. And any other line typed by hand on the same day
+     of a kind the trip bills, which could charge the same road twice. */
   function tripLinesInfo(dayId) {
     const out = { lines: [], typed: [] };
-    if (!booking || !tripHasRoute(booking.tripOf(dayId))) return out;
+    const t = booking ? booking.tripOf(dayId) : null;
+    if (!tripHasRoute(t)) return out;
     const pricing = LSCData.pricing();
     const defs = (pricing && pricing.travelRows) || [];
-    const rows = Array.from(groupBody(panelFor(dayId), 'travel').querySelectorAll(':scope > [data-rid]'));
+    const rows = Array.from(travelBody(dayId).querySelectorAll(':scope > [data-rid]'));
     const billOf = (tr) => {
       const line = lineFrom(tr, false);
       const bill = travelBill(travelDef(line, pricing), line);
       return { line, bill: bill === null ? 'no price' : fmt(bill) };
     };
+    const shown = (tr, kind, note) => {
+      const { line, bill } = billOf(tr);
+      const qty = num(line.qty);
+      out.lines.push(Object.assign({ name: line.name, qty: kind === 'km' ? qty.toLocaleString('en-AU') + ' km' : qty + ' h', bill },
+        note ? { note } : {}));
+    };
     TRIP_KINDS.forEach((kind) => {
       const tr = rows.find((r) => r.dataset.fromTrip === kind);
+      const typed = rows.filter((r) => !r.dataset.fromTrip && rowTripKind(r) === kind);
+      const unlinked = !tr && unlinkedOf(t).indexOf(kind) !== -1;
       if (tr) {
-        const { line, bill } = billOf(tr);
-        const qty = num(line.qty);
-        out.lines.push({ name: line.name, qty: kind === 'km' ? qty.toLocaleString('en-AU') + ' km' : qty + ' h', bill });
+        shown(tr, kind);
+      } else if (unlinked && typed.length) {
+        /* The line unlinked in this session is marked; after a reload, the
+           last one (a trip's lines are added after any typed before it). */
+        const was = typed.find((r) => r.dataset.tripUnlinked === kind) || typed[typed.length - 1];
+        typed.splice(typed.indexOf(was), 1);
+        shown(was, kind, KIND_NAME[kind] + ' unlinked: billed as typed.');
+      } else if (unlinked) {
+        out.lines.push({ missing: KIND_NAME[kind] + ' unlinked, and there’s no line for it on this day.' });
       } else {
         const row = defs.find((r) => LSCCalc.tripKindOf(r) === kind);
         const what = kind === 'km' ? 'No km line' : 'No drive-time line';
@@ -1390,15 +1445,196 @@ const EstimateEditor = (() => {
         else why = row.name + ' has no price yet: it needs ' + LSCData.autoPriceBlocker().screen + '.';
         out.lines.push({ missing: what + ': ' + why });
       }
-      rows.forEach((r) => {
-        if (r.dataset.fromTrip) return;
-        // A line with no snapshot (saved before snapshots, or from a row with no price yet) is known by its card row.
-        const snap = snapOf(r);
-        if (LSCCalc.tripKindOf(snap || cardRowFor('', null, r.dataset.name)) !== kind) return;
-        out.typed.push({ name: r.dataset.name, bill: billOf(r).bill });
-      });
+      typed.forEach((r) => out.typed.push({ name: r.dataset.name, bill: billOf(r).bill }));
     });
     return out;
+  }
+
+  /* A travel row rebuilt as the same line, linked as `fromTrip` (a kind) or
+     ordinary (null), at `qty` when given: its snapshot, unit and rate marks
+     go with it, as a Duplicate's do. */
+  function relinkRow(tr, fromTrip, qty) {
+    const line = lineFrom(tr, false);
+    delete line.dayId;
+    delete line.fromTrip;
+    if (fromTrip) line.fromTrip = fromTrip;
+    if (qty !== undefined) line.qty = qty;
+    const fresh = buildTravelRow(travelDef(line, LSCData.pricing()), line);
+    if (tr.dataset.prevSnap) fresh.dataset.prevSnap = tr.dataset.prevSnap;
+    if (tr.dataset.lastOnly) fresh.dataset.lastOnly = tr.dataset.lastOnly;
+    tr.replaceWith(fresh);
+    return fresh;
+  }
+
+  /* The day's trip with a kind on or off its unlinked list. */
+  function setUnlinked(dayId, kind, on) {
+    const t = booking.tripOf(dayId);
+    if (!t) return;
+    const kinds = new Set(unlinkedOf(t));
+    if (on) kinds.add(kind);
+    else kinds.delete(kind);
+    const next = Object.assign({}, t);
+    if (kinds.size) next.unlinked = TRIP_KINDS.filter((k) => kinds.has(k));
+    else delete next.unlinked;
+    booking.setTrip(dayId, next);
+  }
+
+  function askUnlink(tr, opener) {
+    const dayId = rowDayId(tr);
+    const kind = tr.dataset.fromTrip;
+    if (!dayId || !kind) return;
+    const qty = num(inputValue(tr, '.qty-inp'));
+    const qtyText = kind === 'km' ? qty.toLocaleString('en-AU') + ' km' : qty + ' h';
+    tripDialog(opener, {
+      title: 'Unlink ' + tr.dataset.name + ' from the trip?',
+      body: 'It stays at ' + qtyText + ', and its quantity becomes yours to type. The trip stops updating it; ' +
+        'Relink to trip puts the trip’s figure back.',
+      actions: [{ label: 'Unlink', cls: 'btn-accent', run: () => {
+        const fresh = relinkRow(tr, null);
+        fresh.dataset.tripUnlinked = kind; // the one the totals call unlinked
+        setUnlinked(dayId, kind, true);
+        recalc();
+        const input = fresh.querySelector('.qty-inp');
+        if (input) input.focus();
+        LSCUtil.announce($('editor-live'), fresh.dataset.name + ' unlinked from the trip: billed as typed.');
+        return false; // focus is placed; the dialog doesn't hand it back
+      } }],
+    });
+  }
+
+  function linkLine(tr) {
+    const dayId = rowDayId(tr);
+    const kind = rowTripKind(tr);
+    const t = dayId && booking ? booking.tripOf(dayId) : null;
+    if (!kind || !tripHasRoute(t) || linkedRows(dayId, kind).length) return;
+    const qty = LSCCalc.tripLineQty(t, kind);
+    const fresh = relinkRow(tr, kind, qty);
+    setUnlinked(dayId, kind, false);
+    recalc();
+    const more = fresh.querySelector('.from-trip-more');
+    if (more) more.focus();
+    LSCUtil.announce($('editor-live'), fresh.dataset.name + ' linked to the trip: ' +
+      (kind === 'km' ? qty + ' km' : qty + ' hours') + ', ' + fresh.querySelector('.bill-cell').textContent + '.');
+  }
+
+  /* Each ordinary travel line's Link to trip: shown while its day's trip has
+     a route and no linked line of its kind. "Relink" when it's the kind the
+     owner unlinked. Run from recalc(), which follows every change to lines
+     and days. */
+  function paintTripLinks() {
+    if (!booking) return;
+    rowsIn('travel').forEach((tr) => {
+      const btn = tr.querySelector('.trip-link');
+      if (!btn) return;
+      const dayId = rowDayId(tr);
+      const t = dayId ? booking.tripOf(dayId) : null;
+      const kind = rowTripKind(tr);
+      const can = Boolean(kind && tripHasRoute(t) && !linkedRows(dayId, kind).length);
+      btn.hidden = !can;
+      if (!can) return;
+      const again = unlinkedOf(t).indexOf(kind) !== -1;
+      btn.textContent = again ? 'Relink to trip' : 'Link to trip';
+      btn.setAttribute('aria-label', (again ? 'Relink ' : 'Link ') + tr.dataset.name + ' to the trip');
+    });
+  }
+
+  /* Clear trip (the travel view's ⋯, T7): the stops, details and route go.
+     With linked lines on the day, the dialog asks whether they go too
+     (Remove) or stay as ordinary lines at their quantities (Keep). The view
+     is then drawn afresh, empty. */
+  function clearTrip(dayId, opener) {
+    const pricing = LSCData.pricing();
+    const linked = TRIP_KINDS.flatMap((k) => linkedRows(dayId, k));
+    const sum = linked.reduce((total, tr) => {
+      const line = lineFrom(tr, false);
+      return total + (travelBill(travelDef(line, pricing), line) || 0);
+    }, 0);
+    const done = (keep) => {
+      if (keep) linked.forEach((tr) => relinkRow(tr, null));
+      booking.setTrip(dayId, null);
+      syncTripLines(dayId, null); // with keep, nothing linked is left to remove
+      recalc();
+      dropTripView();
+      openTrip(dayId);
+      LSCUtil.announce($('editor-live'), 'Trip cleared' +
+        (linked.length ? (keep ? ', its travel lines kept as ordinary lines.' : ', with its travel lines.') : '.'));
+      return false;
+    };
+    const n = linked.length;
+    tripDialog(opener, n
+      ? {
+        title: 'Clear the trip?',
+        body: 'Its stops, their details and the route go. Also remove the ' + (n === 1 ? 'travel line' : n + ' travel lines') +
+          ' it added? (' + fmt(sum) + ')',
+        actions: [
+          { label: 'Keep as ordinary lines', cls: 'btn-ghost', run: () => done(true) },
+          { label: 'Remove', cls: 'btn-danger', run: () => done(false) },
+        ],
+      }
+      : {
+        title: 'Clear the trip?',
+        body: 'Its stops, their details and the route go.',
+        actions: [{ label: 'Clear trip', cls: 'btn-danger', run: () => done(false) }],
+      });
+  }
+
+  // ── The trip's dialog (Unlink, Clear trip) ──
+  /* One overlay (#modal-trip), the app's focus trap (modal.js), Escape and
+     the backdrop cancel. actions: [{ label, cls, run }], drawn after Cancel;
+     run() closes it, and returning false means it placed focus itself. */
+  const tripDlg = { overlay: null, opener: null };
+
+  function onTripDlgKeydown(event) {
+    if (!tripDlg.overlay || tripDlg.overlay.closest('[hidden]')) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTripDialog(true);
+      return;
+    }
+    LSCModal.trapTab(tripDlg.overlay, event);
+  }
+  function onTripDlgClick(event) {
+    if (event.target === tripDlg.overlay) closeTripDialog(true);
+  }
+
+  function closeTripDialog(returnFocus) {
+    const o = tripDlg.overlay;
+    if (!o || !o.classList.contains('open')) return;
+    o.classList.remove('open');
+    o.innerHTML = '';
+    document.removeEventListener('keydown', onTripDlgKeydown, true);
+    o.removeEventListener('click', onTripDlgClick);
+    if (returnFocus && tripDlg.opener && tripDlg.opener.isConnected) tripDlg.opener.focus();
+    tripDlg.opener = null;
+  }
+
+  function tripDialog(opener, opts) {
+    tripDlg.overlay = document.getElementById('modal-trip');
+    if (!tripDlg.overlay) return;
+    closeTripDialog(false);
+    tripDlg.opener = opener || null;
+    tripDlg.overlay.innerHTML =
+      '<div class="modal-box trip-dialog" role="dialog" aria-modal="true" aria-labelledby="tripd-title" aria-describedby="tripd-desc">' +
+      '<h2 class="modal-title" id="tripd-title">' + esc(opts.title) + '</h2>' +
+      '<p class="tripd-desc" id="tripd-desc">' + esc(opts.body) + '</p>' +
+      '<div class="modal-actions">' +
+      '<button type="button" class="btn btn-ghost" data-i="-1">Cancel</button>' +
+      opts.actions.map((a, i) => '<button type="button" class="btn ' + a.cls + '" data-i="' + i + '">' + esc(a.label) + '</button>').join('') +
+      '</div></div>';
+    tripDlg.overlay.classList.add('open');
+    // Captured, so Escape here doesn't also close the travel view's menus or sheet.
+    document.addEventListener('keydown', onTripDlgKeydown, true);
+    tripDlg.overlay.addEventListener('click', onTripDlgClick);
+    tripDlg.overlay.querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => {
+      const i = Number(b.dataset.i);
+      if (i < 0) return closeTripDialog(true);
+      const back = tripDlg.opener;
+      closeTripDialog(false);
+      if (opts.actions[i].run() !== false && back && back.isConnected) back.focus();
+    }));
+    // Cancel first: the safe choice has focus.
+    tripDlg.overlay.querySelector('[data-i="-1"]').focus();
   }
 
   function dropTripView() {
@@ -1760,8 +1996,7 @@ const EstimateEditor = (() => {
         if (kind === 'prod' || kind === 'travel') {
           const line = lineFrom(tr, kind === 'prod');
           delete line.dayId;
-          // The copy starts with no trip (trip-planner task 6 copies both), so its travel lines are ordinary ones.
-          delete line.fromTrip;
+          // A linked travel line stays linked: Duplicate day copies the trip with it (trip-planner task 6, T2).
           fresh = kind === 'prod'
             ? buildLabourRow(prod, labourDef(prod, line, pricing), line)
             : buildTravelRow(travelDef(line, pricing), line);
@@ -3017,6 +3252,7 @@ const EstimateEditor = (() => {
       tally('travel', line.dayId, bill, onSetLine(line.name, qtyText, billed, ''));
     });
     setText('sum-travel', fmt(travelSubtotal));
+    paintTripLinks();
     subs.travel = travelSubtotal;
 
     ['crew', 'equip'].forEach((kind) => {
@@ -4206,6 +4442,8 @@ const EstimateEditor = (() => {
       },
       // Duplicate day (B2-5): the block made the day; its lines are copied here.
       onDuplicate: duplicateLines,
+      // A day card's trip summary (trip-planner task 6) opens its travel view.
+      onTrip: defineTravel,
       // Gear rentals (B2-7): the panel under both columns, and the head's counts.
       rentals: rentalsPanel,
       headNotes: bookingHeadNotes,

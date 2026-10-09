@@ -248,6 +248,12 @@ const ProjectFolder = (() => {
   /* Every estimate's days in one list, dated ones in order and Date TBC
      last, each with the production items on it (as the calendar tiles list
      them). */
+  /* A day's trip, on its own line (trip-planner task 6): "Trip · 186 km". */
+  function tripNote(trip) {
+    const s = TripPlanner.summary(trip);
+    return s ? '<span class="pf-day-trip">Trip · ' + esc(s.km || 'not routed yet') + '</span>' : '';
+  }
+
   function daysMarkup(project, today) {
     const rows = [];
     folder.estimates.forEach((estimate) => {
@@ -292,6 +298,7 @@ const ProjectFolder = (() => {
           (items.length ? esc(items.join(', ')) : '<span class="pf-muted">No production items yet</span>') +
           (many ? '<span class="pf-muted"> · ' + esc(estimate.name || 'Untitled') + '</span>' : '') +
           (day.overrideNote ? '<span class="pf-day-note">Note: ' + esc(day.overrideNote) + '</span>' : '') +
+          tripNote(day.trip) +
           '</span>' +
           '<span class="pf-day-go" aria-hidden="true">Edit →</span>' +
           '</button></li>'

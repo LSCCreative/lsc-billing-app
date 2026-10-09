@@ -99,6 +99,8 @@ function stampOrNull(v) {
  * `minutesOnSite` and `details` (a details key present means its field is
  * shown, even blank).
  *
+ * UNLINKED (optional) lists the kinds of line the owner took off the trip.
+ *
  * LEGS and TOTALS are stored as sent: they come from the last good route, and
  * after a failed re-route the browser keeps the last good figures (task 4), so
  * the leg count needn't match the stops. TOTALS are what bills (calc.js
@@ -206,7 +208,21 @@ function parseTrip(raw) {
   const routedAt = stampOrNull(raw.routedAt);
   if (routedAt === undefined || (routedAt !== null && Number.isNaN(Date.parse(routedAt)))) return { error: 'trip_invalid' };
 
-  return { trip: { stops, legs, totals, polyline, routedFor, routedAt } };
+  const trip = { stops, legs, totals, polyline, routedFor, routedAt };
+  /* The kinds of line the owner unlinked from this trip (task 6, T4): the
+     trip then stops writing a line of that kind on its day, so an unlinked
+     line isn't joined by a fresh linked one on the next route. Stored only
+     when there is one. */
+  if (raw.unlinked !== undefined && raw.unlinked !== null) {
+    if (!Array.isArray(raw.unlinked)) return { error: 'trip_invalid' };
+    const kinds = new Set();
+    for (const k of raw.unlinked) {
+      if (k !== 'km' && k !== 'hours') return { error: 'trip_invalid' };
+      kinds.add(k);
+    }
+    if (kinds.size) trip.unlinked = ['km', 'hours'].filter((k) => kinds.has(k));
+  }
+  return { trip };
 }
 
 /**

@@ -3,9 +3,9 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Model: Opus, effort high. Frontend task** (task 6 next; it's money too).
+**Next: task 7, Sonnet, effort high, backend** (not a frontend task). Stage A (the trip planner) is done.
 
-## State as of 2026-10-09 (task 5)
+## State as of 2026-10-09 (task 6)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -36,18 +36,52 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   dispatched events), by a real mouse drag at 1280 and a real finger drag at 375 (headless
   Chrome); each re-routed and announced "… moved to stop N of 7". Details and minutes saved to
   the server. Shots at 1280/800/375, no overflow. No server change.
-- [ ] **Next: task 6**, trip lifecycle around the day, and Home base. *Frontend: Opus/high, money
-  for unlink/clear.* **Frontend task.** Unlink needs a way for the trip to remember an unlinked
-  kind (see task 4's "not adopted" decision): an unlinked line has no `fromTrip`, so
-  `syncTripLines` would make a new linked line beside it on the next route. Probably a trip-level
-  `unlinked: ['km']` (a days.js parseTrip change + test) that `syncTripLines` and the totals read.
+- [x] **Task 6** trip lifecycle around the day, and Home base, `COMMIT6`. **Stage A is done.**
+  Verified in the pane on the scratch estimate, each answer saved and checked on the server:
+  Unlink (dialog → ordinary line, `unlinked: ['km']`, no new linked line on the next route, the
+  totals say "billed as typed"), Relink (trip's 109 km back on the line), Clear trip → Remove
+  (linked lines gone, trip null) and → Keep (lines kept as ordinary at their qty), Duplicate day
+  (copy has the trip, its linked lines, "Day changed" until recalculated; server derives both),
+  Remove day ("Its trip and 4 items are removed too"), day card / menu foot / Project page
+  summaries, Settings → Home base (pick by keyboard, saved with coordinates; typed text refused;
+  blank removes it) and its one-pick Start in the travel view. Shots at 1280 and 375
+  (headless), no overflow. 594 server tests pass.
+- [ ] **Next: task 7**, autosave on the server. *Backend: Sonnet/high.* Not a frontend task.
+  Then task 8 (autosave in the editor, frontend + money, Opus/high), which the trip planner then
+  saves through.
 
 **Scratch state (for testing):** the scratch card prices both trip rows (Overhead
 `vehicleCostPerKm` 0.9; Transport & Logistics Hrs typed $95; setting the vehicle figure through
-`PUT /api/goals` also filled in Capacity defaults). `est_43f5777a` day `d_nbk1` (start 08:00) is
-saved as a five-destination Sydney day from Marrickville Metro, with details and times on
-location, and still has the hand-typed "Vehicle — per km" (qty 120) line that sets off the
-double-billing note. A PUT straight to the API needs `pricingShape` from `GET /api/pricing`.
+`PUT /api/goals` also filled in Capacity defaults). The scratch ABN is now `51 824 753 556` (the
+old one failed its checksum and blocked every Settings save). Home base is Marrickville Metro.
+`est_43f5777a` day `d_nbk1` (start 08:00) is saved as a routed five-destination Sydney day with
+both lines linked, plus the hand-typed "Vehicle — per km" (qty 120) line. A PUT straight to the
+API needs `pricingShape` from `GET /api/pricing`.
+
+## Decisions made in task 6 (agent's, within the brief)
+
+- **`trip.unlinked`** (`['km'|'hours']`, days.js parseTrip, stored only when non-empty): the
+  kinds the owner unlinked. `syncTripLines` makes no line of an unlinked kind. The server
+  doesn't enforce it against `fromTrip` (a linked line wins); the editor keeps them consistent.
+- **Unlink** is the linked line's ⋯ → confirm ("It stays at 109 km … Relink to trip puts the
+  trip's figure back") → the same line rebuilt ordinary, focus in its qty. **Relink / Link to
+  trip** is a quiet button on any ordinary line of a trip kind on a routed day with no linked
+  line of that kind ("Relink" when that kind is unlinked). No confirm: it's the explicit action.
+  Linking a hand-typed line is how the double-billing note gets resolved now.
+- The totals call one line "unlinked: billed as typed": the one unlinked this session
+  (`data-trip-unlinked`), else after a reload the last typed line of that kind.
+- **Clear trip** is in the view's ⋯ (shown once there's a start; Recalculate only with ≥ 2
+  stops). With linked lines: T7's dialog (Cancel / Keep as ordinary lines / Remove, with their
+  total); without: Cancel / Clear trip. Then the view is drawn afresh, empty. No Undo.
+- One editor dialog for the trip (`#modal-trip`, `tripDialog`), Cancel focused first, Escape
+  captured so it doesn't also close the view's menus.
+- **Duplicate day copies the trip as it is** (routed for the source's date, so the copy reads
+  "Day changed") and keeps its lines linked.
+- Summaries: `TripPlanner.summary/summaryText`; stops count destinations only ("5 stops"), km
+  rounded to the whole km, time "3 h 27"; "Trip · not routed yet" on the Project page when
+  there's no route.
+- **Home base** uses `typeahead.js` over `LSCMaps.suggest/place` (no map), one session per
+  pick; only a picked place saves. Never on a public route (`clientBusiness` allow-list).
 
 ## Decisions made in task 5 (agent's, within the brief)
 

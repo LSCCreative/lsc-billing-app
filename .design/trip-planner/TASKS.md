@@ -110,8 +110,8 @@ starting. **Frontend** marks anything a person looks at.
   reorder works by mouse, touch (375) and keyboard. _Reuses: `menu.js`, `sortable.js`. Modifies:
   `trip-planner.js`._ _Depends on: 4._
 
-- [ ] **6. Trip lifecycle around the day, and Home base** *(frontend: Opus/high, money for
-  unlink/clear)*: The travel line's ⋯ gets **Unlink from trip** (confirm → `fromTrip` dropped, qty
+- [x] **6. Trip lifecycle around the day, and Home base** *(frontend: Opus/high, money for
+  unlink/clear)*: **Done COMMIT6.** `trip.unlinked`, Unlink/Relink/Link, Clear trip (both answers), card + menu + Project page summaries, Duplicate copies trip and lines, Home base. Original spec: The travel line's ⋯ gets **Unlink from trip** (confirm → `fromTrip` dropped, qty
   editable, the totals note "billed as typed") and **Relink to trip**. ⋯ → **Clear trip** with the
   "Also remove the 2 travel lines it added? ($X)" dialog (Remove / Keep as ordinary lines /
   Cancel, T7). The day card shows "Trip · 4 stops · 186 km · 2 h 40" (it opens `?trip=`). The
