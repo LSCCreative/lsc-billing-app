@@ -12,8 +12,28 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
 
 - [x] **Task 1** trip storage and the km/hours rule, `fc331dc`. Schema v16, server derivation,
   calc functions, 19 new tests (`test-trips.js`, plus `test-calc.js` and `test-db.js`).
-- [ ] **Next: task 2**, the Maps loader and the travel view shell. *Frontend: Opus/high.*
-  **Frontend task.** Before building, ask the user to approve creating the default-style Map ID.
+- [x] **Task 2** Maps loader and the travel view shell, `7d83047`. `maps.js`, `views/trip-planner.js`,
+  `css/trip.css`, Define travel foot, `?trip=` with router `claim()`/`mark()`. Verified in the
+  browser at 1280, 800 and 375: map draws (key + billing OK), reload reopens, view Back and
+  browser Back/Forward keep unsaved edits with no prompt, unknown day id dropped, no-key message.
+- [ ] **Next: task 3**, placing stops. *Frontend: Opus/high.* **Frontend task.** Wire
+  `.trip-add-start` (rendered disabled in task 2) and add the search bar, pins and cells.
+
+## Decisions made in task 2 (agent's, within the brief)
+
+- **The router owns no screen knowledge still.** `LSCRouter.claim(fn)` lets the screen on show take
+  a query-only move on its own path (Back/Forward/typed). `fn` must not `mark()` synchronously
+  (the move is recorded after it returns); it defers with `queueMicrotask`. `LSCRouter.mark(path,
+  {replace})` moves the address without a render. A claim is cleared on every render.
+- View Back = `history.back()` when the view pushed its entry (so Forward reopens it), else a
+  replace (after a reload or a link).
+- **The travel view's ⋯ isn't drawn yet**: `menu.js` draws no menu without items. Task 4 adds
+  Recalculate and task 6 Clear trip; the ⋯ appears with them.
+- Map: `gestureHandling` cooperative below 768, greedy above; `clickableIcons: false` (a click
+  will place a stop); fullscreen/map type/street view off; opens on Sydney (`LSCMaps.HOME_VIEW`)
+  until Home base exists (task 6).
+- The day menu's foot sticks above the editor's bar via `--ed-bar-h`, set on `.ed-shell` by the
+  editor (`watchBar`, measured once synchronously, then a ResizeObserver).
 
 ## Decisions made in task 1 (agent's, within the brief)
 
@@ -31,12 +51,14 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
 - A trip-only edit on a sent estimate doesn't need a resend (`changedSince` compares the client
   view); a changed km/hours qty does, correctly.
 
-## Google setup (done 2026-10-08)
+## Google setup (done 2026-10-08; Map ID 2026-10-09)
 
 Two keys in Cloud project *LSC Production Decks*: **LSC Billing — browser** (website-restricted,
 4 APIs) and **LSC Billing — server** (Maps Static only). Values are in `.credentials.local.md`
-only. Still open: a default-style Map ID (ask first), whether billing is enabled (unverified;
-the console's billing page didn't load in the panel), and a $1 budget alert.
+only. Map ID **"LSC Billing — trip planner"** `48b0b465b984a1fcfa2d9969` (JavaScript, vector,
+Google default style) created 2026-10-09 with the user's OK; in `.credentials.local.md` and the
+local `web/js/config.js`. **Billing works**: the map drew on localhost:5173 with no refusal.
+Still open: a $1 budget alert, and the Pages secrets `LSC_MAPS_KEY` / `LSC_MAPS_ID` (task 20).
 
 Google Calendar: the Calendar API is enabled, and the consent screen is Internal ("Production Decks", shared,
 left unchanged). The OAuth client "LSC Billing — NAS calendar" (Web application, two redirect URIs,
@@ -52,7 +74,7 @@ secret, correctly. **The user creates it and pastes the client ID and secret int
   (the console refused a wildcard port). Local previews on other ports need a row added.
 - Autosave vs `backup.js` preWriteBackup: every mutating request snapshots the whole DB. Autosave
   PUTs must be throttled (I2), or recovery points collapse to seconds.
-- New schema (v16): NAS before Pages, and the NAS is offline as of 2026-10-08.
+- New schema (v16): NAS before Pages. The NAS and the live site are back online (2026-10-09).
 - `GET /api/estimates` (the list) now carries every day's trip, polyline included (≤ 50k chars
   each). Fine at today's volume. If the list slows, strip `polyline` there, not in `readDays`.
 - Limits in `days.js`: 23 destinations, 2000 chars per detail, 300 per address, 50k polyline,

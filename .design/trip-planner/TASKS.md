@@ -53,7 +53,7 @@ starting. **Frontend** marks anything a person looks at.
   upgrade from v15, and the drift test. _New: migration, calc functions. Modifies: `days.js`,
   `routes/estimates.js`, `estimate.js`._
 
-- [ ] **2. Maps loader and the travel view shell** *(frontend: Opus/high)*: `web/js/maps.js` loads
+- [x] **2. Maps loader and the travel view shell** *(frontend: Opus/high)*: **Done `7d83047`.** Map ID created; Google accepted the key (billing on); verified at 1280/800/375. Original spec: `web/js/maps.js` loads
   Google Maps JS once from `LSC_MAPS_KEY` (`places`, `routes`, `marker`, `geocoding`) and reports a
   clear failure. **Define travel** is a fixed footer in the day service menu. Clicking it sets
   `?trip=<dayId>` (I1) and `BookingBlock` switches to an `.is-trip` state that hides both columns

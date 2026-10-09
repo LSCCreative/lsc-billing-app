@@ -94,10 +94,10 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     continuation paragraphs at their sub's depth, the signing line. Lossless by construction and
     test. `pdf.js agreementBodyHtml` and `c.js showAgreement` draw it; the dialog joins `parts`
     with one NUL per slot, lays out, and puts the slot spans back in order.
-- **Task 8, "Deploy system + D3" is ON HOLD (2026-10-08): the NAS is offline.** It is still the
-  first deploy owed (fetch and merge `origin/main`, ship v15, NAS before Pages) and must still
-  happen before any Pages push, because the old server ignores saved clauses. Don't attempt it,
-  don't push `main`, and don't treat the offline NAS as a bug.
+- **Task 8, "Deploy system + D3" is unblocked: the NAS and the live site are back online
+  (2026-10-09; it was on hold from 2026-10-08).** It is still the first deploy owed (fetch and merge
+  `origin/main`, ship v15, NAS before Pages) and must still happen before any Pages push, because
+  the old server ignores saved clauses. Ask the user before deploying.
   - [x] Task 9, the Project page. `project-folder.js` draws the header (`headMarkup`: one
     `.btn-primary` = `nextAction`, Actions ▾ = `headerActions`), `noticeMarkup` (now also the
     dates-taken warning), and three `.panel`s; each document is `estimateDoc` / `invoiceDoc` →
