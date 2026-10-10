@@ -9,7 +9,7 @@ const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
 const { amountDue } = require('../invoices');
 const { docSettings } = require('../documents');
-const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays } = require('../public');
+const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays, callSheetDays } = require('../public');
 const { agreementFilename } = require('../pdf');
 const { sendRequest, pendingFor, latestFor, cancelPending, addSend, sydneyDate } = require('../sends');
 
@@ -141,6 +141,25 @@ function summarize(p, own, bills, ctx) {
  * (days and rentals included, lead first), the invoices, and the activity log,
  * newest first. Null when there is no such project.
  */
+/* The call sheet row's facts (trip-planner task 11): null until a day has a
+   trip, else how many days and km it covers (the same figures as the sheet's
+   own summary, public.js callSheetView) and its link. Owner-only, like
+   `publicToken`. */
+function callSheetState(row, days) {
+  const trips = callSheetDays(days);
+  if (!trips.length) return null;
+  const km = trips.reduce((sum, d) => {
+    const n = d.trip.totals && d.trip.totals.km;
+    return sum + (typeof n === 'number' && Number.isFinite(n) ? n : 0);
+  }, 0);
+  return {
+    days: trips.length,
+    km: Math.round(km),
+    on: row.call_sheet_on === 1,
+    token: row.call_sheet_token || null,
+  };
+}
+
 function readFolder(db, id, today) {
   const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
   if (!p) return null;
@@ -191,6 +210,7 @@ function readFolder(db, id, today) {
       estimate.days.forEach((d) => {
         if (flags.has(d.id)) d.rebook = flags.get(d.id);
       });
+      estimate.callSheet = callSheetState(row, estimate.days);
       return estimate;
     })
     .sort((a, b) => (a.id === project.estimateId ? -1 : b.id === project.estimateId ? 1 : 0) ||

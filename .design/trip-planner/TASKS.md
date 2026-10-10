@@ -162,7 +162,7 @@ starting. **Frontend** marks anything a person looks at.
   Static call mocked. _New: `google.js`, `callSheetView`. Modifies: `public.js`,
   `routes/public.js`, `routes/estimates.js`._ _Depends on: 1._
 
-- [x] **10. Call sheet page, public page and PDF** *(frontend: Opus/high)*: **Done (commit pending).** `call-sheet.js` shared markup (server + web, drift test), `call-sheet.css`, in-app page, `c/#s/`, owner + public `/pdf`; Share… moved to task 11; 633 tests pass. Original spec: One shared renderer
+- [x] **10. Call sheet page, public page and PDF** *(frontend: Opus/high)*: **Done `68c9b69`.** `call-sheet.js` shared markup (server + web, drift test), `call-sheet.css`, in-app page, `c/#s/`, owner + public `/pdf`; Share… moved to task 11; 633 tests pass. Original spec: One shared renderer
   `web/js/call-sheet.js`, loaded by `index.html` and `c/index.html`, for the layout in IA
   "Content Hierarchy → Call sheet": header, day sections, map image, the schedule with legs and
   depart/arrive times, the details in full, Open in Google Maps, footer. In-app at
@@ -174,7 +174,7 @@ starting. **Frontend** marks anything a person looks at.
   Modifies: `app.js` (route), `web/c/c.js` (`linkOf` gains `s`), `pdf.js`, routes._ _Depends on:
   9._
 
-- [ ] **11. Call sheet on the Project page, Share and email** *(frontend: Opus/high)*: A **Call
+- [x] **11. Call sheet on the Project page, Share and email** *(frontend: Opus/high)*: **Done (see HANDOVER).** Row + chip, `CallSheetShare` dialog (link on/off, Copy, email chips), `POST …/call-sheet/email` one per person, activity line; 638 tests pass. Original spec: A **Call
   sheet** row in the Documents panel after its estimate's row (once any day has a trip):
   "3 days · 412 km", a "Link on" chip, primary **Open**, Documents ▾ Download PDF, Actions ▾
   Share… / Copy link / Turn off link. The **Share dialog** (`modal.js`): Turn on link, Copy link,

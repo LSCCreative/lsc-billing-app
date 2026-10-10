@@ -164,6 +164,13 @@ const ProjectCard = (() => {
       case 'invoice_edited': return (d.number || 'Invoice') + ' edited' +
         (typeof d.depositPct === 'number' ? ', deposit now ' + d.depositPct + '%' : '') +
         (typeof d.amountDue === 'number' ? ' (' + fmt(d.amountDue) + ' due)' : '');
+      // The call sheet emailed to crew (trip-planner task 11): two names, or a count.
+      case 'call_sheet_sent': {
+        const to = Array.isArray(d.to) ? d.to : [];
+        return 'Call sheet emailed' + (!to.length ? ''
+          : to.length <= 2 ? ' to ' + to.join(' and ')
+            : ' to ' + to[0] + ' and ' + (to.length - 1) + ' others');
+      }
       default: return entry.kind.charAt(0).toUpperCase() + entry.kind.slice(1).replace(/_/g, ' ');
     }
   }

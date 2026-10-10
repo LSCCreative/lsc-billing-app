@@ -3,11 +3,12 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 11, Opus, effort high: FRONTEND task** (the call sheet on the Project page, Share and
-email; load `/frontend-design` first). Stage A, stage B and tasks 9–10 (the call sheet, server and
-pages) are done.
+**Next: task 12, Opus, effort high: auth + FRONTEND task** (connect and disconnect Google
+Calendar; load `/frontend-design` first). **Blocked on the user:** the OAuth client's ID and secret
+are still blank in `.credentials.local.md` (see "Google setup" below). Stages A, B and C (tasks
+1–11) are done.
 
-## State as of 2026-10-10 (task 10)
+## State as of 2026-10-11 (task 11)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -70,13 +71,58 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   Static request** with the server key (`google.fetchStaticMap`): numbered pins, a terracotta S,
   the route line, 142 KB PNG (a throwaway script in the session scratchpad; no key printed).
   No schema change (v16 already had the token, flag and `static_maps`).
-- [x] **Task 10** call sheet page, public page and PDF, commit pending. Built by Sonnet, then reviewed
+- [x] **Task 10** call sheet page, public page and PDF, `68c9b69`. Built by Sonnet, then reviewed
   and fixed by Opus. 633 server tests pass (`test-call-sheet-page.js`, 14; PDF routes in
   `test-call-sheet.js`). Verified on scratch `est_705f805a` (two days, real Static images): public
   and app pages at 1280/800/375 (headless, no overflow), Back, Edit trips (`?trip=cs10_a`), both
   Download PDF buttons, the dead-link page, an unknown estimate id; owner and public PDFs
   byte-identical, A4, 3 pages.
-- [ ] **Next: task 11**, call sheet row, Share and email. *Opus/high, **frontend**.*
+- [x] **Task 11** call sheet row, Share and email, commit below. **Stage C is done.** 638 server tests
+  pass (`test-call-sheet-share.js`, 5). Verified in the pane on scratch `est_705f805a` against
+  `api-scratch-mail`: the row ("2 days · 141 km", Link on/off/Not shared), Actions ▾ by keyboard,
+  Share… → Turn on link (same token back, public 200) → chips (typed, pasted list, "Name <a@b>",
+  a bad entry kept with its message, a repeat dropped) → note → Send: two separate stub emails,
+  toast "Call sheet sent to 2 people.", focus back on the row's Actions, the activity line; a
+  stubbed partial failure (refused addresses stay as chips, with why); Turn off in the dialog
+  (public 404) and on again (same link, chips kept); Copy link both ways (stubbed clipboard, and
+  the browser's refusal → link selected); email not set up (note, Send disabled); Escape; the row's
+  Turn off → toast Undo → on; the row's Call sheet PDF (671 KB); Open; the page's Share… and its
+  link line. Shots at 1280 and 375 (pane), no overflow, 44px targets below 600.
+- [ ] **Next: task 12**, connect and disconnect Google Calendar. *Opus/high, **auth + frontend**.*
+  Needs the OAuth client ID and secret from the user first.
+
+## Decisions made in task 11 (agent's, within the brief)
+
+- **Email goes now, one per person, not through the outbox.** `POST
+  /api/estimates/:id/call-sheet/email {to:[..], note}` sends to each address in turn (no one sees
+  the others) and replies `{ sent, failed:[{to,message}] }` (200 even if the provider refused some,
+  as Settings' test email does). Refused: `link_off` (the email *is* the link), `not_configured`,
+  `no_trips`, `no_app_url`, `bad_recipient` (names the bad one), `too_many_recipients` (> 20),
+  `note_invalid` (> 2,000). Addresses trimmed, repeats dropped case-blind.
+  `mail.js callSheetEmail`: subject "Call sheet · UPID · Project", the days in words ("Tue 3 Nov and
+  1 day still to be dated"), "the link always shows the latest schedule", the note as text, button
+  "View the call sheet". The plain shell (ui-clarity D2 branding hasn't landed).
+- **Activity:** `call_sheet_sent {to, estimateId}` in the folder's log only (not Home's kinds), only
+  when something went: "Call sheet emailed to a and b" / "to a and 3 others". Link on/off isn't
+  logged (it would reorder the Projects list for no job change).
+- **Folder reply:** each estimate carries `callSheet: { days, km, on, token } | null`
+  (`routes/projects.js callSheetState`, the sheet's own `summary.km` rule). Owner-only, like
+  `publicToken`.
+- **The row** (after its estimate's): "Call sheet" (+ " — name" with several estimates), chip
+  **Link on** / **Link off** (token kept) / **Not shared**, "2 days · 141 km", primary **Open**,
+  Actions ▾ Share… / Copy link / Turn off link (danger, when on), Documents ▾ **Call sheet PDF**
+  ("No prices"). **Turn off link has no dialog**: it's reversible, so the toast offers **Undo**.
+- **The dialog** `web/js/call-sheet-share.js` (`CallSheetShare`, overlay `#modal-share`): the send
+  panel's frame (`.send-panel`, full screen on a phone). Link section (Off: one sentence + **Turn
+  on link**, the one terracotta action; On: mono link field, Copy link, Turn off link), then
+  "Email it" only while on (To as chips, Note, **Send** terracotta). To reuses
+  `SendPanel.isEmail` and `SendPanel.copyText` (both newly exported). A refused copy selects the
+  link in the field and says so; the row's Copy link opens the dialog that way.
+- **Nothing behind the dialog redraws while it's open:** `onClose({link, changed})` →
+  the folder's quiet `refresh(true)` (focus stays on the row's menu button); the page redraws its
+  `#csp-link` line only.
+- **Public page wording unchanged:** the IA's "has been turned off" vs "isn't active" was settled in
+  task 10 as one message for off and unknown (the page can't tell them apart).
 
 ## Decisions made in task 10 (agent's, within the brief)
 
@@ -105,8 +151,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
 - **In-app page** `views/call-sheet-page.js` at `…/estimate[/<eid>]/call-sheet` (estimates.js):
   ← Back (the project), Edit trips (the editor at `?trip=<editDay>`, or plain with no trips),
   Download PDF (the one terracotta action, hidden with no trips), errors inline.
-  **Share… is not on it yet: task 11 adds it to this bar with its dialog.** No entry point exists
-  until task 11's Documents row; reach it by address.
+  Share… and the link line were added in task 11; the Project page's row is the way in.
 - **Public page** `c/#s/<token>`: masthead, Download PDF under it, the document. A 404 reads "This
   call sheet link isn't active … Ask LSC Creative for a new one." No `?owner=1` (only quotes log
   opens).
@@ -393,6 +438,11 @@ secret, correctly. **The user creates it and pastes the client ID and secret int
 `.credentials.local.md`.** Check `/auth/clients` for a duplicate before creating another.
 
 ## Traps
+
+- **Menu items can't be chosen by a scripted `.click()`.** menu.js stops the click and calls
+  `item.click()` at home, and a browser ignores `click()` on an element whose own synthetic click
+  is still running. Real clicks work. In tests: focus the item and dispatch `keydown` Enter, or
+  click the `[data-doc]` button directly.
 
 - In the hidden browser pane, scripted `.focus()` fires **no** focus/blur events. Test the blur
   save by dispatching `new FocusEvent('focusout', { bubbles: true })` on the field.

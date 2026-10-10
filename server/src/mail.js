@@ -254,6 +254,52 @@ function signedCopyEmail(v) {
   };
 }
 
+/* "Tue 3 Nov" from 'YYYY-MM-DD'; a day with no date is "a day still to be dated". */
+const crewDay = (ymd) => (/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))
+  ? new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+    .replace(/,/g, '')
+  : null);
+
+/* "Tue 3 Nov", "Tue 3 Nov and Wed 4 Nov", "Tue 3 Nov, Wed 4 Nov and 1 day still to be dated". */
+function crewDays(dates) {
+  const list = (Array.isArray(dates) ? dates : []).map(crewDay);
+  const dated = list.filter(Boolean);
+  const tbc = list.length - dated.length;
+  const parts = dated.concat(tbc ? [`${tbc} day${tbc === 1 ? '' : 's'} still to be dated`] : []);
+  if (parts.length <= 1) return parts[0] || '';
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * The call sheet, to crew (trip-planner task 11; T13, I4): its link, never a
+ * price. Each person gets their own copy, so no one sees who else was sent
+ * it. The page always shows the latest saved trips (T18), and the email says
+ * so, so an early email is still the one to keep.
+ *
+ * @param {{businessName:string, upid:string, projectName:string, note:string,
+ *          link:string, dates:(string|null)[]}} v  `dates`: each day's
+ *          'YYYY-MM-DD', or null for one with no date yet
+ */
+function callSheetEmail(v) {
+  const business = v.businessName || 'LSC Creative';
+  const days = crewDays(v.dates);
+  const subject = ['Call sheet', v.upid, v.projectName].filter(Boolean).join(' · ');
+  const said = `${business} has shared the call sheet${v.projectName ? ` for ${v.projectName}` : ''}${days ? `: ${days}` : ''}. ` +
+    'It has each day’s route, the stops with their times, and the location and access details. ' +
+    'The link always shows the latest schedule.';
+  const button = 'View the call sheet';
+  const text = [said, String(v.note || '').trim(), `${button}: ${v.link}`, business].filter(Boolean).join('\n\n');
+  const html = shell({
+    heading: 'Call sheet',
+    bodyHtml: (v.projectName || v.upid
+      ? `<p style="margin:0 0 14px;color:#666">${esc([v.projectName, v.upid].filter(Boolean).join(' · '))}</p>`
+      : '') + paragraphs(said) + paragraphs(v.note),
+    button: { label: button, url: v.link },
+    footer: business,
+  });
+  return { subject, text, html };
+}
+
 /** Settings → Email's "Send a test email". */
 function testEmail({ businessName } = {}) {
   const business = businessName || 'LSC Creative';
@@ -293,5 +339,5 @@ function passwordResetEmail(v) {
 
 module.exports = {
   createMailer, isEmail, NOT_CONFIGURED,
-  documentEmail, ownerSignedEmail, signedCopyEmail, testEmail, passwordResetEmail,
+  documentEmail, ownerSignedEmail, signedCopyEmail, testEmail, passwordResetEmail, callSheetEmail,
 };

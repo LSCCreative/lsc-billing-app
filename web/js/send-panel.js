@@ -630,5 +630,9 @@ const SendPanel = (() => {
     }, 2000);
   }
 
-  return { open, openUpdate, close, copyLink, statusOf, statusMarkup, bindStatus, whenText, linkFor, follow };
+  /* The To field's check, for the call sheet's Share dialog (trip-planner
+     task 11), which takes several addresses but judges each the same way. */
+  const isEmail = (v) => typeof v === 'string' && v.length <= 254 && EMAIL_RE.test(v.trim());
+
+  return { open, openUpdate, close, copyLink, copyText, isEmail, statusOf, statusMarkup, bindStatus, whenText, linkFor, follow };
 })();

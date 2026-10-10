@@ -16,7 +16,12 @@ const { planProjectWrite, applyProjectWrite, dropEmptyProject, upidLocked } = re
 const {
   versionsOf, liveVersion, changedSince, buildCallSheet, callSheetDays, setCallSheetLink,
 } = require('../public');
-const { resendNeeded, updateRequest, sendUpdate, todayOf, localToday } = require('./projects');
+const { resendNeeded, updateRequest, sendUpdate, todayOf, localToday, logActivity } = require('./projects');
+const { isEmail, callSheetEmail } = require('../mail');
+
+/* The call sheet's email (task 11): how many people at once, and the note's length. */
+const CALL_SHEET_RECIPIENTS = 20;
+const CALL_SHEET_NOTE = 2000;
 
 /* Thrown inside the save's transaction to roll it back when it would change a
    sent quote without saying how to send the change (resend_required). */
@@ -244,6 +249,80 @@ function registerEstimateRoutes(app, db, opts = {}) {
     }
     const link = setCallSheetLink(db, row.id, on);
     return res.json({ ok: true, token: link.token, on: link.on, url: linkUrl(link.token) });
+  });
+
+  /* Emails the call sheet's link to crew (task 11, T13): `{ to: [..], note }`.
+     Sent now, one email per person (no one sees the others' addresses), not
+     through the client outbox: nothing about the estimate changes, and the
+     owner is waiting to hear who it reached. The link must be on, since the
+     email is that link. A provider refusing one address doesn't stop the
+     rest: the reply lists `sent` and `failed` ({ to, message }), and the
+     folder's activity log records who it reached. */
+  app.post('/api/estimates/:id/call-sheet/email', async (req, res, next) => {
+    try {
+      const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
+      if (!row) return res.status(404).json({ error: 'not_found' });
+      const mailer = app.locals.mailer;
+      if (!mailer || !mailer.configured) {
+        return res.status(409).json({ error: 'not_configured', message: 'Email isn’t set up yet. Copy the link and send it yourself.' });
+      }
+      if (row.call_sheet_on !== 1 || !row.call_sheet_token) {
+        return res.status(409).json({ error: 'link_off', message: 'Turn the link on first: the email sends it.' });
+      }
+      const days = callSheetDays(readDays(db, row.id));
+      if (!days.length) {
+        return res.status(409).json({
+          error: 'no_trips',
+          message: 'Plan a trip on one of the days first. There is nothing for a call sheet to show yet.',
+        });
+      }
+      const url = linkUrl(row.call_sheet_token);
+      if (!url) {
+        return res.status(409).json({ error: 'no_app_url', message: 'The server doesn’t know the app’s address (APP_URL), so it can’t write the link.' });
+      }
+
+      const b = req.body || {};
+      const seen = new Set();
+      const to = (Array.isArray(b.to) ? b.to : [])
+        .map((t) => (typeof t === 'string' ? t.trim() : ''))
+        .filter((t) => t && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
+      if (!to.length) return res.status(400).json({ error: 'bad_recipient', message: 'Add at least one email address.' });
+      if (to.length > CALL_SHEET_RECIPIENTS) {
+        return res.status(400).json({ error: 'too_many_recipients', message: `Send it to up to ${CALL_SHEET_RECIPIENTS} people at a time.` });
+      }
+      const bad = to.find((t) => !isEmail(t));
+      if (bad) return res.status(400).json({ error: 'bad_recipient', message: `“${bad}” isn’t a valid email address.` });
+      const note = b.note === undefined || b.note === null ? '' : b.note;
+      if (typeof note !== 'string' || note.length > CALL_SHEET_NOTE) {
+        return res.status(400).json({ error: 'note_invalid', message: `Keep the note under ${CALL_SHEET_NOTE.toLocaleString('en-AU')} characters.` });
+      }
+
+      const mail = callSheetEmail({
+        businessName: (readSettings(db).business || {}).name,
+        upid: row.upid,
+        projectName: row.name,
+        note,
+        link: url,
+        dates: days.map((d) => d.date || null),
+      });
+      const sent = [];
+      const failed = [];
+      for (const address of to) {
+        try {
+          await mailer.send({ to: address, ...mail });
+          sent.push(address);
+        } catch (err) {
+          if (!err.code) throw err;
+          failed.push({ to: address, message: err.message });
+        }
+      }
+      if (sent.length && row.project_id) {
+        logActivity(db, row.project_id, 'call_sheet_sent', { to: sent, estimateId: row.id }, nowIso());
+      }
+      return res.json({ ok: true, sent, failed });
+    } catch (err) {
+      return next(err);
+    }
   });
 
   app.post('/api/estimates', (req, res) => {

@@ -318,6 +318,8 @@ const ProjectFolder = (() => {
     Accepted: 'ok', Paid: 'ok',
     Declined: 'alert', Overdue: 'alert', Expired: 'alert',
     Void: 'void',
+    // The call sheet's link (trip-planner task 11).
+    'Link on': 'info', 'Link off': 'neutral', 'Not shared': 'neutral',
   };
 
   /* One document: name and ref, its amount, a status chip and meta line, the
@@ -454,11 +456,42 @@ const ProjectFolder = (() => {
     };
   }
 
-  /* Estimates, then live invoices, then void ones last (IA growth plan). */
+  /* "3 days · 412 km": the figures the call sheet's own header gives. */
+  function callSheetFacts(cs) {
+    return cs.days + (cs.days === 1 ? ' day' : ' days') + ' · ' + cs.km.toLocaleString('en-AU') + ' km';
+  }
+
+  /* An estimate's call sheet (trip-planner task 11, T12): once a day of it
+     has a trip, a row after the estimate's own. Open is the page; Share…
+     turns the link on and emails it; Copy link and Turn off link once it's on. */
+  function callSheetDoc(e) {
+    const cs = e.callSheet;
+    const many = folder.estimates.length > 1;
+    const named = 'the call sheet' + (many ? ' of ' + (e.name || 'Untitled') : '');
+    return {
+      key: 'cs-' + e.id,
+      label: named,
+      name: 'Call sheet' + (many ? ' — ' + esc(e.name || 'Untitled') : ''),
+      ref: '',
+      chip: cs.on ? 'Link on' : cs.token ? 'Link off' : 'Not shared',
+      meta: esc(callSheetFacts(cs)),
+      primary: { id: 'cs-open', label: 'Open', target: e.id },
+      actions: [
+        { id: 'cs-share', label: 'Share…', target: e.id },
+        cs.on ? { id: 'cs-copy', label: 'Copy link', target: e.id } : null,
+        cs.on ? { id: 'cs-off', label: 'Turn off link', danger: true, target: e.id } : null,
+      ],
+      files: [{ id: 'cs-pdf', label: 'Call sheet PDF', hint: 'No prices', target: e.id }],
+    };
+  }
+
+  /* Estimates (each followed by its call sheet), then live invoices, then
+     void ones last (IA growth plan). */
   function documentsMarkup(project, today) {
     const invoices = folder.invoices.filter((i) => i.status !== 'void')
       .concat(folder.invoices.filter((i) => i.status === 'void'));
-    const docs = folder.estimates.map((e) => estimateDoc(e, project, today))
+    const docs = folder.estimates.reduce((list, e) =>
+      list.concat([estimateDoc(e, project, today)], e.callSheet ? [callSheetDoc(e)] : []), [])
       .concat(invoices.map((inv) => invoiceDoc(inv, today)));
     return (
       '<div class="panel-head"><h2 class="panel-title" id="pf-docs-h">Documents' +
@@ -1098,6 +1131,104 @@ const ProjectFolder = (() => {
     });
   }
 
+  // ── The call sheet (trip-planner task 11) ───────────────────────────────
+
+  function callSheetOpts(estimate) {
+    return {
+      estimateId: estimate.id,
+      link: { on: estimate.callSheet.on, token: estimate.callSheet.token },
+      title: 'Share the call sheet' + (folder.estimates.length > 1 ? ' — ' + (estimate.name || 'Untitled') : ''),
+      // Drawn again only once the dialog has gone, so focus can go back to
+      // the menu button it came from (refresh keeps it there).
+      onClose: ({ changed }) => {
+        if (changed) refresh(true);
+      },
+      onAuthLost: () => handlers.onAuthLost({ keepScreen: true }),
+    };
+  }
+
+  function callSheetDo(kind, estimate, button) {
+    if (!estimate || !estimate.callSheet) return undefined;
+    if (kind === 'cs-open') {
+      return LSCRouter.go(estimatePath(folder.project, estimate, false) + '/call-sheet', {
+        state: { estimate, project: folder.project },
+      });
+    }
+    if (kind === 'cs-share') return CallSheetShare.open(button, callSheetOpts(estimate));
+    if (kind === 'cs-copy') return CallSheetShare.copyLink(button, callSheetOpts(estimate));
+    if (kind === 'cs-off') return callSheetOff(estimate, button);
+    if (kind === 'cs-pdf') return callSheetPdf(estimate, button);
+    return undefined;
+  }
+
+  /* Off at once, no dialog: it's undone the same way, and the toast offers
+     that. The token is kept, so the link that comes back is the same one. */
+  async function callSheetOff(estimate, button) {
+    if (busy) return;
+    const id = estimate.id;
+    const turn = async (on) => {
+      setBusy(button, true);
+      try {
+        await CallSheetShare.setLink(id, on);
+        setBusy(button, false);
+        return true;
+      } catch (err) {
+        setBusy(button, false);
+        Toast.hide();
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        if (err.kind === 'auth') handlers.onAuthLost({ keepScreen: true });
+        else showDocError('Couldn’t turn the link ' + (on ? 'on' : 'off') + ': ' + failureText(err));
+        return false;
+      }
+    };
+    Toast.working('Turning the link off…');
+    if (!(await turn(false))) return;
+    Toast.ok('Call sheet link off. Anyone who opens it is told it isn’t active.', {
+      action: {
+        label: 'Undo',
+        run: async () => {
+          Toast.working('Turning the link back on…');
+          if (await turn(true)) {
+            Toast.ok('Call sheet link on again: the same link.');
+            refresh(true);
+          }
+        },
+      },
+    });
+    refresh(true);
+  }
+
+  async function callSheetPdf(estimate, button) {
+    if (button.disabled) return;
+    const spin = button.querySelector('.spinner');
+    button.disabled = true;
+    if (spin) spin.style.display = 'inline-block';
+    const box = $('pf-doc-error');
+    if (box) {
+      box.textContent = '';
+      box.classList.remove('show');
+    }
+    Toast.working('Preparing the call sheet PDF…');
+    try {
+      const reply = await LSCApi.getPdf('/api/estimates/' + encodeURIComponent(estimate.id) + '/call-sheet/pdf');
+      LSCUtil.saveFile(reply.blob, reply.filename || 'Call sheet - ' + (estimate.upid || 'estimate') + '.pdf');
+      Toast.ok('Call sheet PDF downloaded.');
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      Toast.hide();
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      if (err.code === 'pdf_unavailable') showDocError('Couldn’t make the call sheet PDF — the server has no PDF renderer. Check Chromium is installed in the container.');
+      else if (err.status === 404) showDocError('Couldn’t make the call sheet PDF — that estimate no longer exists on the server.');
+      else showDocError('Couldn’t make the call sheet PDF: ' + failureText(err));
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        if (spin) spin.style.display = 'none';
+      }
+    }
+    return undefined;
+  }
+
   // ── Downloads ───────────────────────────────────────────────────────────
 
   async function runDoc(kind, id, el) {
@@ -1117,6 +1248,7 @@ const ProjectFolder = (() => {
       return inv && inv.publicToken ? SendPanel.copyLink('invoice', inv.publicToken, button) : undefined;
     }
     const estimate = folder.estimates.find((e) => e.id === id);
+    if (kind.startsWith('cs-')) return callSheetDo(kind, estimate, button);
     if (kind === 'view' && estimate) return openEstimate(estimate, true);
     if (kind === 'edit' && estimate) return openEstimate(estimate, false);
     if (kind === 'duplicate') return duplicate(estimate, button);
@@ -1252,6 +1384,7 @@ const ProjectFolder = (() => {
     show(id) {
       closeDialog(false);
       SendPanel.close(false);
+      CallSheetShare.close(false);
       load(id);
       return true;
     },
