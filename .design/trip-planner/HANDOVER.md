@@ -92,7 +92,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   (`test-google-oauth.js`, 25). Verified with the user's real account on localhost (consent →
   4 calendars → toggles saved, Refresh, Disconnect revoked, reconnect), and every state at
   1280/800/375 (headless, no overflow) against `api-scratch-google`, a pretend Google.
-- [x] **Task 13** Google events on the calendar, `COMMIT13`. 678 server tests pass
+- [x] **Task 13** Google events on the calendar, `52155d3`. 678 server tests pass
   (`test-google-events.js`, 15). Verified with the user's real account on localhost
   (`api-scratch-mail`): events on Home month and week and the editor's calendar, Calendars ▾ by
   keyboard (toggle off/on redraws at once, menu stays open, Esc back to the button), Refresh,
