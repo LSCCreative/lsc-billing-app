@@ -2,7 +2,7 @@
 
 The one record of what is built, what is live, and what happens next, across every track and every
 session working in this folder. **Read this first**, then only the HANDOVER of the track you are
-working on (it has the detail, decisions and traps). Last consolidated **2026-10-11**.
+working on (it has the detail, decisions and traps). Last consolidated **2026-10-11** (trip-planner task 14).
 
 **Keep it true:** when a task changes the order, a branch, a deploy wave, a seam between tracks or
 the user's to-do list, update this file in the same commit. Per-task logs stay in the track's
@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `a728420`, schema **v15** | production-booking A–E, account recovery, everything older. NAS and site back online since 2026-10-09. |
 | **ui-clarity** | branch `ui-clarity` `850f904` + this record, on `main`, unpushed | Tasks 1–7, 9–13 built. Nothing of it is live. |
-| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–13 built (stages A, B, C; stage D but task 14). Nothing live. |
+| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–14 built (stages A, B, C, D; task 14's live check on the real calendar still to do). Nothing live. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -28,7 +28,7 @@ main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three scr
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **14** writing bookings to Google *(Sonnet/high + small frontend)* |
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **15** responsive + accessibility pass *(Opus/high, frontend)*; task 14's live check waits on the user |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**
@@ -37,7 +37,10 @@ main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three scr
   the files under the other session's feet. `trip-planner` owns this checkout. ui-clarity work runs in
   a worktree (`EnterWorktree`, or `git worktree add <path> ui-clarity`).
 - **One scratch database per schema.** `/tmp/lsc-billing-scratch` is **v16** (trip-planner migrated
-  it; it is also connected to the user's **real Google account**, refresh token stored in it). A
+  it; it is also connected to the user's **real Google account**, refresh token stored in it). **Since
+  task 14 a save there would write events to that real calendar** (5 s later), so the configs that use
+  it carry `GOOGLE_CALENDAR_WRITE=0`; build and check writing on `/tmp/lsc-billing-scratch-sync` with
+  `api-scratch-sync` (a copy with no Google account, and a pretend Google). A
   ui-clarity build (v15) **refuses to start on it**. For ui-clarity use its own data dir, e.g.
   `/tmp/lsc-billing-scratch-uic`: seed the `dev` account (launch.json's comment), run the API with
   that `DATA_DIR`, then `node .design/ui-clarity/seed-review.js server` for the review dataset.
@@ -87,10 +90,12 @@ keeps the conflicts small: see §4 for the files both lines touch.
 ### Line 2: trip-planner (tracker: [`trip-planner/TASKS.md`](trip-planner/TASKS.md))
 
 1. ~~Task 13: Google events on the calendars~~, done: Calendars ▾, checkbox items in `menu.js`.
-2. **Task 14: writing bookings to Google** (the sync engine) *(Sonnet/high + small frontend)*. Its
-   live check on the user's calendar needs the user's OK, a test project and a clean-up.
+2. ~~Task 14: writing bookings to Google~~, built and tested against a pretend Google
+   (`google-sync.js`, Settings → Writing bookings, the day card's mark). **Its live check on the
+   user's calendar is not done**: it needs the user's OK, a test project and a clean-up (HANDOVER).
 3. **Tasks 15–19:** responsive/a11y pass, code review, design review, live Google check *(with the
-   user present)*, docs (`DEPLOYMENT.md` env, `web/README.md`).
+   user present; fold task 14's live check into it)*, docs (`DEPLOYMENT.md` env incl.
+   `GOOGLE_CALENDAR_WRITE`, `web/README.md`).
 4. **Wave 3, deploy trip-planner** *(task 20, Sonnet/medium)*: only after wave 1 (and ideally wave 2),
    with `ui-clarity` and `main` merged in. **NAS first (v16 migration), then Pages.** New NAS env:
    `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_MAPS_SERVER_KEY`, `APP_URL`/`APP_ORIGIN`,
@@ -111,7 +116,8 @@ Both lines change these. Merge `ui-clarity` forward often and read the other sid
 | `menu.js` | task 14 may fix keys/focus | task 13 added checkbox items (`menuitemcheckbox`, `ITEM` selector, stays open on choose) |
 | `views/settings.js`, `css/settings.css` | task 14 (agreement builder, Account) | Home base, Google Calendar section |
 | `calendar.js`, `views/home.js`, `views/home-week.js`, `views/booking-block.js` | task 14 (panels, focus) | task 13 Google tiles, bands, pop-up, `.cal-tools`/`.cal-gnote` slots, Calendars ▾ (`gcal-menu.js`) |
-| `views/estimate-editor.js`, `css/estimates.css` | tasks 11–12 rail, sticky bar, panels (done) | autosave bar (Done / Save), travel foot, FROM TRIP lines |
+| `views/estimate-editor.js`, `css/estimates.css` | tasks 11–12 rail, sticky bar, panels (done) | autosave bar (Done / Save), travel foot, FROM TRIP lines, the day card's Google mark (`watchGoogleSync`) |
+| `views/booking-block.js`, `css/booking.css` | task 14 (panels, focus) | the day card's `.day-sync` line + Try again, `setSync()` (task 14) |
 | `mail.js` | task 16 rebuilds `shell()` for seven templates | `callSheetEmail` (an eighth) already calls `shell()`: keep the signature |
 | a11y passes | task 14: its screens | task 15: travel view, Share, call sheet, Google settings |
 | design reviews | task 18 | task 17 |
@@ -136,7 +142,9 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 - [ ] After wave 1: fill Settings → Business email, phone, Signs for the business.
 - [ ] A Google Cloud **$1 budget alert**; add the Pages secrets `LSC_MAPS_KEY` / `LSC_MAPS_ID` (or let
   an agent do it, with permission) before wave 3.
-- [ ] Be present for trip-planner task 18 (live Google check) and the live sync check in its task 14.
+- [ ] **OK a live check of writing bookings** on the real calendar (trip-planner task 14: a test project
+  with one pencilled and one confirmed day, then removed; an agent can do it, or fold it into task 18
+  with the user present), and be present for trip-planner task 18 (live Google check).
 - [ ] **VoiceOver passes:** production-booking, price-calculator, service-rate-tiers, and the list
   ui-clarity task 14 will leave.
 - [ ] **Safari:** service-rate-tiers R8 (select-on-focus after a mouse click).

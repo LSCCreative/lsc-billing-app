@@ -193,7 +193,7 @@ test('status: not set up on the server, and set up but not connected', async () 
   reset();
   const off = await api('/api/google/status', {}, bare);
   assert.equal(off.status, 200);
-  assert.deepEqual(off.body, { configured: false, connected: false, email: '', connectedAt: null, calendars: [], problem: null, sync: { pending: 0, errors: 0 } });
+  assert.deepEqual(off.body, { configured: false, connected: false, email: '', connectedAt: null, calendars: [], problem: null, sync: { enabled: true, pending: 0, errors: 0, running: false, lastSyncedAt: null } });
   const on = await status();
   assert.equal(on.body.configured, true);
   assert.equal(on.body.connected, false);

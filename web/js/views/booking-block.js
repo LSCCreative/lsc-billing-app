@@ -281,6 +281,9 @@ const BookingBlock = (() => {
     const onToggle = typeof opts.onToggle === 'function' ? opts.onToggle : () => {};
     const onDuplicate = typeof opts.onDuplicate === 'function' ? opts.onDuplicate : () => 0;
     const onTrip = typeof opts.onTrip === 'function' ? opts.onTrip : () => {};
+    const onSyncRetry = typeof opts.onSyncRetry === 'function' ? opts.onSyncRetry : () => {};
+    // Writing bookings to Google (trip-planner task 14): { dayId: 'pending' | 'error' } as the server last said.
+    let syncMap = (estimate && estimate.googleSync) || {};
     const headNotes = typeof opts.headNotes === 'function' ? opts.headNotes : () => [];
     const ownRentals = typeof opts.ownRentals === 'function' ? opts.ownRentals : () => [];
     const onRentalFocus = typeof opts.onRentalFocus === 'function' ? opts.onRentalFocus : () => {};
@@ -473,6 +476,11 @@ const BookingBlock = (() => {
         '<p class="day-overnight" id="' + k + '-on" hidden>Ends next day: the shoot runs past midnight and belongs to its start date.</p>' +
         '<p class="day-clash" id="' + k + '-clash" hidden></p>' +
         '<button type="button" class="btn btn-quiet btn-sm day-trip" data-act="trip" hidden></button>' +
+        // A day Google didn't take (task 14). Only a failure is marked: a write that is just waiting is gone in seconds.
+        '<p class="day-sync" id="' + k + '-sync" hidden>' +
+        '<span class="day-sync-text">Not in Google Calendar yet: Google didn’t take this day.</span>' +
+        '<button type="button" class="btn btn-quiet btn-sm day-sync-retry" data-act="sync-retry" data-write>Try again</button>' +
+        '</p>' +
         '<div class="day-field day-note" hidden>' +
         '<label for="' + k + '-note">Specification note</label>' +
         '<input type="text" class="text-inp" id="' + k + '-note" data-f="overrideNote" maxlength="' + MAX_NOTE + '"' +
@@ -518,6 +526,10 @@ const BookingBlock = (() => {
       tripBtn.hidden = !summary;
       tripBtn.innerHTML = summary ? esc(summary) + '<span class="day-trip-go" aria-hidden="true">→</span>' : '';
       tripBtn.setAttribute('aria-label', summary ? summary + '. Edit travel for ' + titleOf(day, days.indexOf(day) + 1) : '');
+
+      // Not written to Google (task 14): a quiet line with its own Try again.
+      const syncLine = li.querySelector('.day-sync');
+      if (syncLine) syncLine.hidden = syncMap[day.id] !== 'error';
 
       // A lock is announced once per day and date, as it appears (brief, Live regions).
       const key = day.id + '|' + day.date;
@@ -734,6 +746,8 @@ const BookingBlock = (() => {
     cards.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-act="trip"]');
       if (btn) onTrip(btn.closest('[data-day-id]').dataset.dayId);
+      const retry = e.target.closest('[data-act="sync-retry"]');
+      if (retry) onSyncRetry(retry.closest('[data-day-id]').dataset.dayId);
     });
 
     /* Duplicate day (B2-5, D81): a Date TBC day straight after the source,
@@ -852,6 +866,16 @@ const BookingBlock = (() => {
         })),
 
       addTbc,
+
+      /** Which days Google hasn't taken, `{ dayId: 'pending' | 'error' }`, as the
+          server's estimate reply gives it (task 14). Redraws only the marks. */
+      setSync(map) {
+        syncMap = map && typeof map === 'object' ? map : {};
+        $('booking-cards').querySelectorAll('[data-day-id]').forEach((li) => {
+          const line = li.querySelector('.day-sync');
+          if (line) line.hidden = syncMap[li.dataset.dayId] !== 'error';
+        });
+      },
 
       /** A day's trip as it stands (null for none), and its replacement from the
           travel view (trip-planner task 3). setTrip(id, null) clears it. */

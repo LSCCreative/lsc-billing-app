@@ -677,6 +677,11 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
  *                  deleting its estimate always took it).
  */
 function registerProjectRoutes(app, db, opts = {}) {
+  // Tells the calendar writer a project's days may have changed (task 14),
+  // after the commit; it can't fail the reply.
+  const touchGoogle = (_req, projectId) => {
+    if (app.locals.googleSync) app.locals.googleSync.touchProject(projectId);
+  };
   app.get('/api/activity', (req, res) => {
     const limit = req.query.limit === undefined ? HOME_LIMIT : Number(req.query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > HOME_MAX) {
@@ -925,6 +930,8 @@ function registerProjectRoutes(app, db, opts = {}) {
       db.prepare('UPDATE projects SET declined_at = ?, updated_at = ? WHERE id = ?').run(now, now, p.id);
       logActivity(db, p.id, 'declined', {}, now);
     })();
+    // A declined estimate's days leave every calendar (D22), Google's included.
+    touchGoogle(req, p.id);
     return folderReply(req, res);
   });
 
@@ -954,6 +961,7 @@ function registerProjectRoutes(app, db, opts = {}) {
         .run(now, p.id);
       logActivity(db, p.id, 'reopened', {}, now);
     })();
+    touchGoogle(req, p.id);
     return folderReply(req, res, { pencilled: clash.pencilled });
   });
 
@@ -983,6 +991,8 @@ function registerProjectRoutes(app, db, opts = {}) {
     db.transaction(() => {
       ({ rebook } = acceptEstimate(db, p, lead, own.map((e) => e.id), choice, nowIso()));
     })();
+    // Accepting confirms the project's pencilled and proposed days (D18).
+    touchGoogle(req, p.id);
     return folderReply(req, res, { rebook });
   });
 
@@ -1058,6 +1068,7 @@ function registerProjectRoutes(app, db, opts = {}) {
     // Estimates (and through them days and rentals), invoices and activity
     // all hang off the project, ON DELETE CASCADE. Sends name their document
     // by id only, so they go first: a waiting one would email a deleted job.
+    const estimateIds = db.prepare('SELECT id FROM estimates WHERE project_id = ?').all(p.id).map((r) => r.id);
     db.transaction(() => {
       db.prepare(`
         DELETE FROM sends WHERE (doc_kind = 'estimate' AND doc_id IN (SELECT id FROM estimates WHERE project_id = ?))
@@ -1065,6 +1076,7 @@ function registerProjectRoutes(app, db, opts = {}) {
       `).run(p.id, p.id);
       db.prepare('DELETE FROM projects WHERE id = ?').run(p.id);
     })();
+    if (app.locals.googleSync) app.locals.googleSync.touch(estimateIds);
     return res.json({ ok: true });
   });
 }

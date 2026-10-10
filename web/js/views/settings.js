@@ -1625,13 +1625,22 @@ const SettingsView = (() => {
      OAuth client), not connected (Connect), connected (who and since, the
      calendar toggles, the writing explainer, Disconnect…). Each toggle saves
      at once through PUT /api/google/calendars; a change made while one is
-     on its way goes after it, so the last word always wins. */
+     on its way goes after it, so the last word always wins.
+
+     WRITING BOOKINGS (task 14): the status line says whether the days are in
+     Google, from status.sync ({ pending, errors, running, lastSyncedAt }).
+     Retry and Sync existing bookings both POST /api/google/sync and then ask
+     the status every couple of seconds while it says running or pending. Only
+     that block is redrawn, so a toggle's focus is never stolen. */
   const GcalPanel = (() => {
     let status = null; // the last GET /api/google/status, or null while unknown
     let saved = null; // the calendars as the server last confirmed them
     let saving = false;
     let again = false; // a toggle changed while a save was out
     let busy = false; // Refresh or Disconnect under way
+    let pollTimer = null; // the status being watched while a push is under way
+    let polls = 0;
+    let syncBusy = false; // a Retry or Sync existing request is out
 
     const box = () => $('set-gcal');
     const live = (text) => { const el = $('set-gcal-live'); if (el) LSCUtil.announce(el, text); };
@@ -1678,7 +1687,52 @@ const SettingsView = (() => {
       return 'Shared with you · view only';
     }
 
-    const dot = (on) => '<span class="set-status-dot' + (on ? ' is-on' : '') + '" aria-hidden="true"></span>';
+    const dot = (on, warn) => '<span class="set-status-dot' + (on ? ' is-on' : '') + (warn ? ' is-warn' : '') + '" aria-hidden="true"></span>';
+
+    const days = (n) => n + (n === 1 ? ' day' : ' days');
+
+    const writtenAt = (iso) => {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleString('en-AU', {
+        day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Australia/Sydney',
+      });
+    };
+
+    /* The writing status and its two buttons. One block, redrawn alone. */
+    function syncMarkup(s) {
+      const sync = s.sync || { pending: 0, errors: 0, running: false, lastSyncedAt: null };
+      const working = sync.running || syncBusy;
+      let line;
+      let hint = '';
+      if (working) {
+        line = dot(false) + 'Writing to Google…';
+      } else if (sync.errors > 0) {
+        line = dot(false, true) + days(sync.errors) + ' not synced';
+        hint = 'Google didn’t take ' + (sync.errors === 1 ? 'it' : 'them') + '. Retry sends ' +
+          (sync.errors === 1 ? 'it' : 'them') + ' again. Nothing you saved was lost.';
+      } else if (sync.pending > 0) {
+        line = dot(false) + days(sync.pending) + ' waiting to be written';
+      } else if (sync.lastSyncedAt) {
+        line = dot(true) + 'All bookings synced';
+        hint = 'Last written ' + writtenAt(sync.lastSyncedAt) + '.';
+      } else {
+        line = dot(false) + 'Nothing written yet';
+        hint = 'Bookings are written as you save them, a few seconds later.';
+      }
+      return '<p class="set-status" id="set-gcal-sync">' + line + '</p>' +
+        (hint ? '<p class="set-hint gcal-sync-hint">' + esc(hint) + '</p>' : '') +
+        '<div class="gcal-actions">' +
+          // aria-disabled, not disabled: focus stays on the button while it works.
+          '<button type="button" class="btn btn-sm" id="set-gcal-sync-all" data-write' + (working ? ' aria-disabled="true"' : '') + '>' +
+            (working ? 'Syncing…' : 'Sync existing bookings') + '</button>' +
+          (sync.errors > 0 && !working
+            ? '<button type="button" class="btn btn-quiet btn-sm" id="set-gcal-sync-retry" data-write>Retry</button>'
+            : '') +
+        '</div>' +
+        '<p class="set-hint gcal-sync-note">Sync existing bookings writes every confirmed or pencilled day, from today on, ' +
+          'that isn’t in Google yet. Connecting doesn’t do it for you.</p>';
+    }
 
     function rowMarkup(c, i) {
       const id = 'set-gcal-cal-' + i;
@@ -1722,8 +1776,7 @@ const SettingsView = (() => {
         '<p class="set-hint set-hint-lead">Confirmed days, and pencilled days marked tentative (“Pencil ·”), go to your main ' +
           'calendar, ' + esc(s.email || 'your Google account') + '. Proposed and Date TBC days don’t. Each event names the project, ' +
           'the client, the day’s items, the trip and the call sheet link: never prices.</p>' +
-        '<p class="set-status" id="set-gcal-sync">' + dot(false) + 'Not writing yet</p>' +
-        '<p class="set-hint gcal-sync-hint">Bookings start going to Google in a later update.</p>';
+        '<div class="gcal-sync" id="set-gcal-sync-box">' + syncMarkup(s) + '</div>';
     }
 
     function paint() {
@@ -1766,6 +1819,8 @@ const SettingsView = (() => {
       if (!LSCRouter.isCurrent(ticket)) return;
       saved = status ? status.calendars.map((c) => ({ ...c })) : null;
       paint();
+      polls = 0;
+      watch();
       if (arrival) {
         // Said once: a reload of this address shouldn't say it again.
         LSCRouter.mark('/settings/calendar', { replace: true });
@@ -1883,6 +1938,85 @@ const SettingsView = (() => {
       Toast.ok(said);
     }
 
+    function stopPolling() {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+
+    /* Redraws the writing block only, keeping focus on the button that was
+       used when it is still there. */
+    function paintSync() {
+      const el = $('set-gcal-sync-box');
+      if (!el || !status) return;
+      const had = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : '';
+      el.innerHTML = syncMarkup(status);
+      if (had) {
+        const again_ = $(had) || $('set-gcal-sync-all');
+        if (again_) again_.focus({ preventScroll: true });
+      }
+    }
+
+    /* While a push is under way, ask the status every couple of seconds (up to
+       about two minutes: a long first sync), say how it ended, and stop. */
+    function watch() {
+      stopPolling();
+      if (!status || !status.connected || !status.sync) return;
+      if (!(status.sync.running || status.sync.pending > 0)) return;
+      if (polls >= 60) return;
+      polls += 1;
+      pollTimer = setTimeout(async () => {
+        pollTimer = null;
+        if (!box()) return;
+        let next = null;
+        try {
+          next = await LSCApi.get('/api/google/status');
+        } catch (err) {
+          if (!(err instanceof LSCApi.ApiError)) throw err;
+          return; // the page keeps what it last knew; Retry still works
+        }
+        if (!box() || !status) return;
+        const before = status.sync;
+        status = Object.assign({}, status, { sync: next.sync, problem: next.problem });
+        paintSync();
+        const busy_ = next.sync.running || next.sync.pending > 0;
+        if (busy_) { watch(); return; }
+        if (before.running || before.pending > 0) {
+          live(next.sync.errors > 0
+            ? days(next.sync.errors) + ' not synced.'
+            : 'All bookings synced.');
+        }
+      }, 2000);
+    }
+
+    async function syncNow(all) {
+      if (syncBusy || !status) return;
+      syncBusy = true;
+      notice('');
+      paintSync();
+      let reply = null;
+      let failed = null;
+      try {
+        reply = await LSCApi.post('/api/google/sync', all ? { all: true } : {});
+      } catch (err) {
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        failed = err;
+      }
+      syncBusy = false;
+      if (!box()) return;
+      if (failed) {
+        if (failed.kind === 'auth') { handlers.onAuthLost({ keepScreen: true }); return; }
+        if (failed.code === 'google_reconnect') { status.problem = 'reconnect'; paint(); }
+        else paintSync();
+        notice('Couldn’t start that: ' + failure(failed));
+        return;
+      }
+      status = Object.assign({}, status, { sync: reply.sync, problem: reply.problem });
+      polls = 0;
+      paintSync();
+      live('Writing bookings to Google.');
+      watch();
+    }
+
     function askDisconnect(opener) {
       Confirm.open(opener, {
         title: 'Disconnect Google Calendar?',
@@ -1943,6 +2077,9 @@ const SettingsView = (() => {
         if (target.id === 'set-gcal-connect') connect();
         else if (target.id === 'set-gcal-refresh') refresh(target);
         else if (target.id === 'set-gcal-disconnect') askDisconnect(target);
+        else if (target.getAttribute('aria-disabled') === 'true') return;
+        else if (target.id === 'set-gcal-sync-all') syncNow(true);
+        else if (target.id === 'set-gcal-sync-retry') syncNow(false);
       });
       el.addEventListener('change', (event) => {
         if (event.target.classList.contains('gcal-switch')) onToggle(event.target);
@@ -1952,7 +2089,10 @@ const SettingsView = (() => {
     return {
       load,
       bind,
-      reset() { status = null; saved = null; saving = false; again = false; busy = false; },
+      reset() {
+        status = null; saved = null; saving = false; again = false; busy = false;
+        stopPolling(); polls = 0; syncBusy = false;
+      },
     };
   })();
 

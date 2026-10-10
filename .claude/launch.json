@@ -6,7 +6,7 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "cd server && CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 npm start"
+        "cd server && GOOGLE_CALENDAR_WRITE=0 CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 npm start"
       ],
       "port": 8080
     },
@@ -16,7 +16,7 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "cd server && DATA_DIR=/tmp/lsc-billing-scratch CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 npm start"
+        "cd server && GOOGLE_CALENDAR_WRITE=0 DATA_DIR=/tmp/lsc-billing-scratch CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 npm start"
       ],
       "port": 8080
     },
@@ -26,7 +26,7 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "cd server && DATA_DIR=/tmp/lsc-billing-scratch CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 APP_URL=http://localhost:5173/ node scripts/dev-stub-mail.js"
+        "cd server && GOOGLE_CALENDAR_WRITE=0 DATA_DIR=/tmp/lsc-billing-scratch CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 APP_URL=http://localhost:5173/ node scripts/dev-stub-mail.js"
       ],
       "port": 8080
     },
@@ -37,6 +37,16 @@
       "runtimeArgs": [
         "-c",
         "cd server && DATA_DIR=/tmp/lsc-billing-scratch CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 APP_URL=http://localhost:5173/ node scripts/dev-stub-google.js"
+      ],
+      "port": 8080
+    },
+    {
+      "_comment": "Writing bookings (trip-planner task 14) against a COPY of the scratch database with its Google account removed, and a pretend Google that keeps the events it is sent (GET :8080/dev/google-events lists them). Never point a write-capable build at /tmp/lsc-billing-scratch: its google_account row is the user's real calendar. Make the copy: server/ `node -e` backup of that file into /tmp/lsc-billing-scratch-sync, then DELETE FROM google_account and google_event_sync. STUB_GOOGLE_WRITE_FAIL=1 makes every write fail.",
+      "name": "api-scratch-sync",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd server && DATA_DIR=/tmp/lsc-billing-scratch-sync CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 APP_URL=http://localhost:5173/ node scripts/dev-stub-google.js"
       ],
       "port": 8080
     },

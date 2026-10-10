@@ -163,11 +163,26 @@ function registerEstimateRoutes(app, db, opts = {}) {
     SELECT number, kind, status FROM invoices
      WHERE estimate_id = ? AND kind <> 'legacy' AND status <> 'void' ORDER BY created_at, id
   `);
+  // Writing bookings to Google (task 14): the days whose event isn't yet where
+  // the day is, `{ dayId: 'pending' | 'error' }`, for the day card's mark.
+  // Owner-only, like the rest.
+  const notSynced = db.prepare(`
+    SELECT day_id, state FROM google_event_sync WHERE estimate_id = ? AND state <> 'synced'
+  `);
+  const googleSyncOf = (estimateId) => {
+    const out = {};
+    notSynced.all(estimateId).forEach((r) => { out[r.day_id] = r.state; });
+    return out;
+  };
   const loadJson = (row) => Object.assign(loadEstimate(row, readDays(db, row.id), readRentals(db, row.id)), {
     upidLocked: upidLocked(db, row.project_id),
     versions: versionsOf(db, [row.id]).get(row.id) || [],
     invoices: billing.all(row.id),
+    googleSync: googleSyncOf(row.id),
   });
+  // Tells the calendar writer what a save changed. After the commit, and
+  // never able to fail the reply.
+  const touch = (ids) => { if (app.locals.googleSync) app.locals.googleSync.touch(ids); };
 
   app.get('/api/estimates', (_req, res) => {
     const rows = db.prepare('SELECT * FROM estimates ORDER BY updated_at DESC').all();
@@ -248,6 +263,8 @@ function registerEstimateRoutes(app, db, opts = {}) {
       });
     }
     const link = setCallSheetLink(db, row.id, on);
+    // The days' events name the call sheet link while it is on.
+    touch([row.id]);
     return res.json({ ok: true, token: link.token, on: link.on, url: linkUrl(link.token) });
   });
 
@@ -360,6 +377,7 @@ function registerEstimateRoutes(app, db, opts = {}) {
       replaceRentals(db, id, rentals, now);
     })();
 
+    touch([id]);
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(id);
     res.status(201).json({ ok: true, estimate: loadJson(row) });
   });
@@ -452,6 +470,7 @@ function registerEstimateRoutes(app, db, opts = {}) {
       return res.status(409).json(needed);
     }
     if (resent && ask.by === 'email' && !resent.carried && app.locals.outbox) app.locals.outbox.kick();
+    touch([req.params.id]);
 
     const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
     res.json({
@@ -486,6 +505,8 @@ function registerEstimateRoutes(app, db, opts = {}) {
       db.prepare('DELETE FROM estimates WHERE id = ?').run(req.params.id);
       dropEmptyProject(db, existing.project_id);
     })();
+    // Its days are gone: whatever event they had goes with them.
+    touch([req.params.id]);
     res.json({ ok: true });
   });
 

@@ -162,6 +162,9 @@ function registerPublicRoutes(app, db, opts = {}) {
         render,
         ownerEmail: opts.ownerEmail,
         kick: opts.outbox ? opts.outbox.kick : null,
+        // The accept confirms days: tell the calendar writer (task 14). Read
+        // when it happens, as it is built after this route.
+        onAccepted: (ids) => { if (app.locals.googleSync) app.locals.googleSync.touch(ids); },
       });
       return res.status(out.status).json(out.body);
     } catch (err) {

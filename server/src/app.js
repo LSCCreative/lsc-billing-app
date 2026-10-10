@@ -2,7 +2,7 @@
 
 const path = require('path');
 const express = require('express');
-const { config } = require('./config');
+const { config, appUrlOf } = require('./config');
 const { registerAuthRoutes, requireAuth } = require('./auth');
 const { preWriteBackup } = require('./backup');
 const { registerEstimateRoutes } = require('./routes/estimates');
@@ -23,6 +23,7 @@ const { registerPublicRoutes } = require('./routes/public');
 const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
 const { registerRecoveryRoutes, registerAccountRoutes } = require('./routes/account');
 const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/google');
+const { createGoogleSync } = require('./google-sync');
 const { createMailer } = require('./mail');
 const { createOutbox } = require('./sends');
 
@@ -127,11 +128,32 @@ function createApp(db, opts = {}) {
     now: opts.googleNow,
   };
   const appOrigin = opts.appOrigin !== undefined ? opts.appOrigin : config.appOrigin;
-  registerGoogleOAuthRoutes(app, db, { oauth, appOrigin });
+
+  // Writing bookings to the calendar (task 14). The routes that change a
+  // booking say which estimate they changed (`app.locals.googleSync.touch`);
+  // the gate below also tells it about every other write, so an event can't
+  // be left stale by a route that forgot. Nothing here fails a save.
+  const googleSync = createGoogleSync(db, {
+    oauth,
+    appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+    now: opts.googleNow,
+    debounceMs: opts.googleSyncDebounceMs,
+    enabled: opts.googleCalendarWrite !== undefined ? opts.googleCalendarWrite : config.googleCalendarWrite,
+  });
+  app.locals.googleSync = googleSync;
+  registerGoogleOAuthRoutes(app, db, { oauth, appOrigin, sync: googleSync });
 
   // ── Everything under /api from here down requires a valid session. New API
   // routes mount after this line and inherit the gate for free.
   app.use('/api', requireAuth(db));
+  app.use('/api', (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS' && !req.path.startsWith('/google/')) {
+      res.on('finish', () => {
+        if (res.statusCode < 400) googleSync.noteWrite();
+      });
+    }
+    next();
+  });
 
   // PDF export is a POST but never writes the database. Mounted ahead of the
   // pre-write snapshot so exporting doesn't rotate real recovery points out
@@ -163,7 +185,8 @@ function createApp(db, opts = {}) {
   registerProjectRoutes(app, db, stageD);
   registerInvoiceRoutes(app, db, stageD);
   registerSendRoutes(app, db, { outbox });
-  registerGoogleRoutes(app, db, { oauth });
+  registerGoogleRoutes(app, db, { oauth, sync: googleSync });
+  googleSync.start();
 
   // ── Static app shell. Empty until the UI is ported off the Electron build.
   app.use(express.static(PUBLIC_DIR, { index: 'index.html', extensions: ['html'] }));

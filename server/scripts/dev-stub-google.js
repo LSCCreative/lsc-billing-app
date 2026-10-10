@@ -11,10 +11,18 @@
  *   STUB_GOOGLE_REFRESH_FAIL=1   Google refuses the refresh token (Reconnect).
  *   STUB_GOOGLE_DOWN=1           every Google request fails (unavailable).
  *   STUB_GOOGLE_FAIL_CAL=<id>    that one calendar's events fail (task 13's partial line).
+ *   STUB_GOOGLE_WRITE_FAIL=1     every event write (create, update, delete) answers 500, for
+ *                                the "N days not synced · Retry" states (task 14). Switch it
+ *                                while running: GET :8080/dev/google-write-fail?on=1 (or 0).
  *
  * Events (task 13): each calendar answers with a made-up week of events round
  * today, repeated every week (timed, all-day, multi-day, overlapping, an
  * untitled one, a long title, and one tagged lscDayId that must not show).
+ *
+ * Writes (task 14): the app's events are kept in memory, as Google keeps them
+ * (a deleted one keeps its id), and listed at GET /dev/google-events on the
+ * API's port, so a check can read what the pretend calendar holds. A restart
+ * forgets them.
  *
  * Never for the NAS.
  */
@@ -106,6 +114,10 @@ function stubEvents(calId, timeMin, timeMax) {
   return items;
 }
 
+const written = new Map(); // event id → { event, deleted }
+let writesFail = process.env.STUB_GOOGLE_WRITE_FAIL === '1';
+let generated = 0;
+
 async function fakeGoogle(url, init = {}) {
   await new Promise((r) => setTimeout(r, 400)); // a believable wait
   if (process.env.STUB_GOOGLE_DOWN === '1') throw new Error('stub: Google is down');
@@ -129,7 +141,28 @@ async function fakeGoogle(url, init = {}) {
     if (process.env.STUB_GOOGLE_FAIL_CAL === id) return json(500, { error: 'stub: this calendar fails' });
     return json(200, { items: stubEvents(id, u.searchParams.get('timeMin'), u.searchParams.get('timeMax')) });
   }
-  if ((init.method || 'GET') === 'DELETE') return new Response(null, { status: 204 });
+  const method = init.method || 'GET';
+  const one = u.pathname.match(/\/calendars\/([^/]+)\/events\/([^/]+)$/);
+  if ((ev && method === 'POST') || (one && (method === 'PUT' || method === 'DELETE'))) {
+    if (writesFail) return json(500, { error: 'stub: writes fail' });
+    const payload = typeof init.body === 'string' && init.body ? JSON.parse(init.body) : null;
+    if (ev) {
+      const id = payload.id || `stub${(generated += 1)}`;
+      if (written.has(id)) return json(409, { error: 'stub: identifier exists' });
+      written.set(id, { event: { ...payload, id }, deleted: false });
+      return json(200, { id });
+    }
+    const id = decodeURIComponent(one[2]);
+    const have = written.get(id);
+    if (method === 'PUT') {
+      if (!have) return json(404, { error: 'stub: not found' });
+      written.set(id, { event: { ...payload, id }, deleted: false });
+      return json(200, { id });
+    }
+    if (!have || have.deleted) return json(410, { error: 'stub: gone' });
+    have.deleted = true;
+    return new Response(null, { status: 204 });
+  }
   return json(404, { error: 'not stubbed' });
 }
 
@@ -162,5 +195,13 @@ const consent = (req, res) => {
 // Express matches in registration order, and createApp ends with fallbacks
 // for /api only, so a /dev path added now is still reached.
 app.get('/dev/google-consent', consent);
+// GET /dev/google-write-fail?on=1 (or 0): writes fail from now on, without a restart.
+app.get('/dev/google-write-fail', (req, res) => {
+  writesFail = req.query.on === '1';
+  res.json({ writesFail });
+});
+app.get('/dev/google-events', (_req, res) => {
+  res.json([...written.values()].filter((e) => !e.deleted).map((e) => e.event));
+});
 
 app.listen(config.port, () => console.log(`[stub-google] dev server on :${config.port}; Google is pretend`));

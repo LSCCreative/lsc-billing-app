@@ -90,13 +90,12 @@ function redirectUriOf(req, oauth) {
  * GET /api/google/status, the Settings section's one read. An allow-list:
  * no token, no expiry, nothing Google said beyond the address and the list.
  */
-function statusOf(db, oauth) {
+const NO_SYNC = { enabled: true, pending: 0, errors: 0, running: false, lastSyncedAt: null };
+
+function statusOf(db, oauth, sync) {
   const row = google.readAccount(db);
-  const counts = db.prepare(`
-    SELECT SUM(state = 'pending') AS pending, SUM(state = 'error') AS errors FROM google_event_sync
-  `).get();
   if (!row) {
-    return { configured: google.configured(oauth), connected: false, email: '', connectedAt: null, calendars: [], problem: null, sync: { pending: 0, errors: 0 } };
+    return { configured: google.configured(oauth), connected: false, email: '', connectedAt: null, calendars: [], problem: null, sync: NO_SYNC };
   }
   return {
     configured: google.configured(oauth),
@@ -108,7 +107,9 @@ function statusOf(db, oauth) {
     })),
     // 'reconnect' once Google has refused the stored token (google.js).
     problem: google.needsReconnect() ? 'reconnect' : null,
-    sync: { pending: counts.pending || 0, errors: counts.errors || 0 },
+    // Writing bookings (task 14): days waiting, days Google refused, and
+    // whether a push is under way or about to be.
+    sync: sync ? sync.status() : NO_SYNC,
   };
 }
 
@@ -128,6 +129,7 @@ function googleFailure(res, err) {
 function registerGoogleOAuthRoutes(app, db, opts) {
   const oauth = opts.oauth;
   const appOrigin = opts.appOrigin;
+  const sync = opts.sync || null;
   const now = () => (oauth.now || Date.now)();
 
   function back(res, query) {
@@ -194,6 +196,9 @@ function registerGoogleOAuthRoutes(app, db, opts) {
           sameAccount ? previous.connected_at : nowIso());
       })();
       google.forgetReconnect();
+      // Days that were waiting on a refused connection go out now; connecting
+      // writes nothing else (Sync existing bookings does that).
+      if (sync) sync.kick();
       return back(res, 'connected=1');
     } catch (err) {
       return next(err);
@@ -204,9 +209,27 @@ function registerGoogleOAuthRoutes(app, db, opts) {
 /** The section's API, mounted after the session gate. */
 function registerGoogleRoutes(app, db, opts) {
   const oauth = opts.oauth;
+  const sync = opts.sync || null;
 
   app.get('/api/google/status', (_req, res) => {
-    res.json(statusOf(db, oauth));
+    res.json(statusOf(db, oauth, sync));
+  });
+
+  /* POST /api/google/sync { all? } — Settings' two buttons (task 14). Without
+     `all` it is Retry: every day Google refused goes round again. With
+     `all: true` it is Sync existing bookings: every current confirmed or
+     pencilled day not already in Google is written, once. Either way the
+     work happens in the background and the reply is the status, running;
+     the page asks GET /api/google/status until it isn't. */
+  app.post('/api/google/sync', (req, res) => {
+    if (!google.readAccount(db)) return res.status(409).json({ error: 'google_not_connected' });
+    if (google.needsReconnect()) return res.status(409).json({ error: 'google_reconnect' });
+    if (!google.configured(oauth)) return res.status(409).json({ error: 'google_not_configured' });
+    if (!sync) return res.status(409).json({ error: 'google_not_configured' });
+    if (!sync.status().enabled) return res.status(409).json({ error: 'google_writing_off' });
+    if (req.body && req.body.all === true) sync.syncExisting();
+    else sync.retryErrors();
+    return res.json(statusOf(db, oauth, sync));
   });
 
   /* PUT /api/google/calendars { on: [calendarId…] } — the calendars shown
@@ -222,7 +245,7 @@ function registerGoogleRoutes(app, db, opts) {
     const wanted = new Set(on);
     const calendars = google.storedCalendars(row).map((c) => ({ ...c, on: wanted.has(c.id) }));
     db.prepare('UPDATE google_account SET calendars_json = ? WHERE id = 1').run(JSON.stringify(calendars));
-    res.json({ calendars: statusOf(db, oauth).calendars });
+    res.json({ calendars: statusOf(db, oauth, sync).calendars });
   });
 
   /* POST /api/google/calendars/refresh — the list again from Google (a
@@ -230,7 +253,7 @@ function registerGoogleRoutes(app, db, opts) {
   app.post('/api/google/calendars/refresh', async (_req, res, next) => {
     try {
       await google.refreshCalendars(db, oauth);
-      res.json(statusOf(db, oauth));
+      res.json(statusOf(db, oauth, sync));
     } catch (err) {
       try {
         googleFailure(res, err);

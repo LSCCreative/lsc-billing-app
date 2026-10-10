@@ -230,6 +230,29 @@
   color: var(--err-text);
 }
 
+/* A day Google Calendar didn't take (trip-planner task 14): the pencilled
+   colour's rule, like a clash, so it reads as a heads-up and not an error. */
+.day-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--cal-pencilled);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.day-sync[hidden] {
+  display: none;
+}
+/* The quiet button's own padding is 8px: pull it back so its words line up
+   with the sentence when it wraps under it on a phone. */
+.day-sync-retry {
+  margin-left: -8px;
+}
+
 /* ── The add-day dialog ────────────────────────────────────────────────────── */
 
 /* A bottom sheet on a phone, full width, buttons full width at 44px

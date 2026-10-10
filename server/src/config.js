@@ -79,6 +79,11 @@ const config = {
     clientSecret: (process.env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim(),
     redirectUri: (process.env.GOOGLE_OAUTH_REDIRECT_URI || '').trim(),
   },
+  // Writing bookings to the connected calendar (task 14, G4) is on whenever a
+  // calendar is connected. GOOGLE_CALENDAR_WRITE=0 switches it off for a server
+  // that shares a real connection with a throwaway database (a dev server on
+  // a scratch copy), so a test save can't put events in a real calendar.
+  googleCalendarWrite: process.env.GOOGLE_CALENDAR_WRITE !== '0',
   // Where Google's consent sends the browser back to: the app's address
   // (Pages), with the trailing slash. APP_URL unless APP_ORIGIN says otherwise.
   appOrigin: appUrlOf(process.env.APP_ORIGIN) || appUrlOf(process.env.APP_URL),

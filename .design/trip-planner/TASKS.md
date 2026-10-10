@@ -214,7 +214,7 @@ local `server/.env`. Test the OAuth flow against
   and screen readers reach them through the list. _Modifies: `routes/calendar.js`, `google.js`,
   `calendar.js`, `menu.js`, `home.js`, `booking-block.js`._ _Depends on: 12._
 
-- [ ] **14. Writing bookings to Google** *(backend: Sonnet/high, with a small frontend status)*:
+- [x] **14. Writing bookings to Google** *(backend: Sonnet/high, with a small frontend status)*: **Done `PENDING`** (built and tested against a stub Google; 699 tests pass; the live check on the user's calendar is **not done**, see HANDOVER). `google-sync.js` diffs each booked day against `google_event_sync` and writes, rewrites or deletes its event; Settings → Writing bookings (status, Retry, Sync existing bookings); the day card's quiet mark. Original spec:
   The sync engine in `google.js`: after any commit that changes a dated confirmed or pencilled
   day (IA flow 9's trigger list, **including the client's accept on `c/#e/` and Mark accepted**),
   queue the estimate (5 s debounce), diff by day id against `google_event_sync`, and create, patch

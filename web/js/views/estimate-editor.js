@@ -1682,6 +1682,64 @@ const EstimateEditor = (() => {
     if (travel) travel.focus({ preventScroll: !menu.sheet });
   }
 
+  /* Writing bookings to Google (trip-planner task 14). The server writes a
+     saved day to the calendar a few seconds after the save, so its reply can
+     only say a day is waiting. Look again a few times for one Google refused,
+     and mark that day's card (a quiet line with Try again). Nothing here
+     touches the form or the saved copy: only the card's mark. */
+  let syncLooks = 0;
+  let syncTimer = null;
+  let syncState = {}; // { dayId: 'pending' | 'error' } as last heard
+  function watchGoogleSync(fromReply) {
+    if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+    const pending = (map) => Object.keys(map || {}).some((id) => map[id] === 'pending');
+    if (fromReply) {
+      syncLooks = 0;
+      syncState = fromReply;
+      if (booking) booking.setSync(fromReply);
+      if (!pending(fromReply)) return;
+    }
+    if (syncLooks >= 3 || !existing) return;
+    syncLooks += 1;
+    const gen = mountGen;
+    syncTimer = setTimeout(async () => {
+      syncTimer = null;
+      if (gen !== mountGen || !onScreen() || !existing) return;
+      let map = null;
+      try {
+        map = (await LSCApi.get(estimateUrl())).estimate.googleSync;
+      } catch (err) {
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        return; // the page isn't the place to fuss about a calendar
+      }
+      if (gen !== mountGen || !booking) return;
+      syncState = map || {};
+      booking.setSync(syncState);
+      if (pending(syncState)) watchGoogleSync(null);
+    }, 8000);
+  }
+
+  async function retryGoogleSync(dayId) {
+    try {
+      await LSCApi.post('/api/google/sync', {});
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') { handlers.onAuthLost({ keepScreen: true }); return; }
+      Toast.error(
+        err.code === 'google_not_connected' ? 'Google Calendar isn’t connected. Connect it in Settings.'
+          : err.code === 'google_reconnect' ? 'Google no longer accepts the connection. Connect again in Settings.'
+            : 'Couldn’t ask Google just now. Try again in a moment.'
+      );
+      return;
+    }
+    Toast.ok('Trying Google Calendar again.');
+    // Marks clear at once; the look in a few seconds says whether it took.
+    const again = {};
+    Object.keys(syncState).forEach((id) => { again[id] = 'pending'; });
+    if (dayId) again[dayId] = 'pending';
+    watchGoogleSync(again);
+  }
+
   function defineTravel(dayId) {
     if (!dayOf(dayId)) return;
     if (!LSCRouter.mark(tripAddress(dayId))) return;
@@ -4381,6 +4439,7 @@ const EstimateEditor = (() => {
       if (refreshMark === mark) refreshSurcharges = false;
       savedSinceOpen = true;
       if (!onScreen()) return null;
+      watchGoogleSync(existing.googleSync || {});
       if (created) {
         // A new project, in place: its address, title and Delete (T17, IA flow 4).
         handlers.onCreated(existing);
@@ -4839,6 +4898,8 @@ const EstimateEditor = (() => {
       onDuplicate: duplicateLines,
       // A day card's trip summary (trip-planner task 6) opens its travel view.
       onTrip: defineTravel,
+      // A day Google didn't take (trip-planner task 14): Try again on its card.
+      onSyncRetry: retryGoogleSync,
       // Gear rentals (B2-7): the panel under both columns, and the head's counts.
       rentals: rentalsPanel,
       headNotes: bookingHeadNotes,

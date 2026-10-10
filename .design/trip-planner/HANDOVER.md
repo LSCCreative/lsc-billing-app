@@ -3,12 +3,14 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 14, Sonnet, effort high, with a small frontend part** (writing bookings to Google,
-the sync engine; its live check on the user's calendar needs their OK, a test project and a
-clean-up). Stages A, B and C (tasks 1–11) and tasks 12–13 are done. The scratch DB is connected to
-the user's real Google account (all four calendars on).
+**Next: task 15, Opus, effort high, **Frontend task** (responsive and accessibility pass: the
+travel view, Share dialog, call sheet pages, Settings → Google Calendar incl. Writing bookings, and
+Calendars ▾). Stages A, B, C (tasks 1–11) and D (tasks 12–14) are built. **Task 14's live check on
+the user's real calendar is not done**: it needs their OK, a test project and a clean-up (see
+"Live check" below). The scratch DB `/tmp/lsc-billing-scratch` is connected to the user's real
+Google account (all four calendars on): **never run a write-capable build on it** (see Traps).
 
-## State as of 2026-10-11 (task 13)
+## State as of 2026-10-11 (task 14)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -100,7 +102,84 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   unavailable / reconnect / partial lines, not connected → Settings, and a refused toggle
   (reverted + toast) by standing in for the reply in the page. 375 (dots, sheet with Done),
   800, 1280: no overflow.
-- [ ] **Next: task 14**, writing bookings to Google. *Sonnet/high, small frontend part.*
+- [x] **Task 14** writing bookings to Google, `PENDING`. 699 server tests pass (`test-google-sync.js`,
+  21; the status shape in `test-google-oauth.js`). Verified against the pretend Google
+  (`api-scratch-sync`, a copy of the scratch DB with no Google account) in the browser at 1024 and
+  375: Sync existing bookings wrote the 11 current days (None → Writing → All bookings synced), a
+  save of a draft's start time wrote again about 5 s later, the day card's mark appeared when
+  writes failed (looked for at 8 s) and Try again cleared it and wrote the event (the stub had
+  restarted, so the event was gone from Google: the PUT's 404 became a create), Settings said
+  "1 day not synced" with Retry, no overflow at 375, 44px targets. **Not verified: the real
+  Google Calendar API** (a live check, below).
+- [ ] **Next: task 15**, responsive and accessibility pass. *Opus/high, **frontend**.* Add task 14's
+  surfaces to its list: Settings → Writing bookings (status line, Sync existing bookings, Retry;
+  `aria-disabled` while working, a polite live region) and the day card's `.day-sync` line.
+- [ ] **Task 14 live check** (anyone, **with the user's OK**): connect the real calendar on a
+  server with `GOOGLE_CALENDAR_WRITE` unset, make a *test* project with one pencilled and one
+  confirmed day a month out, confirm both appear in Google (title, "Pencil ·" + tentative, times,
+  location, description), move one, re-time one, Mark accepted, then remove the project and check
+  both events are gone; then Disconnect with "Also remove the app's events" as a belt and braces.
+  Things only Google can show: that a deleted event's id can be brought back by a PUT (the 409 path
+  in `create`), that `sendUpdates=none` is accepted on insert/update/delete, and the all-day
+  rendering. Fold it into task 18 if the user would rather be present.
+
+## Decisions made in task 14 (agent's, within the brief)
+
+- **Diff, not hooks (`server/src/google-sync.js`).** The wanted event of each booked day is built
+  from the database, hashed, and compared with `google_event_sync.pushed_hash`. `touch(estimateIds)`
+  (estimate POST/PUT/DELETE, the call sheet link on/off, project accept/decline/reopen/delete, and
+  the client's accept through `signEstimate`'s `onAccepted`) **marks differing days `pending` in the
+  database at once** (a restart loses nothing) and schedules a pass 5 s after the last touch (30 s
+  cap, so a stream of autosaves makes one push). A pass also **re-checks every estimate that has a
+  row** (the safety net, fed by a gate that notes every successful non-GET under `/api`), so a route
+  that forgot to `touch` can leave a stale event, never an unmarked one. An estimate with no row is
+  written only when touched, or by Sync existing: **connecting writes nothing by itself**.
+- **Which days.** Dated, status confirmed or pencilled, estimate not declined (the calendar's rule,
+  D22). A day dated before today (Sydney) with no event yet is **not written**, and Sync existing
+  means "current" days; a day that already has an event keeps it and keeps being rewritten after its
+  date passes (time passing never deletes). Proposed and Date TBC days, rentals and prices never go.
+- **Event** (G5): summary `[Pencil · ]UPID · Project · Client`, `status` tentative/confirmed,
+  Sydney `dateTime`s or all-day `date`s (no start time = all day; end before start = next date, D21;
+  no or equal end = one hour, inside the day), `location` = the first destination's address,
+  `description` = Items / Crew / Gear names (the day's `prod`, `crew`, `equip` lines; **names only**),
+  `Trip: 5 stops · 109 km · 3 h 27 min driving`, `Call sheet: <link>` while sharing is on,
+  `Project: <app>#/projects/<id>`, and a line saying the app owns the event;
+  `extendedProperties.private.lscDayId`. The event is rewritten whole (PUT), so a Google-side edit
+  goes on the next change of that day (G4).
+- **Idempotent creates.** The event id is ours and deterministic: `lscb` + sha1(day id), legal
+  base32hex. A create that timed out and is tried again gets 409 and updates that event instead
+  of making a second; Google keeps a deleted event's id, so the same 409 → PUT brings it back
+  (reopening a declined project); a 404/410 on the PUT falls back to an id-less create.
+- **Failure.** `error` + back-off 1, 5 then 30 min, then `next_try_at` null (on demand: POST
+  `/api/google/sync`). `unavailable` stops the pass (the rest stay pending, looked at again in a
+  minute); a refused event (4xx) doesn't. A refused connection (`reconnect`) **blocks**: rows stay
+  `pending`, nothing is retried until `kick()` (the OAuth callback, 5 s after connecting). The
+  error column holds our code only (`unavailable`, `refused (400)`), never Google's words.
+- **API.** `GET /api/google/status` → `sync: { enabled, pending, errors, running, lastSyncedAt }`
+  (`running` = a pass in flight or about to run with something pending). `POST /api/google/sync`
+  `{ all }`: without `all` = Retry (errors → pending), with = Sync existing; answers at once with
+  the status (running) and the work happens in the background; 409 `google_not_connected` /
+  `google_reconnect` / `google_not_configured` / `google_writing_off`. The owner's estimate reply
+  carries `googleSync: { dayId: 'pending' | 'error' }` (never `synced`).
+- **`GOOGLE_CALENDAR_WRITE=0`** (config `googleCalendarWrite`, createApp opt `googleCalendarWrite`)
+  switches writing off wholesale: nothing marked, scheduled or sent; the status says
+  `enabled: false`. The launch configs that use the scratch DB's real connection (`api`,
+  `api-scratch`, `api-scratch-mail`) carry it. Production leaves it unset (on).
+- **Frontend.** Settings → Writing bookings (`GcalPanel.syncMarkup`): status chip (All bookings
+  synced · last written; N days not synced + Retry; waiting; nothing written yet), Sync existing
+  bookings, one note. Only that block redraws; polls the status every 2 s (up to ~2 min) while
+  running/pending; buttons use `aria-disabled` so focus stays; `data-write`. The day card gets a
+  quiet `.day-sync` line (the pencilled colour's rule, like a clash) with Try again, **only for an
+  error**: a waiting write is gone in seconds. The editor (`watchGoogleSync`) updates marks from
+  each save's reply and looks again up to three times, 8 s apart, while a day is `pending`.
+- **Dev:** `dev-stub-google.js` keeps the events it is sent (`GET :8080/dev/google-events`) and
+  fails writes on demand (`GET /dev/google-write-fail?on=1|0`, or `STUB_GOOGLE_WRITE_FAIL=1`).
+  Launch `api-scratch-sync` (copy of the scratch DB with its `google_account` removed, in
+  `/tmp/lsc-billing-scratch-sync`).
+- **For task 19 (docs):** `DEPLOYMENT.md` gets the optional `GOOGLE_CALENDAR_WRITE`.
+- **Left for task 16 (code review):** the sync is sequential (a first Sync existing of a few
+  hundred days takes a minute or two); Google Calendar's per-minute quota isn't handled beyond
+  `unavailable` back-off; `eventFor` reads `active_rows_json` per day.
 
 ## Decisions made in task 13 (agent's, within the brief)
 
@@ -543,6 +622,16 @@ redirect URIs) was **created 2026-10-11** by the agent with the user's OK; its I
 `.credentials.local.md` and the local `server/.env`. The NAS env needs both at deploy (task 20).
 
 ## Traps
+
+- **Never run a write-capable build on `/tmp/lsc-billing-scratch`**: its `google_account` is the
+  user's real calendar, and since task 14 a saved booking there is written to it. Use
+  `api-scratch-sync` (its own copy, a pretend Google). The old configs carry
+  `GOOGLE_CALENDAR_WRITE=0`; removing that for the live check is the point of the check.
+- Don't `git stash` to compare against the old tree: new untracked test files stay and run against
+  the old code (a hang, here). Use a worktree, or `git diff`.
+- `test-call-sheet-page.js` "a wrong, short or malformed link is the same 404" failed once in a full
+  run and passed in the next six (alone and in the suite). Unrelated to task 14; flaky under
+  parallel load.
 
 - **Menu items can't be chosen by a scripted `.click()`.** menu.js stops the click and calls
   `item.click()` at home, and a browser ignores `click()` on an element whose own synthetic click

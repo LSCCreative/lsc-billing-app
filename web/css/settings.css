@@ -1100,6 +1100,11 @@
   border-color: var(--color-status-success);
   background: var(--color-status-success);
 }
+/* Days Google didn't take: the warning colour, as the pencilled day wears it. */
+.set-status-dot.is-warn {
+  border-color: var(--color-status-warning);
+  background: var(--color-status-warning);
+}
 
 #set-gcal-notice {
   display: none;
@@ -1263,8 +1268,25 @@
 .gcal-list-foot .set-hint {
   margin: 0;
 }
+.gcal-sync {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+}
 .gcal-sync-hint {
   margin-top: calc(-1 * var(--space-4));
+}
+.gcal-sync .gcal-actions {
+  margin-top: var(--space-2);
+}
+/* Working: reads as a disabled button but keeps focus (no disabled attribute). */
+.gcal-sync .btn[aria-disabled="true"] {
+  opacity: .45;
+  cursor: progress;
+}
+.gcal-sync-note {
+  margin-top: var(--space-5);
+  max-width: 64ch;
 }
 
 /* The disconnect dialog's one option. */
