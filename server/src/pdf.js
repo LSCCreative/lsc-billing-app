@@ -13,6 +13,7 @@
 const { RESERVED_SECTION_IDS } = require('./ratecard');
 const { gstTreatment, costBreakdown, lineDef, round2 } = require('./calc');
 const { agreementLayout } = require('./documents');
+const callSheetDoc = require('./call-sheet');
 
 function fmt(n) {
   return '$' + (parseFloat(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -1002,6 +1003,84 @@ function exportFilename(estimate) {
   return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
 }
 
+/* ── The call sheet (trip-planner task 10) ────────────────────────────────────
+ *
+ * The same markup the app and the crew's page draw (call-sheet.js), in the
+ * print skin: Arial like the other PDFs, a day to a page, no stop split across
+ * two. The letterhead is the PDF's own chrome. Built from the allow-listed view
+ * only, so it can never print a price or a client's contact details.
+ */
+const CALL_SHEET_STYLE =
+  '@page{margin:14mm 0}' +
+  // The body's own bottom padding, after a full page, is a page of nothing.
+  'body{padding-bottom:0 !important}' +
+  '.cs-kicker{display:none}' +
+  '.cs-title{font-size:20pt;line-height:1.15;font-weight:900;letter-spacing:-.005em}' +
+  '.cs-meta{display:flex;flex-wrap:wrap;gap:6px 28px;margin-top:12px}' +
+  '.cs-meta dt{font-size:7.5pt;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700}' +
+  '.cs-meta dd{font-size:10pt;margin-top:1px;color:#181818}' +
+  '.cs-day{margin-top:26px}' +
+  '.cs-head+.cs-day{margin-top:22px}' +
+  '.cs-day+.cs-day{break-before:page;margin-top:0}' +
+  '.cs-day-for{font-size:8pt;color:#888;margin-bottom:4px}' +
+  '.cs-head+.cs-day .cs-day-for{display:none}' +
+  '.cs-day-head{padding-bottom:7px;border-bottom:2px solid #181818;margin-bottom:12px;break-after:avoid}' +
+  '.cs-day-title{font-size:14pt;font-weight:900;letter-spacing:.01em}' +
+  '.cs-day-facts{margin-top:3px;font-size:9.5pt;color:#555}' +
+  '.cs-day-facts span+span::before{content:" \\00b7  "}' +
+  '.cs-map{margin:0 0 14px;break-inside:avoid}' +
+  // A 16:9 picture at the column's width is 100mm tall; capped, a day's
+  // stops and its footer fit on the page the day starts.
+  '.cs-map img{display:block;width:auto;max-width:100%;max-height:66mm;height:auto;border:1px solid #ddd}' +
+  '.cs-stops{list-style:none}' +
+  '.cs-stop{break-inside:avoid}' +
+  '.cs-leg{margin:0 0 0 11px;padding:5px 0 5px 21px;border-left:2px dotted #aaa;font-size:9pt;color:#555}' +
+  '.cs-stop-row{display:flex;gap:10px;align-items:flex-start}' +
+  '.cs-pin{flex:none;width:24px;height:24px;border-radius:50%;background:#181818;color:#fff;font-size:9pt;font-weight:700;' +
+    'line-height:24px;text-align:center}' +
+  '.cs-stop-start .cs-pin{background:#B85444}' +
+  '.cs-stop-return .cs-pin{background:#fff;color:#B85444;border:2px solid #B85444;line-height:20px}' +
+  '.cs-stop-main{flex:1;min-width:0;padding-bottom:4px}' +
+  '.cs-role{font-size:7.5pt;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700;line-height:24px}' +
+  '.cs-role-pin{text-transform:none;letter-spacing:0;font-weight:400}' +
+  '.cs-address{font-size:11pt;font-weight:700;line-height:1.35;margin-top:-2px;overflow-wrap:anywhere}' +
+  '.cs-times{display:flex;flex-wrap:wrap;gap:2px 18px;margin-top:4px;font-size:10pt}' +
+  '.cs-time-label{font-size:7.5pt;text-transform:uppercase;letter-spacing:.1em;color:#888;font-weight:700}' +
+  '.cs-clock{font-weight:700;font-variant-numeric:tabular-nums}' +
+  '.cs-onsite{margin-top:3px;font-size:9.5pt;color:#555}' +
+  '.cs-maps-row{margin-top:4px;font-size:9pt}' +
+  '.cs-maps{color:#8C4832}' +
+  '.cs-vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}' +
+  '.cs-details{margin-top:8px;padding:8px 11px 2px;background:#f5f3f0;border-left:3px solid #181818}' +
+  '.cs-detail{margin-bottom:8px}' +
+  '.cs-detail dt{font-size:7.5pt;text-transform:uppercase;letter-spacing:.12em;color:#555;font-weight:700}' +
+  '.cs-detail dd{margin-top:2px;font-size:10pt;line-height:1.45;white-space:pre-line;overflow-wrap:anywhere}' +
+  '.cs-empty{margin-top:24px;font-size:10.5pt;color:#555}' +
+  // One line, so it never lands alone on a page of its own.
+  '.cs-foot{display:flex;flex-wrap:wrap;gap:0 16px;margin-top:18px;padding-top:8px;border-top:1px solid #e0e0e0;' +
+    'font-size:9pt;line-height:1.6;break-inside:avoid}' +
+  '.cs-foot-ask{color:#555}.cs-foot-name{font-weight:700}.cs-foot-link{color:#181818;text-decoration:none}';
+
+function buildCallSheetHtml(cs) {
+  const v = cs || {};
+  return '<!DOCTYPE html><html lang="en-AU"><head><meta charset="UTF-8"><title>' + esc(callSheetDoc.title(v)) + '</title>' +
+    '<style>' + PDF_STYLE + CALL_SHEET_STYLE + '</style></head>' + INVOICE_BODY +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;padding-bottom:14px;border-bottom:3px solid #181818">' +
+      '<div><div style="font-size:22pt;font-weight:900;letter-spacing:.02em">LSC CREATIVE<span style="color:#B85444">.</span></div>' +
+      '<div style="font-size:8pt;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-top:4px">Motion Productions</div></div>' +
+      '<div style="text-align:right"><div style="font-size:16pt;font-weight:900;color:#181818;letter-spacing:.02em">CALL SHEET' +
+        (v.upid ? ' <span style="color:#B85444">' + esc(v.upid) + '</span>' : '') + '</div></div>' +
+    '</div>' +
+    callSheetDoc.markup(v) +
+    '</body></html>';
+}
+
+/** `Call sheet - ABC-123 - Brand film.pdf`, filesystem-safe. */
+function callSheetFilename(cs) {
+  const base = ['Call sheet', cs && cs.upid, cs && cs.name].filter((x) => x && String(x).trim()).join(' - ');
+  return base.replace(/[/\\:*?"<>|]/g, '-').trim() + '.pdf';
+}
+
 let executablePathCache;
 
 /**
@@ -1071,6 +1150,8 @@ module.exports = {
   exportBlocker,
   exportFilename,
   costBreakdownFilename,
+  buildCallSheetHtml,
+  callSheetFilename,
   renderPdfBuffer,
   resolveExecutablePath,
   PROPOSED_DISCLAIMER,

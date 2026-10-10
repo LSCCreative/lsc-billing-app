@@ -15,7 +15,7 @@
 const { config } = require('../config');
 const {
   buildEstimateHtml, exportFilename, renderPdfBuffer, agreementFilename,
-  buildInvoiceDocHtml, invoiceFilename, invoiceBlocker,
+  buildInvoiceDocHtml, invoiceFilename, invoiceBlocker, buildCallSheetHtml, callSheetFilename,
 } = require('../pdf');
 const { nowIso } = require('../db');
 const { readPricing, readSettings } = require('../ratecard');
@@ -223,6 +223,30 @@ function registerPublicRoutes(app, db, opts = {}) {
       const row = callSheetRowOfLink(db, req.params.token);
       if (!row) return notFound(res);
       return res.json({ callSheet: await buildCallSheet(db, row, opts.maps) });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  /* The call sheet's PDF (task 10): the page's own content in print, from the
+     same allow-listed view, so it can't carry more than the page does. A link
+     that is off is the same 404 as any wrong one. Rate-limited like the other
+     PDFs: the renderer is the expensive part. */
+  app.get('/public/call-sheets/:token/pdf', rateLimit(limits.pdf), async (req, res, next) => {
+    try {
+      const row = callSheetRowOfLink(db, req.params.token);
+      if (!row) return notFound(res);
+      const callSheet = await buildCallSheet(db, row, opts.maps);
+      let buffer;
+      try {
+        buffer = await render(buildCallSheetHtml(callSheet));
+      } catch (err) {
+        if (err.code === 'pdf_unavailable') return res.status(503).json({ error: 'pdf_unavailable' });
+        throw err;
+      }
+      res.attachment(callSheetFilename(callSheet));
+      res.type('application/pdf');
+      return res.send(buffer);
     } catch (err) {
       return next(err);
     }

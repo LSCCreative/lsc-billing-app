@@ -1,0 +1,330 @@
+/* The call sheet (trip-planner task 10; T12, T13, T18).
+ *
+ * One document, two screens. call-sheet.js writes the same markup for the
+ * app's own page (dark) and for the crew's page at c/#s/<token> (light, in
+ * lsccreative.studio's colours); this file is the single skin for both and
+ * names nothing but tokens.css, so each page's palette themes it and neither
+ * needs a rule of its own. (The PDF is its own skin, in pdf.js.)
+ *
+ * The one bold move is the rail: each stop hangs on a vertical line, its pin
+ * the same disc the map draws (terracotta S, numbered discs, an outlined R),
+ * and the drive between two stops is set on the line in mono. A crew member
+ * reads down the page the way they will drive it.
+ *
+ * Mobile first: one column at 375, the same column wider. Nothing here is
+ * interactive but its links (Google Maps, email, phone), each a 44px target.
+ */
+
+.cs {
+  max-width: 44rem;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  overflow-wrap: break-word;
+}
+/* :where() keeps the reset at zero specificity, so every rule below wins it. */
+:where(.cs) :where(h1, h2, p, dl, dd, ol) { margin: 0; padding: 0; }
+:where(.cs) ol { list-style: none; }
+
+/* A phrase only a screen reader gets: where a link goes. */
+.cs-vh {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Head ─────────────────────────────────────────────────────────────────── */
+
+.cs-kicker {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.cs-title {
+  margin-top: var(--space-4);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: clamp(30px, 8vw, 44px);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  text-wrap: balance;
+}
+.cs-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6) var(--space-7);
+  margin-top: var(--space-7);
+}
+.cs-meta dt {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.cs-meta dd { margin-top: var(--space-1); }
+@media (min-width: 640px) {
+  .cs-meta { grid-template-columns: repeat(4, auto); justify-content: start; column-gap: var(--space-8); }
+}
+
+/* ── A day ────────────────────────────────────────────────────────────────── */
+
+.cs-day { margin-top: var(--space-9); }
+/* Only the PDF prints whose day this is (pdf.js). */
+.cs-day-for { display: none; }
+.cs-day-head {
+  padding-top: var(--space-5);
+  border-top: 2px solid var(--color-text-primary);
+}
+.cs-day-title {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+}
+.cs-day-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin-top: var(--space-3);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--color-text-secondary);
+}
+
+.cs-map {
+  margin: var(--space-6) 0 var(--space-7);
+}
+.cs-map img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: var(--color-bg-inset);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/* ── The schedule: stops on a rail ────────────────────────────────────────── */
+
+.cs-day-head + .cs-stops { margin-top: var(--space-7); }
+
+.cs-stops { --cs-pin: 32px; }
+
+/* The line runs from each pin down to the next: here beside the stop's own
+   words and notes, then through the drive below. */
+.cs-stop { position: relative; }
+.cs-stop:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--cs-pin) / 2 - 1px);
+  top: var(--cs-pin);
+  bottom: 0;
+  border-left: 2px dotted var(--color-border-strong);
+}
+
+/* The drive into a stop sits on the line above it, in the pin's own column. */
+.cs-leg {
+  margin-left: calc(var(--cs-pin) / 2 - 1px);
+  padding: var(--space-4) 0 var(--space-4) calc(var(--cs-pin) / 2 + var(--space-5));
+  border-left: 2px dotted var(--color-border-strong);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--color-text-secondary);
+}
+
+.cs-stop-row {
+  display: grid;
+  grid-template-columns: var(--cs-pin) minmax(0, 1fr);
+  column-gap: var(--space-5);
+  align-items: start;
+}
+
+.cs-pin {
+  display: grid;
+  place-items: center;
+  width: var(--cs-pin);
+  height: var(--cs-pin);
+  border-radius: var(--radius-full);
+  background: var(--color-text-primary);
+  color: var(--color-bg-page);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  line-height: 1;
+}
+/* The start is terracotta on the map, so here. White on --accent-primary
+   clears 4.5:1 in both palettes (tokens.css). */
+.cs-stop-start .cs-pin {
+  background: var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+}
+/* The return has no pin of its own on the map (it shares the start's spot),
+   so it is the outline of one. */
+.cs-stop-return .cs-pin {
+  background: transparent;
+  color: var(--color-accent-text);
+  box-shadow: inset 0 0 0 2px var(--color-accent-mark);
+}
+
+.cs-stop-main { padding-bottom: var(--space-2); min-width: 0; }
+
+.cs-role {
+  /* Level with the pin's middle. */
+  min-height: var(--cs-pin);
+  display: flex;
+  align-items: center;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.cs-role-pin { text-transform: none; letter-spacing: 0; white-space: pre; }
+
+.cs-address {
+  margin-top: calc(var(--space-2) * -1);
+  font-weight: var(--font-weight-semibold);
+  font-size: 1.0625em;
+  line-height: var(--line-height-snug);
+  text-wrap: pretty;
+}
+
+.cs-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-7);
+  margin-top: var(--space-4);
+}
+.cs-time { display: inline-flex; align-items: baseline; gap: var(--space-3); }
+.cs-time-label {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.cs-clock {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+}
+.cs-onsite {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-base);
+  color: var(--color-text-secondary);
+}
+
+.cs-maps-row { margin-top: var(--space-2); }
+.cs-maps {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  /* A 44px target, without opening up the lines around it. */
+  min-height: var(--touch-min);
+  margin-block: calc((var(--touch-min) - 1.5em) / -2);
+  font-size: var(--font-size-base);
+  color: var(--color-accent-text);
+  text-underline-offset: 0.18em;
+}
+.cs-maps::after {
+  content: "\2197";
+  content: "\2197" / "";
+  text-decoration: none;
+}
+.cs-maps:hover { color: var(--color-text-primary); }
+.cs-maps:focus-visible {
+  outline: 3px solid var(--color-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* The three notes, in full: one well, each under its own name. */
+.cs-details {
+  margin-top: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  background: var(--color-bg-inset);
+  border-radius: var(--radius-md);
+}
+.cs-detail + .cs-detail { margin-top: var(--space-5); }
+.cs-detail dt {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.cs-detail dd {
+  margin-top: var(--space-2);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* ── Foot ─────────────────────────────────────────────────────────────────── */
+
+.cs-empty {
+  margin-top: var(--space-9);
+  color: var(--color-text-secondary);
+}
+.cs-foot {
+  margin-top: var(--space-10);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-text-primary);
+}
+.cs-foot-ask { color: var(--color-text-secondary); }
+.cs-foot-name { margin-top: var(--space-4); font-weight: var(--font-weight-semibold); }
+.cs-foot-link {
+  display: inline-block;
+  padding: var(--space-4) 0;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--color-accent-text);
+}
+.cs-foot-link:hover { color: var(--color-text-primary); }
+
+/* ── Wider screens: the same column, more air ─────────────────────────────── */
+
+@media (min-width: 768px) {
+  .cs-stops { --cs-pin: 36px; }
+  .cs-day { margin-top: 64px; }
+  .cs-day-title { font-size: var(--font-size-2xl); }
+  .cs-details { padding: var(--space-6) var(--space-7); }
+}
+
+/* ── A printed copy of the page ───────────────────────────────────────────────
+   The PDF is the printed form; this only keeps a browser print from cutting a
+   stop in two, or stranding a day's heading. */
+@media print {
+  .cs-stop { break-inside: avoid; }
+  .cs-day-head { break-after: avoid; }
+  .cs-map { break-inside: avoid; }
+}
+
+/* ── In the app: the page around the document ─────────────────────────────────
+   Only the actions and their notes; the document is the .cs above, and the
+   crew's page has its own masthead (c/c.css). One terracotta action: the PDF. */
+
+.csp-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 44rem;
+  margin-bottom: var(--space-7);
+}
+.csp-bar .btn { min-height: var(--touch-min); }
+.csp-bar .spinner { margin-right: var(--space-3); }
+.csp-error:not(:empty) {
+  max-width: 44rem;
+  margin: calc(var(--space-4) * -1) 0 var(--space-7);
+  font-size: var(--font-size-base);
+  color: var(--color-status-error-text);
+}
+.csp-note { color: var(--color-text-secondary); padding: var(--space-8) 0; }
+@media (min-width: 768px) {
+  .csp-bar { flex-direction: row; justify-content: flex-end; }
+  .csp-bar .btn { min-height: var(--control-h); }
+}

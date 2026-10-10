@@ -4,6 +4,7 @@ const { newId, nowIso } = require('../db');
 const { computeTotals, surchargeSnapshot, stampSurchargedPrices, PRICING_SHAPE } = require('../calc');
 const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeLineField } = require('../ratecard');
 const { loadEstimate } = require('../estimate');
+const { buildCallSheetHtml, callSheetFilename, renderPdfBuffer } = require('../pdf');
 const {
   readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, lineDeliverableProblem, dayIdTakenElsewhere,
   lockedDay, replaceDays, applyTripLines,
@@ -199,6 +200,28 @@ function registerEstimateRoutes(app, db, opts = {}) {
         link: { on: row.call_sheet_on === 1, token: row.call_sheet_token || null, url: linkUrl(row.call_sheet_token) },
         editDay: first ? first.id : null,
       });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  /* The call sheet as a PDF (task 10): the page's own content in print. Not
+     kept in exportDir: it is rebuilt from the saved trips each time (T18). */
+  app.get('/api/estimates/:id/call-sheet/pdf', async (req, res, next) => {
+    try {
+      const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(req.params.id);
+      if (!row) return res.status(404).json({ error: 'not_found' });
+      const callSheet = await buildCallSheet(db, row, opts.maps);
+      let buffer;
+      try {
+        buffer = await (opts.render || renderPdfBuffer)(buildCallSheetHtml(callSheet));
+      } catch (err) {
+        if (err.code === 'pdf_unavailable') return res.status(503).json({ error: 'pdf_unavailable' });
+        throw err;
+      }
+      res.attachment(callSheetFilename(callSheet));
+      res.type('application/pdf');
+      return res.send(buffer);
     } catch (err) {
       return next(err);
     }

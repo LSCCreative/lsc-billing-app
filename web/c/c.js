@@ -1,13 +1,18 @@
 /**
  * The client's estimate and invoice pages (production-booking stage E,
- * D46, D50–D56). The client is never shown the word "estimate": to them it
- * is a quote (D103), on this page, its PDF and its emails.
+ * D46, D50–D56), and the crew's call sheet (trip-planner task 10). The client
+ * is never shown the word "estimate": to them it is a quote (D103), on this
+ * page, its PDF and its emails.
  *
  * A separate page on the same Pages site: of the app's CSS and JS it loads
- * only tokens.css, config.js and documents.js (for the agreement's layout); it
+ * only tokens.css and call-sheet.css, config.js, documents.js (for the
+ * agreement's layout) and call-sheet.js (the call sheet's document); it
  * keeps nothing in localStorage and runs no analytics. The address is
- * `c/#e/<token>` for an estimate and `c/#i/<token>` for an invoice; the token
- * stays in the fragment so it never reaches a server log or a Referer header.
+ * `c/#e/<token>` for an estimate, `c/#i/<token>` for an invoice and
+ * `c/#s/<token>` for a call sheet; the token stays in the fragment so it
+ * never reaches a server log or a Referer header. A call sheet is read-only:
+ * no accept, signature or payment, and its document is call-sheet.js's, the
+ * same function the app and the PDF draw.
  *
  * It reads GET /public/estimates/:token (task 25's client view, with a live
  * state) from the API named in ../js/config.js, without credentials: the
@@ -503,6 +508,25 @@
     watchDock();
   }
 
+  /* The crew's call sheet (task 10): the masthead, a Download PDF at the top
+     where someone on a phone on the way to a shoot looks first, then the same
+     document the app and the PDF draw. Its stylesheet is css/call-sheet.css,
+     themed by the tokens this page already loads. */
+  function renderCallSheet(v) {
+    // Nothing here can be signed: no estimate is on screen.
+    current = null;
+    const days = Array.isArray(v.days) ? v.days : [];
+    doc.innerHTML = '<header class="mast"><p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p></header>' +
+      (days.length
+        ? '<div class="cs-bar"><button type="button" class="btn btn-quiet" data-act="pdf">Download PDF</button>' +
+          '<p class="foot-msg" id="pdf-msg" role="status"></p></div>'
+        : '') +
+      LSCCallSheet.markup(v);
+    doc.removeAttribute('aria-busy');
+    document.title = LSCCallSheet.title(v) + ' — LSC Creative';
+    watchDock();
+  }
+
   /* A page with no estimate on it: a bad link, or the server out of reach. */
   function renderNotice(title, body, retry) {
     doc.innerHTML = '<header class="mast"><p class="wordmark" aria-label="LSC Creative">LSC <span>Creative.</span></p></header>' +
@@ -514,14 +538,19 @@
     watchDock();
   }
 
-  const renderMissing = () => renderNotice('We couldn’t find this ' + WORD[kind],
-    'The link may be incomplete. Check it against the email we sent, or ask us for a new one.');
+  /* A call sheet link that is off, or was never made, is one answer from the
+     server (404): say it plainly, and say who to ask (IA flow 11). */
+  const renderMissing = () => (kind === 's'
+    ? renderNotice('This call sheet link isn’t active',
+      'It may have been turned off, or the link may be incomplete. Ask LSC Creative for a new one.')
+    : renderNotice('We couldn’t find this ' + WORD[kind],
+      'The link may be incomplete. Check it against the email we sent, or ask us for a new one.'));
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
-  /* `e` an estimate, `i` an invoice: which page, which route. */
-  const WORD = { e: 'quote', i: 'invoice' };
-  const ROUTE = { e: '/public/estimates/', i: '/public/invoices/' };
+  /* `e` an estimate, `i` an invoice, `s` a call sheet: which page, which route. */
+  const WORD = { e: 'quote', i: 'invoice', s: 'call sheet' };
+  const ROUTE = { e: '/public/estimates/', i: '/public/invoices/', s: '/public/call-sheets/' };
 
   /* The owner looking at their own link (task 33 C15): the app, on this same
      origin, marks the browser it's signed in on, and the server then doesn't
@@ -538,8 +567,10 @@
   let ticket = 0;
 
   function linkOf(hash) {
-    const m = /^#([ei])\/([A-Za-z0-9_-]+)$/.exec(hash);
-    return m ? { kind: m[1], token: m[2] } : { kind: /^#i\//.test(hash) ? 'i' : 'e', token: '' };
+    const m = /^#([eis])\/([A-Za-z0-9_-]+)$/.exec(hash);
+    if (m) return { kind: m[1], token: m[2] };
+    const k = /^#([is])\//.exec(hash);
+    return { kind: k ? k[1] : 'e', token: '' };
   }
 
   async function load() {
@@ -548,12 +579,13 @@
     document.querySelector('.skip').textContent = 'Skip to the ' + WORD[kind];
     if (!token || !API) return renderMissing();
     if (!doc.querySelector('.loading')) doc.innerHTML = '<p class="loading">Loading…</p>';
-    doc.querySelector('.loading').textContent = 'Loading your ' + WORD[kind] + '…';
+    doc.querySelector('.loading').textContent = 'Loading ' + (kind === 's' ? 'the ' : 'your ') + WORD[kind] + '…';
     doc.setAttribute('aria-busy', 'true');
     let res;
     let body = null;
     try {
-      res = await fetch(API + ROUTE[kind] + encodeURIComponent(token) + (ownerBrowser() ? '?owner=1' : ''), {
+      // `?owner=1` is only the estimate's "opened" log; nothing else logs a look.
+      res = await fetch(API + ROUTE[kind] + encodeURIComponent(token) + (kind === 'e' && ownerBrowser() ? '?owner=1' : ''), {
         credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' },
       });
       body = await res.json().catch(() => null);
@@ -569,12 +601,16 @@
       renderInvoice(body.invoice);
       return undefined;
     }
+    if (res && res.ok && body && kind === 's' && body.callSheet) {
+      renderCallSheet(body.callSheet);
+      return undefined;
+    }
     if (res && res.status === 404) return renderMissing();
     if (res && res.status === 429) {
       return renderNotice('Please wait a moment',
         'This page has been opened a lot in the last few minutes. Wait a minute, then try again.', true);
     }
-    return renderNotice('We couldn’t load your ' + WORD[kind],
+    return renderNotice('We couldn’t load ' + (kind === 's' ? 'the ' : 'your ') + WORD[kind],
       res ? 'Something went wrong on our side. Try again in a moment.' : 'Check your connection, then try again.', true);
   }
 
@@ -612,7 +648,8 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filenameOf(res.headers.get('Content-Disposition'), agreement ? 'Service Agreement.pdf' : kind === 'i' ? 'Invoice.pdf' : 'Quote.pdf');
+      a.download = filenameOf(res.headers.get('Content-Disposition'),
+        agreement ? 'Service Agreement.pdf' : kind === 'i' ? 'Invoice.pdf' : kind === 's' ? 'Call sheet.pdf' : 'Quote.pdf');
       document.body.appendChild(a);
       a.click();
       a.remove();

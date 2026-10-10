@@ -16,21 +16,26 @@
 <!-- The app's design tokens, in their light palette (data-theme above): the
      shared colour, type and radius names only. c.css is the page itself. -->
 <link rel="stylesheet" href="../css/tokens.css">
+<!-- The call sheet's own document (call-sheet.js draws it; the app and the PDF
+     draw the same one): tokens only, so this page's light palette themes it. -->
+<link rel="stylesheet" href="../css/call-sheet.css">
 <link rel="stylesheet" href="c.css">
 </head>
 <body>
 <a class="skip" href="#doc">Skip to the document</a>
 <main id="doc" tabindex="-1" aria-busy="true">
   <p class="loading">Loading…</p>
-  <noscript><p class="loading">This page needs JavaScript to show your quote or invoice. You can also ask us for a PDF copy.</p></noscript>
+  <noscript><p class="loading">This page needs JavaScript to show your quote, invoice or call sheet. You can also ask us for a PDF copy.</p></noscript>
 </main>
 <p id="c-status" class="visually-hidden" role="status" aria-live="polite"></p>
 <!-- From the app: the API's address (Pages writes it at deploy), and
      documents.js, whose agreementLayout lays out the agreement in the sign
-     dialog exactly as the signed PDF does. Pure functions only: no DOM, no
-     storage, no requests. -->
+     dialog exactly as the signed PDF does, and call-sheet.js, whose markup is
+     the call sheet's document. Pure functions only: no DOM, no storage, no
+     requests. -->
 <script src="../js/config.js"></script>
 <script src="../js/documents.js"></script>
+<script src="../js/call-sheet.js"></script>
 <script src="c.js"></script>
 </body>
 </html>

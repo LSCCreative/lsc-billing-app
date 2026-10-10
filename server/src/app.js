@@ -131,6 +131,7 @@ function createApp(db, opts = {}) {
   registerAccountRoutes(app, db);
   registerEstimateRoutes(app, db, {
     maps,
+    render: opts.renderPdf,
     appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
   });
   registerClientRoutes(app, db);

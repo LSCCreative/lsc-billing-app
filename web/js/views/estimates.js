@@ -8,6 +8,7 @@
  *   #/projects/<id>/estimate/view        its read-only view
  *   #/projects/<id>/estimate/<eid>[/view] the same, for another estimate of a
  *                                        group the fix-up kept together
+ *   #/projects/<id>/estimate[/<eid>]/call-sheet  its trips as crew see them
  *
  * and #/estimates/<eid>[/edit], their addresses before the folder, find the
  * estimate's project and take its place. Back and Cancel return to the folder;
@@ -144,6 +145,15 @@ const EstimatesView = (() => {
     if (found) EstimateDetail.mount(root, found.estimate, handlers(found.project));
   }
 
+  /* The call sheet (trip-planner task 10): the estimate's trips as crew see
+     them, with Download PDF and Edit trips. Nothing to guard: it edits
+     nothing. */
+  async function showCallSheet(projectId, eid, state) {
+    window.scrollTo(0, 0);
+    const found = await resolve(projectId, eid, state, () => showCallSheet(projectId, eid, null));
+    if (found) CallSheetPage.mount(root, found.estimate, found.project, handlers(found.project));
+  }
+
   /* projectId null for a new project. A held estimate (the folder's, or the
      copy Duplicate just made) is used as it is, so Edit doesn't wait on a
      second fetch of what is on screen; a reload or a deep link reads it. */
@@ -202,8 +212,10 @@ const EstimatesView = (() => {
       if (extra !== undefined) return false;
       if (a === undefined) showEditor(projectId, null, state, query);
       else if (a === 'view' && b === undefined) showDetail(projectId, null, state);
+      else if (a === 'call-sheet' && b === undefined) showCallSheet(projectId, null, state);
       else if (b === undefined) showEditor(projectId, a, state, query);
       else if (b === 'view') showDetail(projectId, a, state);
+      else if (b === 'call-sheet') showCallSheet(projectId, a, state);
       else return false;
       return true;
     },

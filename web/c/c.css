@@ -871,3 +871,18 @@ a:hover { color: var(--ink); }
   .panel, .skip, .foot .btn, .sign, .copy, .dock { display: none; }
   #doc, .has-dock #doc { padding: 0; }
 }
+
+/* ── The call sheet (trip-planner task 10) ────────────────────────────────────
+   The document itself is css/call-sheet.css, themed by this page's tokens.
+   Here: the Download PDF under the masthead, and the document's place on the
+   paper. */
+
+.cs-bar { margin-top: 20px; }
+.cs-bar .btn { width: 100%; }
+@media (min-width: 560px) {
+  .cs-bar .btn { width: auto; min-width: 200px; }
+}
+#doc .cs { margin-top: 32px; font-size: 17px; }
+@media (min-width: 768px) {
+  #doc .cs { margin-top: 48px; }
+}

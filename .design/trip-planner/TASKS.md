@@ -162,7 +162,7 @@ starting. **Frontend** marks anything a person looks at.
   Static call mocked. _New: `google.js`, `callSheetView`. Modifies: `public.js`,
   `routes/public.js`, `routes/estimates.js`._ _Depends on: 1._
 
-- [ ] **10. Call sheet page, public page and PDF** *(frontend: Opus/high)*: One shared renderer
+- [x] **10. Call sheet page, public page and PDF** *(frontend: Opus/high)*: **Done (commit pending).** `call-sheet.js` shared markup (server + web, drift test), `call-sheet.css`, in-app page, `c/#s/`, owner + public `/pdf`; Share… moved to task 11; 633 tests pass. Original spec: One shared renderer
   `web/js/call-sheet.js`, loaded by `index.html` and `c/index.html`, for the layout in IA
   "Content Hierarchy → Call sheet": header, day sections, map image, the schedule with legs and
   depart/arrive times, the details in full, Open in Google Maps, footer. In-app at

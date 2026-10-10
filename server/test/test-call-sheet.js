@@ -581,3 +581,104 @@ test('the stored allow-list has no second copy to leak later: the estimate\'s ow
   const list = await api('/api/estimates');
   assert.ok(!list.text.includes('data:image'));
 });
+
+/* ── The PDF (task 10) ────────────────────────────────────────────────────── */
+
+/* A renderer that keeps what it was asked to print: the PDF is the markup, so
+   the markup is what's checked. Chromium is never started. */
+const PDF_BYTES = Buffer.from('%PDF-1.4 call sheet');
+const printed = [];
+let renderDown = false;
+async function fakeRender(html) {
+  printed.push(html);
+  if (renderDown) throw Object.assign(new Error('no chromium'), { code: 'pdf_unavailable' });
+  return PDF_BYTES;
+}
+let pdfBase;
+const pdfServer = async () => {
+  if (!pdfBase) {
+    pdfBase = await start({
+      mapsKey: SERVER_KEY, mapsFetch, renderPdf: fakeRender,
+      publicLimits: { all: { max: 10000, windowMs: 60000 }, pdf: { max: 4, windowMs: 60000 } },
+    });
+  }
+  return pdfBase;
+};
+
+test('the owner\'s PDF is the page\'s own content, named for the project, and needs the session', async () => {
+  const url = await pdfServer();
+  const est = await create([day('cs_pd1', '2026-11-03', twoStopTrip()), day('cs_pd2', '2026-11-04', twoStopTrip())], {
+    shortNotice: true,
+  });
+  const res = await fetch(`${url}/api/estimates/${est.id}/call-sheet/pdf`, { headers: { cookie } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type').split(';')[0], 'application/pdf');
+  assert.match(decodeURIComponent(res.headers.get('content-disposition')), new RegExp(`filename.*Call sheet - ${est.upid} - ${est.name}\\.pdf`));
+  assert.ok(Buffer.from(await res.arrayBuffer()).equals(PDF_BYTES));
+
+  const html = printed[printed.length - 1];
+  assert.match(html, /<title>Call sheet · CS-\d+ · Harbour shoot \d+<\/title>/);
+  assert.match(html, /Tuesday 3 November 2026/);
+  assert.match(html, /Wednesday 4 November 2026/);
+  assert.ok(html.includes('Bondi Pavilion, Queen Elizabeth Dr, Bondi Beach NSW'));
+  assert.ok(html.includes('Gate code 4417'), 'the details in full');
+  assert.ok(html.includes('data:image/png;base64,'), 'the route image is in the print');
+  assert.equal((html.match(/class="cs-day"/g) || []).length, 2, 'a section per day');
+  for (const secret of ['Priya', 'priya@salt.example', '0400 111 222', '51824753556', 'INTERNAL-NOTE-MARKER',
+    'Video Capture', '1120', 'Secret Bank', '062-000', SERVER_KEY, 'cs_pd1', est.id]) {
+    assert.ok(!html.includes(secret), `"${secret}" is in the PDF`);
+  }
+  assert.ok(html.includes('hello@lsc.example') && html.includes('0412 000 000'), 'the business\'s contact is the footer');
+
+  const noSession = await fetch(`${url}/api/estimates/${est.id}/call-sheet/pdf`);
+  assert.equal(noSession.status, 401);
+  assert.equal((await fetch(`${url}/api/estimates/est_nope/call-sheet/pdf`, { headers: { cookie } })).status, 404);
+});
+
+test('the public PDF prints exactly what the owner\'s does, only while the link is on, and is rate-limited', async () => {
+  const url = await pdfServer();
+  const est = await create([day('cs_pd3', '2026-11-05', twoStopTrip())]);
+  const owner = await fetch(`${url}/api/estimates/${est.id}/call-sheet/pdf`, { headers: { cookie } });
+  await owner.arrayBuffer();
+  const ownerHtml = printed[printed.length - 1];
+
+  // Never made, then off, are the same 404, and the renderer isn't started.
+  const before = printed.length;
+  assert.equal((await fetch(`${url}/public/call-sheets/nope/pdf`)).status, 404);
+  const { body: { token } } = await link(est.id, true);
+  await link(est.id, false);
+  const off = await fetch(`${url}/public/call-sheets/${token}/pdf`);
+  assert.equal(off.status, 404);
+  assert.deepEqual(await off.json(), { error: 'not_found' });
+  assert.equal(printed.length, before, 'nothing was rendered for a dead link');
+
+  await link(est.id, true);
+  const on = await fetch(`${url}/public/call-sheets/${token}/pdf`, { headers: { origin: PAGES } });
+  assert.equal(on.status, 200);
+  assert.equal(on.headers.get('content-type').split(';')[0], 'application/pdf');
+  assert.equal(on.headers.get('cache-control'), 'no-store');
+  assert.equal(on.headers.get('set-cookie'), null);
+  assert.equal(on.headers.get('access-control-allow-origin'), PAGES);
+  assert.match(on.headers.get('access-control-expose-headers'), /Content-Disposition/);
+  assert.ok(Buffer.from(await on.arrayBuffer()).equals(PDF_BYTES));
+  assert.equal(printed[printed.length - 1], ownerHtml, 'one document for both');
+
+  // The renderer being missing is "not ready", not a crash and not a 404.
+  renderDown = true;
+  const down = await fetch(`${url}/public/call-sheets/${token}/pdf`);
+  renderDown = false;
+  assert.equal(down.status, 503);
+  assert.deepEqual(await down.json(), { error: 'pdf_unavailable' });
+
+  // The pdf limit is 4 per window per address, and every request counts, a
+  // dead link's too: the unknown, the off, the on and the down one above use
+  // it up, so the next is refused.
+  let limited = null;
+  for (let i = 0; i < 4 && !limited; i += 1) {
+    const r = await fetch(`${url}/public/call-sheets/${token}/pdf`);
+    await r.arrayBuffer();
+    if (r.status === 429) limited = r;
+  }
+  assert.ok(limited, 'a runaway client is stopped');
+  assert.ok(Number(limited.headers.get('retry-after')) > 0);
+});

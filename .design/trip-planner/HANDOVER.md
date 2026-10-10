@@ -3,11 +3,11 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 10, Opus, effort high: FRONTEND task** (the call sheet page, public page and PDF; load
-`/frontend-design` first). Stage A (the trip planner), stage B (autosave) and task 9 (the call sheet's
-server side) are done.
+**Next: task 11, Opus, effort high: FRONTEND task** (the call sheet on the Project page, Share and
+email; load `/frontend-design` first). Stage A, stage B and tasks 9–10 (the call sheet, server and
+pages) are done.
 
-## State as of 2026-10-10 (task 9)
+## State as of 2026-10-10 (task 10)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -70,7 +70,48 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   Static request** with the server key (`google.fetchStaticMap`): numbered pins, a terracotta S,
   the route line, 142 KB PNG (a throwaway script in the session scratchpad; no key printed).
   No schema change (v16 already had the token, flag and `static_maps`).
-- [ ] **Next: task 10**, call sheet page, public page and PDF. *Opus/high, **frontend**.*
+- [x] **Task 10** call sheet page, public page and PDF, commit pending. Built by Sonnet, then reviewed
+  and fixed by Opus. 633 server tests pass (`test-call-sheet-page.js`, 14; PDF routes in
+  `test-call-sheet.js`). Verified on scratch `est_705f805a` (two days, real Static images): public
+  and app pages at 1280/800/375 (headless, no overflow), Back, Edit trips (`?trip=cs10_a`), both
+  Download PDF buttons, the dead-link page, an unknown estimate id; owner and public PDFs
+  byte-identical, A4, 3 pages.
+- [ ] **Next: task 11**, call sheet row, Share and email. *Opus/high, **frontend**.*
+
+## Decisions made in task 10 (agent's, within the brief)
+
+- **One markup function, three skins.** `server/src/call-sheet.js` `markup(callSheet)` is the whole
+  document; `web/js/call-sheet.js` is a byte-identical copy (drift test), loaded as a plain script by
+  `index.html` and `c/index.html` (global `LSCCallSheet`). The PDF (`pdf.js buildCallSheetHtml`)
+  wraps the same string, so "the three show the same content" holds by construction. Skins:
+  `web/css/call-sheet.css` (tokens only, so the app's dark and `c/`'s light palette both theme it)
+  and `CALL_SHEET_STYLE` in `pdf.js` (Arial, like the other PDFs).
+- **The renderer distrusts its input:** every string escaped; a stop link must match
+  `https://www.google.com/maps/…`, the image `data:image/png;base64,…`, or it's left out.
+- **Layout:** header (Call sheet, project as h1, For / Reference / Covers / Updated in Sydney
+  time); a section per day (date as h2, "5 stops · Starts 7:30am · 109 km · 3 h 27 min driving"),
+  the map, then the stops on a dotted rail with the map's pins (terracotta S, numbered discs, an
+  outlined R; 10+ say "· map pin A"), each with its inbound "Drive 18 km · 49 min",
+  Depart/Arrive/Leave, time on location, Open in Google Maps and the details in full; footer with the
+  business's name, email and phone. Not routed = stops with no times or legs.
+- **PDF:** letterhead "LSC CREATIVE. / CALL SHEET <UPID>", a page break before each day after the
+  first, no stop split, map capped at 66 mm high, a print-only "project · UPID" line above each later
+  day (`.cs-day-for`, hidden on screen), one-line footer, body bottom padding dropped (it made a
+  blank last page). Filename `Call sheet - UPID - Project.pdf`.
+- **Routes:** owner `GET /api/estimates/:id/call-sheet/pdf` (session; not kept in exportDir);
+  public `GET /public/call-sheets/:token/pdf` (pdf rate limit; off/unknown = the same 404, renderer
+  not started; no Chromium = 503 `pdf_unavailable`). `registerEstimateRoutes` takes `render`
+  (`opts.renderPdf`) for tests.
+- **In-app page** `views/call-sheet-page.js` at `…/estimate[/<eid>]/call-sheet` (estimates.js):
+  ← Back (the project), Edit trips (the editor at `?trip=<editDay>`, or plain with no trips),
+  Download PDF (the one terracotta action, hidden with no trips), errors inline.
+  **Share… is not on it yet: task 11 adds it to this bar with its dialog.** No entry point exists
+  until task 11's Documents row; reach it by address.
+- **Public page** `c/#s/<token>`: masthead, Download PDF under it, the document. A 404 reads "This
+  call sheet link isn't active … Ask LSC Creative for a new one." No `?owner=1` (only quotes log
+  opens).
+- **Seen, not changed:** `summary.km` (the "Covers" figure) sums every day's stored totals,
+  including a day shown unrouted; task 11's row should use the same figure.
 
 ## Decisions made in task 9 (agent's, within the brief)
 
