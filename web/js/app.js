@@ -264,7 +264,7 @@
     } else if (area === 'settings') {
       // #/settings, or one of its sections (task 21, D65).
       setNav('settings');
-      shown = SettingsView.show(rest, state);
+      shown = SettingsView.show(rest, state, route.query);
     } else if (area === 'finance' && rest.length <= 1) {
       setNav('finance');
       shown = FinanceView.show(main, rest[0], state, {

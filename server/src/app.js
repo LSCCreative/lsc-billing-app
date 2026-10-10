@@ -22,6 +22,7 @@ const { registerInvoiceRoutes } = require('./routes/invoices');
 const { registerPublicRoutes } = require('./routes/public');
 const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
 const { registerRecoveryRoutes, registerAccountRoutes } = require('./routes/account');
+const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/google');
 const { createMailer } = require('./mail');
 const { createOutbox } = require('./sends');
 
@@ -116,6 +117,18 @@ function createApp(db, opts = {}) {
     appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
   });
 
+  // The Google Calendar connection (trip-planner task 12). A test never
+  // reaches Google, whatever the developer's .env holds, unless it passes its
+  // own client and a stub fetch. Start and the callback are browser
+  // navigations that check the session themselves and answer with redirects.
+  const oauth = {
+    ...(opts.googleOAuth !== undefined ? opts.googleOAuth : (config.isTest ? {} : config.googleOAuth)),
+    fetchImpl: opts.googleFetch,
+    now: opts.googleNow,
+  };
+  const appOrigin = opts.appOrigin !== undefined ? opts.appOrigin : config.appOrigin;
+  registerGoogleOAuthRoutes(app, db, { oauth, appOrigin });
+
   // ── Everything under /api from here down requires a valid session. New API
   // routes mount after this line and inherit the gate for free.
   app.use('/api', requireAuth(db));
@@ -150,6 +163,7 @@ function createApp(db, opts = {}) {
   registerProjectRoutes(app, db, stageD);
   registerInvoiceRoutes(app, db, stageD);
   registerSendRoutes(app, db, { outbox });
+  registerGoogleRoutes(app, db, { oauth });
 
   // ── Static app shell. Empty until the UI is ported off the Electron build.
   app.use(express.static(PUBLIC_DIR, { index: 'index.html', extensions: ['html'] }));

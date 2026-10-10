@@ -186,11 +186,11 @@ starting. **Frontend** marks anything a person looks at.
 
 ## Stage D: Google Calendar
 
-The user must first create the OAuth client and put its ID and secret in `.credentials.local.md`
-(HANDOVER). Copy them into `server/.env` locally. Test the OAuth flow against
+The OAuth client exists (2026-10-11); its ID and secret are in `.credentials.local.md` and the
+local `server/.env`. Test the OAuth flow against
 `http://localhost:8080/api/google/oauth/callback`.
 
-- [ ] **12. Connect and disconnect Google Calendar** *(auth: Opus/high, frontend)*:
+- [x] **12. Connect and disconnect Google Calendar** *(auth: Opus/high, frontend)*:
   `/api/google/oauth/start` (session-gated, HMAC'd `state`, `access_type=offline`,
   `prompt=consent`, scopes `calendar.events` + `calendar.calendarlist.readonly`) and
   `/api/google/oauth/callback` (state check, code exchange, account email, calendar list, plain

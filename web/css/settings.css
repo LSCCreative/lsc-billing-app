@@ -1088,3 +1088,206 @@
     transition: none;
   }
 }
+
+/* ── Google Calendar (trip-planner task 12) ───────────────────────────────── */
+
+/* Tokens only. Functionalist, like the rest of the screen: the calendars'
+   own colours are the only colour in the section, as small dots; a switch
+   that is on is drawn in the page's ink, not terracotta (that stays Save
+   settings', the screen's one accent action). */
+
+.set-status-dot.is-on {
+  border-color: var(--color-status-success);
+  background: var(--color-status-success);
+}
+
+#set-gcal-notice {
+  display: none;
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  max-width: 64ch;
+}
+#set-gcal-notice.show {
+  display: block;
+}
+
+.gcal-account {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  justify-items: start;
+}
+.gcal-account .set-status {
+  margin-bottom: 0;
+}
+.gcal-who {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.gcal-who strong {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+.gcal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.gcal-warn {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-4) var(--space-6);
+  max-width: 64ch;
+  border-left: 2px solid var(--color-status-warning);
+  background: var(--color-bg-inset);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* The toggle list: one panel, a hairline between rows. */
+.gcal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 560px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+}
+.gcal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-6) 0 0;
+}
+.gcal-row + .gcal-row {
+  border-top: 1px solid var(--color-border-hairline);
+}
+/* The label is the row's big target: a click on the name flips the switch. */
+.gcal-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 56px;
+  padding: var(--space-4) 0 var(--space-4) var(--space-6);
+  cursor: pointer;
+}
+.gcal-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--gcal-colour, var(--color-status-neutral));
+  box-shadow: 0 0 0 1px var(--color-border-subtle);
+}
+.gcal-text {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.gcal-name {
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.gcal-meta {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+
+/* The switch: a real checkbox (role="switch"), drawn. 44px wide target on a
+   phone through its own size plus the row's padding. */
+.gcal-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-inset);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-default), box-shadow var(--duration-fast) var(--easing-default);
+}
+.gcal-switch::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-tertiary);
+  transition: transform var(--duration-normal) var(--easing-default), background var(--duration-fast) var(--easing-default);
+}
+.gcal-switch:checked {
+  background: var(--color-text-primary);
+  box-shadow: inset 0 0 0 1px var(--color-text-primary);
+}
+.gcal-switch:checked::before {
+  transform: translateX(18px);
+  background: var(--color-bg-page);
+}
+.gcal-switch:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong), var(--shadow-focus);
+}
+.gcal-switch:checked:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--color-text-primary), var(--shadow-focus);
+}
+.gcal-row:hover .gcal-switch:not(:checked) {
+  box-shadow: inset 0 0 0 1px var(--color-text-secondary);
+}
+
+.gcal-list-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  margin-top: var(--space-4);
+}
+.gcal-list-foot .set-hint {
+  margin: 0;
+}
+.gcal-sync-hint {
+  margin-top: calc(-1 * var(--space-4));
+}
+
+/* The disconnect dialog's one option. */
+.set-cf-option {
+  margin: calc(-1 * var(--space-5)) 0 0;
+}
+.set-cf-option-hint {
+  margin: 0 0 var(--space-7);
+  padding-left: 22px;
+}
+
+@media (min-width: 768px) {
+  .gcal-label {
+    min-height: 52px;
+  }
+  .gcal-name {
+    font-size: var(--font-size-base);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gcal-switch,
+  .gcal-switch::before {
+    transition: none;
+  }
+}

@@ -3,12 +3,17 @@
 /* Settings, #/settings (production-booking task 21; D65, IA "Settings").
  *
  * Until task 21 this was the Invoice Settings pop-up, opened over whatever was
- * on #main. It is a screen now, with seven sections, each linkable as
+ * on #main. It is a screen now, with eight sections, each linkable as
  * #/settings/<section>: Business, Payment, Estimates & invoices, Service
- * agreement, Email, Card payments and Account. A rail beside them from 1100px, a jump
+ * agreement, Email, Google Calendar, Card payments and Account. A rail beside them from 1100px, a jump
  * list above them below that. Card payments reads "Not set up yet" (held, D101).
  * Email shows whether the server's SMTP key is connected and sends a test
  * (task 28); the key itself is set on the server, never typed in here.
+ * Google Calendar (trip-planner task 12; G1, G2) connects the server to the
+ * owner's Google account and picks which of their calendars show on the app's
+ * calendars. It saves through its own routes (GcalPanel), never with Save
+ * Settings, and Connect leaves the app for Google's consent page and comes
+ * back to #/settings/calendar?connected=1 (or ?error=…).
  * Account (.design/account-recovery/) is the login itself: username, the
  * email a "forgot password" link goes to, and the password. It saves on its
  * own, through PUT /api/account with the current password, never with Save
@@ -78,6 +83,7 @@ const SettingsView = (() => {
     ['documents', 'Estimates & invoices'],
     ['agreement', 'Service agreement'],
     ['email', 'Email'],
+    ['calendar', 'Google Calendar'],
     ['cards', 'Card payments'],
     ['account', 'Account'],
   ];
@@ -549,6 +555,19 @@ const SettingsView = (() => {
       '<p class="set-hint" id="set-email-result" role="status" aria-live="polite"></p>');
   }
 
+  /* Google Calendar (trip-planner task 12). Drawn by GcalPanel once
+     GET /api/google/status answers; nothing here is saved with the settings. */
+  function calendarMarkup() {
+    return section('calendar', 'Google Calendar',
+      'See your Google calendars beside your bookings, and have bookings written to your own calendar. The connection ' +
+      'lives on the server, so it keeps working when no browser is open.',
+      '<div id="set-gcal-notice" role="alert"></div>' +
+      '<div id="set-gcal" aria-busy="true">' +
+        '<p class="set-status"><span class="set-status-dot" aria-hidden="true"></span><span>Checking…</span></p>' +
+      '</div>' +
+      '<p class="sr-only" id="set-gcal-live" role="status" aria-live="polite"></p>');
+  }
+
   /* Account (account-recovery). A <form> of its own so Enter saves it and a
      password manager sees a username beside a new-password field. Filled by
      AccountPanel once GET /api/account answers. */
@@ -596,6 +615,7 @@ const SettingsView = (() => {
         documentsMarkup(f) +
         agreementMarkup(f) +
         emailMarkup() +
+        calendarMarkup() +
         pendingMarkup('cards', 'Card payments',
           'Paying an invoice by card through Stripe, with the card fee passed on to the client, is on hold. Clients pay by bank transfer, as the invoices say.') +
         accountMarkup() +
@@ -1270,8 +1290,9 @@ const SettingsView = (() => {
       opener = null;
     }
 
-    /* opts: { title, body, confirm, run }. Confirming closes it, then runs
-       run(), which puts focus where the result is. */
+    /* opts: { title, body, confirm, run, option? }. Confirming closes it, then
+       runs run({ option }), which puts focus where the result is. `option`
+       { label, hint } adds one checkbox, off to start with. */
     function open(from, opts) {
       overlay = document.getElementById('modal-settings-confirm');
       close(false);
@@ -1280,6 +1301,11 @@ const SettingsView = (() => {
         '<div class="modal-box set-confirm" role="dialog" aria-modal="true" aria-labelledby="set-cf-title" aria-describedby="set-cf-body">' +
         '<h2 class="modal-title" id="set-cf-title">' + esc(opts.title) + '</h2>' +
         '<p class="set-cf-body" id="set-cf-body">' + esc(opts.body) + '</p>' +
+        (opts.option
+          ? '<label class="set-check set-cf-option"><input type="checkbox" id="set-cf-option"' +
+            (opts.option.hint ? ' aria-describedby="set-cf-option-hint"' : '') + '> ' + esc(opts.option.label) + '</label>' +
+            (opts.option.hint ? '<p class="set-hint set-cf-option-hint" id="set-cf-option-hint">' + esc(opts.option.hint) + '</p>' : '')
+          : '') +
         '<div class="modal-actions">' +
           '<button type="button" class="btn btn-quiet" id="set-cf-cancel">Cancel</button>' +
           '<button type="button" class="btn btn-danger" id="set-cf-ok">' + esc(opts.confirm) + '</button>' +
@@ -1289,8 +1315,10 @@ const SettingsView = (() => {
       overlay.addEventListener('click', onBackdrop);
       overlay.querySelector('#set-cf-cancel').addEventListener('click', () => close(true));
       overlay.querySelector('#set-cf-ok').addEventListener('click', () => {
+        const box = overlay.querySelector('#set-cf-option');
+        const option = Boolean(box && box.checked);
         close(false);
-        opts.run();
+        opts.run({ option });
       });
       overlay.querySelector('#set-cf-cancel').focus();
     }
@@ -1590,6 +1618,344 @@ const SettingsView = (() => {
     return { load, sendTest, reset() { mail = null; } };
   })();
 
+  // ── Google Calendar: the connection and the calendars shown ────────────────
+
+  /* Trip-planner task 12 (G1, G2; IA "Settings → Google Calendar").
+     Three states from GET /api/google/status: not set up on the server (no
+     OAuth client), not connected (Connect), connected (who and since, the
+     calendar toggles, the writing explainer, Disconnect…). Each toggle saves
+     at once through PUT /api/google/calendars; a change made while one is
+     on its way goes after it, so the last word always wins. */
+  const GcalPanel = (() => {
+    let status = null; // the last GET /api/google/status, or null while unknown
+    let saved = null; // the calendars as the server last confirmed them
+    let saving = false;
+    let again = false; // a toggle changed while a save was out
+    let busy = false; // Refresh or Disconnect under way
+
+    const box = () => $('set-gcal');
+    const live = (text) => { const el = $('set-gcal-live'); if (el) LSCUtil.announce(el, text); };
+
+    /* What went wrong, said once above the section; '' clears it. */
+    function notice(text) {
+      const el = $('set-gcal-notice');
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle('show', Boolean(text));
+    }
+
+    const ARRIVALS = {
+      access_denied: 'Nothing was connected: Google’s screen was cancelled. Connect again whenever you’re ready.',
+      scopes: 'Google needs both permissions ticked: seeing and editing your events, and seeing your list of calendars. ' +
+        'Connect again and leave both ticked.',
+      oauth_failed: 'Google didn’t finish connecting. Try Connect again.',
+      signed_out: 'You were signed out partway through. Connect again.',
+      not_configured: 'Google Calendar isn’t set up on the server yet.',
+    };
+
+    const failure = (err) => {
+      if (err.kind === 'network') return 'Couldn’t reach the server. Try again once it’s back.';
+      if (err.code === 'google_reconnect') return 'Google no longer accepts this connection. Connect again to carry on.';
+      if (err.code === 'google_unavailable') return 'Google didn’t answer. Try again in a moment.';
+      if (err.code === 'google_not_connected') return 'Google Calendar isn’t connected any more.';
+      return err.message || 'The server refused the request.';
+    };
+
+    const since = (iso) => {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' });
+    };
+
+    /* Who a calendar belongs to, in a few words. A subscription (public
+       holidays, a sports fixture) has its own address shape. */
+    function roleOf(c) {
+      if (c.primary) return 'Your main calendar';
+      if (/@group\.v\.calendar\.google\.com$/.test(c.id)) return 'Subscribed';
+      if (c.role === 'owner') return 'Yours';
+      if (c.role === 'writer') return 'Shared with you · can edit';
+      if (c.role === 'freeBusyReader') return 'Shared with you · busy times only';
+      return 'Shared with you · view only';
+    }
+
+    const dot = (on) => '<span class="set-status-dot' + (on ? ' is-on' : '') + '" aria-hidden="true"></span>';
+
+    function rowMarkup(c, i) {
+      const id = 'set-gcal-cal-' + i;
+      return '<li class="gcal-row">' +
+        '<label class="gcal-label" for="' + id + '">' +
+          '<span class="gcal-dot"' + (c.colour ? ' style="--gcal-colour:' + esc(c.colour) + '"' : '') + ' aria-hidden="true"></span>' +
+          '<span class="gcal-text"><span class="gcal-name">' + esc(c.summary) + '</span>' +
+          '<span class="gcal-meta" id="' + id + '-meta">' + esc(roleOf(c)) + '</span></span>' +
+        '</label>' +
+        '<input type="checkbox" role="switch" class="gcal-switch" id="' + id + '" data-cal="' + esc(c.id) + '"' +
+          ' aria-describedby="' + id + '-meta"' + (c.on ? ' checked' : '') + '>' +
+      '</li>';
+    }
+
+    function connectedMarkup(s) {
+      const when = since(s.connectedAt);
+      const list = s.calendars.length
+        ? '<ul class="gcal-list" aria-labelledby="set-gcal-cal-h">' + s.calendars.map(rowMarkup).join('') + '</ul>'
+        : '<p class="set-hint set-hint-lead">Google didn’t list any calendars for this account.</p>';
+      return '<div class="gcal-account">' +
+          '<p class="set-status">' + dot(!s.problem) + (s.problem ? 'Needs reconnecting' : 'Connected') + '</p>' +
+          '<p class="gcal-who">As <strong>' + esc(s.email || 'your Google account') + '</strong>' + (when ? ' since ' + esc(when) : '') + '.</p>' +
+          '<div class="gcal-actions">' +
+            (s.problem ? '<button type="button" class="btn btn-sm" id="set-gcal-connect">Connect again</button>' : '') +
+            '<button type="button" class="btn btn-ghost btn-sm" id="set-gcal-disconnect">Disconnect…</button>' +
+          '</div>' +
+        '</div>' +
+        (s.problem
+          ? '<p class="gcal-warn">Google stopped accepting this connection (it may have been removed in your Google account, ' +
+            'or your password changed). Your choices below are kept; connect again to carry on.</p>'
+          : '') +
+        '<h3 class="set-group-head" id="set-gcal-cal-h">Calendars to show</h3>' +
+        '<p class="set-hint set-hint-lead">Switched on, a calendar’s events show on Home and the booking calendar as faded, ' +
+          'read-only times. They never block a booking, and nothing from the app is shared with them.</p>' +
+        list +
+        '<div class="gcal-list-foot">' +
+          '<button type="button" class="btn btn-quiet btn-sm" id="set-gcal-refresh">Refresh the list</button>' +
+          '<span class="set-hint">For a calendar shared with you since you connected.</span>' +
+        '</div>' +
+        '<h3 class="set-group-head">Writing bookings</h3>' +
+        '<p class="set-hint set-hint-lead">Confirmed days, and pencilled days marked tentative (“Pencil ·”), go to your main ' +
+          'calendar, ' + esc(s.email || 'your Google account') + '. Proposed and Date TBC days don’t. Each event names the project, ' +
+          'the client, the day’s items, the trip and the call sheet link: never prices.</p>' +
+        '<p class="set-status" id="set-gcal-sync">' + dot(false) + 'Not writing yet</p>' +
+        '<p class="set-hint gcal-sync-hint">Bookings start going to Google in a later update.</p>';
+    }
+
+    function paint() {
+      const el = box();
+      if (!el) return; // the screen was left
+      el.removeAttribute('aria-busy');
+      if (!status) {
+        el.innerHTML = '<p class="set-status">' + dot(false) + 'Couldn’t check</p>' +
+          '<p class="set-hint set-hint-lead">The server didn’t say whether Google Calendar is connected. ' +
+          '</p><button type="button" class="btn btn-quiet btn-sm" id="set-gcal-retry">Try again</button>';
+        $('set-gcal-retry').addEventListener('click', () => load(LSCRouter.ticket(), null));
+        return;
+      }
+      if (!status.configured && !status.connected) {
+        el.innerHTML = '<p class="set-status">' + dot(false) + 'Not set up yet</p>' +
+          '<p class="set-hint set-hint-lead">Add the Google sign-in client to the server’s settings ' +
+          '(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET), then restart it.</p>';
+        return;
+      }
+      if (!status.connected) {
+        el.innerHTML = '<p class="set-status">' + dot(false) + 'Not connected</p>' +
+          '<p class="set-hint set-hint-lead">Connect opens Google’s sign-in in this tab and brings you back here. Allow both ' +
+          'permissions it asks for: seeing and editing your events, and seeing your list of calendars.</p>' +
+          '<button type="button" class="btn" id="set-gcal-connect">Connect Google Calendar</button>';
+        return;
+      }
+      el.innerHTML = connectedMarkup(status);
+    }
+
+    async function load(ticket, arrival) {
+      if (arrival && ARRIVALS[arrival]) notice(ARRIVALS[arrival]);
+      try {
+        status = await LSCApi.get('/api/google/status');
+      } catch (err) {
+        if (!LSCRouter.isCurrent(ticket)) return;
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        if (err.kind === 'auth') { handlers.onAuthLost(); return; }
+        status = null;
+      }
+      if (!LSCRouter.isCurrent(ticket)) return;
+      saved = status ? status.calendars.map((c) => ({ ...c })) : null;
+      paint();
+      if (arrival) {
+        // Said once: a reload of this address shouldn't say it again.
+        LSCRouter.mark('/settings/calendar', { replace: true });
+        if (arrival === 'connected' && status && status.connected) {
+          Toast.ok('Google Calendar connected as ' + status.email + '.');
+          const first = root.querySelector('.gcal-switch');
+          if (first) first.focus({ preventScroll: true });
+        } else if (arrival !== 'connected' && $('set-gcal-connect')) {
+          $('set-gcal-connect').focus({ preventScroll: true });
+        }
+      }
+    }
+
+    /* Leaves for Google's consent page: a navigation, not a fetch, so the
+       session cookie goes with it and Google can send the browser back. An
+       unsaved edit on the page is asked about by the browser on the way out. */
+    function connect() {
+      notice('');
+      const base = String(window.LSC_API_BASE || '').replace(/\/+$/, '');
+      window.location.assign(base + '/api/google/oauth/start');
+    }
+
+    async function save() {
+      if (saving) { again = true; return; }
+      saving = true;
+      const on = status.calendars.filter((c) => c.on).map((c) => c.id);
+      let reply = null;
+      let failed = null;
+      try {
+        reply = await LSCApi.put('/api/google/calendars', { on });
+      } catch (err) {
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        failed = err;
+      }
+      saving = false;
+      if (!box()) return;
+      if (failed) {
+        again = false;
+        if (failed.kind === 'auth') { handlers.onAuthLost({ keepScreen: true }); return; }
+        // Back to what the server holds, switch by switch.
+        status.calendars = saved.map((c) => ({ ...c }));
+        syncSwitches();
+        notice('Couldn’t save that change: ' + failure(failed));
+        return;
+      }
+      saved = reply.calendars.map((c) => ({ ...c }));
+      if (again) {
+        again = false;
+        save();
+        return;
+      }
+      notice('');
+    }
+
+    function syncSwitches() {
+      root.querySelectorAll('.gcal-switch').forEach((input) => {
+        const c = status.calendars.find((x) => x.id === input.dataset.cal);
+        if (c) input.checked = c.on;
+      });
+    }
+
+    function onToggle(input) {
+      const c = status.calendars.find((x) => x.id === input.dataset.cal);
+      if (!c) return;
+      c.on = input.checked;
+      live(c.summary + (c.on ? ' shown.' : ' hidden.'));
+      save();
+    }
+
+    async function refresh(button) {
+      if (busy) return;
+      busy = true;
+      button.disabled = true;
+      button.textContent = 'Refreshing…';
+      notice('');
+      let reply = null;
+      let failed = null;
+      try {
+        reply = await LSCApi.post('/api/google/calendars/refresh', {});
+      } catch (err) {
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        failed = err;
+      }
+      busy = false;
+      if (!box()) return;
+      if (failed) {
+        if (failed.kind === 'auth') { handlers.onAuthLost({ keepScreen: true }); return; }
+        if (failed.code === 'google_reconnect') {
+          // The section's own warning says it, beside Connect again.
+          status.problem = 'reconnect';
+          paint();
+          live('Google no longer accepts this connection. Connect again to carry on.');
+          if ($('set-gcal-connect')) $('set-gcal-connect').focus();
+          return;
+        }
+        if (failed.code === 'google_not_connected') {
+          status = Object.assign({}, status, { connected: false });
+          paint();
+        } else {
+          button.disabled = false;
+          button.textContent = 'Refresh the list';
+        }
+        notice('Couldn’t refresh the list: ' + failure(failed));
+        return;
+      }
+      const before = status.calendars.length;
+      status = reply;
+      saved = status.calendars.map((c) => ({ ...c }));
+      paint();
+      const added = status.calendars.length - before;
+      const said = added > 0 ? added + (added === 1 ? ' new calendar' : ' new calendars') + ' listed, switched off.' : 'The list is up to date.';
+      live(said);
+      const again_ = $('set-gcal-refresh');
+      if (again_) again_.focus({ preventScroll: true });
+      Toast.ok(said);
+    }
+
+    function askDisconnect(opener) {
+      Confirm.open(opener, {
+        title: 'Disconnect Google Calendar?',
+        body: 'Your Google events leave Home and the booking calendar, bookings stop being written to ' +
+          (status.email || 'your calendar') + ', and the app’s access to your Google account is removed.',
+        option: {
+          label: 'Also remove the app’s events from Google Calendar',
+          hint: 'Left off, the events already written stay in your calendar as they are.',
+        },
+        confirm: 'Disconnect',
+        run: ({ option }) => disconnect(option),
+      });
+    }
+
+    async function disconnect(removeEvents) {
+      if (busy) return;
+      busy = true;
+      const button = $('set-gcal-disconnect');
+      if (button) { button.disabled = true; button.textContent = 'Disconnecting…'; }
+      notice('');
+      let reply = null;
+      let failed = null;
+      try {
+        reply = await LSCApi.post('/api/google/disconnect', { removeEvents });
+      } catch (err) {
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        failed = err;
+      }
+      busy = false;
+      if (!box()) return;
+      if (failed) {
+        if (failed.kind === 'auth') { handlers.onAuthLost({ keepScreen: true }); return; }
+        if (button) { button.disabled = false; button.textContent = 'Disconnect…'; button.focus(); }
+        notice('Couldn’t disconnect: ' + failure(failed));
+        return;
+      }
+      status = Object.assign({}, status, { connected: false, email: '', connectedAt: null, calendars: [], problem: null });
+      saved = [];
+      paint();
+      let said = 'Google Calendar disconnected.';
+      if (reply.removed) said += ' ' + reply.removed + (reply.removed === 1 ? ' event' : ' events') + ' removed from Google.';
+      if (reply.notRemoved) {
+        notice(reply.notRemoved + (reply.notRemoved === 1 ? ' event' : ' events') +
+          ' couldn’t be removed from Google. Delete ' + (reply.notRemoved === 1 ? 'it' : 'them') + ' in Google Calendar.');
+      }
+      if (!reply.revoked) said += ' Google didn’t confirm the access was removed; you can remove it in your Google account.';
+      Toast.ok(said);
+      live(said);
+      const connectBtn = $('set-gcal-connect');
+      if (connectBtn) connectBtn.focus();
+    }
+
+    function bind() {
+      const el = box();
+      el.addEventListener('click', (event) => {
+        const target = event.target.closest('button');
+        if (!target) return;
+        if (target.id === 'set-gcal-connect') connect();
+        else if (target.id === 'set-gcal-refresh') refresh(target);
+        else if (target.id === 'set-gcal-disconnect') askDisconnect(target);
+      });
+      el.addEventListener('change', (event) => {
+        if (event.target.classList.contains('gcal-switch')) onToggle(event.target);
+      });
+    }
+
+    return {
+      load,
+      bind,
+      reset() { status = null; saved = null; saving = false; again = false; busy = false; },
+    };
+  })();
+
   // ── Account: the login's own details ───────────────────────────────────────
 
   const AccountPanel = (() => {
@@ -1710,7 +2076,7 @@ const SettingsView = (() => {
 
   // ── Showing ───────────────────────────────────────────────────────────────
 
-  async function draw(sectionId) {
+  async function draw(sectionId, arrival) {
     const ticket = LSCRouter.ticket();
     saving = false;
     form = null;
@@ -1718,6 +2084,7 @@ const SettingsView = (() => {
     Confirm.close(false);
     Clauses.reset();
     EmailPanel.reset();
+    GcalPanel.reset();
     AccountPanel.reset();
     root.innerHTML = head + '<div class="empty-state"><h3>Loading…</h3></div>';
     let settings;
@@ -1745,6 +2112,8 @@ const SettingsView = (() => {
     paintBiz();
     $('set-email-send').addEventListener('click', EmailPanel.sendTest);
     EmailPanel.load(ticket);
+    GcalPanel.bind();
+    GcalPanel.load(ticket, arrival);
     AccountPanel.bind();
     AccountPanel.load(ticket);
     LSCUtil.landFocus(root);
@@ -1755,8 +2124,10 @@ const SettingsView = (() => {
     else window.scrollTo(0, 0);
   }
 
-  /* #/settings or #/settings/<section>. False for anything else. */
-  function show(rest, state) {
+  /* #/settings or #/settings/<section>. False for anything else. `query` is
+     the address's query: Google's consent comes back to
+     #/settings/calendar?connected=1 or ?error=<reason>. */
+  function show(rest, state, query) {
     if (rest.length > 1) return false;
     const sectionId = rest[0];
     if (sectionId !== undefined && !SECTIONS.some(([id]) => id === sectionId)) return false;
@@ -1765,7 +2136,10 @@ const SettingsView = (() => {
       jumpTo(sectionId || SECTIONS[0][0], true);
       return true;
     }
-    draw(sectionId);
+    const arrival = sectionId === 'calendar' && query
+      ? (query.get('connected') === '1' ? 'connected' : query.get('error') || null)
+      : null;
+    draw(sectionId, arrival);
     return true;
   }
 

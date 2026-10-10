@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * The server's side of Google Maps Platform (trip-planner task 9, T1a, T12):
- * the call sheet's route image, from Maps Static.
+ * The server's side of Google (trip-planner): the call sheet's route image,
+ * from Maps Static (task 9, T1a, T12), and the Calendar connection (task 12
+ * on, G1; at the end of the file).
  *
  * The NAS makes the request with GOOGLE_MAPS_SERVER_KEY and keeps the PNG; a
  * browser, a client page and a crew member's phone only ever receive the image
@@ -287,6 +288,294 @@ const forgetFailures = () => failedAt.clear();
 
 const dataUri = (png) => `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
 
+/* ══ Google Calendar (trip-planner task 12; G1, I3) ══════════════════════════
+ *
+ * The NAS holds the one connection: Connect runs Google's OAuth web flow once
+ * (routes/google.js), and the refresh token it leaves is kept in
+ * `google_account` (plain, I3). Everything below takes that row's tokens and
+ * makes the requests; no token is ever returned from here to a route, a reply
+ * or a log. Errors carry a short code of ours (GoogleError), never Google's
+ * reply body, which can echo a token back.
+ */
+
+const OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const OAUTH_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
+const CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
+const SCOPE_EVENTS = 'https://www.googleapis.com/auth/calendar.events';
+const SCOPE_LIST = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+const SCOPES = [SCOPE_EVENTS, SCOPE_LIST];
+const API_TIMEOUT_MS = 10000;
+/* An access token is renewed this long before Google says it ends, so one
+   never runs out between the check and the request. */
+const ACCESS_MARGIN_MS = 60 * 1000;
+/* Google's list can't sensibly run past this; a cap keeps a looping
+   nextPageToken from spinning forever. */
+const MAX_LIST_PAGES = 10;
+
+/**
+ * `code` is ours: 'not_connected' (no account row), 'reconnect' (Google no
+ * longer accepts the refresh token: revoked, the password changed, or the
+ * client was deleted), 'unavailable' (Google didn't answer, or answered with
+ * a server error), 'refused' (a 4xx other than the above), 'scopes' (consent
+ * left a permission unticked), 'not_configured' (no client id/secret).
+ */
+class GoogleError extends Error {
+  constructor(code, status) {
+    super(`google: ${code}`);
+    this.code = code;
+    this.status = status || null;
+  }
+}
+
+/* The last time Google refused the refresh token. In memory: the status reply
+   says "reconnect" until a token is issued again, and a restart forgets it
+   until the next request finds out again (one failed call). */
+let reconnectNeeded = false;
+const needsReconnect = () => reconnectNeeded;
+
+function configured(oauth) {
+  return Boolean(oauth && oauth.clientId && oauth.clientSecret);
+}
+
+/** Google's consent page for `state`. Offline + consent so a refresh token always comes back. */
+function oauthUrl({ clientId, redirectUri, state }) {
+  const q = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: SCOPES.join(' '),
+    access_type: 'offline',
+    prompt: 'consent',
+    include_granted_scopes: 'false',
+    state,
+  });
+  return `${OAUTH_AUTH_URL}?${q.toString()}`;
+}
+
+/* One request to Google: a timeout, JSON back, and our own error codes. A
+   reply body is read for its `error` field only (invalid_grant), never kept. */
+async function call(fetchImpl, url, init) {
+  let res;
+  try {
+    res = await (fetchImpl || fetch)(url, { ...init, signal: AbortSignal.timeout(API_TIMEOUT_MS) });
+  } catch (_) {
+    throw new GoogleError('unavailable');
+  }
+  let body = null;
+  try {
+    const text = await res.text();
+    body = text ? JSON.parse(text) : null;
+  } catch (_) {
+    body = null;
+  }
+  if (res.ok) return body || {};
+  const reason = body && (typeof body.error === 'string' ? body.error : body.error && body.error.status);
+  if (reason === 'invalid_grant' || reason === 'unauthorized_client' || reason === 'invalid_client') {
+    throw new GoogleError('reconnect', res.status);
+  }
+  if (res.status === 401) throw new GoogleError('unauthorized', 401);
+  if (res.status >= 500 || res.status === 429) throw new GoogleError('unavailable', res.status);
+  throw new GoogleError('refused', res.status);
+}
+
+const form = (fields) => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams(fields).toString(),
+});
+
+const expiryOf = (seconds, now) => new Date(now + Math.max(0, Number(seconds) || 0) * 1000).toISOString();
+
+/**
+ * Swaps the consent's one-time code for tokens.
+ * @returns {{accessToken, refreshToken, expiresAt, scopes:string[]}}
+ */
+async function exchangeCode(oauth, { code, redirectUri }) {
+  const now = (oauth.now || Date.now)();
+  const body = await call(oauth.fetchImpl, OAUTH_TOKEN_URL, form({
+    code,
+    client_id: oauth.clientId,
+    client_secret: oauth.clientSecret,
+    redirect_uri: redirectUri,
+    grant_type: 'authorization_code',
+  }));
+  if (!body.access_token) throw new GoogleError('refused');
+  return {
+    accessToken: String(body.access_token),
+    refreshToken: body.refresh_token ? String(body.refresh_token) : '',
+    expiresAt: expiryOf(body.expires_in, now),
+    scopes: String(body.scope || '').split(/\s+/).filter(Boolean),
+  };
+}
+
+const hasScopes = (granted) => SCOPES.every((s) => granted.includes(s));
+
+/** Best effort: a token Google has already forgotten is gone either way. */
+async function revokeToken(oauth, token) {
+  if (!token) return false;
+  try {
+    await call(oauth.fetchImpl, OAUTH_REVOKE_URL, form({ token }));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function readAccount(db) {
+  return db.prepare('SELECT * FROM google_account WHERE id = 1').get() || null;
+}
+
+/**
+ * A live access token for the stored account, renewed from the refresh token
+ * when it is near its end. `force` renews regardless (after a 401).
+ */
+async function accessToken(db, oauth, { force = false } = {}) {
+  const row = readAccount(db);
+  if (!row) throw new GoogleError('not_connected');
+  const now = (oauth.now || Date.now)();
+  if (!force && row.access_token && row.access_expires_at &&
+      Date.parse(row.access_expires_at) - ACCESS_MARGIN_MS > now) {
+    return row.access_token;
+  }
+  if (!configured(oauth)) throw new GoogleError('not_configured');
+  let body;
+  try {
+    body = await call(oauth.fetchImpl, OAUTH_TOKEN_URL, form({
+      client_id: oauth.clientId,
+      client_secret: oauth.clientSecret,
+      refresh_token: row.refresh_token,
+      grant_type: 'refresh_token',
+    }));
+  } catch (err) {
+    if (err.code === 'reconnect' || err.code === 'refused') {
+      reconnectNeeded = true;
+      throw new GoogleError('reconnect', err.status);
+    }
+    throw err;
+  }
+  if (!body.access_token) throw new GoogleError('unavailable');
+  reconnectNeeded = false;
+  const token = String(body.access_token);
+  db.prepare('UPDATE google_account SET access_token = ?, access_expires_at = ? WHERE id = 1')
+    .run(token, expiryOf(body.expires_in, now));
+  return token;
+}
+
+/**
+ * A Calendar API request as the stored account. A 401 renews the token once
+ * and tries again (Google can end one early).
+ */
+async function calendarApi(db, oauth, method, path, body) {
+  const send = (token) => call(oauth.fetchImpl, CALENDAR_API + path, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  try {
+    return await send(await accessToken(db, oauth));
+  } catch (err) {
+    if (err.code !== 'unauthorized') throw err;
+    try {
+      return await send(await accessToken(db, oauth, { force: true }));
+    } catch (again) {
+      if (again.code === 'unauthorized') {
+        reconnectNeeded = true;
+        throw new GoogleError('reconnect', 401);
+      }
+      throw again;
+    }
+  }
+}
+
+/* The raw calendar list, every page, with a given access token (the callback
+   has one before there is an account row to read it from). */
+async function listCalendarsWith(oauth, token) {
+  const items = [];
+  let pageToken = '';
+  for (let page = 0; page < MAX_LIST_PAGES; page += 1) {
+    const q = new URLSearchParams({ maxResults: '250', showHidden: 'false' });
+    if (pageToken) q.set('pageToken', pageToken);
+    const body = await call(oauth.fetchImpl, `${CALENDAR_API}/users/me/calendarList?${q}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (Array.isArray(body.items)) items.push(...body.items);
+    pageToken = body.nextPageToken || '';
+    if (!pageToken) break;
+  }
+  return items;
+}
+
+const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
+const ROLE_RANK = { owner: 1, writer: 2, reader: 3, freeBusyReader: 4 };
+
+/**
+ * The toggle list (G2) from Google's calendar list: primary first, then the
+ * user's own, then everyone else's, each alphabetically. `previous` keeps the
+ * user's choices across a refresh or a reconnect; a calendar new to the list
+ * starts off, except the primary the first time (IA flow 7: "primary on").
+ *
+ * A free/busy-only calendar is listed (it is "a calendar shown in my
+ * Calendar") but can only show busy blocks, so it says so.
+ *
+ * @returns {Array<{id, summary, colour, primary, role, on}>}
+ */
+function calendarsFrom(items, previous) {
+  const before = new Map((previous || []).map((c) => [c.id, c.on]));
+  const firstTime = !(previous && previous.length);
+  const list = (items || [])
+    .filter((c) => c && typeof c.id === 'string' && c.id && !c.deleted)
+    .map((c) => {
+      const primary = c.primary === true;
+      return {
+        id: c.id.slice(0, 300),
+        summary: String(c.summaryOverride || c.summary || c.id).slice(0, 200),
+        colour: HEX_COLOUR.test(c.backgroundColor || '') ? c.backgroundColor.toLowerCase() : null,
+        primary,
+        role: ROLE_RANK[c.accessRole] ? c.accessRole : 'reader',
+        on: before.has(c.id) ? before.get(c.id) === true : (primary && firstTime),
+      };
+    });
+  const rank = (c) => (c.primary ? 0 : c.role === 'owner' ? 1 : 2);
+  list.sort((a, b) => rank(a) - rank(b) || a.summary.localeCompare(b.summary, 'en', { sensitivity: 'base' }));
+  return list;
+}
+
+/** The primary calendar's id is the account's address (no extra scope needed for it). */
+const accountEmail = (items) => {
+  const primary = (items || []).find((c) => c && c.primary === true);
+  return primary && typeof primary.id === 'string' ? primary.id : '';
+};
+
+function storedCalendars(row) {
+  try {
+    const list = JSON.parse((row && row.calendars_json) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+/** Fetches the list again as the stored account, keeping each calendar's toggle. */
+async function refreshCalendars(db, oauth) {
+  const token = await accessToken(db, oauth);
+  let items;
+  try {
+    items = await listCalendarsWith(oauth, token);
+  } catch (err) {
+    if (err.code !== 'unauthorized') throw err;
+    items = await listCalendarsWith(oauth, await accessToken(db, oauth, { force: true }));
+  }
+  const row = readAccount(db);
+  if (!row) throw new GoogleError('not_connected');
+  const calendars = calendarsFrom(items, storedCalendars(row));
+  db.prepare('UPDATE google_account SET calendars_json = ? WHERE id = 1').run(JSON.stringify(calendars));
+  return calendars;
+}
+
+/** For tests. */
+const forgetReconnect = () => { reconnectNeeded = false; };
+
 module.exports = {
   decodePolyline,
   encodePolyline,
@@ -299,4 +588,22 @@ module.exports = {
   staticMapFor,
   forgetFailures,
   MAX_PATH_CHARS,
+  // Calendar (task 12)
+  GoogleError,
+  SCOPES,
+  configured,
+  oauthUrl,
+  exchangeCode,
+  hasScopes,
+  revokeToken,
+  readAccount,
+  accessToken,
+  calendarApi,
+  listCalendarsWith,
+  calendarsFrom,
+  accountEmail,
+  storedCalendars,
+  refreshCalendars,
+  needsReconnect,
+  forgetReconnect,
 };

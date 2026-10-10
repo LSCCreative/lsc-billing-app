@@ -3,12 +3,11 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 12, Opus, effort high: auth + FRONTEND task** (connect and disconnect Google
-Calendar; load `/frontend-design` first). **Blocked on the user:** the OAuth client's ID and secret
-are still blank in `.credentials.local.md` (see "Google setup" below). Stages A, B and C (tasks
-1–11) are done.
+**Next: task 13, Opus, effort high: FRONTEND task** (Google events on Home and the editor's
+calendar, Calendars ▾; load `/frontend-design` first). Stages A, B and C (tasks 1–11) and task 12
+are done. The scratch DB is connected to the user's real Google account (all four calendars on).
 
-## State as of 2026-10-11 (task 11)
+## State as of 2026-10-11 (task 12)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -88,8 +87,61 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   the browser's refusal → link selected); email not set up (note, Send disabled); Escape; the row's
   Turn off → toast Undo → on; the row's Call sheet PDF (671 KB); Open; the page's Share… and its
   link line. Shots at 1280 and 375 (pane), no overflow, 44px targets below 600.
-- [ ] **Next: task 12**, connect and disconnect Google Calendar. *Opus/high, **auth + frontend**.*
-  Needs the OAuth client ID and secret from the user first.
+- [x] **Task 12** connect and disconnect Google Calendar, `COMMIT12`. 663 server tests pass
+  (`test-google-oauth.js`, 25). Verified with the user's real account on localhost (consent →
+  4 calendars → toggles saved, Refresh, Disconnect revoked, reconnect), and every state at
+  1280/800/375 (headless, no overflow) against `api-scratch-google`, a pretend Google.
+- [ ] **Next: task 13**, Google events on the calendar. *Opus/high, **frontend**.*
+
+## Decisions made in task 12 (agent's, within the brief)
+
+- **Routes** (`server/src/routes/google.js`). `GET /api/google/oauth/start` and `…/callback` are
+  browser navigations mounted **before** the session gate: they read the session themselves and
+  always answer with a redirect to `${appOrigin}#/settings/calendar?connected=1` or
+  `?error=signed_out|not_configured|access_denied|oauth_failed|scopes`. After the gate:
+  `GET /api/google/status` → `{ configured, connected, email, connectedAt, calendars:[{id, summary,
+  colour, primary, role, on}], problem: 'reconnect'|null, sync:{pending, errors} }` (an
+  allow-list; a test checks its keys), `PUT /api/google/calendars {on:[ids]}`,
+  `POST /api/google/calendars/refresh` (the list again, toggles kept; **added**, the IA had none:
+  shared calendars change), `POST /api/google/disconnect {removeEvents}` →
+  `{ disconnected, revoked, removed, notRemoved }`. Errors: `google_not_connected`,
+  `google_reconnect` (409), `google_not_configured`, `google_unavailable` (502).
+- **State** = `base64url(json{n, t, s}).hmac` keyed by SESSION_SECRET; refused if forged, > 10 min
+  old, used before (in-memory nonce set) or from another session (`s` = a hash of the session id).
+  Checked before Google's `error` param, and before any code swap.
+- **No openid/email scope:** the account's address is the primary calendar's id.
+- **Consent can untick a permission:** both scopes must come back, else `error=scopes`, nothing
+  stored. No refresh token back → `oauth_failed`.
+- **Never revoke on reconnect:** Google's revoke kills the whole grant, new token included. Only
+  Disconnect revokes (after deleting events, while the token still works).
+- **Same account reconnecting** (while still connected) keeps its toggles, `connected_at` and
+  `google_event_sync` rows; **another account** clears the sync rows. **Disconnect deletes the
+  row**, so toggles start afresh on the next connect (primary on). Event rows survive a disconnect
+  unless their event was removed, so a reconnect can still find them.
+- **Token renewal** in `google.js` (`accessToken`, 60 s margin; `calendarApi` retries a 401 once
+  with a forced renewal). `invalid_grant`/refused renewal → `GoogleError('reconnect')` and an
+  in-memory flag that `status.problem` reports (a restart forgets it until the next call).
+  `GoogleError` codes are ours; Google's reply bodies are never passed on.
+- **Calendar list:** every page (`nextPageToken`, ≤ 10 pages), deleted ones dropped, colour kept only
+  if `#rrggbb`. Order: primary, then own, then others A–Z. New calendars start off; the primary is on
+  only on a first connect. Roles shown as "Your main calendar", "Yours", "Shared with you · can
+  edit / view only / busy times only", "Subscribed" (`@group.v.calendar.google.com`).
+- **Config:** `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, optional
+  `GOOGLE_OAUTH_REDIRECT_URI` (unset = this API's own address as the request reached it, so set it
+  on the NAS if the proxy doesn't pass the scheme/host), `APP_ORIGIN` (falls back to `APP_URL`).
+  createApp opts for tests: `googleOAuth`, `googleFetch`, `googleNow`, `appOrigin`.
+- **Settings → Google Calendar** (`GcalPanel` in `settings.js`, `.gcal-*` in `settings.css`):
+  status chip; Connect (plain `btn`: terracotta stays Save settings'); connected = "As … since …",
+  Disconnect… (the settings Confirm, which gained an `option` checkbox: "Also remove the app's
+  events"), the toggle list (real checkboxes with `role="switch"`, the whole row is the label), Refresh
+  the list, the writing explainer, and **"Not writing yet"**, the placeholder task 14 replaces
+  (`#set-gcal-sync`, `.gcal-sync-hint`). Each toggle PUTs at once; a change while one is out goes
+  after it; a failure reverts to the server's copy. Arrival messages show once, then the query is
+  dropped with `LSCRouter.mark` (replace). `SettingsView.show` now takes `route.query`.
+- **Dev:** `server/scripts/dev-stub-google.js` (launch `api-scratch-google`): Connect goes to a
+  local pretend consent page (Allow / one permission unticked / Cancel); a refresh token other than
+  the stub's is refused (edit `google_account` to see Reconnect). The real flow is
+  `api-scratch-mail` with the client in `server/.env`.
 
 ## Decisions made in task 11 (agent's, within the brief)
 
@@ -432,10 +484,9 @@ local `web/js/config.js`. **Billing works**: the map drew on localhost:5173 with
 Still open: a $1 budget alert, and the Pages secrets `LSC_MAPS_KEY` / `LSC_MAPS_ID` (task 20).
 
 Google Calendar: the Calendar API is enabled, and the consent screen is Internal ("Production Decks", shared,
-left unchanged). The OAuth client "LSC Billing — NAS calendar" (Web application, two redirect URIs,
-see G1) was filled in but **not confirmed created**. The agent was blocked from reading its
-secret, correctly. **The user creates it and pastes the client ID and secret into
-`.credentials.local.md`.** Check `/auth/clients` for a duplicate before creating another.
+left unchanged). The OAuth client **"LSC Billing — NAS calendar"** (Web application, both G1
+redirect URIs) was **created 2026-10-11** by the agent with the user's OK; its ID and secret are in
+`.credentials.local.md` and the local `server/.env`. The NAS env needs both at deploy (task 20).
 
 ## Traps
 

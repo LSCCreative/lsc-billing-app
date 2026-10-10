@@ -69,6 +69,19 @@ const config = {
   // key. It stays here and in the one request google.js makes; no reply, log
   // or page ever carries it. Empty = the call sheet simply has no map image.
   googleMapsServerKey: (process.env.GOOGLE_MAPS_SERVER_KEY || '').trim(),
+  // The Calendar connection (trip-planner task 12, G1): the OAuth client
+  // "LSC Billing — NAS calendar". Like the SMTP key, the secret is read here
+  // and sent to Google only. Empty = Settings says Google Calendar isn't set
+  // up on the server. The redirect URI must be one the client lists; unset,
+  // it is this API's own address as the request reached it.
+  googleOAuth: {
+    clientId: (process.env.GOOGLE_OAUTH_CLIENT_ID || '').trim(),
+    clientSecret: (process.env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim(),
+    redirectUri: (process.env.GOOGLE_OAUTH_REDIRECT_URI || '').trim(),
+  },
+  // Where Google's consent sends the browser back to: the app's address
+  // (Pages), with the trailing slash. APP_URL unless APP_ORIGIN says otherwise.
+  appOrigin: appUrlOf(process.env.APP_ORIGIN) || appUrlOf(process.env.APP_URL),
   isTest: process.env.NODE_ENV === 'test',
 };
 
