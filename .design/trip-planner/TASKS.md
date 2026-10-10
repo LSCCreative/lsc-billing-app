@@ -174,7 +174,7 @@ starting. **Frontend** marks anything a person looks at.
   Modifies: `app.js` (route), `web/c/c.js` (`linkOf` gains `s`), `pdf.js`, routes._ _Depends on:
   9._
 
-- [x] **11. Call sheet on the Project page, Share and email** *(frontend: Opus/high)*: **Done (see HANDOVER).** Row + chip, `CallSheetShare` dialog (link on/off, Copy, email chips), `POST …/call-sheet/email` one per person, activity line; 638 tests pass. Original spec: A **Call
+- [x] **11. Call sheet on the Project page, Share and email** *(frontend: Opus/high)*: **Done `ba05c05`.** Row + chip, `CallSheetShare` dialog (link on/off, Copy, email chips), `POST …/call-sheet/email` one per person, activity line; 638 tests pass. Original spec: A **Call
   sheet** row in the Documents panel after its estimate's row (once any day has a trip):
   "3 days · 412 km", a "Link on" chip, primary **Open**, Documents ▾ Download PDF, Actions ▾
   Share… / Copy link / Turn off link. The **Share dialog** (`modal.js`): Turn on link, Copy link,

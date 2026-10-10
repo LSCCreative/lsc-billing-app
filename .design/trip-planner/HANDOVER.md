@@ -77,7 +77,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   and app pages at 1280/800/375 (headless, no overflow), Back, Edit trips (`?trip=cs10_a`), both
   Download PDF buttons, the dead-link page, an unknown estimate id; owner and public PDFs
   byte-identical, A4, 3 pages.
-- [x] **Task 11** call sheet row, Share and email, commit below. **Stage C is done.** 638 server tests
+- [x] **Task 11** call sheet row, Share and email, `ba05c05`. **Stage C is done.** 638 server tests
   pass (`test-call-sheet-share.js`, 5). Verified in the pane on scratch `est_705f805a` against
   `api-scratch-mail`: the row ("2 days · 141 km", Link on/off/Not shared), Actions ▾ by keyboard,
   Share… → Turn on link (same token back, public 200) → chips (typed, pasted list, "Name <a@b>",
