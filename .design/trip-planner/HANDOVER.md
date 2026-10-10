@@ -102,7 +102,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   unavailable / reconnect / partial lines, not connected → Settings, and a refused toggle
   (reverted + toast) by standing in for the reply in the page. 375 (dots, sheet with Done),
   800, 1280: no overflow.
-- [x] **Task 14** writing bookings to Google, `PENDING`. 699 server tests pass (`test-google-sync.js`,
+- [x] **Task 14** writing bookings to Google, `54e0c29`. 699 server tests pass (`test-google-sync.js`,
   21; the status shape in `test-google-oauth.js`). Verified against the pretend Google
   (`api-scratch-sync`, a copy of the scratch DB with no Google account) in the browser at 1024 and
   375: Sync existing bookings wrote the 11 current days (None → Writing → All bookings synced), a
