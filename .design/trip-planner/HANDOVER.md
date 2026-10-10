@@ -87,7 +87,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   the browser's refusal → link selected); email not set up (note, Send disabled); Escape; the row's
   Turn off → toast Undo → on; the row's Call sheet PDF (671 KB); Open; the page's Share… and its
   link line. Shots at 1280 and 375 (pane), no overflow, 44px targets below 600.
-- [x] **Task 12** connect and disconnect Google Calendar, `COMMIT12`. 663 server tests pass
+- [x] **Task 12** connect and disconnect Google Calendar, `99c4b1e`. 663 server tests pass
   (`test-google-oauth.js`, 25). Verified with the user's real account on localhost (consent →
   4 calendars → toggles saved, Refresh, Disconnect revoked, reconnect), and every state at
   1280/800/375 (headless, no overflow) against `api-scratch-google`, a pretend Google.
