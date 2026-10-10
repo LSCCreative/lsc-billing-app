@@ -194,8 +194,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Depends on: 4. Modifies: `web/c/c.js`, `web/c/c.css`, `server/src/pdf.js`, `test-pdf.js`._
 
 - [ ] **8. Deploy system + D3** (deploy — Sonnet/medium)
-  - **ON HOLD 2026-10-08: the NAS is offline.** Skip to task 9; build 9–14 and 16 locally and
-    don't push. Do 8 first once the NAS is back (see HANDOVER).
+  - **Unblocked 2026-10-09** (NAS back). Planned as **wave 1 with task 15**, after task 14
+    ([`../ROADMAP.md`](../ROADMAP.md) §3). Ask first.
   - **Fetch and merge `origin/main` first.** The server tree must contain schema **v15** (`db.js`) and
     `routes/account.js`; one without them won't boot on the live database. Back up as
     `pre-<task>-<date>.db`; the boot log should show no migration (already v15).

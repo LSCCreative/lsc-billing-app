@@ -35,3 +35,6 @@ web/js/config.js
 
 # Business documents (personal contact details; the repo is public)
 LSC-Service-Agreement*
+
+# Review screenshots: local only, often large (see each track's HANDOVER)
+.design/*/screenshots/
