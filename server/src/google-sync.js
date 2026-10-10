@@ -143,7 +143,7 @@ function eventFor(row, { appUrl }) {
   try {
     client = String(JSON.parse(row.client_json || '{}').businessName || '').trim();
   } catch (_) { /* a damaged snapshot has no client */ }
-  const title = [row.upid, row.name, client].map((p) => String(p || '').trim()).filter(Boolean).join(' · ') || 'Booking';
+  const title = [row.name, client, row.upid].map((p) => String(p || '').trim()).filter(Boolean).join(' · ') || 'Booking';
 
   let lines = {};
   try {

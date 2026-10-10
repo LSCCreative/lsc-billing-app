@@ -107,7 +107,7 @@ the app writes.
   own events. The app is the source of truth: edits made in Google to an app event are
   overwritten on the next sync. App events are filtered out of the Google layer, because the app
   already draws those days.
-- **G5 Full booking detail in each event:** title "UPID · Project · Client". Start and end times
+- **G5 Full booking detail in each event:** title "Project · Client · UPID" (the user's order, 2026-10-11; first written as "UPID · Project · Client"). Start and end times
   (all-day when the day has no start time) in `Australia/Sydney` (the app's existing zone). The
   trip's first destination as location. A description with the day's production items, the trip
   summary, the call sheet link (when sharing is on) and a link to the project in the app.

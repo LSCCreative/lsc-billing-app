@@ -278,7 +278,7 @@ test('a pencilled day is written once, with the booking’s detail and no prices
   const ev = only();
   assert.equal(ev.id, eventIdOf('d_a'));
   assert.match(ev.id, /^lscb[0-9a-f]{40}$/, 'a legal Google event id, ours');
-  assert.equal(ev.summary, `Pencil · GS-${counter} · Harbour shoot ${counter} · Saltwater Co.`);
+  assert.equal(ev.summary, `Pencil · Harbour shoot ${counter} · Saltwater Co. · GS-${counter}`);
   assert.equal(ev.status, 'tentative');
   assert.deepEqual(ev.start, { dateTime: '2026-11-03T07:00:00', timeZone: 'Australia/Sydney' });
   assert.deepEqual(ev.end, { dateTime: '2026-11-03T17:00:00', timeZone: 'Australia/Sydney' });

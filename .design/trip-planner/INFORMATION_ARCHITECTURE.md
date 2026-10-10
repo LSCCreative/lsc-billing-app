@@ -393,7 +393,7 @@ New items are **bold**; existing ones are shown for place only.
   deletes events if asked.
 - `GET /api/calendar` gains `google: [{ id, calendarId, title, start, end, allDay, colour }]` and
   `googleState: 'off'|'ok'|'unavailable'`. Events tagged `lscDayId` are excluded.
-- Event payload (G5): `summary` "UPID · Project · Client" ("Pencil · " prefix +
+- Event payload (G5): `summary` "Project · Client · UPID" ("Pencil · " prefix +
   `status: tentative` for pencilled); start/end `dateTime` in `Australia/Sydney`, or `date` for
   all-day; `location` = the trip's first destination address; `description` = items, trip
   summary, call sheet link (when on), project link; `extendedProperties.private.lscDayId`.

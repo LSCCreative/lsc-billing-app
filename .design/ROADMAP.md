@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `a728420`, schema **v15** | production-booking A–E, account recovery, everything older. NAS and site back online since 2026-10-09. |
 | **ui-clarity** | branch `ui-clarity` `850f904` + this record, on `main`, unpushed | Tasks 1–7, 9–13 built. Nothing of it is live. |
-| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–14 built (stages A, B, C, D; task 14's live check on the real calendar still to do). Nothing live. |
+| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–14 built (stages A–D); task 14 live-checked on the real calendar. Nothing deployed. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -28,7 +28,7 @@ main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three scr
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **15** responsive + accessibility pass *(Opus/high, frontend)*; task 14's live check waits on the user |
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **15** responsive + accessibility pass *(Opus/high, frontend)*|
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**
@@ -91,10 +91,10 @@ keeps the conflicts small: see §4 for the files both lines touch.
 
 1. ~~Task 13: Google events on the calendars~~, done: Calendars ▾, checkbox items in `menu.js`.
 2. ~~Task 14: writing bookings to Google~~, built and tested against a pretend Google
-   (`google-sync.js`, Settings → Writing bookings, the day card's mark). **Its live check on the
-   user's calendar is not done**: it needs the user's OK, a test project and a clean-up (HANDOVER).
+   (`google-sync.js`, Settings → Writing bookings, the day card's mark). **Live check on the user's
+   calendar passed 2026-10-11** (create, move, re-time, accept, delete; HANDOVER).
 3. **Tasks 15–19:** responsive/a11y pass, code review, design review, live Google check *(with the
-   user present; fold task 14's live check into it)*, docs (`DEPLOYMENT.md` env incl.
+   user present)*, docs (`DEPLOYMENT.md` env incl.
    `GOOGLE_CALENDAR_WRITE`, `web/README.md`).
 4. **Wave 3, deploy trip-planner** *(task 20, Sonnet/medium)*: only after wave 1 (and ideally wave 2),
    with `ui-clarity` and `main` merged in. **NAS first (v16 migration), then Pages.** New NAS env:
@@ -142,9 +142,8 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 - [ ] After wave 1: fill Settings → Business email, phone, Signs for the business.
 - [ ] A Google Cloud **$1 budget alert**; add the Pages secrets `LSC_MAPS_KEY` / `LSC_MAPS_ID` (or let
   an agent do it, with permission) before wave 3.
-- [ ] **OK a live check of writing bookings** on the real calendar (trip-planner task 14: a test project
-  with one pencilled and one confirmed day, then removed; an agent can do it, or fold it into task 18
-  with the user present), and be present for trip-planner task 18 (live Google check).
+- [ ] Be present for trip-planner task 18 (live Google check: the trip planner's own routes, and a
+  real project end to end).
 - [ ] **VoiceOver passes:** production-booking, price-calculator, service-rate-tiers, and the list
   ui-clarity task 14 will leave.
 - [ ] **Safari:** service-rate-tiers R8 (select-on-focus after a mouse click).
