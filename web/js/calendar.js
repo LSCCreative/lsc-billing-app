@@ -78,6 +78,18 @@
  * Labour Day"); the wide layout prints it small beside the date. Hidden
  * (removed) holidays are skipped, as calc.js dayKind skips them.
  *
+ * GOOGLE CALENDAR (trip-planner task 13, G2, G3)
+ * setGoogle(events) takes GET /api/calendar's `google` list (Sydney dates and
+ * HH:MM, worked out on the NAS). A timed event is a faded tile after the
+ * date's bookings, with its calendar's colour as a dot; an all-day or
+ * multi-day one is a thin band under the date on each date it covers; in dots
+ * mode each is a short dash. They are in the date's accessible name and in
+ * the list under the grid as plain text, not buttons: nothing can be done to
+ * them here, and they never block or warn (G3). A tile or band click opens a
+ * small read-only pop-up (openGooglePop) instead of the date's own action.
+ * slots() hands Calendars ▾ (gcal-menu.js) its place in the bar and the quiet
+ * line under it.
+ *
  * Dates are 'YYYY-MM-DD' strings throughout, with arithmetic done on UTC
  * epoch days so a daylight-saving change can never skip or repeat a date.
  */
@@ -266,6 +278,138 @@ const LSCCalendar = (() => {
       esc(joinAnd(rentals.map((r) => r.vendor + ' (' + upidOf(r) + ')'))) + '</p>';
   }
 
+  // ── Google Calendar events (trip-planner task 13, G2, G3) ──────────────────
+
+  const HEX = /^#[0-9a-f]{6}$/i;
+  const HHMM = /^\d{2}:\d{2}$/;
+
+  /* An event as GET /api/calendar's `google` has it, checked, or null. */
+  function normGoogle(ev) {
+    if (!ev || typeof ev !== 'object' || !ev.id || !isDate(ev.date)) return null;
+    const endDate = isDate(ev.endDate) && ev.endDate >= ev.date ? ev.endDate : ev.date;
+    return {
+      id: String(ev.id),
+      calendarId: String(ev.calendarId || ''),
+      calendar: String(ev.calendar || '').trim() || 'Google Calendar',
+      colour: HEX.test(ev.colour || '') ? ev.colour : null,
+      title: String(ev.title || '').trim() || '(No title)',
+      date: ev.date,
+      endDate,
+      startTime: !ev.allDay && HHMM.test(ev.startTime || '') ? ev.startTime : null,
+      endTime: !ev.allDay && HHMM.test(ev.endTime || '') ? ev.endTime : null,
+      allDay: Boolean(ev.allDay) || !HHMM.test(ev.startTime || ''),
+    };
+  }
+
+  /* All-day, or running over more than one date: drawn as a band across the
+     top of each date it covers, as Google itself draws them, not as a tile. */
+  const isBand = (ev) => ev.allDay || ev.endDate > ev.date;
+
+  /* Its times in words. Visible: "09:30–10:15", "All day", "Fri 23 Oct 08:00 –
+     Sat 24 Oct 18:00", "All day, Fri 16 – Sun 18 Oct". Spoken: lower case,
+     "to" for the dash. */
+  function googleTime(ev, spoken) {
+    const to = spoken ? ' to ' : '–';
+    if (ev.allDay) {
+      if (ev.endDate === ev.date) return spoken ? 'all day' : 'All day';
+      return (spoken ? 'all day, ' : 'All day, ') + shortDate(ev.date) + (spoken ? ' to ' : ' – ') + shortDate(ev.endDate);
+    }
+    if (ev.endDate > ev.date) {
+      return shortDate(ev.date) + ' ' + ev.startTime + (spoken ? ' to ' : ' – ') + shortDate(ev.endDate) + ' ' + ev.endTime;
+    }
+    return ev.endTime && ev.endTime !== ev.startTime ? ev.startTime + to + ev.endTime : ev.startTime;
+  }
+
+  // "Client call, 09:30 to 10:15, Crew bookings": a tile's title and an event's name in a sentence.
+  const googleLabel = (ev) => ev.title + ', ' + googleTime(ev, true) + ', ' + ev.calendar;
+
+  const swatch = (ev) => '<span class="cal-gdot" aria-hidden="true"' + (ev.colour ? ' style="--g:' + ev.colour + '"' : '') + '></span>';
+
+  /* A Google event in a date's list: read in place, never a button (there is
+     nothing to do with it here, G3). The chip says where it's from. */
+  function googleEntryMarkup(ev) {
+    return '<li><div class="cal-entry cal-gentry">' +
+      '<span class="cal-gchip">' + swatch(ev) + 'Google</span>' +
+      '<span class="cal-entry-main"><span class="cal-entry-gtitle">' + esc(ev.title) + '</span>' +
+      '<span class="cal-entry-client">' + esc(ev.calendar) + '</span></span>' +
+      '<span class="cal-entry-time">' + esc(googleTime(ev)) + '</span>' +
+      '</div></li>';
+  }
+  function googleListMarkup(events) {
+    return events.length
+      ? '<ul class="cal-entries cal-glist" aria-label="From Google Calendar">' + events.map(googleEntryMarkup).join('') + '</ul>'
+      : '';
+  }
+
+  /* The small read-only pop-up a Google tile or band opens (brief: title,
+     time, calendar). Not modal: a click outside, Esc, Tab away or the route
+     changing closes it, and Esc puts focus back on `trigger`. One at a time,
+     for every calendar on the page. */
+  const gpop = { el: null, trigger: null };
+
+  function closeGooglePop(returnFocus) {
+    const el = gpop.el;
+    if (!el) return;
+    gpop.el = null;
+    document.removeEventListener('pointerdown', onGpopOutside, true);
+    window.removeEventListener('hashchange', onGpopHash);
+    el.remove();
+    if (returnFocus && gpop.trigger && gpop.trigger.isConnected) gpop.trigger.focus();
+    gpop.trigger = null;
+  }
+  function onGpopOutside(e) {
+    if (gpop.el && !gpop.el.contains(e.target)) closeGooglePop(false);
+  }
+  function onGpopHash() {
+    closeGooglePop(false);
+  }
+
+  let gpopSeq = 0;
+  function openGooglePop(ev, anchor, trigger, today) {
+    closeGooglePop(false);
+    const n = ++gpopSeq;
+    const el = document.createElement('div');
+    el.className = 'cal-gpop';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-labelledby', 'cal-gpop-t' + n);
+    el.innerHTML =
+      '<p class="cal-gpop-from">' + swatch(ev) + '<span>' + esc(ev.calendar) + '</span></p>' +
+      '<h3 class="cal-gpop-title" id="cal-gpop-t' + n + '">' + esc(ev.title) + '</h3>' +
+      '<p class="cal-gpop-when">' + esc(ev.endDate > ev.date
+        ? googleTime(ev)
+        : longDate(ev.date, today) + ' · ' + googleTime(ev)) + '</p>' +
+      '<p class="cal-gpop-note">From Google Calendar. Change it there.</p>' +
+      '<button type="button" class="cal-gpop-x" aria-label="Close"><span aria-hidden="true">×</span></button>';
+    document.body.appendChild(el);
+    gpop.el = el;
+    gpop.trigger = trigger || null;
+
+    // Under the anchor, else above it; kept inside the window's width.
+    const r = anchor.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const left = Math.max(8, Math.min(r.left, vw - w - 8));
+    const below = r.bottom + 6 + h <= window.innerHeight - 8 || r.top - 6 - h < 8;
+    el.style.left = Math.round(left + window.scrollX) + 'px';
+    el.style.top = Math.round((below ? r.bottom + 6 : r.top - 6 - h) + window.scrollY) + 'px';
+
+    el.querySelector('.cal-gpop-x').addEventListener('click', () => closeGooglePop(true));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeGooglePop(true);
+      }
+    });
+    el.addEventListener('focusout', (e) => {
+      if (gpop.el === el && e.relatedTarget && !el.contains(e.relatedTarget)) closeGooglePop(false);
+    });
+    document.addEventListener('pointerdown', onGpopOutside, true);
+    window.addEventListener('hashchange', onGpopHash);
+    el.querySelector('.cal-gpop-x').focus();
+  }
+
   /**
    * The status chip: the word, always, in the status colour, hatched when
    * pencilled. Shared with the day cards (task 6) and Coming up (task 12).
@@ -310,6 +454,8 @@ const LSCCalendar = (() => {
       rentals: [], // normalised, own first (see sortRentals)
       rentalSig: '[]',
       holidays: new Map(), // date → name
+      google: [], // normGoogle'd events from the switched-on Google calendars (task 13)
+      googleSig: '[]',
     };
     st.view = monthOf(st.active);
 
@@ -324,7 +470,10 @@ const LSCCalendar = (() => {
       '</div>' +
       '<label class="cal-goto"><span class="cal-goto-label">Go to date</span>' +
       '<input type="date" class="cal-goto-inp" id="' + esc(id) + '-goto"></label>' +
+      // Calendars ▾ goes here (gcal-menu.js), and its quiet line under the bar.
+      '<div class="cal-tools"></div>' +
       '</div>' +
+      '<p class="cal-gnote" role="status" hidden></p>' +
       '<div class="cal-grid" role="grid" aria-labelledby="' + esc(id) + '-title" aria-describedby="' + esc(id) + '-keys">' +
       '<div class="cal-row cal-head" role="row">' +
       DAY_NAMES.map((n, i) =>
@@ -356,6 +505,8 @@ const LSCCalendar = (() => {
     const isOwn = (day) => st.emphasis && day.estimateId === st.emphasis;
     const isFaded = (day) => !!st.emphasis && day.estimateId !== st.emphasis;
     const rentalsOn = (date) => st.rentals.filter((r) => r.from <= date && date <= r.to);
+    const googleOn = (date) => st.google.filter((ev) => ev.date <= date && date <= ev.endDate);
+    const gById = (gid) => st.google.find((ev) => ev.id === gid);
 
     // This estimate's first, then by out date, the longer first, then vendor: the lane order.
     function sortRentals() {
@@ -428,8 +579,36 @@ const LSCCalendar = (() => {
       );
     }
 
+    function gTileMarkup(ev) {
+      return '<span class="cal-tile cal-gtile" data-gid="' + esc(ev.id) + '" title="' + esc(googleLabel(ev)) + '">' +
+        swatch(ev) + '<span class="cal-tile-upid">' + esc(ev.startTime + ' ' + ev.title) + '</span></span>';
+    }
+
+    // Two bands a date, then "+N": the cell is for bookings first.
+    const MAX_BANDS = 2;
+    function gBandsMarkup(bands, date) {
+      if (!bands.length) return '';
+      const over = bands.length > MAX_BANDS;
+      return '<span class="cal-gbands">' +
+        bands.slice(0, over ? MAX_BANDS - 1 : MAX_BANDS).map((ev) =>
+          '<span class="cal-gband' + (ev.date < date ? ' is-cont-l' : '') + (ev.endDate > date ? ' is-cont-r' : '') + '"' +
+          ' data-gid="' + esc(ev.id) + '"' + (ev.colour ? ' style="--g:' + ev.colour + '"' : '') + ' title="' + esc(googleLabel(ev)) + '">' +
+          '<span class="cal-gband-t">' + esc(ev.title) + '</span></span>'
+        ).join('') +
+        (over ? '<span class="cal-gband-more">+' + (bands.length - MAX_BANDS + 1) + ' all day</span>' : '') +
+        '</span>';
+    }
+
     function cellMarkup(date) {
       const days = daysOn(date);
+      const gAll = googleOn(date);
+      const gBands = gAll.filter(isBand);
+      const gTimed = gAll.filter((ev) => !isBand(ev));
+      const tiles = days.map(tileMarkup).concat(gTimed.map(gTileMarkup));
+      const dots = days.map((day) => '<span class="cal-dot is-' + day.status + (isFaded(day) ? ' is-faded' : '') + '"></span>')
+        .concat(gAll.map((ev) => '<span class="cal-dot cal-gdash"' + (ev.colour ? ' style="--g:' + ev.colour + '"' : '') + '></span>'));
+      const label = describeDate(date, days, today, rentalsOn(date), st.holidays.get(date)) +
+        (gAll.length ? '; Google Calendar: ' + joinAnd(gAll.map((ev) => ev.title + ', ' + googleTime(ev, true))) : '');
       const [, , d] = date.split('-').map(Number);
       const cls = ['cal-cell'];
       if (monthOf(date) !== st.view) cls.push('is-out');
@@ -439,26 +618,25 @@ const LSCCalendar = (() => {
       if (date === today) cls.push('is-today');
       if (date === st.target) cls.push('is-target');
       if (date === st.active) cls.push('is-selected');
-      const extra = days.length - MAX_TILES;
+      const extra = tiles.length - MAX_TILES;
       return (
         '<div role="gridcell" class="' + cls.join(' ') + '" data-date="' + date + '"' +
         ' tabindex="' + (date === st.active ? '0' : '-1') + '"' +
         ' aria-selected="' + (date === st.active) + '"' +
         (date === today ? ' aria-current="date"' : '') +
-        ' aria-label="' + esc(describeDate(date, days, today, rentalsOn(date), holiday)) + '">' +
+        ' aria-label="' + esc(label) + '">' +
         (holiday
           ? '<span class="cal-numrow" aria-hidden="true"><span class="cal-num">' + d + '</span>' +
             '<span class="cal-hol" title="' + esc(holiday) + '">' + esc(holiday) + '</span></span>'
           : '<span class="cal-num" aria-hidden="true">' + d + '</span>') +
         '<span class="cal-tiles" aria-hidden="true">' +
-        days.slice(0, extra > 0 ? MAX_TILES - 1 : MAX_TILES).map(tileMarkup).join('') +
+        gBandsMarkup(gBands, date) +
+        tiles.slice(0, extra > 0 ? MAX_TILES - 1 : MAX_TILES).join('') +
         (extra > 0 ? '<span class="cal-more">+' + (extra + 1) + ' more</span>' : '') +
         '</span>' +
         '<span class="cal-dots" aria-hidden="true">' +
-        days.slice(0, MAX_DOTS).map((day) =>
-          '<span class="cal-dot is-' + day.status + (isFaded(day) ? ' is-faded' : '') + '"></span>'
-        ).join('') +
-        (days.length > MAX_DOTS ? '<span class="cal-dot-more">+' + (days.length - MAX_DOTS) + '</span>' : '') +
+        dots.slice(0, MAX_DOTS).join('') +
+        (dots.length > MAX_DOTS ? '<span class="cal-dot-more">+' + (dots.length - MAX_DOTS) + '</span>' : '') +
         '</span>' +
         '</div>'
       );
@@ -511,6 +689,7 @@ const LSCCalendar = (() => {
     function renderList() {
       if (!o.showList) return;
       const days = daysOn(st.active);
+      const gEvents = googleOn(st.active);
       const split = o.quietGear ? gearSplit(rentalsOn(st.active), st.active) : { ends: rentalsOn(st.active), onHire: [] };
       const gear = split.ends;
       const holiday = st.holidays.get(st.active);
@@ -537,7 +716,9 @@ const LSCCalendar = (() => {
           // Each line's chip says "Gear", so the list needs no visible heading of its own.
           ? '<ul class="cal-entries cal-gear" aria-label="Gear rentals">' + gear.map(rentalEntryMarkup).join('') + '</ul>'
           : '') +
-        onHireLine(split.onHire);
+        onHireLine(split.onHire) +
+        // Not bookings (G3): after the app's own, each chipped "Google".
+        googleListMarkup(gEvents);
     }
 
     function render(slide) {
@@ -608,6 +789,15 @@ const LSCCalendar = (() => {
       }
       const cell = e.target.closest('[role="gridcell"]');
       if (!cell) return;
+      // A Google tile or band: its date, and the read-only pop-up beside it.
+      const gEl = e.target.closest('[data-gid]');
+      const ev = gEl && gById(gEl.dataset.gid);
+      if (ev) {
+        if (cell.dataset.date !== st.active) moveTo(cell.dataset.date, true);
+        const at = activeCell();
+        openGooglePop(ev, at, at, today);
+        return;
+      }
       const tile = e.target.closest('.cal-tile');
       const day = tile && st.byId.get(tile.dataset.dayId);
       if (day) {
@@ -699,6 +889,21 @@ const LSCCalendar = (() => {
         sortRentals();
         render(0);
       },
+      /**
+       * The switched-on Google calendars' events (trip-planner task 13), in
+       * GET /api/calendar's `google` shape. Faded tiles, all-day bands, list
+       * entries; never a booking (G3). An unchanged set draws nothing.
+       */
+      setGoogle(events) {
+        const list = (Array.isArray(events) ? events : []).map(normGoogle).filter(Boolean);
+        const sig = JSON.stringify(list);
+        if (sig === st.googleSig) return;
+        st.googleSig = sig;
+        st.google = list;
+        render(0);
+      },
+      /** Where Calendars ▾ and its quiet line go (gcal-menu.js). */
+      slots: () => ({ tools: root.querySelector('.cal-tools'), note: root.querySelector('.cal-gnote'), root }),
       /** Draw one estimate's days at full strength, listed first; every other one faded. */
       setEmphasis(estimateId) {
         st.emphasis = estimateId || null;
@@ -736,5 +941,7 @@ const LSCCalendar = (() => {
   return {
     mount, statusChip, describeDate, timeText, gridRange, longDate, shortDate, addDays, addMonths, isDate,
     weekday, normRental, rentalRole, rentalDates, gearSplit, onHireLine, upidOf, holidayMap, STATUS_WORD, MONTHS, DAY_SHORT,
+    // Google events (task 13), for the week view
+    normGoogle, isBand, googleTime, googleLabel, googleListMarkup, openGooglePop, closeGooglePop,
   };
 })();

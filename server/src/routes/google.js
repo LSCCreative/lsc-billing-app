@@ -279,6 +279,7 @@ function registerGoogleRoutes(app, db, opts) {
       const revoked = await google.revokeToken(oauth, row.refresh_token);
       db.prepare('DELETE FROM google_account WHERE id = 1').run();
       google.forgetReconnect();
+      google.forgetEvents();
       res.json({ disconnected: true, revoked, removed, notRemoved });
     } catch (err) {
       next(err);

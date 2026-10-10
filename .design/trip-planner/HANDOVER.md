@@ -3,11 +3,12 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 13, Opus, effort high: FRONTEND task** (Google events on Home and the editor's
-calendar, Calendars ▾; load `/frontend-design` first). Stages A, B and C (tasks 1–11) and task 12
-are done. The scratch DB is connected to the user's real Google account (all four calendars on).
+**Next: task 14, Sonnet, effort high, with a small frontend part** (writing bookings to Google,
+the sync engine; its live check on the user's calendar needs their OK, a test project and a
+clean-up). Stages A, B and C (tasks 1–11) and tasks 12–13 are done. The scratch DB is connected to
+the user's real Google account (all four calendars on).
 
-## State as of 2026-10-11 (task 12)
+## State as of 2026-10-11 (task 13)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -91,7 +92,60 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   (`test-google-oauth.js`, 25). Verified with the user's real account on localhost (consent →
   4 calendars → toggles saved, Refresh, Disconnect revoked, reconnect), and every state at
   1280/800/375 (headless, no overflow) against `api-scratch-google`, a pretend Google.
-- [ ] **Next: task 13**, Google events on the calendar. *Opus/high, **frontend**.*
+- [x] **Task 13** Google events on the calendar, `COMMIT13`. 678 server tests pass
+  (`test-google-events.js`, 15). Verified with the user's real account on localhost
+  (`api-scratch-mail`): events on Home month and week and the editor's calendar, Calendars ▾ by
+  keyboard (toggle off/on redraws at once, menu stays open, Esc back to the button), Refresh,
+  the pop-up from a tile (month, week, editor: no add-day dialog), the list entries; the
+  unavailable / reconnect / partial lines, not connected → Settings, and a refused toggle
+  (reverted + toast) by standing in for the reply in the page. 375 (dots, sheet with Done),
+  800, 1280: no overflow.
+- [ ] **Next: task 14**, writing bookings to Google. *Sonnet/high, small frontend part.*
+
+## Decisions made in task 13 (agent's, within the brief)
+
+- **Only the calendar on show asks Google:** `GET /api/calendar?google=1` (Home's range fetches,
+  the editor's month on show and Calendars ▾). The editor's clash checks (`ensureCovered`) and
+  Coming up don't send it, so they never wait on Google. The reply then carries `google`,
+  `googleState` (`off`/`ok`/`unavailable`/`reconnect`: **reconnect added**, the IA had three),
+  `googleCalendars` (the toggle list, so the menu needs no second request) and `googleMissing`
+  (calendars that failed while others didn't). `refresh=1` skips the cache. Google failing is
+  never a failed request. `PUT /api/google/calendars` was already there from task 12.
+- **Cache** (`google.js calendarEvents`): in memory, per account email + calendar + range, 5 min;
+  failures aren't cached; cleared on disconnect. Switching a calendar on asks for that one only.
+  One token renewal up front, not one per calendar.
+- **Sydney wall-clock on the NAS:** each event is `{ id, calendarId, calendar, colour, title,
+  date, endDate, startTime, endTime, allDay }`, dates inclusive (Google's all-day end is
+  exclusive; a timed event ending at midnight ends that day). `id` is a hash of calendar + event
+  (one invite sits in several calendars). Left out: `lscDayId` (G4), cancelled, declined by
+  the owner, `workingLocation`. An untitled event is "(No title)", or "Busy" on a busy-times-only
+  calendar. Colour = the calendar's, never the event's own.
+- **Month view:** timed events are faded tiles after the bookings (they share the 3-tile cap and
+  "+N more"); all-day and multi-day events are bands under the date (2, then "+N all day"),
+  capped on their real ends; in dots mode a short dash in the calendar's colour. The date's
+  accessible name adds "; Google Calendar: <title>, <time>…". The list under the grid lists them
+  after bookings, gear and On hire as **plain text, not buttons** (nothing to do with them, G3);
+  "Nothing booked." still shows when only Google has the date.
+- **Week view (home-week.js, not in the task's file list):** Google tiles pack beside bookings at
+  their times; all-day/multi-day ones go in the top row (labelled "All day" when any are there);
+  tiles are buttons opening the pop-up; the list layout lists them per date.
+- **The pop-up** (`LSCCalendar.openGooglePop`): calendar (dot + name), title, date and time, "From
+  Google Calendar. Change it there." Non-modal: Esc (focus back to the date or tile), ×, a click
+  outside, Tab away or a route change closes it. A click on a Google tile never runs the date's
+  own action (the editor's add-day dialog).
+- **Calendars ▾** (`web/js/gcal-menu.js`, `LSCGcalMenu.attach(cal.slots(), { reload })`): a
+  bordered bar button with the on-calendars' colour dots. Checkbox items save at once (PUTs in
+  order; a reply mid-save keeps unsaved ticks), then Refresh (busy state, then a toast "Google
+  Calendar refreshed.") and Manage in Settings. Not connected: one item, Connect Google Calendar;
+  refused token: Reconnect Google Calendar. Both go to `#/settings/calendar`.
+- **menu.js checkbox items:** `{ text, checked, swatch }` → `menuitemcheckbox`; choosing flips it
+  and calls `onSelect(item, checked)` with the menu left open; the phone sheet's last row says
+  Done. `open()` menus only. (ui-clarity task 14 seam: small, self-contained.)
+- **Quiet line** `.cal-gnote` under the bar: "Google Calendar unavailable. Your bookings are all
+  here. Try again", "…needs reconnecting… Reconnect", "Couldn’t load X from Google Calendar. Try
+  again".
+- **Dev:** `dev-stub-google.js` now answers events (a made-up week, repeated; one tagged
+  `lscDayId`), and `STUB_GOOGLE_FAIL_CAL=<id>` fails one calendar.
 
 ## Decisions made in task 12 (agent's, within the brief)
 

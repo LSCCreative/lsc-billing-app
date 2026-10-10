@@ -204,7 +204,7 @@ local `server/.env`. Test the OAuth flow against
   the NAS. _New: `routes/google.js`, the Settings section. Modifies: `google.js`, `settings.js`,
   `config.js` (env)._ _Depends on: 1._
 
-- [ ] **13. Google events on the calendar** *(frontend: Opus/high)*: `GET /api/calendar` merges
+- [x] **13. Google events on the calendar** *(frontend: Opus/high)*: `GET /api/calendar` merges
   `google` events (switched-on calendars, minus `lscDayId`, cached ~5 min) and `googleState`.
   `PUT /api/google/calendars`. `calendar.js` gains `setGoogle()`, faded tiles with a colour dot, an
   all-day band, read-only popovers and entries in the under-grid list. `menu.js` gains checkbox

@@ -20,6 +20,13 @@
  * `canSend && { … }`. Danger items always go last, below a divider (IA
  * Content Rules), wherever the caller put them.
  *
+ * CHECKBOX ITEMS (trip-planner task 13, Calendars ▾): an item with
+ * `checked: true|false` is a menuitemcheckbox, optionally with a colour
+ * `swatch` ('#rrggbb'). Choosing one flips it in place and calls
+ * onSelect(item, checked) with the menu left open, so several can be set in
+ * one visit; Esc or a click outside closes it. On a phone the sheet's last
+ * row says Done instead of Cancel. For open() menus only.
+ *
  * WHILE OPEN the list lives in <body>, so no table's overflow or panel's
  * stacking clips it. A chosen declarative item is put back where it came
  * from first and clicked there, so the click bubbles through the screen
@@ -60,8 +67,18 @@ const LSCMenu = (() => {
     return Object.keys(attrs || {}).map((k) => ' ' + k + '="' + esc(attrs[k]) + '"').join('');
   }
 
+  const SWATCH = /^#[0-9a-f]{6}$/i;
+
   function itemMarkup(it) {
     if (it === '-') return '<span class="menu-sep" role="separator"></span>';
+    if (typeof it.checked === 'boolean') {
+      return '<button type="button" class="menu-item menu-check-item" role="menuitemcheckbox" tabindex="-1"' +
+        ' aria-checked="' + it.checked + '"' + attrsOf(it.attrs) + '>' +
+        '<span class="menu-check" aria-hidden="true"></span>' +
+        (SWATCH.test(it.swatch || '') ? '<span class="menu-swatch" aria-hidden="true" style="--swatch:' + it.swatch + '"></span>' : '') +
+        '<span class="menu-text">' + esc(it.text) + '</span>' +
+        (it.hint ? '<span class="menu-hint">' + esc(it.hint) + '</span>' : '') + '</button>';
+    }
     const cls = 'menu-item' + (it.danger ? ' is-danger' : '');
     const inner = '<span class="menu-text">' + esc(it.text) + '</span>' +
       (it.hint ? '<span class="menu-hint">' + esc(it.hint) + '</span>' : '');
@@ -98,8 +115,10 @@ const LSCMenu = (() => {
   }
 
   // ── Open and close ──
+  const ITEM = '[role="menuitem"], [role="menuitemcheckbox"]';
+
   function itemsOf(list) {
-    return Array.from(list.querySelectorAll('[role="menuitem"]'));
+    return Array.from(list.querySelectorAll(ITEM));
   }
 
   function labelOf(item) {
@@ -148,9 +167,11 @@ const LSCMenu = (() => {
       // The sheet names what it's for, and ends with Cancel.
       const title = opts.title || list.getAttribute('aria-label') || opener.getAttribute('aria-label') || opener.textContent;
       list.insertAdjacentHTML('afterbegin', '<span class="menu-sheet-title" aria-hidden="true">' + esc(title.trim()) + '</span>');
+      // A checkbox's choice is made as it's ticked, so there's nothing to cancel.
+      const done = list.querySelector('[role="menuitemcheckbox"]');
       list.insertAdjacentHTML('beforeend',
         '<button type="button" class="menu-item menu-cancel" role="menuitem" tabindex="-1" data-menu-cancel>' +
-        '<span class="menu-text">Cancel</span></button>');
+        '<span class="menu-text">' + (done ? 'Done' : 'Cancel') + '</span></button>');
     }
     document.body.appendChild(list);
     list.hidden = false;
@@ -225,6 +246,12 @@ const LSCMenu = (() => {
       close(true);
       return;
     }
+    if (item.getAttribute('role') === 'menuitemcheckbox') {
+      const checked = item.getAttribute('aria-checked') !== 'true';
+      item.setAttribute('aria-checked', String(checked));
+      if (cur.onSelect) cur.onSelect(item, checked);
+      return;
+    }
     const { home, onSelect } = cur;
     close(true);
     if (onSelect) onSelect(item);
@@ -292,7 +319,7 @@ const LSCMenu = (() => {
 
   document.addEventListener('click', (e) => {
     if (cur && cur.list.contains(e.target)) {
-      const item = e.target.closest('[role="menuitem"]');
+      const item = e.target.closest(ITEM);
       // The real click happens at home (choose); this one stops here.
       e.preventDefault();
       e.stopPropagation();
@@ -312,7 +339,7 @@ const LSCMenu = (() => {
   // Mouse hover moves focus, so the pointer and the keys never light two rows.
   document.addEventListener('pointerover', (e) => {
     if (!cur || e.pointerType !== 'mouse') return;
-    const item = e.target.closest('[role="menuitem"]');
+    const item = e.target.closest(ITEM);
     if (item && cur.list.contains(item) && document.activeElement !== item) item.focus({ preventScroll: true });
   });
 
@@ -347,7 +374,7 @@ const LSCMenu = (() => {
     show(opener, list, {
       title: opts.title,
       last: opts.last,
-      onSelect: opts.onSelect ? (el) => opts.onSelect(el._menuItem) : null,
+      onSelect: opts.onSelect ? (el, checked) => opts.onSelect(el._menuItem, checked) : null,
     });
   }
 

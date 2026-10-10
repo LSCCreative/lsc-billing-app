@@ -154,7 +154,7 @@ function createApp(db, opts = {}) {
   registerGoalsRoutes(app, db);
   registerDepreciationRoutes(app, db);
   registerTaxYearRoutes(app, db);
-  registerCalendarRoutes(app, db);
+  registerCalendarRoutes(app, db, { oauth });
   registerHolidayRoutes(app, db, opts);
   registerSetupRoutes(app, db);
   // Stage D's Mark sent routes (POST …/sent) are for the tests alone (C13):

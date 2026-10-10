@@ -647,6 +647,43 @@
   mask-image: linear-gradient(to bottom, #000 55%, transparent);
 }
 
+/* Google events (trip-planner task 13): faded, the calendar's colour as a dot
+   before the time; all-day ones in the top row tinted in it, capped on their
+   real ends, like the month view's bands. Never a booking's fill. */
+.wk-tile.wk-gtile {
+  background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  color: var(--muted);
+}
+.wk-gtile .wk-tile-upid {
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.wk-gtile .wk-tile-time::before,
+.wk-gtile.is-narrow .wk-tile-upid::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--g, var(--color-status-neutral));
+  vertical-align: 1px;
+}
+.wk-tile.wk-gtile.is-band {
+  background: color-mix(in srgb, var(--g, var(--color-status-neutral)) 24%, transparent);
+  border-left: 2px solid var(--g, var(--color-status-neutral));
+  color: var(--text);
+}
+.wk-gtile.is-band .wk-tile-time::before {
+  display: none;
+}
+.wk-gtile.is-band.is-cont-l {
+  border-left-width: 0;
+}
+.wk-gtile:hover {
+  filter: brightness(1.25);
+}
+
 /* ── The tile pop-up (D28) ─────────────────────────────────────────────────── */
 
 /* A bottom sheet on a phone, a centred box from 768px, as the add-day dialog. */

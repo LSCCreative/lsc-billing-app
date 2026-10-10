@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `a728420`, schema **v15** | production-booking A–E, account recovery, everything older. NAS and site back online since 2026-10-09. |
 | **ui-clarity** | branch `ui-clarity` `850f904` + this record, on `main`, unpushed | Tasks 1–7, 9–13 built. Nothing of it is live. |
-| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–12 built (stages A, B, C; stage D half). Nothing live. |
+| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–13 built (stages A, B, C; stage D but task 14). Nothing live. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -28,7 +28,7 @@ main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three scr
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **13** Google events on the calendars *(Opus/high, frontend)* |
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **14** writing bookings to Google *(Sonnet/high + small frontend)* |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**
@@ -86,8 +86,7 @@ keeps the conflicts small: see §4 for the files both lines touch.
 
 ### Line 2: trip-planner (tracker: [`trip-planner/TASKS.md`](trip-planner/TASKS.md))
 
-1. **Task 13: Google events on the calendars**, Calendars ▾ *(Opus/high, **frontend**)*. Adds checkbox
-   items to `menu.js`.
+1. ~~Task 13: Google events on the calendars~~, done: Calendars ▾, checkbox items in `menu.js`.
 2. **Task 14: writing bookings to Google** (the sync engine) *(Sonnet/high + small frontend)*. Its
    live check on the user's calendar needs the user's OK, a test project and a clean-up.
 3. **Tasks 15–19:** responsive/a11y pass, code review, design review, live Google check *(with the
@@ -109,9 +108,9 @@ Both lines change these. Merge `ui-clarity` forward often and read the other sid
 
 | Where | ui-clarity | trip-planner |
 |---|---|---|
-| `menu.js` | task 14 may fix keys/focus | task 13 adds checkbox items |
+| `menu.js` | task 14 may fix keys/focus | task 13 added checkbox items (`menuitemcheckbox`, `ITEM` selector, stays open on choose) |
 | `views/settings.js`, `css/settings.css` | task 14 (agreement builder, Account) | Home base, Google Calendar section |
-| `calendar.js`, `views/home.js`, `views/booking-block.js` | task 14 (panels, focus) | task 13 Google tiles, Calendars ▾ |
+| `calendar.js`, `views/home.js`, `views/home-week.js`, `views/booking-block.js` | task 14 (panels, focus) | task 13 Google tiles, bands, pop-up, `.cal-tools`/`.cal-gnote` slots, Calendars ▾ (`gcal-menu.js`) |
 | `views/estimate-editor.js`, `css/estimates.css` | tasks 11–12 rail, sticky bar, panels (done) | autosave bar (Done / Save), travel foot, FROM TRIP lines |
 | `mail.js` | task 16 rebuilds `shell()` for seven templates | `callSheetEmail` (an eighth) already calls `shell()`: keep the signature |
 | a11y passes | task 14: its screens | task 15: travel view, Share, call sheet, Google settings |

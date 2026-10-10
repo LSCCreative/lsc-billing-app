@@ -21,6 +21,11 @@
  * GET /api/holidays, asked once per visit. If that fails the calendar simply
  * has no holidays marked: the bookings fetch reports any real trouble.
  *
+ * Google Calendar (trip-planner task 13, G2): the calendar's range fetches ask
+ * for the switched-on Google calendars' events too (google=1), drawn faded on
+ * both views, and Calendars ▾ in the calendar's bar (gcal-menu.js) switches
+ * them. Coming up stays bookings only: Google events aren't jobs.
+ *
  * Nothing here is cached between visits except where the calendar was looking
  * and which view it was in: each visit and each month or week asks
  * GET /api/calendar for just its range (IA, Content Growth Plan), so a day
@@ -50,6 +55,8 @@ const HomeView = (() => {
      fetch rather than two. */
   let upWanted = null;
   let holidays = null; // this visit's GET /api/holidays list, once it's in
+  let gcal = null; // Calendars ▾ on the calendar on show
+  let googleSeen = null; // the last reply's Google state, so a re-mounted view's button doesn't pop in late
 
   function readView() {
     try {
@@ -169,15 +176,17 @@ const HomeView = (() => {
      has moved on meanwhile. Off Home (the router's ticket has moved) nothing
      is touched, a 401 included: it is not this screen's to report. Still on
      Home but on another range or view, the reply can still serve Coming up. */
-  async function loadRange(range, target, label) {
+  async function loadRange(range, target, label, opts) {
     const mine = ++rangeSeq;
     const ticket = LSCRouter.ticket();
+    target.range = range;
     if (coversUp(range)) upWanted.asked = true;
     const gone = () => !LSCRouter.isCurrent(ticket);
     const superseded = () => mine !== rangeSeq || cal !== target.component;
     let reply;
     try {
-      reply = await LSCApi.get('/api/calendar?from=' + range.from + '&to=' + range.to);
+      reply = await LSCApi.get('/api/calendar?from=' + range.from + '&to=' + range.to + '&google=1' +
+        (opts && opts.refresh ? '&refresh=1' : ''));
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (gone()) return;
@@ -188,6 +197,7 @@ const HomeView = (() => {
       calMessage('Couldn’t load the bookings for ' + label + ': ' + failureText(err), () => loadRange(range, target, label));
       return;
     }
+    if (!gone()) googleSeen = reply;
     if (gone()) return;
     const days = reply.days || [];
     const w = claimUp(range);
@@ -195,6 +205,8 @@ const HomeView = (() => {
     if (superseded()) return;
     calMessage('');
     target.apply(days, reply.rentals || []);
+    cal.setGoogle(reply.google || []);
+    if (gcal) gcal.update(reply);
   }
 
   function mountCalendar() {
@@ -203,14 +215,14 @@ const HomeView = (() => {
     slot.innerHTML = '';
     calMessage('');
     const today = LSCUtil.today();
-    const target = { component: null, apply: null };
+    const target = { component: null, apply: null, range: null, label: '' };
 
     if (view === 'week') {
       cal = HomeWeek.mount(slot, {
         id: 'home-wk',
         anchor: anchor || today,
         today,
-        onRangeChange: (range) => loadRange(range, target, 'this week'),
+        onRangeChange: (range) => loadRange(range, target, (target.label = 'this week')),
         onTileActivate: (day, { trigger }) => openPop(day, trigger),
       });
       target.apply = (days, rentals) => cal.setData(days, rentals);
@@ -222,7 +234,7 @@ const HomeView = (() => {
         quietGear: true, // gear is logistics: outlined bars, listed on its ends (DR5)
         today,
         selected: anchor || today,
-        onRangeChange: (range) => loadRange(range, target, 'this month'),
+        onRangeChange: (range) => loadRange(range, target, (target.label = 'this month')),
         onTileActivate: (day, { trigger }) => openPop(day, trigger),
       });
       target.apply = (days, rentals) => {
@@ -234,6 +246,10 @@ const HomeView = (() => {
        fetch only checks the target once the reply is in, by which time it is. */
     target.component = cal;
     if (holidays) cal.setHolidays(holidays);
+    gcal = LSCGcalMenu.attach(cal.slots(), {
+      reload: (o) => (target.range ? loadRange(target.range, target, target.label, o) : null),
+    });
+    if (googleSeen) gcal.update(googleSeen);
   }
 
   async function loadHolidays() {

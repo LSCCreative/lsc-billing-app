@@ -118,6 +118,56 @@
 .menu-item.is-danger {
   color: var(--color-status-error-text);
 }
+/* A checkbox item (trip-planner task 13, Calendars ▾): the box first, then an
+   optional colour swatch, then the words. The box is drawn, not an input: the
+   row is the menuitemcheckbox and aria-checked is its state. */
+.menu-check-item {
+  justify-content: flex-start;
+  gap: var(--space-3);
+}
+.menu-check-item .menu-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-check-item .menu-hint {
+  margin-left: auto;
+  padding-left: var(--space-4);
+}
+.menu-check {
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-text-tertiary);
+  border-radius: 3px;
+}
+.menu-check-item[aria-checked='true'] .menu-check {
+  background: var(--color-text-primary);
+  border-color: var(--color-text-primary);
+}
+.menu-check-item[aria-checked='true'] .menu-check::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--color-bg-page);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.menu-swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--swatch);
+}
+.menu-check-item[aria-checked='false'] .menu-text {
+  color: var(--color-text-secondary);
+}
+
 .menu-hint {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);

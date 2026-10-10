@@ -268,6 +268,7 @@ const BookingBlock = (() => {
     let days = sortDays(((estimate && estimate.days) || []).map(norm));
     let open = typeof opts.open === 'boolean' ? opts.open : days.length > 0 || Boolean(opts.hasItems);
     let cal = null;
+    let gcal = null; // Calendars ▾ in the calendar's bar (trip-planner task 13)
     let holidayList = null; // kept for a calendar mounted after it arrives
     let loadFailed = false;
     const others = new Map(); // date → other estimates' days, as /api/calendar returns them
@@ -333,9 +334,18 @@ const BookingBlock = (() => {
 
     const isCovered = (date) => covered.some((r) => r.from <= date && date <= r.to);
 
-    async function load(from, to) {
+    /* `google` (the month on show, and Calendars ▾) also asks for the Google
+       events; the clash checks (ensureCovered) don't, so they never wait on Google. */
+    async function load(from, to, opts) {
+      const google = Boolean(opts && opts.google);
       try {
-        const reply = await LSCApi.get('/api/calendar?from=' + from + '&to=' + to);
+        const reply = await LSCApi.get('/api/calendar?from=' + from + '&to=' + to +
+          (google ? '&google=1' + (opts.refresh ? '&refresh=1' : '') : ''));
+        // Only the month still on show takes its Google events: a slow reply for one paged past is dropped.
+        if (google && cal && alive() && cal.range().from === from) {
+          cal.setGoogle(reply.google || []);
+          if (gcal) gcal.update(reply);
+        }
         Array.from(others.keys()).forEach((d) => {
           if (from <= d && d <= to) others.delete(d);
         });
@@ -602,7 +612,7 @@ const BookingBlock = (() => {
         emphasis: ownId,
         // Opens on this estimate's first day when it has one, else on today.
         selected: dated.length ? dated[0].date : null,
-        onRangeChange: (r) => load(r.from, r.to),
+        onRangeChange: (r) => load(r.from, r.to, { google: true }),
         onDateActivate: (date, ctx) => addOn(date, ctx.trigger),
         onTileActivate: (day, ctx) => {
           if (day.estimateId === ownId) return focusCard(day.id, 'date');
@@ -616,6 +626,12 @@ const BookingBlock = (() => {
         },
       });
       if (holidayList) cal.setHolidays(holidayList);
+      gcal = LSCGcalMenu.attach(cal.slots(), {
+        reload: (o) => {
+          const r = cal.range();
+          return load(r.from, r.to, Object.assign({ google: true }, o));
+        },
+      });
       // This estimate's own days now; other projects' when the fetch the mount set off returns.
       cal.setRentals(calendarRentals());
       cal.setDays(calendarDays());

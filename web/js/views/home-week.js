@@ -14,6 +14,7 @@
  *     onTileActivate(day, { trigger }),
  *   });
  *   wk.setData(days, rentals); wk.setHolidays(holidays); wk.goTo(date); wk.anchor;
+ *   wk.setGoogle(events); wk.slots();   // Google events and Calendars ▾ (trip-planner task 13)
  *
  * Days and rentals are GET /api/calendar's shapes, as the month view takes.
  *
@@ -36,6 +37,13 @@
  * to the foot of its column and says "ends next day". A day with no start is
  * untimed and sits at the top, with "Until 17:00" if it has an end. The scale
  * is 07:00–19:00, stretched to fit the week's earliest start and latest end.
+ *
+ * GOOGLE EVENTS (trip-planner task 13, G2)
+ * Faded tiles with their calendar's colour, packed beside the bookings at
+ * their times; all-day and multi-day ones in the top row, on each date they
+ * cover. A tile is a button that opens the month view's read-only pop-up
+ * (LSCCalendar.openGooglePop), and the list layout lists them after each
+ * date's bookings. They never block or warn (G3).
  */
 
 const HomeWeek = (() => {
@@ -121,6 +129,7 @@ const HomeWeek = (() => {
       days: [],
       rentals: [],
       holidays: new Map(), // date → name (task 33 DR4), as the month view has them
+      google: [], // LSCCalendar.normGoogle'd events (task 13)
     };
 
     root.classList.add('cal', 'wk');
@@ -134,7 +143,9 @@ const HomeWeek = (() => {
       '</div>' +
       '<label class="cal-goto"><span class="cal-goto-label">Go to date</span>' +
       '<input type="date" class="cal-goto-inp" id="' + esc(id) + '-goto"></label>' +
+      '<div class="cal-tools"></div>' +
       '</div>' +
+      '<p class="cal-gnote" role="status" hidden></p>' +
       '<div class="wk-body" role="region" aria-labelledby="' + esc(id) + '-title"></div>' +
       '<div class="sr-only" aria-live="polite" id="' + esc(id) + '-live"></div>';
 
@@ -144,6 +155,7 @@ const HomeWeek = (() => {
     const dates = () => Array.from({ length: 7 }, (_, i) => C.addDays(st.from, i));
     const daysOn = (date) => st.days.filter((d) => d.date === date);
     const rentalsOn = (date) => st.rentals.filter((r) => r.from <= date && date <= r.to);
+    const googleOn = (date) => st.google.filter((ev) => ev.date <= date && date <= ev.endDate);
 
     function entryLabel(day) {
       return STATUS_WORD[day.status] + ': ' + upidOf(day) + (day.projectName ? ', ' + day.projectName : '') +
@@ -190,12 +202,26 @@ const HomeWeek = (() => {
         '</button>';
     }
 
+    function gTileButton(ev, cls, style, timeLine) {
+      return '<button type="button" class="wk-tile wk-gtile' + (cls ? ' ' + cls : '') + '" data-gid="' + esc(ev.id) + '"' +
+        (style ? ' style="' + style + (ev.colour ? ';--g:' + ev.colour : '') + '"' : (ev.colour ? ' style="--g:' + ev.colour + '"' : '')) +
+        ' aria-label="' + esc('Google Calendar: ' + C.googleLabel(ev)) + '" title="' + esc(C.googleLabel(ev)) + '">' +
+        '<span class="wk-tile-time" aria-hidden="true">' + esc(timeLine) + '</span>' +
+        '<span class="wk-tile-upid" aria-hidden="true">' + esc(ev.title) + '</span>' +
+        '</button>';
+    }
+
     function gridMarkup() {
       const cols = dates().map((date) => {
         const all = daysOn(date);
-        const timed = packColumn(all.map((day) => ({ day, s: span(day) })).filter((it) => it.s));
+        const gAll = googleOn(date);
+        // Google's timed events pack beside the bookings, so neither hides the other.
+        const timed = packColumn(all.map((day) => ({ day, s: span(day) }))
+          .concat(gAll.filter((ev) => !C.isBand(ev)).map((ev) => ({ ev, s: span(ev) })))
+          .filter((it) => it.s));
         const untimed = all.filter((day) => !span(day));
-        return { date, timed, untimed };
+        const bands = gAll.filter(C.isBand);
+        return { date, timed, untimed, bands };
       });
 
       // The scale: 07:00–19:00, stretched to the week's earliest start and latest end.
@@ -207,12 +233,13 @@ const HomeWeek = (() => {
       }));
       toH = Math.min(24, toH);
       const fromMin = fromH * 60;
-      const untimedRows = cols.reduce((n, c) => Math.max(n, c.untimed.length), 0);
+      const untimedRows = cols.reduce((n, c) => Math.max(n, c.untimed.length + c.bands.length), 0);
+      const anyBands = cols.some((c) => c.bands.length);
       const gear = gearStrip();
 
       let gutter = '<div class="wk-gutter" aria-hidden="true"><div class="wk-dhead"></div>' +
         '<div class="wk-gearspace">' + (gear.lanes ? '<span class="wk-glabel">Gear</span>' : '') + '</div>' +
-        '<div class="wk-untimed">' + (untimedRows ? '<span class="wk-glabel">No time</span>' : '') + '</div>' +
+        '<div class="wk-untimed">' + (untimedRows ? '<span class="wk-glabel">' + (anyBands ? 'All day' : 'No time') + '</span>' : '') + '</div>' +
         '<div class="wk-timed">';
       for (let h = fromH; h < toH; h++) {
         gutter += '<span class="wk-hour" style="--h:' + (h - fromH) + '">' + String(h).padStart(2, '0') + ':00</span>';
@@ -236,11 +263,18 @@ const HomeWeek = (() => {
           (holiday ? '<span class="wk-dhol" aria-hidden="true" title="' + esc(holiday) + '">' + esc(holiday) + '</span>' : '') +
           '</div>' +
           '<div class="wk-gearspace"></div>' +
-          '<div class="wk-untimed">' + c.untimed.map((day) => tileButton(day, '', '', day.endTime ? C.timeText(day) : 'No time')).join('') + '</div>' +
+          '<div class="wk-untimed">' + c.untimed.map((day) => tileButton(day, '', '', day.endTime ? C.timeText(day) : 'No time')).join('') +
+          c.bands.map((ev) => gTileButton(ev, 'is-band' + (ev.date < c.date ? ' is-cont-l' : '') + (ev.endDate > c.date ? ' is-cont-r' : ''), '',
+            ev.allDay ? 'All day' : (c.date === ev.date ? 'From ' + ev.startTime : c.date === ev.endDate ? 'Until ' + ev.endTime : 'All day'))).join('') +
+          '</div>' +
           '<div class="wk-timed">' + c.timed.map((it) => {
             const style = '--top:' + (it.s.a - fromMin) / 60 + ';--len:' + (it.s.b - it.s.a) / 60 +
               ';--lane:' + it.lane + ';--lanes:' + it.lanes;
             // Under an hour and a quarter there's room for the time and the UPID, not the name.
+            if (it.ev) {
+              const g = (it.s.b - it.s.a < 75 ? 'is-short' : '') + (it.lanes > 1 ? ' is-narrow' : '');
+              return gTileButton(it.ev, g.trim(), style, C.googleTime(it.ev));
+            }
             const cls2 = (it.s.open ? 'is-open-end' : '') + (it.s.overnight ? ' is-overnight' : '') +
               (it.s.b - it.s.a < 75 ? ' is-short' : '') + (it.lanes > 1 ? ' is-narrow' : '');
             return tileButton(it.day, cls2.trim(), style, C.timeText(it.day));
@@ -257,6 +291,7 @@ const HomeWeek = (() => {
     function listMarkup() {
       return '<ol class="wk-list">' + dates().map((date) => {
         const days = daysOn(date);
+        const gEvents = googleOn(date);
         // A rental is a full entry on its out and back days only; between, one muted line (DR5).
         const { ends: gear, onHire } = C.gearSplit(rentalsOn(date), date);
         const holiday = st.holidays.get(date);
@@ -286,6 +321,7 @@ const HomeWeek = (() => {
             }).join('') + '</ul>'
             : '') +
           C.onHireLine(onHire) +
+          C.googleListMarkup(gEvents) +
           '</li>';
       }).join('') + '</ol>';
     }
@@ -323,6 +359,12 @@ const HomeWeek = (() => {
       if (C.isDate(els.goto.value)) moveTo(els.goto.value);
     });
     els.body.addEventListener('click', (e) => {
+      const gBtn = e.target.closest('button[data-gid]');
+      const ev = gBtn && st.google.find((g) => g.id === gBtn.dataset.gid);
+      if (ev) {
+        C.openGooglePop(ev, gBtn, gBtn, today);
+        return;
+      }
       const btn = e.target.closest('button[data-day-id]');
       const day = btn && st.days.find((d) => String(d.id) === btn.dataset.dayId);
       if (day && typeof o.onTileActivate === 'function') o.onTileActivate(day, { trigger: btn });
@@ -340,6 +382,13 @@ const HomeWeek = (() => {
             a.vendor.localeCompare(b.vendor));
         render();
       },
+      /** The switched-on Google calendars' events (task 13), GET /api/calendar's `google`. */
+      setGoogle(events) {
+        st.google = (Array.isArray(events) ? events : []).map(C.normGoogle).filter(Boolean);
+        render();
+      },
+      /** Where Calendars ▾ and its quiet line go (gcal-menu.js). */
+      slots: () => ({ tools: root.querySelector('.cal-tools'), note: root.querySelector('.cal-gnote'), root }),
       /** Shade and name the public holidays (task 33 DR4); GET /api/holidays' list. */
       setHolidays(list) {
         st.holidays = C.holidayMap(list);

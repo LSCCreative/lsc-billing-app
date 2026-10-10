@@ -576,6 +576,194 @@ async function refreshCalendars(db, oauth) {
 /** For tests. */
 const forgetReconnect = () => { reconnectNeeded = false; };
 
+/* ══ Google events on the app's calendar (task 13; G2, G3) ════════════════════
+ *
+ * GET /api/calendar?google=1 asks for the events of every switched-on calendar
+ * in the range on show. They are shown, never stored: each calendar's events
+ * for a range are kept in memory for five minutes (the brief's "cached about 5
+ * minutes"), so paging back and forth between months doesn't ask Google again,
+ * and Refresh (Calendars ▾) asks regardless. The key holds the account's
+ * address, so another account connecting never sees the last one's events.
+ *
+ * The app's own events (tagged lscDayId, G4) are left out: the app already
+ * draws those days. So are cancelled ones, ones the owner declined, and
+ * Google's "working location" markers (an all-day "Home" on every weekday is
+ * not a commitment).
+ *
+ * Times become Sydney wall-clock dates and HH:MM, the shape the app's own days
+ * have, so the browser does no time-zone arithmetic and a laptop set to
+ * another zone still draws a 9am shoot at 9am.
+ */
+
+const EVENTS_TTL_MS = 5 * 60 * 1000;
+const MAX_EVENT_PAGES = 4; // 1,000 events per calendar per range is plenty for six weeks
+const MAX_CACHED = 300;
+const ZONE = 'Australia/Sydney';
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+const EVENT_FIELDS = 'items(id,status,summary,start,end,eventType,extendedProperties(private),attendees(self,responseStatus)),nextPageToken';
+
+const eventCache = new Map(); // `${email}\n${calendarId}\n${from}\n${to}` → { at, events }
+
+const sydneyFormat = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+
+/** An RFC 3339 time as Sydney's date and HH:MM, or null. */
+function sydneyParts(iso) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const p = Object.fromEntries(sydneyFormat.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour === '24' ? '00' : p.hour}:${p.minute}` };
+}
+
+function shiftDate(ymd, n) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/**
+ * One Google event as the calendar draws it, or null for one it doesn't.
+ * `date`..`endDate` are the Sydney dates it covers, inclusive (Google's
+ * all-day end is exclusive; a timed event ending at midnight ends the day
+ * before). An untitled event on a busy-times-only calendar is "Busy", which
+ * is all Google tells anyone about it.
+ */
+function eventFrom(item, cal) {
+  if (!item || typeof item.id !== 'string' || item.status === 'cancelled') return null;
+  if (item.eventType === 'workingLocation') return null;
+  const priv = item.extendedProperties && item.extendedProperties.private;
+  if (priv && priv.lscDayId) return null;
+  if (Array.isArray(item.attendees) && item.attendees.some((a) => a && a.self && a.responseStatus === 'declined')) return null;
+  const s = item.start || {};
+  const e = item.end || {};
+  let date;
+  let endDate;
+  let startTime = null;
+  let endTime = null;
+  let allDay;
+  if (YMD.test(s.date || '')) {
+    allDay = true;
+    date = s.date;
+    endDate = YMD.test(e.date || '') && e.date > s.date ? shiftDate(e.date, -1) : s.date;
+  } else if (s.dateTime) {
+    const a = sydneyParts(s.dateTime);
+    const b = e.dateTime ? sydneyParts(e.dateTime) : a;
+    if (!a || !b) return null;
+    allDay = false;
+    date = a.date;
+    startTime = a.time;
+    endTime = b.time;
+    endDate = b.date > a.date && b.time === '00:00' ? shiftDate(b.date, -1) : b.date;
+    if (endDate < date) endDate = date;
+  } else {
+    return null;
+  }
+  const summary = typeof item.summary === 'string' ? item.summary.trim().slice(0, 200) : '';
+  return {
+    // An invitation sits in each calendar it's on under the same id: the pair is unique.
+    id: crypto.createHash('sha1').update(`${cal.id}\n${item.id}`).digest('hex').slice(0, 16),
+    calendarId: cal.id,
+    title: summary || (cal.role === 'freeBusyReader' ? 'Busy' : '(No title)'),
+    date,
+    endDate,
+    startTime,
+    endTime,
+    allDay,
+  };
+}
+
+/* Every page of one calendar's events in a margin round the range (Sydney is
+   ahead of UTC by 10 or 11 hours); eventFrom's dates then decide what's in. */
+async function listEvents(db, oauth, calendarId, from, to) {
+  const items = [];
+  let pageToken = '';
+  for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
+    const q = new URLSearchParams({
+      timeMin: `${shiftDate(from, -1)}T00:00:00Z`,
+      timeMax: `${shiftDate(to, 1)}T00:00:00Z`,
+      singleEvents: 'true',
+      orderBy: 'startTime',
+      maxResults: '250',
+      timeZone: ZONE,
+      fields: EVENT_FIELDS,
+    });
+    if (pageToken) q.set('pageToken', pageToken);
+    // eslint-disable-next-line no-await-in-loop
+    const body = await calendarApi(db, oauth, 'GET', `/calendars/${encodeURIComponent(calendarId)}/events?${q}`);
+    if (Array.isArray(body.items)) items.push(...body.items);
+    pageToken = body.nextPageToken || '';
+    if (!pageToken) break;
+  }
+  return items;
+}
+
+const order = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) ||
+  Number(b.allDay) - Number(a.allDay) ||
+  String(a.startTime || '').localeCompare(String(b.startTime || '')) ||
+  a.title.localeCompare(b.title);
+
+/**
+ * The switched-on calendars' events overlapping from..to (dates, inclusive).
+ *
+ * @returns {{ state: 'off'|'ok'|'unavailable'|'reconnect',
+ *   events: Array<{id, calendarId, calendar, colour, title, date, endDate, startTime, endTime, allDay}>,
+ *   calendars: Array<{id, summary, colour, primary, role, on}>,
+ *   missing: string[] }}  `missing` names calendars that failed while others didn't.
+ */
+async function calendarEvents(db, oauth, { from, to, refresh = false }) {
+  const row = readAccount(db);
+  if (!row) return { state: 'off', events: [], calendars: [], missing: [] };
+  const all = storedCalendars(row).map((c) => ({
+    id: c.id, summary: c.summary, colour: c.colour, primary: c.primary === true, role: c.role, on: c.on === true,
+  }));
+  const on = all.filter((c) => c.on);
+  const result = (state, events, missing) => ({ state, events, calendars: all, missing });
+  if (!on.length) return result('ok', [], []);
+
+  const now = (oauth.now || Date.now)();
+  for (const [k, v] of eventCache) if (now - v.at >= EVENTS_TTL_MS) eventCache.delete(k);
+  const keyOf = (cal) => `${row.email}\n${cal.id}\n${from}\n${to}`;
+  const stale = on.filter((cal) => refresh || !eventCache.has(keyOf(cal)));
+
+  const failed = new Map(); // calendar id → GoogleError code
+  if (stale.length) {
+    // One renewal up front, not one per calendar racing each other.
+    try {
+      await accessToken(db, oauth);
+    } catch (err) {
+      if (!(err instanceof GoogleError)) throw err;
+      return result(err.code === 'reconnect' ? 'reconnect' : 'unavailable', [], []);
+    }
+    await Promise.all(stale.map(async (cal) => {
+      try {
+        const events = (await listEvents(db, oauth, cal.id, from, to))
+          .map((item) => eventFrom(item, cal))
+          .filter((ev) => ev && ev.date <= to && ev.endDate >= from);
+        eventCache.set(keyOf(cal), { at: now, events });
+      } catch (err) {
+        if (!(err instanceof GoogleError)) throw err;
+        failed.set(cal.id, err.code);
+      }
+    }));
+    if (eventCache.size > MAX_CACHED) eventCache.clear();
+  }
+
+  if (failed.size === on.length) {
+    return result([...failed.values()].includes('reconnect') ? 'reconnect' : 'unavailable', [], []);
+  }
+  const events = [];
+  for (const cal of on) {
+    const hit = eventCache.get(keyOf(cal));
+    if (!hit || failed.has(cal.id)) continue;
+    hit.events.forEach((ev) => events.push({ ...ev, calendar: cal.summary, colour: cal.colour }));
+  }
+  events.sort(order);
+  return result('ok', events, on.filter((c) => failed.has(c.id)).map((c) => c.summary));
+}
+
+/** For tests, and after a disconnect. */
+const forgetEvents = () => eventCache.clear();
+
 module.exports = {
   decodePolyline,
   encodePolyline,
@@ -606,4 +794,9 @@ module.exports = {
   refreshCalendars,
   needsReconnect,
   forgetReconnect,
+  // Events on the calendar (task 13)
+  sydneyParts,
+  eventFrom,
+  calendarEvents,
+  forgetEvents,
 };

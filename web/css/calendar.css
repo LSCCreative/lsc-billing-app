@@ -718,6 +718,322 @@ div.cal-rentry:focus {
   background: var(--cal-rental);
 }
 
+/* ── Google Calendar events (trip-planner task 13, G2, G3) ───────────────────
+   The owner's own diary showing through the board: never as loud as a
+   booking. A Google tile is a faint wash with its calendar's colour as a dot
+   and its words in --muted; an all-day (or multi-day) event is a thin band at
+   the top of each date it covers, tinted in the calendar's colour, with a cap
+   on its real ends (as a rental bar's, but at the top, and per calendar).
+   --g is the calendar's colour; the neutral grey stands in when Google gives
+   none. In dots mode an event is a short dash, a shape no booking uses. */
+
+.cal-gdot {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--g, var(--color-status-neutral));
+}
+
+.cal-dot.cal-gdash {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--g, var(--color-status-neutral));
+  opacity: 0.85;
+}
+
+.cal-tile.cal-gtile {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  color: var(--muted);
+  font-weight: 400;
+}
+.cal-gtile .cal-gdot {
+  width: 6px;
+  height: 6px;
+}
+.cal-gtile .cal-tile-upid {
+  min-width: 0;
+}
+
+.cal-gbands {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Bleeds to the cell's edges, so a band carrying on reads as one strip. */
+  margin: 0 -4px 1px;
+}
+.cal-gband {
+  display: block;
+  min-width: 0;
+  height: 13px;
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--g, var(--color-status-neutral)) 24%, transparent);
+  border: 0 solid var(--g, var(--color-status-neutral));
+  border-left-width: 2px;
+  color: var(--color-text-primary);
+  font-size: 9px;
+  line-height: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cal-gband.is-cont-l {
+  border-left-width: 0;
+}
+.cal-gband.is-cont-r {
+  border-right-width: 0;
+}
+.cal-gband:hover,
+.cal-gtile:hover {
+  filter: brightness(1.25);
+}
+.cal-gband-t {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-gband-more {
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--muted);
+}
+
+@container cal (min-width: 640px) {
+  .cal-gbands {
+    margin: 0 -6px 2px;
+  }
+  .cal-gband {
+    height: 16px;
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+}
+
+/* In the selected date's list: read, not pressed. */
+.cal-entries + .cal-glist,
+.cal-empty + .cal-glist,
+.cal-onhire + .cal-glist {
+  margin-top: 8px;
+}
+div.cal-gentry {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--color-border-hairline);
+  cursor: default;
+}
+div.cal-gentry:hover {
+  border-color: var(--color-border-hairline);
+}
+.cal-entry-gtitle {
+  font-size: 12px;
+  color: var(--text);
+}
+.cal-gchip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 84px;
+  padding: var(--chip-pad);
+  font: var(--chip-font);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+  border: 1px solid var(--color-border-hairline);
+  border-radius: var(--chip-radius);
+  white-space: nowrap;
+}
+
+/* ── Calendars ▾ and its quiet line ───────────────────────────────────────── */
+
+.cal-tools:empty {
+  display: none;
+}
+.cal-tools {
+  display: flex;
+}
+.cal-cals {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.cal-cals[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--row-hover);
+}
+.cal-cals[aria-expanded='true'] .menu-caret {
+  transform: translateY(1px) rotate(-135deg);
+}
+.cal-cals .menu-caret {
+  margin: 0 0 0 2px;
+}
+.cal-cals.is-busy {
+  cursor: progress;
+}
+.cal-cals.is-busy .cal-cals-dots {
+  animation: cal-cals-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes cal-cals-pulse {
+  to { opacity: 0.3; }
+}
+/* The calendars on show, overlapped like a stack of swatches. */
+.cal-cals-dots {
+  display: inline-flex;
+}
+.cal-cals-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--g, var(--color-status-neutral));
+  box-shadow: 0 0 0 1.5px var(--color-bg-page);
+}
+.cal-cals-dot + .cal-cals-dot {
+  margin-left: -3px;
+}
+
+/* Phone first: the month and arrows on the first row; Go to date and
+   Calendars ▾ share the second. */
+.cal-bar:has(.cal-tools:not(:empty)) .cal-goto {
+  flex: 1 1 0;
+  min-width: 160px;
+  order: 3;
+}
+.cal-tools {
+  order: 4;
+}
+@container cal (min-width: 640px) {
+  .cal-bar:has(.cal-tools:not(:empty)) .cal-goto {
+    flex: 0 1 auto;
+    min-width: 0;
+    order: 1;
+  }
+  .cal-tools {
+    order: 3;
+  }
+}
+
+.cal-gnote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: -4px 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--color-status-warning);
+  font-size: var(--font-size-sm);
+  line-height: 18px;
+  color: var(--muted);
+}
+.cal-gnote[hidden] {
+  display: none;
+}
+.cal-gnote-act {
+  padding: 0;
+  min-height: 0;
+  background: none;
+  border: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cal-gnote-act:hover {
+  color: var(--text);
+}
+@media (max-width: 767px) {
+  .cal-gnote-act {
+    min-height: 44px;
+  }
+}
+
+/* ── The read-only pop-up ─────────────────────────────────────────────────── */
+
+.cal-gpop {
+  position: absolute;
+  z-index: 9300;
+  width: min(300px, calc(100vw - 16px));
+  padding: var(--space-5) 44px var(--space-5) var(--space-5);
+  background: var(--menu-bg);
+  color: var(--color-text-primary);
+  border-radius: var(--menu-radius);
+  box-shadow: var(--menu-shadow);
+  animation: menu-fade-in var(--duration-normal) var(--easing-out);
+}
+.cal-gpop-from {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cal-gpop-from span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-gpop-title {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.cal-gpop-when {
+  margin-top: 4px;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.cal-gpop-note {
+  margin-top: 10px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+.cal-gpop-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cal-gpop-x:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+.cal-gpop-x:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+@media (max-width: 767px) {
+  .cal-gpop-x {
+    width: 44px;
+    height: 44px;
+    top: 2px;
+    right: 2px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cal-body.slide-next,
   .cal-body.slide-prev {
@@ -728,5 +1044,9 @@ div.cal-rentry:focus {
   .cal-entry,
   .cal-goto-inp {
     transition: none;
+  }
+  .cal-gpop,
+  .cal-cals.is-busy .cal-cals-dots {
+    animation: none;
   }
 }
