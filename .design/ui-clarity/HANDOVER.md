@@ -94,10 +94,10 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     continuation paragraphs at their sub's depth, the signing line. Lossless by construction and
     test. `pdf.js agreementBodyHtml` and `c.js showAgreement` draw it; the dialog joins `parts`
     with one NUL per slot, lays out, and puts the slot spans back in order.
-- **Task 8, "Deploy system + D3" is unblocked: the NAS and the live site are back online
-  (2026-10-09; it was on hold from 2026-10-08).** It is still the first deploy owed (fetch and merge
-  `origin/main`, ship v15, NAS before Pages) and must still happen before any Pages push, because
-  the old server ignores saved clauses. Ask the user before deploying.
+- **Task 8, "Deploy system + D3", is unblocked** (NAS and site back 2026-10-09). The plan
+  ([`../ROADMAP.md`](../ROADMAP.md) §3) ships it with task 15 as **wave 1**, after task 14: fetch
+  and merge `origin/main`, ship v15, NAS before Pages (the old server ignores saved clauses). Ask
+  the user first; the agreement header wording (below) needs their OK.
   - [x] Task 9, the Project page. `project-folder.js` draws the header (`headMarkup`: one
     `.btn-primary` = `nextAction`, Actions ▾ = `headerActions`), `noticeMarkup` (now also the
     dates-taken warning), and three `.panel`s; each document is `estimateDoc` / `invoiceDoc` →
@@ -135,9 +135,10 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     fix-up had a terracotta Save per group. `scratchpad/sweep13.js`-style checks: see TASKS.
 - **Next: task 14, "Accessibility and responsive pass"** (frontend — Opus/high, **Frontend
   task**), then 16. These need no NAS or live app: build and verify only against local
-  `api-scratch` / `api-scratch-mail`, never the live site or API. Skip the deploy tasks (8, 15, 17) until the user
-  says the NAS is back; when it is, task 8 comes first, then 15 and 17. Commit locally on
-  `ui-clarity`; don't push.
+  scratch, never the live site or API. **Build in a git worktree on `ui-clarity`** (this folder's
+  checkout belongs to `trip-planner`), with a **v15 scratch DB of its own**: `/tmp/lsc-billing-scratch`
+  is v16 now and a ui-clarity server refuses it (ROADMAP §2). Commit on `ui-clarity`, don't push;
+  the trip-planner session merges each commit forward.
 
 ## Waiting on the user
 
