@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `70845d8`, schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
 | **ui-clarity** | branch `ui-clarity` `850f904`, **behind `main`** | Tasks 1–7, 9–13 built and now live. Its worktree must **merge `main`** before its next commit. Tasks 14, 8+15, 16, 18 still to do. |
-| **trip-planner** | branch `trip-planner` = `main` `70845d8` | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
+| **trip-planner** | deployed as `main` `70845d8`; the `trip-planner` branch is deleted (2026-10-12) | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -29,13 +29,13 @@ ui-clarity (worktree) ── still at 850f904: merge main, then tasks 14, 8+15, 
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`main` is checked out here; no feature branch now) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**
 
 - **Never `git checkout` another branch in this folder** while another session works here: it swaps
-  the files under the other session's feet. `trip-planner` owns this checkout. ui-clarity work runs in
+  the files under the other session's feet. `main` is checked out here. ui-clarity work runs in
   a worktree (`EnterWorktree`, or `git worktree add <path> ui-clarity`).
 - **One scratch database per schema.** `/tmp/lsc-billing-scratch` is **v16** (trip-planner migrated
   it; it is also connected to the user's **real Google account**, refresh token stored in it). **Since
@@ -63,9 +63,10 @@ ships a `server/` with v15 or later.
 
 ### Merge rule
 
-`ui-clarity` → `trip-planner` after **every** ui-clarity commit (the trip-planner session merges it,
-in this folder). Never the other way: `trip-planner` → `main` happens only at wave 3. Merging often
-keeps the conflicts small: see §4 for the files both lines touch.
+Wave 3 shipped, so `main` already holds everything through trip-planner and the `trip-planner`
+branch is gone. The ui-clarity worktree **merges `main` into `ui-clarity`** before its next commit and
+whenever `main` moves. `ui-clarity` reaches `main` only at its own wave (1 or 2). See §4 for the
+files both lines touched.
 
 ### Line 1: ui-clarity (tracker: [`ui-clarity/TASKS.md`](ui-clarity/TASKS.md))
 
@@ -81,7 +82,7 @@ keeps the conflicts small: see §4 for the files both lines touch.
 3. **Task 16: branded email shell** *(Opus/high, **frontend**)*. Needs the logo trimmed from
    `Visual Design/` and the user's approval of the look. **trip-planner seam:** trip-planner added an
    eighth template, `callSheetEmail`, which already calls `shell({ heading, bodyHtml, button, footer })`.
-   Keep that signature working (or update its one caller when task 16 merges into `trip-planner`),
+   Keep that signature working (or update its one caller when task 16 lands),
    give it the client footer like the other client emails, and add it to `test-mail.js`'s checks.
 4. **Wave 2, deploy D2** *(Sonnet/medium)*: **Pages before NAS** (the logo must be live first), then
    a test email the user checks in Gmail on phone and desktop.
@@ -129,7 +130,7 @@ Both lines change these. Merge `ui-clarity` forward often and read the other sid
 | `tokens.css` | the token source; task 13 warmed `--color-status-neutral` | uses tokens only; inherits on merge |
 
 **Editor bar:** ui-clarity's sticky bar (task 12) and trip-planner's autosave (task 8) share the
-editor's foot. They are already reconciled on `trip-planner`: `barActs()` draws ⋯, then Done for a
+editor's foot. They are already reconciled on `main`: `barActs()` draws ⋯, then Done for a
 draft (autosaved) or Cancel + Save for a sent estimate, beside the same live total. A ui-clarity
 change to the bar (task 14) must be merged into `barActs()` by hand, not taken whole.
 
