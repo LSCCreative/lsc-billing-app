@@ -258,7 +258,12 @@ local `server/.env`. Test the OAuth flow against
   the Pages secrets `LSC_MAPS_KEY`, `LSC_MAPS_ID`), `web/README.md` (config.js keys), and the
   CLAUDE.md track row.
 
-- [ ] **20. Deploy** *(deploy: Sonnet/medium)*: **Ask first.** It needs ui-clarity and `main` merged in
+- [x] **20. Deploy** *(deploy: Sonnet/medium)*: **Done 2026-10-11/12.** NAS v16 first (backup
+  `pre-v16-20261011-211953.db`, code by tar over ssh, Google env added, `up -d --build`, boot log
+  "migrated to v16", routes 401 not 404), then the Pages secrets and `main` `70845d8`
+  (run success, live `config.js` has all three keys). **Left for the user:** Connect Google
+  Calendar on the live site, press Sync existing bookings, check a trip routes and a call sheet
+  shows its map (the after-deploy steps in `DEPLOYMENT.md` §7). Original spec: **Ask first.** It needs ui-clarity and `main` merged in
   as they stand (fetch + diff `origin/main`; memory: deploy base check), the NAS online, and v15+ in
   the shipped `server/`. Add the GitHub secrets (the user, or the agent with permission). Set the
   NAS env. **NAS (v16) first, then Pages.** After deploy: connect Google Calendar on the live site

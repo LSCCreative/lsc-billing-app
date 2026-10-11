@@ -12,23 +12,24 @@ HANDOVER/TASKS, never here.
 
 | | Code | State |
 |---|---|---|
-| **Live** (NAS + Pages) | `main` `a728420`, schema **v15** | production-booking A–E, account recovery, everything older. NAS and site back online since 2026-10-09. |
-| **ui-clarity** | branch `ui-clarity` `850f904` + this record, on `main`, unpushed | Tasks 1–7, 9–13 built. Nothing of it is live. |
-| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–19 built (stages A–D, and E's accessibility pass, code review, design review, live Google check and docs); task 14 live-checked on the real calendar. Nothing deployed. |
+| **Live** (NAS + Pages) | `main` `70845d8`, schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
+| **ui-clarity** | branch `ui-clarity` `850f904`, **behind `main`** | Tasks 1–7, 9–13 built and now live. Its worktree must **merge `main`** before its next commit. Tasks 14, 8+15, 16, 18 still to do. |
+| **trip-planner** | branch `trip-planner` = `main` `70845d8` | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
-main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three screens) ── trip-planner (+23, v16)
+main = trip-planner (live, v16, 70845d8), which contains ui-clarity's 850f904
+ui-clarity (worktree) ── still at 850f904: merge main, then tasks 14, 8+15, 16, 18
 ```
 
-`trip-planner` contains all of `ui-clarity`. `main` gets each line only when it deploys.
+`main` gets each line only when it deploys. `main` now holds everything through trip-planner.
 
 ## 2. Who is working where
 
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **20** deploy, wave 3 *(Sonnet/medium; ask first)* |
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**

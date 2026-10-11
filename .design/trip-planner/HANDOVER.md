@@ -3,13 +3,16 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 20, the deploy, Sonnet, effort medium (deploy, not a frontend task). Ask the user
-first.** The steps are in `.design/nas-hosted-billing/DEPLOYMENT.md` §7 (written in task 19):
-merge `ui-clarity` and `main` in as they stand (fetch + diff `origin/main`; memory: deploy base
-check), NAS online, **NAS (v16) first, then Pages**; set the NAS env (`GOOGLE_MAPS_SERVER_KEY`,
-`GOOGLE_OAUTH_CLIENT_ID`/`_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`; values in
-`.credentials.local.md`), the Pages secrets `LSC_MAPS_KEY`/`LSC_MAPS_ID`, then Connect and Sync
-existing bookings on the live site. Tasks 1–19 are done. Waiting on the user, not blocking: the
+**All 20 tasks are done. Deployed 2026-10-11/12 (wave 3): NAS v16 first, then Pages, `main`
+`70845d8`.** What's left is the user's, on the live site, in this order (`DEPLOYMENT.md` §7):
+Settings → Google Calendar → **Connect** (their consent click), switch on the calendars, press
+**Sync existing bookings** once, then check a trip routes in the travel view (browser key + Map
+ID) and a call sheet shows its route map (server key). Not checked from here: neither needs a
+login the agent should type. Rollback if needed: NAS `/volume4/lsc-billing/code-pre-v16.tgz`
+(code), `manual-backup/pre-v16-20261011-211953.db` (data, taken at v15), `.env.pre-v16`; a v16
+database can't be opened by v15 code, so restore the `.db` with the code. Because `main` now
+contains all of `ui-clarity`'s tasks 1–7 and 9–13, **the ui-clarity worktree must merge `main`
+before its next commit.** Waiting on the user, not blocking: the
 two should-fix items from task 17 (km rounding across surfaces; the R pin over S) and the Routes
 preference (task 18). The scratch DB `/tmp/lsc-billing-scratch` is connected to the user's real
 Google account (all four calendars on): **never run a write-capable build on it** except for a
