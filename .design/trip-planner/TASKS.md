@@ -241,7 +241,7 @@ local `server/.env`. Test the OAuth flow against
   the legs, an orphaned event, a disconnect race, reconnecting another account, a false reconnect,
   the call sheet's "Updated", the list's payload, shared helpers), 1 not a bug; 705 tests pass.
 
-- [x] **17. Design review** *(frontend: Opus/high)*: **Done** (commit in HANDOVER). [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md);
+- [x] **17. Design review** *(frontend: Opus/high)*: **Done `5c3a05b`.** [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md);
   2 must-fix, both fixed (call sheet and editor clock times follow the day's current start
   time; the call sheet's rail no longer crosses the stop discs); 2 should-fix left for the user;
   706 tests pass.

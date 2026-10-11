@@ -122,7 +122,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   pass doesn't repeat it. The VoiceOver list for a person is at the end of that section.
 - [x] **Task 16** code review (`/code-review high`), `3a93d8a`. 9 findings: 8 fixed, 1 judged
   not a bug. 705 server tests pass (6 new). Server only; nothing a person sees changed.
-- [x] **Task 17** design review (`/design-review`), see [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md).
+- [x] **Task 17** design review (`/design-review`), `5c3a05b`, see [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md).
   45 shots at 1280/768/375 (headless, `api-scratch-sync`, the pretend Google), no sideways
   scroll anywhere. 2 must-fix, both fixed; 2 should-fix left for the user (below). 706 server
   tests pass (1 new).
