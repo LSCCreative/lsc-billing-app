@@ -193,7 +193,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
     - An agreement signed before task 4 (free text) still renders, as plain paragraphs.
   - _Depends on: 4. Modifies: `web/c/c.js`, `web/c/c.css`, `server/src/pdf.js`, `test-pdf.js`._
 
-- [ ] **8. Deploy system + D3** (deploy — Sonnet/medium)
+- [x] **8. Deploy system + D3** (deploy — Sonnet/medium)
+  - **Done** 2026-10-12: server already live (v16) via wave 3; header wording approved by the user.
   - **Unblocked 2026-10-09** (NAS back). Planned as **wave 1 with task 15**, after task 14
     ([`../ROADMAP.md`](../ROADMAP.md) §3). Ask first.
   - **Fetch and merge `origin/main` first.** The server tree must contain schema **v15** (`db.js`) and
@@ -311,7 +312,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - A VoiceOver listen is left for a person (as in earlier tracks), with a list of what to hear.
   - _Depends on: 9–12._
 
-- [ ] **15. Deploy D1** (deploy — Sonnet/medium)
+- [x] **15. Deploy D1** (deploy — Sonnet/medium)
+  - **Done** 2026-10-12 as wave 1: Pages only, `main` `eda110d` (task 14). Not yet checked by eye on a real live project.
   - Pages only (no server change since task 8). Ask first. `git fetch` and fast-forward onto
     `origin/main` first: other sessions push `main` too. Check the live Project page, Invoice
     and Editor on one real project.

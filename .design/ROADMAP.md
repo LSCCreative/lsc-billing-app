@@ -12,8 +12,8 @@ HANDOVER/TASKS, never here.
 
 | | Code | State |
 |---|---|---|
-| **Live** (NAS + Pages) | `main` `70845d8`, schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
-| **ui-clarity** | branch `ui-clarity`, fast-forwarded to `main` then task 14 on top (unpushed) | Tasks 1–7, 9–13 live; **task 14 done** (frontend only, no server change). Next: wave 1 (now just Pages), 16, 18. |
+| **Live** (NAS + Pages) | `main` `eda110d` (Pages; NAS still at `70845d8`'s server), schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
+| **ui-clarity** | `main` `eda110d` (branch `ui-clarity` equals it) | Tasks 1–15 **live** (wave 1 deployed 2026-10-12, Pages only). Next: 16, wave 2, 18. |
 | **trip-planner** | deployed as `main` `70845d8`; the `trip-planner` branch is deleted (2026-10-12) | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
@@ -28,7 +28,7 @@ ui-clarity (worktree) ── main + task 14; then wave 1, 16, 18
 
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
-| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **Wave 1** *(Sonnet/medium, deploy)*, ask first; then **16** *(Opus/high, frontend)* |
+| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | Wave 1 done; **16** *(Opus/high, frontend)* |
 | **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`main` is checked out here; no feature branch now) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
@@ -138,7 +138,7 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 **Decisions**
 - [ ] **Feature 4, "day-based media tree":** what it is and where it stands (§2).
 - [ ] **ui-clarity task 4's agreement header wording:** live since wave 3; approve or reword.
-- [ ] **Wave 1 timing:** one deploy after task 14 (recommended), or task 8 now and 15 later.
+- [x] **Wave 1 timing:** done 2026-10-12, one Pages push.
 - [ ] **Projects list cards:** keep the 11 terracotta totals, or make them white (ui-clarity task 13).
 - [ ] **ui-clarity task 16:** approve the email look (blocks wave 2).
 - [ ] **estimate-accuracy:** `/grill-me` on its tasks 9, 10, 12–14 (each has an open decision).
