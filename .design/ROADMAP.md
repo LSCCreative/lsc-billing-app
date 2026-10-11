@@ -13,13 +13,13 @@ HANDOVER/TASKS, never here.
 | | Code | State |
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `eda110d` (Pages; NAS still at `70845d8`'s server), schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
-| **ui-clarity** | branch `ui-clarity` = `main` `35e56ca` + task 16 (worktree, unpushed) | Tasks 1–15 **live** (wave 1 deployed 2026-10-12, Pages only). Task 16 built, awaiting the user's OK on the email look; then wave 2, 18. |
+| **ui-clarity** | branch `ui-clarity` = `main` `35e56ca` + task 16 (worktree, unpushed) | Tasks 1–15 **live** (wave 1 deployed 2026-10-12, Pages only). Task 16 done (look approved 2026-10-12); next wave 2, then 18. |
 | **trip-planner** | deployed as `main` `70845d8`; the `trip-planner` branch is deleted (2026-10-12) | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
 main = trip-planner (live, v16, 70845d8), which contains ui-clarity's 850f904
-ui-clarity (worktree) ── main + task 16 (built, unapproved); then wave 2, 18
+ui-clarity (worktree) ── main + task 16; then wave 2, 18
 ```
 
 `main` gets each line only when it deploys. `main` now holds everything through trip-planner.
@@ -28,7 +28,7 @@ ui-clarity (worktree) ── main + task 16 (built, unapproved); then wave 2, 18
 
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
-| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | 16 built; **the user approves the email look**, then wave 2 *(Sonnet/medium)* |
+| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **Wave 2** (task 17) *(Sonnet/medium, deploy)*, then 18 |
 | **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`main` is checked out here; no feature branch now) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
@@ -78,8 +78,8 @@ files both lines touched.
    **After:** the user fills Settings → Business email, phone and Signs for the business, and checks
    the 13 clauses. *(If the user wants the agreement builder sooner, task 8 can ship 1–13 now and
    task 15 follows after 14; one wave is fewer NAS trips.)*
-3. **Task 16: branded email shell** *(Opus/high, **frontend**)*: **built 2026-10-12**, waiting on the
-   user's approval of the look (HANDOVER "Decisions made in task 16"); the call sheet email is on the
+3. **Task 16: branded email shell** *(Opus/high, **frontend**)*: **done 2026-10-12**, look approved by
+   the user (HANDOVER "Decisions made in task 16"); the call sheet email is on the
    new shell with the client footer and in `test-mail.js`. Needs the logo trimmed from
    `Visual Design/` and the user's approval of the look. **trip-planner seam:** trip-planner added an
    eighth template, `callSheetEmail`, which already calls `shell({ heading, bodyHtml, button, footer })`.
@@ -142,7 +142,7 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 - [ ] **ui-clarity task 4's agreement header wording:** live since wave 3; approve or reword.
 - [x] **Wave 1 timing:** done 2026-10-12, one Pages push.
 - [ ] **Projects list cards:** keep the 11 terracotta totals, or make them white (ui-clarity task 13).
-- [ ] **ui-clarity task 16:** approve the email look (blocks wave 2).
+- [x] **ui-clarity task 16:** email look approved 2026-10-12.
 - [ ] **estimate-accuracy:** `/grill-me` on its tasks 9, 10, 12–14 (each has an open decision).
 
 **Things only a person can do**

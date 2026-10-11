@@ -138,15 +138,14 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     its own data `/tmp/lsc-billing-scratch-uic` and launch.json's `api-uic` (:8081) + `web-uic`
     (:5174). What failed, what passed and the VoiceOver list: "Decisions made in task 14".
   - [x] Wave 1 (tasks 8, 15): deployed 2026-10-12, Pages only, `main` `eda110d`.
-  - [~] Task 16, the branded email shell: **built 2026-10-12, waiting on the user's approval of the
-    look** (screenshots `screenshots/task16-*`, local). See "Decisions made in task 16".
-- **Next: the user approves the email look** (or asks for changes), then **wave 2** = task 17
+  - [x] Task 16, the branded email shell (`752ab81`): built 2026-10-12, **look approved by the user** (screenshots `screenshots/task16-*`, local). See "Decisions made in task 16".
+- **Next: wave 2** = task 17
   (*Sonnet/medium*, deploy; **Pages before NAS**), then task 18 (Opus/high, **Frontend task**).
   Commit on `ui-clarity` in its worktree; merge `main` in first if it has moved.
 
 ## Waiting on the user
 
-- **Task 16's email look:** approve or ask for changes. Blocks wave 2.
+- After wave 2: check the test email in Gmail on phone and desktop.
 
 The logo master is `Visual Design/CS-Felice-Mono-Monospaced-Font/LogoDark_ No Text.png`
 (`Logo Light_ No Text.png` is for dark grounds); task 16 trimmed it into `web/email/logo.png`.
