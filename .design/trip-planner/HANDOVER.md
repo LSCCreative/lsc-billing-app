@@ -112,8 +112,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   restarted, so the event was gone from Google: the PUT's 404 became a create), Settings said
   "1 day not synced" with Retry, no overflow at 375, 44px targets. The real Google Calendar was
   checked afterwards (the live check, below).
-- [x] **Task 15** responsive and accessibility pass, commit in the log (`Trip planner: accessibility and
-  responsive pass (task 15)`). **Stage E's frontend is done.** 699 server tests pass (no server change).
+- [x] **Task 15** responsive and accessibility pass, `0656f32`. **Stage E's frontend is done.** 699 server tests pass (no server change).
   Audited headless at 320/375/768/1280 with real key events, axe-core, a computed-contrast probe and a
   target-size probe, over: the travel view (empty, with a search open, with a pending pin), the Share
   dialog, Clear trip, the in-app and public call sheet, Settings → Google Calendar (all states incl.
