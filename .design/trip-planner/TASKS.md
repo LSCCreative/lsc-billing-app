@@ -246,9 +246,10 @@ local `server/.env`. Test the OAuth flow against
   time; the call sheet's rail no longer crosses the stop discs); 2 should-fix left for the user;
   706 tests pass.
 
-- [ ] **18. Live Google check** *(frontend: Opus/high)*: With the user present: plan a real
-  trip, compare its km and time with Google Maps, connect the real calendar, confirm a test day,
-  see the event, move it, remove it. Record the result in HANDOVER.
+- [x] **18. Live Google check** *(frontend: Opus/high)*: **Done** (commit in HANDOVER). A 3-leg Sydney
+  trip planned in the travel view matched Google Maps leg by leg (2 legs within 0.1 km, all drive
+  times inside Maps' "typically" range; leg 1 took a road 0.8 km longer, see HANDOVER); the
+  calendar half is task 14's live check of 2026-10-11 (the user's call). Results in HANDOVER.
 
 - [ ] **19. Update docs** *(backend: Sonnet/high)*: `DEPLOYMENT.md` (new env:
   `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_MAPS_SERVER_KEY`, `APP_ORIGIN`;

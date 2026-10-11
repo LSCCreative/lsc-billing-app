@@ -3,16 +3,17 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 18, Opus, effort high, a frontend task, with the user present** (live Google check:
-plan a real trip and compare its km and time with Google Maps, connect the real calendar, confirm
-a test day, see the event, move it, remove it; record the result here). Stages A–E up to task 17
-are built: task 15's accessibility pass, task 16's code review and task 17's design review are
-done and fixed. Task 14's live check on the real calendar already passed (2026-10-11), so task 18
-mainly adds the Maps comparison. The scratch DB `/tmp/lsc-billing-scratch` is connected to the
+**Next: task 19, Sonnet, effort high (backend/docs, not a frontend task)**: update
+`DEPLOYMENT.md` (new env `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`GOOGLE_MAPS_SERVER_KEY`, `APP_ORIGIN`; Pages secrets `LSC_MAPS_KEY`, `LSC_MAPS_ID`),
+`web/README.md` (config.js keys) and the CLAUDE.md track row. Then task 20, the deploy (ask first).
+Tasks 1–18 are done: the live Google check (task 18) is below. Waiting on the user, not blocking:
+the two should-fix items from task 17 (km rounding across surfaces; the R pin over S) and the
+Routes preference (below). The scratch DB `/tmp/lsc-billing-scratch` is connected to the
 user's real Google account (all four calendars on): **never run a write-capable build on it**
 except for a live check (see Traps).
 
-## State as of 2026-10-11 (task 17)
+## State as of 2026-10-11 (task 18)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -126,6 +127,25 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   45 shots at 1280/768/375 (headless, `api-scratch-sync`, the pretend Google), no sideways
   scroll anywhere. 2 must-fix, both fixed; 2 should-fix left for the user (below). 706 server
   tests pass (1 new).
+- [x] **Task 18** live Google check, 2026-10-11. **Maps:** a trip built in the travel view by
+  search alone (headless Chrome, real browser key, `api-scratch-sync` so nothing reached the real
+  calendar) on scratch `est_43f5777a` day `d_nbk0`, Wed 28 Oct 8:00: Marrickville Metro → Bondi
+  Pavilion (2 h) → Carriageworks (1 h) → return. Each leg checked in google.com/maps with
+  "Depart at" the app's leg time:
+
+  | Leg | App | Google Maps (first route) |
+  | --- | --- | --- |
+  | Marrickville → Bondi, 8:00 | 13.9 km, 44 min | 13.1 km, typically 30 min–1 h 5 |
+  | Bondi → Carriageworks, 10:44 | 9.6 km, 26 min | 9.6 km, typically 18–40 min |
+  | Carriageworks → Marrickville, 12:10 | 3.3 km, 12 min | 3.4 km, typically 10–18 min |
+
+  Totals 26.87 km / 82 min → lines 27 km and 1.5 h (Maps' legs sum to 26.1 km, also 27 billed).
+  Departures carried the time on location (10:44 = 8:44 + 2 h). **Leg 1's 0.8 km** is route
+  choice: `maps.js` asks Routes for `TRAFFIC_AWARE`; Google Maps itself routes like
+  `TRAFFIC_AWARE_OPTIMAL`, a pricier Routes tier. **The user's call** whether to switch (check
+  the price first); not changed. **Calendar:** by the user's choice, task 14's live check below
+  stands as the result (event made, moved, re-timed, accepted, removed). The test trip stays on
+  the sync copy only. Shot: `screenshots/live-trip-1280.png`.
 - [x] **Task 14 live check, 2026-10-11, on the user's real calendar** (with their OK, from the
   scratch DB via the `api-scratch-live` launch config; the user had Google Calendar open in the
   pane). A test project "ZZ LIVE SYNC CHECK delete me" (UPID ZZTEST1, client Test Client) with a
