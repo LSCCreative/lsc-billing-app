@@ -706,11 +706,15 @@ function callSheetView(estimate, business, maps, updatedAt) {
   };
 }
 
-/* When the trips were last saved: the newest of the estimate's days (days.js
-   replaceDays keeps a day's stamp when a save changed nothing in it), or the
-   estimate's own save when it has none. */
+/* When the trips were last saved: the newest of the estimate's days with a
+   trip (days.js replaceDays keeps a day's stamp when a save changed nothing in
+   it, and restamps these when a day with a trip goes), or the estimate's own
+   save when it has none. A day with no trip isn't on the sheet, so an edit to
+   it doesn't move "Updated". */
 function callSheetUpdatedAt(db, row) {
-  const d = db.prepare('SELECT MAX(updated_at) AS at FROM production_days WHERE estimate_id = ?').get(row.id);
+  const d = db.prepare(`
+    SELECT MAX(updated_at) AS at FROM production_days WHERE estimate_id = ? AND trip_json IS NOT NULL
+  `).get(row.id);
   return (d && d.at) || row.updated_at;
 }
 

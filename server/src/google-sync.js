@@ -51,8 +51,9 @@
 const crypto = require('crypto');
 const { nowIso } = require('./db');
 const google = require('./google');
+const { durationText } = require('./call-sheet');
 
-const ZONE = 'Australia/Sydney';
+const { ZONE, shiftDate } = google;
 const PRIMARY = 'primary';
 /* Bumped when the event's shape changes, so every event is written again. */
 const FORMAT_VERSION = 1;
@@ -66,11 +67,6 @@ const MAX_ITEMS = 40;
 const DEFAULT_LENGTH_MIN = 60;
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
-
-function shiftDate(ymd, n) {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-}
 
 const pad = (n) => String(n).padStart(2, '0');
 const clock = (minutes) => `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
@@ -98,14 +94,6 @@ function whenOf(date, startTime, endTime) {
     end: { dateTime: `${endDate}T${end}:00`, timeZone: ZONE },
   };
 }
-
-const durationText = (minutes) => {
-  const total = Math.max(0, Math.round(minutes));
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (!h) return `${m} min`;
-  return m ? `${h} h ${m} min` : `${h} h`;
-};
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -214,6 +202,7 @@ function createGoogleSync(db, deps = {}) {
   let running = null; // the pass in flight
   let again = false; // something asked for a pass while one ran
   let stopped = false;
+  let holds = 0; // a disconnect under way: no pass starts (hold/release)
 
   const stamp = () => new Date(now()).toISOString();
   const connected = () => Boolean(db.prepare('SELECT 1 FROM google_account WHERE id = 1').get());
@@ -460,10 +449,21 @@ function createGoogleSync(db, deps = {}) {
           setState.run(row.estimate_id, 'synced', null, 0, null, at, row.day_id);
         } else {
           const eventId = await write(row, w);
-          db.prepare(`
+          const kept = db.prepare(`
             UPDATE google_event_sync SET event_id = ?, pushed_hash = ?, state = 'synced', error = NULL,
                    attempts = 0, next_try_at = NULL, updated_at = ? WHERE day_id = ?
           `).run(eventId, w.hash, at, row.day_id);
+          if (!kept.changes) {
+            // The day stopped being booked while its event was being made
+            // (mark dropped the row, which had no event yet). Keep the event's
+            // id, pending, so the next pass deletes it rather than leaving it
+            // in the calendar with nothing pointing at it (task 16).
+            db.prepare(`
+              INSERT INTO google_event_sync (day_id, estimate_id, event_id, pushed_hash, state, error, attempts, next_try_at, updated_at)
+              VALUES (?, ?, ?, ?, 'pending', NULL, 0, NULL, ?)
+            `).run(row.day_id, row.estimate_id, eventId, w.hash, at);
+            again = true;
+          }
         }
       } catch (err) {
         if (!(err instanceof google.GoogleError)) throw err;
@@ -490,6 +490,7 @@ function createGoogleSync(db, deps = {}) {
 
   /** Runs a pass now (or after the one in flight), and whatever it was asked while running. */
   function run() {
+    if (holds) return Promise.resolve();
     if (running) {
       again = true;
       return running;
@@ -564,6 +565,21 @@ function createGoogleSync(db, deps = {}) {
     },
     /** Connected again: whatever waited on a refused connection goes out in a moment. */
     kick() { if (enabled) schedule(debounceMs, { restart: false }); },
+    /** A disconnect is starting: nothing new starts, and the pass in flight
+        lands first, so every event it made has its id in a row before the
+        rows are read (task 16). Pair with release(). */
+    async hold() {
+      holds += 1;
+      clearTimer();
+      if (running) await running.catch(() => {});
+    },
+    /** The disconnect is over: anything still owed is scheduled again. */
+    release() {
+      holds = Math.max(0, holds - 1);
+      if (holds || stopped || !enabled || !connected()) return;
+      const next = nextDue();
+      if (next !== null) schedule(Math.max(1000, next - now()), { restart: false, retry: true });
+    },
     /** Run now and wait for it, whatever the debounce says (tests, shutdown). */
     async flush() {
       clearTimer();

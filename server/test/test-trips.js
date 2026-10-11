@@ -154,6 +154,22 @@ test('a trip round-trips on its day, and its two lines bill the rounded-up total
   assert.deepEqual(again.estimate.days[0].trip, est.days[0].trip);
 });
 
+test('the billed totals are the legs’ sum: tampered totals bill nothing extra, and the list carries no trips', async () => {
+  // Legs of 21 + 21 km and 24 + 24 min, sent with totals claiming 9 km and 5 min.
+  const { body } = await create([day('dT', tripOf(42, 48, { totals: { km: 9, minutes: 5 } }))], [kmLine('dT', 1), hoursLine('dT', 1)]);
+  assert.deepEqual(body.estimate.days[0].trip.totals, { km: 42, minutes: 48 });
+  assert.deepEqual(travelOf(body.estimate).map((l) => l.qty), [42, 1]);
+  // A total past the cap, summed from legs each inside it, is refused.
+  const huge = tripOf(42, 48);
+  huge.legs = [{ km: 60000, minutes: 1 }, { km: 60000, minutes: 1 }];
+  assert.equal((await create([day('dT2', huge)], [])).body.error, 'trip_invalid');
+
+  const list = await api('/api/estimates').then((r) => r.json());
+  const mine = list.estimates.find((e) => e.id === body.estimate.id);
+  assert.equal(mine.days[0].trip, undefined, 'one estimate’s read has the trip; the list doesn’t');
+  assert.equal(mine.days[0].id, 'dT');
+});
+
 test('the derived quantity overrides a tampered one, on create and on every save', async () => {
   const { body } = await create([day('dB', tripOf(42, 48))], [kmLine('dB', 9999), hoursLine('dB', 0.01)]);
   assert.deepEqual(travelOf(body.estimate).map((l) => l.qty), [42, 1]);

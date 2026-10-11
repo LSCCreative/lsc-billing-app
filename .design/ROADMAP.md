@@ -2,7 +2,7 @@
 
 The one record of what is built, what is live, and what happens next, across every track and every
 session working in this folder. **Read this first**, then only the HANDOVER of the track you are
-working on (it has the detail, decisions and traps). Last consolidated **2026-10-11** (trip-planner task 15).
+working on (it has the detail, decisions and traps). Last consolidated **2026-10-11** (trip-planner task 16).
 
 **Keep it true:** when a task changes the order, a branch, a deploy wave, a seam between tracks or
 the user's to-do list, update this file in the same commit. Per-task logs stay in the track's
@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `a728420`, schema **v15** | production-booking A–E, account recovery, everything older. NAS and site back online since 2026-10-09. |
 | **ui-clarity** | branch `ui-clarity` `850f904` + this record, on `main`, unpushed | Tasks 1–7, 9–13 built. Nothing of it is live. |
-| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–15 built (stages A–D, and E's accessibility and responsive pass); task 14 live-checked on the real calendar. Nothing deployed. |
+| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–16 built (stages A–D, and E's accessibility pass and code review); task 14 live-checked on the real calendar. Nothing deployed. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -28,7 +28,7 @@ main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three scr
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **16** code review *(Opus/high)* |
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **17** design review *(Opus/high, frontend)* |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**
@@ -95,9 +95,10 @@ keeps the conflicts small: see §4 for the files both lines touch.
    calendar passed 2026-10-11** (create, move, re-time, accept, delete; HANDOVER).
 3. ~~Task 15: responsive and accessibility pass~~, done (HANDOVER: what failed, what passed, and a
    VoiceOver list for a person).
-   **Tasks 16–19:** code review, design review, live Google check *(with the user present)*, docs
+4. ~~Task 16: code review~~, done: 8 of 9 findings fixed (HANDOVER).
+   **Tasks 17–19:** design review, live Google check *(with the user present)*, docs
    (`DEPLOYMENT.md` env incl. `GOOGLE_CALENDAR_WRITE`, `web/README.md`).
-4. **Wave 3, deploy trip-planner** *(task 20, Sonnet/medium)*: only after wave 1 (and ideally wave 2),
+5. **Wave 3, deploy trip-planner** *(task 20, Sonnet/medium)*: only after wave 1 (and ideally wave 2),
    with `ui-clarity` and `main` merged in. **NAS first (v16 migration), then Pages.** New NAS env:
    `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_MAPS_SERVER_KEY`, `APP_URL`/`APP_ORIGIN`,
    and `GOOGLE_OAUTH_REDIRECT_URI=https://billing.lsccreative.studio/api/google/oauth/callback` unless

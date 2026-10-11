@@ -186,6 +186,18 @@ function registerGoogleOAuthRoutes(app, db, opts) {
       db.transaction(() => {
         // Another account's events aren't this one's to edit: forget them.
         if (previous && !sameAccount) db.prepare('DELETE FROM google_event_sync').run();
+        // Rows kept by a disconnect belong to whichever account was connected
+        // then, and nothing records which. Each goes round once more (task
+        // 16): the same account finds its event by id and rewrites it in
+        // place; another account gets a 404 and a fresh event, or for a day
+        // no longer booked, nothing to delete. Left as they were, rows that
+        // read as synced would never reach a different account's calendar.
+        if (!previous) {
+          db.prepare(`
+            UPDATE google_event_sync SET pushed_hash = NULL, state = 'pending', error = NULL, attempts = 0,
+                   next_try_at = NULL, updated_at = ?
+          `).run(nowIso());
+        }
         db.prepare(`
           INSERT INTO google_account (id, email, refresh_token, access_token, access_expires_at, calendars_json, connected_at)
           VALUES (1, ?, ?, ?, ?, ?, ?)
@@ -274,40 +286,53 @@ function registerGoogleRoutes(app, db, opts) {
       const row = google.readAccount(db);
       if (!row) return res.json({ disconnected: true, revoked: false, removed: 0, notRemoved: 0 });
       const removeEvents = req.body && req.body.removeEvents === true;
-      let removed = 0;
-      let notRemoved = 0;
-      if (removeEvents) {
-        const synced = db.prepare('SELECT day_id, event_id FROM google_event_sync WHERE event_id IS NOT NULL').all();
-        for (const [i, s] of synced.entries()) {
-          try {
-            await google.calendarApi(db, oauth, 'DELETE', `/calendars/primary/events/${encodeURIComponent(s.event_id)}`);
-            removed += 1;
-          } catch (err) {
-            if (!(err instanceof google.GoogleError)) throw err;
-            // Already gone from Google is as good as removed.
-            if (err.status === 404 || err.status === 410) {
-              removed += 1;
-            } else if (err.code === 'reconnect' || err.code === 'not_configured') {
-              // No token to delete with: none of the rest will go either.
-              notRemoved += synced.length - i;
-              break;
-            } else {
-              notRemoved += 1;
-              continue;
-            }
-          }
-          db.prepare('DELETE FROM google_event_sync WHERE day_id = ?').run(s.day_id);
-        }
+      // A pass in flight lands first and none starts meanwhile, so an event
+      // it was making is in the rows read below, not written after them.
+      if (sync) await sync.hold();
+      try {
+        return res.json(await disconnect(row, removeEvents));
+      } finally {
+        if (sync) sync.release();
       }
-      const revoked = await google.revokeToken(oauth, row.refresh_token);
-      db.prepare('DELETE FROM google_account WHERE id = 1').run();
-      google.forgetReconnect();
-      google.forgetEvents();
-      res.json({ disconnected: true, revoked, removed, notRemoved });
     } catch (err) {
-      next(err);
+      return next(err);
     }
   });
+
+  /* The disconnect itself: optionally the app's events out of the primary
+     calendar, then the grant revoked and the account forgotten. */
+  async function disconnect(row, removeEvents) {
+    let removed = 0;
+    let notRemoved = 0;
+    if (removeEvents) {
+      const synced = db.prepare('SELECT day_id, event_id FROM google_event_sync WHERE event_id IS NOT NULL').all();
+      for (const [i, s] of synced.entries()) {
+        try {
+          await google.calendarApi(db, oauth, 'DELETE', `/calendars/primary/events/${encodeURIComponent(s.event_id)}`);
+          removed += 1;
+        } catch (err) {
+          if (!(err instanceof google.GoogleError)) throw err;
+          // Already gone from Google is as good as removed.
+          if (err.status === 404 || err.status === 410) {
+            removed += 1;
+          } else if (err.code === 'reconnect' || err.code === 'not_configured') {
+            // No token to delete with: none of the rest will go either.
+            notRemoved += synced.length - i;
+            break;
+          } else {
+            notRemoved += 1;
+            continue;
+          }
+        }
+        db.prepare('DELETE FROM google_event_sync WHERE day_id = ?').run(s.day_id);
+      }
+    }
+    const revoked = await google.revokeToken(oauth, row.refresh_token);
+    db.prepare('DELETE FROM google_account WHERE id = 1').run();
+    google.forgetReconnect();
+    google.forgetEvents();
+    return { disconnected: true, revoked, removed, notRemoved };
+  }
 }
 
 /* For tests: forget redeemed states. */

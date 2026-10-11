@@ -448,10 +448,12 @@ async function accessToken(db, oauth, { force = false } = {}) {
       grant_type: 'refresh_token',
     }));
   } catch (err) {
-    if (err.code === 'reconnect' || err.code === 'refused') {
-      reconnectNeeded = true;
-      throw new GoogleError('reconnect', err.status);
-    }
+    // Only Google refusing the grant itself (invalid_grant and kin, which
+    // call() turns into 'reconnect') means reconnect. Any other 4xx (a rate
+    // limit, a malformed request) is a refusal of this one try: the sync
+    // engine backs off and tries again, and Settings doesn't ask for a
+    // reconnect the grant doesn't need (task 16).
+    if (err.code === 'reconnect') reconnectNeeded = true;
     throw err;
   }
   if (!body.access_token) throw new GoogleError('unavailable');
@@ -795,6 +797,8 @@ module.exports = {
   needsReconnect,
   forgetReconnect,
   // Events on the calendar (task 13)
+  ZONE,
+  shiftDate,
   sydneyParts,
   eventFrom,
   calendarEvents,

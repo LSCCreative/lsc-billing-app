@@ -237,9 +237,9 @@ local `server/.env`. Test the OAuth flow against
   only); drag alternatives; `prefers-reduced-motion`; focus return on Back and dialogs; 44px
   targets. Fix what fails.
 
-- [ ] **16. Code review** *(Opus/high)*: `/code-review high` on the branch. Fix the findings, with
-  extra scrutiny on money (task 1/4/6 derivations), the public allow-list, OAuth state and token
-  handling, and the sync engine's idempotency.
+- [x] **16. Code review** *(Opus/high)*: **Done.** 9 findings, 8 fixed (trip totals derived from
+  the legs, an orphaned event, a disconnect race, reconnecting another account, a false reconnect,
+  the call sheet's "Updated", the list's payload, shared helpers), 1 not a bug; 705 tests pass.
 
 - [ ] **17. Design review** *(frontend: Opus/high)*: `/design-review` against the brief,
   screenshots in `screenshots/`. Fix the must-fix items.

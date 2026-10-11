@@ -190,9 +190,12 @@ function registerEstimateRoutes(app, db, opts = {}) {
     const rentals = readRentalsByEstimate(db);
     // How many projects still wait for the UPID fix-up (task 16): the list's banner.
     const needsUpid = db.prepare('SELECT COUNT(*) AS n FROM projects WHERE needs_upid = 1').get().n;
+    // The list carries no trips (task 16): nothing that reads it uses them,
+    // and each routed day's line runs to 50 KB. One estimate's read has them.
+    const tripless = (list) => (list || []).map(({ trip, ...rest }) => rest);
     res.json({
       ok: true,
-      estimates: rows.map((row) => loadEstimate(row, days.get(row.id), rentals.get(row.id))),
+      estimates: rows.map((row) => loadEstimate(row, tripless(days.get(row.id)), rentals.get(row.id))),
       needsUpid,
     });
   });

@@ -101,10 +101,10 @@ function stampOrNull(v) {
  *
  * UNLINKED (optional) lists the kinds of line the owner took off the trip.
  *
- * LEGS and TOTALS are stored as sent: they come from the last good route, and
- * after a failed re-route the browser keeps the last good figures (task 4), so
- * the leg count needn't match the stops. TOTALS are what bills (calc.js
- * tripLineQty).
+ * LEGS are stored as sent: they come from the last good route, and after a
+ * failed re-route the browser keeps the last good figures (task 4), so the
+ * leg count needn't match the stops. TOTALS are what bills (calc.js
+ * tripLineQty), so they are the legs' sum, worked out here (task 16).
  *
  * @returns {{trip:object|null}|{error:string}}
  */
@@ -180,10 +180,21 @@ function parseTrip(raw) {
     legs.push(leg);
   }
 
+  // The totals sent are checked, then replaced by the sum of the legs: they
+  // bill (tripLineQty), so the server works them out rather than taking the
+  // browser's word. Legs and totals always come from the same route (the last
+  // good one), and the sum runs in the browser's order, so an honest trip's
+  // figures come out the same to the last bit.
   const rawTotals = raw.totals === undefined || raw.totals === null ? { km: 0, minutes: 0 } : raw.totals;
   if (typeof rawTotals !== 'object') return { error: 'trip_invalid' };
-  const totals = { km: numberIn(rawTotals.km, 0, MAX_TRIP_KM), minutes: numberIn(rawTotals.minutes, 0, MAX_TRIP_MINUTES) };
-  if (totals.km === undefined || totals.minutes === undefined) return { error: 'trip_invalid' };
+  if (numberIn(rawTotals.km, 0, MAX_TRIP_KM) === undefined || numberIn(rawTotals.minutes, 0, MAX_TRIP_MINUTES) === undefined) {
+    return { error: 'trip_invalid' };
+  }
+  const totals = {
+    km: legs.reduce((sum, l) => sum + l.km, 0),
+    minutes: legs.reduce((sum, l) => sum + l.minutes, 0),
+  };
+  if (totals.km > MAX_TRIP_KM || totals.minutes > MAX_TRIP_MINUTES) return { error: 'trip_invalid' };
 
   const polyline = raw.polyline === undefined || raw.polyline === null ? '' : raw.polyline;
   if (typeof polyline !== 'string' || polyline.length > MAX_POLYLINE) return { error: 'trip_invalid' };
@@ -438,6 +449,12 @@ function replaceDays(db, estimateId, days, now) {
   for (const r of db.prepare('SELECT * FROM production_days WHERE estimate_id = ?').all(estimateId)) {
     stored.set(r.id, r);
   }
+  // A day that had a trip and has it no more (removed, or its trip cleared)
+  // takes its stamp with it, so the call sheet's "Updated" (public.js
+  // callSheetUpdatedAt, the newest of the days with a trip) wouldn't move.
+  // The days that still have one are stamped instead (task 16).
+  const kept = new Map(days.map((d) => [d.id, d]));
+  const tripGone = [...stored.values()].some((was) => was.trip_json && !(kept.get(was.id) || {}).trip);
   db.prepare('DELETE FROM production_days WHERE estimate_id = ?').run(estimateId);
   const insert = db.prepare(`
     INSERT INTO production_days
@@ -454,7 +471,7 @@ function replaceDays(db, estimateId, days, now) {
     // callSheetUpdatedAt, T18) would move on an edit to a price.
     const unchanged = was && was.date === d.date && was.status === d.status && was.start_time === d.startTime &&
       was.end_time === d.endTime && was.override_note === d.overrideNote && was.sort === i &&
-      was.rebook === rebook && was.trip_json === tripJson;
+      was.rebook === rebook && was.trip_json === tripJson && !(tripGone && tripJson);
     insert.run(d.id, estimateId, d.date, d.status, d.startTime, d.endTime, d.overrideNote, i, rebook,
       tripJson, (was && was.created_at) || now, unchanged ? was.updated_at : now);
   });

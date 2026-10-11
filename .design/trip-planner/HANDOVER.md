@@ -3,15 +3,14 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 16, Opus, effort high** (code review: `/code-review high` on the branch; money
-derivations from tasks 1/4/6, the public allow-list, OAuth state and token handling, the sync
-engine's idempotency; the "Left for task 16" list under task 14's decisions). Not a frontend task.
-Stages A–E up to task 15 are built; task 14's live check on the user's real calendar passed
-(2026-10-11) and task 15's accessibility and responsive pass is done (below). The scratch DB
+**Next: task 17, Opus, effort high, a frontend task** (design review: `/design-review` against
+the brief, screenshots in `screenshots/`; fix the must-fix items). Stages A–E up to task 16 are
+built; task 14's live check on the user's real calendar passed (2026-10-11), task 15's
+accessibility and responsive pass is done, and task 16's code review is fixed (below). The scratch DB
 `/tmp/lsc-billing-scratch` is connected to the user's real Google account (all four calendars on):
 **never run a write-capable build on it** except for a live check (see Traps).
 
-## State as of 2026-10-11 (task 15)
+## State as of 2026-10-11 (task 16)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -119,6 +118,8 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   Writing bookings in error), Calendars ▾ and the Google pop-up on Home month and week. What failed
   and is fixed is under "Decisions made in task 15"; what passed is listed there too, so a later
   pass doesn't repeat it. The VoiceOver list for a person is at the end of that section.
+- [x] **Task 16** code review (`/code-review high`), commit below. 9 findings: 8 fixed, 1 judged
+  not a bug. 705 server tests pass (6 new). Server only; nothing a person sees changed.
 - [x] **Task 14 live check, 2026-10-11, on the user's real calendar** (with their OK, from the
   scratch DB via the `api-scratch-live` launch config; the user had Google Calendar open in the
   pane). A test project "ZZ LIVE SYNC CHECK delete me" (UPID ZZTEST1, client Test Client) with a
@@ -131,6 +132,43 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   nothing). The DB was backed up first and no row or project was left behind; no other estimate
   was touched and Sync existing was never pressed. Not exercised live: bringing a deleted event
   back (409 → PUT) and Google refusing; both are covered by the stub tests only.
+
+## Decisions made in task 16 (agent's, within the brief)
+
+- **Trip totals are the legs' sum, worked out on the server** (`days.js parseTrip`). The totals sent
+  are still checked (a bad shape is `trip_invalid`) and then replaced; a sum past the cap is refused.
+  The browser adds the legs in the same order, so an honest trip's figures match to the bit. The
+  money now rests on the legs, not on a figure the browser states.
+- **Sync engine, orphaned event:** if a day stops being booked while its first event is being made,
+  `mark` drops the row (no event id yet) and the pass's update finds nothing. The pass now puts the
+  row back, `pending`, holding the new event id, and runs again, so the event is deleted.
+- **Disconnect holds the engine** (`googleSync.hold()` / `release()`): the pass in flight lands
+  first and none starts meanwhile, so "remove events" also removes one that was being made.
+- **A connect after a disconnect sends every kept row round once** (`pushed_hash` cleared, `pending`).
+  Nothing records which account the rows were written for. The same account finds each event by id
+  and rewrites it in place; another account gets a 404 and a fresh event. Before, those rows read as
+  synced and a different account never got the existing bookings.
+- **Only a refused grant means reconnect.** A renewal answered with another 4xx (a rate limit, a
+  malformed request) is `refused`: the day backs off as any refusal does, and Settings doesn't ask to
+  reconnect.
+- **Call sheet "Updated"** is the newest stamp of the days *with a trip*, and `replaceDays` restamps
+  those days when a day with a trip goes (removed, or its trip cleared). Removing a day now moves it;
+  an edit to a day with no trip doesn't.
+- **`GET /api/estimates` carries no trips** (each routed day's line runs to 50 KB). Nothing that
+  reads the list used them; one estimate's read still has them.
+- `google-sync.js` uses `google.js`'s `shiftDate`/`ZONE` and `call-sheet.js`'s `durationText`.
+- **Not changed:** the autosave snapshot throttle (`backup.js`). Claiming the slot before the request
+  is checked looked wrong, but a refused request writes nothing, so the snapshot taken before it is
+  still the state before the session's first real change. Claiming it only on success would snapshot
+  every refused retry and push real recovery points out.
+- **"Left for task 16" under task 14, reviewed and left as is:** the sequential sync (a first Sync
+  existing of a few hundred days takes a minute or two), the per-minute quota handled only by the
+  `unavailable` back-off, and `eventFor` reading `active_rows_json` per day. None of them is wrong,
+  and none is worth the complexity at one user's volume.
+- **New tests:** a day removed mid-create, disconnect during a write, a non-grant renewal refusal
+  (`test-google-sync.js`); a reconnect after a disconnect (`test-google-oauth.js`); "Updated" on
+  removal and on a day without a trip (`test-call-sheet.js`); tampered totals and the trip-less list
+  (`test-trips.js`). The two race tests fail without their fixes.
 
 ## Decisions made in task 15 (agent's, within the brief)
 
@@ -260,9 +298,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   Launch `api-scratch-sync` (copy of the scratch DB with its `google_account` removed, in
   `/tmp/lsc-billing-scratch-sync`).
 - **For task 19 (docs):** `DEPLOYMENT.md` gets the optional `GOOGLE_CALENDAR_WRITE`.
-- **Left for task 16 (code review):** the sync is sequential (a first Sync existing of a few
-  hundred days takes a minute or two); Google Calendar's per-minute quota isn't handled beyond
-  `unavailable` back-off; `eventFor` reads `active_rows_json` per day.
+- **Left for task 16 (code review):** reviewed and kept as is (see task 16's decisions).
 
 ## Decisions made in task 13 (agent's, within the brief)
 

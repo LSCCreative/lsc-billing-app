@@ -52,6 +52,8 @@ const g = {
   vanish: 0, // the next n creates are stored, then the answer never arrives (a timeout)
   refuseSummary: null, // an event whose summary includes this answers 400
   refreshFails: false,
+  refreshError: null, // { status, error }: the token endpoint's answer to a renewal
+  gate: null, // a promise every create waits on before Google stores it (a write in flight)
   seq: 0,
 };
 
@@ -66,6 +68,7 @@ async function fakeGoogle(url, init = {}) {
   if (u.host === 'oauth2.googleapis.com' && u.pathname === '/token') {
     const p = new URLSearchParams(body);
     if (g.refreshFails || p.get('refresh_token') !== REFRESH) return json(400, { error: 'invalid_grant' });
+    if (g.refreshError) return json(g.refreshError.status, { error: g.refreshError.error });
     return json(200, { access_token: ACCESS, expires_in: 3599, token_type: 'Bearer' });
   }
   if (u.host === 'oauth2.googleapis.com' && u.pathname === '/revoke') return json(200, {});
@@ -82,6 +85,7 @@ async function fakeGoogle(url, init = {}) {
     return json(400, { error: { message: 'Invalid value' } });
   }
   if (list && method === 'POST') {
+    if (g.gate) await g.gate;
     const id = payload.id || `gen${(g.seq += 1)}`;
     if (g.events.has(id)) return json(409, { error: { message: 'The requested identifier already exists.' } });
     g.events.set(id, { event: { ...payload, id }, deleted: false });
@@ -175,6 +179,8 @@ function reset() {
   g.vanish = 0;
   g.refuseSummary = null;
   g.refreshFails = false;
+  g.refreshError = null;
+  g.gate = null;
   forget();
   db.prepare('DELETE FROM google_event_sync').run();
   db.prepare('DELETE FROM production_days').run();
@@ -647,4 +653,69 @@ test('GOOGLE_CALENDAR_WRITE=0: nothing is marked or written, the status says so,
   assert.equal(r.status, 409);
   assert.equal((await r.json()).error, 'google_writing_off');
   offSync.stop();
+});
+
+/* ── Races and the connection (task 16) ───────────────────────────────────── */
+
+/* A create held in flight until open() is called. */
+function holdCreates() {
+  let open;
+  g.gate = new Promise((resolve) => { open = resolve; });
+  return () => { g.gate = null; open(); };
+}
+const posted = async () => {
+  for (let i = 0; i < 200 && !calls.some((c) => c.method === 'POST' && c.path.endsWith('/events')); i += 1) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+};
+
+test('a day removed while its event is being made: the event is deleted, not orphaned', async () => {
+  reset();
+  const est = await create([day('d_race', '2026-12-01')]);
+  const open = holdCreates();
+  const pass = sync.flush();
+  await posted();
+  // The day goes while Google is still making its event: its row (no event id yet) is dropped.
+  await save(est, { days: [], activeRows: {} });
+  open();
+  await pass;
+  await sync.flush();
+  assert.equal(live().length, 0, 'the event made in flight was deleted');
+  assert.equal(rows().length, 0);
+});
+
+test('disconnect with "remove events" waits for a write in flight, and removes its event too', async () => {
+  reset();
+  await create([day('d_disc', '2026-12-02')]);
+  const open = holdCreates();
+  const pass = sync.flush();
+  await posted();
+  const out = api('/api/google/disconnect', { method: 'POST', body: JSON.stringify({ removeEvents: true }) });
+  setTimeout(open, 30);
+  const r = await out;
+  await pass;
+  assert.equal(r.status, 200);
+  assert.equal(r.body.removed, 1);
+  assert.equal(live().length, 0, 'nothing left in the calendar the owner cleared');
+  assert.equal(rows().length, 0);
+  connect();
+});
+
+test('a renewal Google refuses for another reason backs off; only a refused grant means reconnect', async () => {
+  reset();
+  db.prepare('UPDATE google_account SET access_expires_at = ? WHERE id = 1').run(new Date(clock - 1000).toISOString());
+  g.refreshError = { status: 403, error: 'rate_limit_exceeded' };
+  await create([day('d_rl', '2026-12-03')]);
+  await sync.flush();
+  assert.equal(google.needsReconnect(), false);
+  assert.match(rowOf('d_rl').error, /^refused \(403\)$/);
+  assert.equal(rowOf('d_rl').state, 'error');
+  assert.ok(rowOf('d_rl').next_try_at, 'tried again after the back-off');
+  const st = (await api('/api/google/status')).body;
+  assert.equal(st.problem, null);
+  g.refreshError = null;
+  clock += BACKOFF_MS[0] + 1000;
+  await sync.flush();
+  assert.equal(rowOf('d_rl').state, 'synced');
+  assert.equal(only().summary.startsWith('Pencil · '), true);
 });

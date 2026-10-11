@@ -467,6 +467,20 @@ test('disconnect: revokes the grant and forgets the account, leaving Google’s 
   assert.equal((await status()).body.connected, false);
 });
 
+test('connecting after a disconnect sends every kept row round again (whichever account it was)', async () => {
+  reset();
+  await connect();
+  db.prepare(`
+    INSERT INTO google_event_sync (day_id, estimate_id, event_id, pushed_hash, state, updated_at) VALUES ('d1', 'e1', 'ev1', 'h1', 'synced', ?)
+  `).run(nowIso());
+  await api('/api/google/disconnect', { method: 'POST', body: JSON.stringify({ removeEvents: false }) });
+  await connect();
+  const row = db.prepare("SELECT * FROM google_event_sync WHERE day_id = 'd1'").get();
+  assert.equal(row.event_id, 'ev1', 'the same account still finds its event by id');
+  assert.equal(row.pushed_hash, null, 'so the row reads as unwritten: another account gets the event too');
+  assert.equal(row.state, 'pending');
+});
+
 test('disconnect: “Also remove the app’s events” deletes each from the primary calendar (one already gone counts)', async () => {
   reset();
   await connect();

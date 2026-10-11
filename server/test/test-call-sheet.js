@@ -389,6 +389,27 @@ test('always the latest saved trip (T18): a save shows on the link, and "Updated
   assert.ok(next.updatedAt > first.updatedAt, `${next.updatedAt} after ${first.updatedAt}`);
 });
 
+test('"Updated" moves when a day with a trip goes, and not for an edit to a day without one', async () => {
+  const both = () => [day('cs_r1', '2026-11-16', twoStopTrip()), day('cs_r2', '2026-11-17', twoStopTrip())];
+  const est = await create(both().concat([day('cs_r3', '2026-11-18', null)]));
+  const { body: { token } } = await link(est.id, true);
+  const first = (await pub(token)).body.callSheet;
+  assert.equal(first.days.length, 2);
+  await new Promise((r) => setTimeout(r, 15));
+
+  // A day that isn't on the sheet: re-timed, and "Updated" stays.
+  const plain = await save(est.id, both().concat([day('cs_r3', '2026-11-18', null, { startTime: '09:00' })]));
+  assert.equal(plain.status, 200, plain.text);
+  assert.equal((await pub(token)).body.callSheet.updatedAt, first.updatedAt);
+
+  // Day 2 and its trip go: the sheet lost a day, so "Updated" moves.
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal((await save(est.id, [both()[0]])).status, 200);
+  const next = (await pub(token)).body.callSheet;
+  assert.equal(next.days.length, 1);
+  assert.ok(next.updatedAt > first.updatedAt, `${next.updatedAt} after ${first.updatedAt}`);
+});
+
 test('off, never made and malformed links are one 404 with nothing to tell them apart', async () => {
   const est = await create([day('cs_off', '2026-11-17', twoStopTrip())]);
   const never = await create([day('cs_never', '2026-11-18', twoStopTrip())]);
