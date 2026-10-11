@@ -118,7 +118,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   Writing bookings in error), Calendars ▾ and the Google pop-up on Home month and week. What failed
   and is fixed is under "Decisions made in task 15"; what passed is listed there too, so a later
   pass doesn't repeat it. The VoiceOver list for a person is at the end of that section.
-- [x] **Task 16** code review (`/code-review high`), commit below. 9 findings: 8 fixed, 1 judged
+- [x] **Task 16** code review (`/code-review high`), `3a93d8a`. 9 findings: 8 fixed, 1 judged
   not a bug. 705 server tests pass (6 new). Server only; nothing a person sees changed.
 - [x] **Task 14 live check, 2026-10-11, on the user's real calendar** (with their OK, from the
   scratch DB via the `api-scratch-live` launch config; the user had Google Calendar open in the

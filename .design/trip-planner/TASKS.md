@@ -237,7 +237,7 @@ local `server/.env`. Test the OAuth flow against
   only); drag alternatives; `prefers-reduced-motion`; focus return on Back and dialogs; 44px
   targets. Fix what fails.
 
-- [x] **16. Code review** *(Opus/high)*: **Done.** 9 findings, 8 fixed (trip totals derived from
+- [x] **16. Code review** *(Opus/high)*: **Done `3a93d8a`.** 9 findings, 8 fixed (trip totals derived from
   the legs, an orphaned event, a disconnect race, reconnecting another account, a false reconnect,
   the call sheet's "Updated", the list's payload, shared helpers), 1 not a bug; 705 tests pass.
 
