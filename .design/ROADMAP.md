@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `a728420`, schema **v15** | production-booking A–E, account recovery, everything older. NAS and site back online since 2026-10-09. |
 | **ui-clarity** | branch `ui-clarity` `850f904` + this record, on `main`, unpushed | Tasks 1–7, 9–13 built. Nothing of it is live. |
-| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–16 built (stages A–D, and E's accessibility pass and code review); task 14 live-checked on the real calendar. Nothing deployed. |
+| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–17 built (stages A–D, and E's accessibility pass, code review and design review); task 14 live-checked on the real calendar. Nothing deployed. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -28,7 +28,7 @@ main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three scr
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **17** design review *(Opus/high, frontend)* |
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **18** live Google check *(Opus/high, frontend, with the user)* |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**

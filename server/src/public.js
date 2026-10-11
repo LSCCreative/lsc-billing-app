@@ -626,19 +626,42 @@ function callSheetDays(days) {
 }
 
 const callSheetNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-const callSheetClock = (v) => (typeof v === 'string' && v ? v : null);
+
+/* '07:30' + 49.4 → '08:19' (trip-planner.js clockPlus). */
+function callSheetClockPlus(hhmm, minutes) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = (((h * 60 + m + Math.round(minutes)) % 1440) + 1440) % 1440;
+  return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+}
+
+/* Each leg's clock times from the day's start as it stands: leaving the start
+   then, each next leg after the time on location before it (T5, T11), the
+   editor's own sum (trip-planner.js clockLegs). Not the stamps stored with the
+   route: those are for the start time it was routed at, and a start time
+   changed since (T6, waiting on Recalculate) would give the crew "Starts
+   7:30am" over "Depart 8:00am". The legs' minutes don't move; only the clock
+   they start from. No start time, no clock times. */
+function callSheetClocks(legs, stops, startTime) {
+  if (typeof startTime !== 'string' || !/^\d{2}:\d{2}$/.test(startTime)) {
+    return legs.map(() => ({ departAt: null, arriveAt: null }));
+  }
+  let elapsed = 0;
+  return legs.map((l, i) => {
+    if (i > 0 && Number.isInteger(stops[i].minutesOnSite)) elapsed += stops[i].minutesOnSite;
+    const departAt = callSheetClockPlus(startTime, elapsed);
+    elapsed += l.minutes;
+    return { departAt, arriveAt: callSheetClockPlus(startTime, elapsed) };
+  });
+}
 
 function callSheetDay(day, mapUri) {
   const trip = day.trip;
   const legsFit = Array.isArray(trip.legs) && trip.legs.length === trip.stops.length - 1;
-  const legs = legsFit
-    ? trip.legs.map((l) => ({
-      km: callSheetNumber(l.km),
-      minutes: callSheetNumber(l.minutes),
-      departAt: callSheetClock(l.departAt),
-      arriveAt: callSheetClock(l.arriveAt),
-    }))
+  const figures = legsFit
+    ? trip.legs.map((l) => ({ km: callSheetNumber(l.km), minutes: callSheetNumber(l.minutes) }))
     : [];
+  const clocks = callSheetClocks(figures, trip.stops, day.startTime);
+  const legs = figures.map((l, i) => ({ ...l, ...clocks[i] }));
   let destination = 0;
   const stops = trip.stops.map((s, i) => {
     const out = {

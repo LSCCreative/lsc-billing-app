@@ -117,9 +117,11 @@
 .cs-stops { --cs-pin: 32px; }
 
 /* The line runs from each pin down to the next: here beside the stop's own
-   words and notes, then through the drive below. */
-.cs-stop { position: relative; }
-.cs-stop:not(:last-child)::after {
+   words and notes, then through the drive below. It hangs off the row, not
+   the stop: a stop opens with the drive into it, so measured from the stop's
+   top the line would start inside the pin and cross its number. */
+.cs-stop-row { position: relative; }
+.cs-stop:not(:last-child) > .cs-stop-row::after {
   content: "";
   position: absolute;
   left: calc(var(--cs-pin) / 2 - 1px);

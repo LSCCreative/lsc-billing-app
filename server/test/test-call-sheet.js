@@ -309,6 +309,23 @@ test('stops whose route is out of step are shown without drive times, never with
   assert.equal(d.stops.length, 4, 'the stops themselves are all there');
 });
 
+test('clock times run from the day\'s start time as it stands, not the one it was routed at', async () => {
+  // Routed for 7:00 (the fixture), then the day moved to 7:30 without a
+  // Recalculate: the minutes wait (T6), the clock moves with the start.
+  const est = await create([
+    day('cs_moved', '2026-11-21', twoStopTrip(), { startTime: '07:30' }),
+    day('cs_untimed', '2026-11-22', twoStopTrip(), { startTime: null }),
+  ]);
+  const [moved, untimed] = (await sheet(est.id)).body.callSheet.days;
+  assert.equal(moved.startTime, '07:30');
+  assert.deepEqual(moved.legs.map((l) => [l.minutes, l.departAt, l.arriveAt]),
+    [[31, '07:30', '08:01'], [24, '09:31', '09:55'], [17, '10:25', '10:42']]);
+  assert.deepEqual(moved.stops.map((s) => [s.arriveAt, s.leaveAt]),
+    [[null, '07:30'], ['08:01', '09:31'], ['09:55', '10:25'], ['10:42', null]]);
+  assert.equal(untimed.routed, true, 'the drives are still shown');
+  assert.deepEqual(untimed.stops.map((s) => [s.arriveAt, s.leaveAt]), [[null, null], [null, null], [null, null], [null, null]]);
+});
+
 /* ── The link ─────────────────────────────────────────────────────────────── */
 
 test('turning the link on makes a 43-character token, off keeps it, on again gives the same link, and none of it touches the estimate\'s save stamp', async () => {

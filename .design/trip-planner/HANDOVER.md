@@ -3,14 +3,16 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 17, Opus, effort high, a frontend task** (design review: `/design-review` against
-the brief, screenshots in `screenshots/`; fix the must-fix items). Stages A–E up to task 16 are
-built; task 14's live check on the user's real calendar passed (2026-10-11), task 15's
-accessibility and responsive pass is done, and task 16's code review is fixed (below). The scratch DB
-`/tmp/lsc-billing-scratch` is connected to the user's real Google account (all four calendars on):
-**never run a write-capable build on it** except for a live check (see Traps).
+**Next: task 18, Opus, effort high, a frontend task, with the user present** (live Google check:
+plan a real trip and compare its km and time with Google Maps, connect the real calendar, confirm
+a test day, see the event, move it, remove it; record the result here). Stages A–E up to task 17
+are built: task 15's accessibility pass, task 16's code review and task 17's design review are
+done and fixed. Task 14's live check on the real calendar already passed (2026-10-11), so task 18
+mainly adds the Maps comparison. The scratch DB `/tmp/lsc-billing-scratch` is connected to the
+user's real Google account (all four calendars on): **never run a write-capable build on it**
+except for a live check (see Traps).
 
-## State as of 2026-10-11 (task 16)
+## State as of 2026-10-11 (task 17)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -120,6 +122,10 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   pass doesn't repeat it. The VoiceOver list for a person is at the end of that section.
 - [x] **Task 16** code review (`/code-review high`), `3a93d8a`. 9 findings: 8 fixed, 1 judged
   not a bug. 705 server tests pass (6 new). Server only; nothing a person sees changed.
+- [x] **Task 17** design review (`/design-review`), see [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md).
+  45 shots at 1280/768/375 (headless, `api-scratch-sync`, the pretend Google), no sideways
+  scroll anywhere. 2 must-fix, both fixed; 2 should-fix left for the user (below). 706 server
+  tests pass (1 new).
 - [x] **Task 14 live check, 2026-10-11, on the user's real calendar** (with their OK, from the
   scratch DB via the `api-scratch-live` launch config; the user had Google Calendar open in the
   pane). A test project "ZZ LIVE SYNC CHECK delete me" (UPID ZZTEST1, client Test Client) with a
@@ -132,6 +138,23 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   nothing). The DB was backed up first and no row or project was left behind; no other estimate
   was touched and Sync existing was never pressed. Not exercised live: bringing a deleted event
   back (409 → PUT) and Google refusing; both are covered by the stub tests only.
+
+## Decisions made in task 17 (agent's, within the brief)
+
+- **Clock times follow the day's current start time** (call sheet: `public.js callSheetClocks`;
+  editor leg lines: `trip-planner.js legsByCell` through `clockLegs`). Before, a start time moved
+  without Recalculate left the crew's page saying "Starts 7:30am" over "Depart 8:00am". The
+  stored `departAt`/`arriveAt` are no longer read by either; they're still written with each route.
+  T6 holds: km and drive minutes wait for Recalculate, only the clock they start from moves. No
+  start time, no clock times.
+- **The call sheet's dotted rail hangs off `.cs-stop-row`**, not `.cs-stop` (it started mid-disc
+  and crossed the stop number). The PDF draws no rail.
+- **Left for the user (should-fix):** km figures that don't add up across surfaces (days 109 + 33,
+  sheet 141; totals 108.8 vs the billed 109), so pick whole km or one decimal everywhere; and the live map's R pin
+  sitting on S (the static map already leaves R out).
+- **Checked and left:** the static map's black numbered pins (task 9's choice, matching the call
+  sheet's discs); the heading focus ring in URL-loaded shots (`:focus-visible`, absent after a
+  click); `.back-btn` size (ui-clarity's).
 
 ## Decisions made in task 16 (agent's, within the brief)
 

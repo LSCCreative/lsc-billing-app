@@ -890,8 +890,12 @@ const TripPlanner = (() => {
       const out = new Map();
       const trip = tripOf(cells, base);
       if (!details || !trip || !fits(trip)) return out;
+      // Clock times from the day's start as it stands, as the call sheet
+      // gives them (public.js callSheetClocks): after a start time change the
+      // minutes wait for Recalculate (T6), the clock they start from doesn't.
+      const legs = clockLegs(base.legs, trip.stops);
       trip.stops.forEach((s, i) => {
-        const leg = i > 0 ? base.legs[i - 1] : null;
+        const leg = i > 0 ? legs[i - 1] : null;
         if (leg) out.set(s.id, leg);
       });
       return out;
