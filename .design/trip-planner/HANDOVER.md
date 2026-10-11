@@ -127,7 +127,7 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   45 shots at 1280/768/375 (headless, `api-scratch-sync`, the pretend Google), no sideways
   scroll anywhere. 2 must-fix, both fixed; 2 should-fix left for the user (below). 706 server
   tests pass (1 new).
-- [x] **Task 18** live Google check, 2026-10-11. **Maps:** a trip built in the travel view by
+- [x] **Task 18** live Google check, 2026-10-11, `8e84be7`. **Maps:** a trip built in the travel view by
   search alone (headless Chrome, real browser key, `api-scratch-sync` so nothing reached the real
   calendar) on scratch `est_43f5777a` day `d_nbk0`, Wed 28 Oct 8:00: Marrickville Metro → Bondi
   Pavilion (2 h) → Carriageworks (1 h) → return. Each leg checked in google.com/maps with

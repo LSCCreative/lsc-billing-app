@@ -246,7 +246,7 @@ local `server/.env`. Test the OAuth flow against
   time; the call sheet's rail no longer crosses the stop discs); 2 should-fix left for the user;
   706 tests pass.
 
-- [x] **18. Live Google check** *(frontend: Opus/high)*: **Done** (commit in HANDOVER). A 3-leg Sydney
+- [x] **18. Live Google check** *(frontend: Opus/high)*: **Done `8e84be7`.** A 3-leg Sydney
   trip planned in the travel view matched Google Maps leg by leg (2 legs within 0.1 km, all drive
   times inside Maps' "typically" range; leg 1 took a road 0.8 km longer, see HANDOVER); the
   calendar half is task 14's live check of 2026-10-11 (the user's call). Results in HANDOVER.
