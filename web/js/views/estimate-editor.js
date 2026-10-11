@@ -765,7 +765,8 @@ const EstimateEditor = (() => {
       }
     });
     tr.querySelector('.del-btn').addEventListener('click', () => {
-      if (dropTagged(tr, 'remove')) removeRow(tr);
+      const tagged = taggedRows(tr.dataset.did).length;
+      if (dropTagged(tr, 'remove')) removeRow(tr, tagged ? 'and its ' + lineCount(tagged) : '');
     });
     return tr;
   }
@@ -909,10 +910,20 @@ const EstimateEditor = (() => {
     tr.querySelector('.del-btn').addEventListener('click', () => removeRow(tr));
   }
 
-  function removeRow(tr) {
+  /* `also`: what went with it, said after its name ("and its 2 post lines"). */
+  function removeRow(tr, also) {
     const body = tr.parentNode;
     if (!body) return;
     const emptyText = body.dataset.emptyText;
+    // The × goes with the row, which would drop focus to the page (ui-clarity task 14).
+    const hadFocus = tr.contains(document.activeElement);
+    const name = rowName(tr);
+    const sibling = (dir) => {
+      let el = tr[dir];
+      while (el && !el.matches('[data-rid]')) el = el[dir];
+      return el;
+    };
+    const next = sibling('nextElementSibling') || sibling('previousElementSibling');
     tr.remove();
     if (emptyText && !body.querySelector('[data-rid]')) {
       const empty = document.createElement('div');
@@ -921,14 +932,51 @@ const EstimateEditor = (() => {
       body.appendChild(empty);
     }
     recalc();
+    if (!hadFocus) return;
+    focusIn(next || addControlOf(body));
+    say((name || 'Line') + ' removed' + (also ? ' ' + also : '') + '.');
   }
 
-  function injectRow(body, tr) {
+  /* #editor-live, emptied first so a second "Video Capture removed." is
+     still a change to announce. */
+  function say(text) {
+    const live = $('editor-live');
+    if (!live) return;
+    live.textContent = '';
+    LSCUtil.announce(live, text);
+  }
+
+  /* Focus after a row comes or goes: the row that took its place (or the one
+     above) at its first field, else the section's own way to add one. */
+  function focusIn(el) {
+    if (!el) return;
+    const field = el.matches('input, select, textarea, button') ? el
+      : el.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea, button:not(.del-btn):not([tabindex="-1"])');
+    (field || el).focus();
+  }
+
+  function addControlOf(body) {
+    const id = body.id.replace(/^tbody-/, '');
+    return $('sel-' + id) || $('add-' + id) ||
+      (body.closest('.panel') && body.closest('.panel').querySelector('.panel-toggle'));
+  }
+
+  function rowName(tr) {
+    const typed = tr.querySelector('.deliv-name-inp, .role-inp, .vendor-inp, .item-inp');
+    return ((typed && typed.value) || tr.dataset.name || '').trim();
+  }
+
+  /* A new row takes focus at the field it needs first (`at`), and says so. */
+  function injectRow(body, tr, at) {
     if (!body) return;
     const empty = body.querySelector('.empty-row');
     if (empty) empty.remove();
     body.appendChild(tr);
     recalc();
+    if (!at) return;
+    const field = tr.querySelector(at);
+    if (field) field.focus();
+    say((rowName(tr) || 'A deliverable') + ' added.');
   }
 
   // ── Section markup ────────────────────────────────────────────────────────
@@ -2244,12 +2292,12 @@ const EstimateEditor = (() => {
   }
 
   function buildRentalRow(r) {
+    /* The group (its fields, named by the vendor) sits inside the list item:
+       an <li> can't itself be a group (ui-clarity task 14, axe). */
     const li = document.createElement('li');
-    li.className = 'rental-row';
     li.dataset.rental = r.id;
-    li.setAttribute('role', 'group');
-    li.setAttribute('aria-labelledby', 'rn-' + r.id + '-v');
-    li.innerHTML = rentalRowMarkup(r);
+    li.innerHTML = '<div class="rental-row" role="group" aria-labelledby="rn-' + esc(r.id) + '-v">' +
+      rentalRowMarkup(r) + '</div>';
     li.querySelector('[data-r="outDate"]').value = r.outDate || '';
     li.querySelector('[data-r="outMethod"]').value = r.outMethod || '';
     li.querySelector('[data-r="backDate"]').value = r.backDate || '';
@@ -4770,14 +4818,14 @@ const EstimateEditor = (() => {
         if (!picked.snap) return; // no price yet — the button is disabled for it
         const tr = buildLabourRow(section, null, Object.assign({ name: row.name, qty: 0 }, picked.snap));
         markOwn(tr, picked);
-        injectRow($('tbody-' + section.id), tr);
+        injectRow($('tbody-' + section.id), tr, '.qty-inp');
       });
     });
 
     // The button is in the panel's head, so it works with the panel closed: it opens it first.
     $('add-deliverables').addEventListener('click', () => {
       openPanelOf($('tbody-deliverables'));
-      injectRow($('tbody-deliverables'), buildDeliverableRow({ qty: 1 }));
+      injectRow($('tbody-deliverables'), buildDeliverableRow({ qty: 1 }), '.deliv-name-inp');
     });
   }
 
@@ -4964,16 +5012,17 @@ const EstimateEditor = (() => {
     else $('f-upid').focus();
   }
 
-  /* The sticky bar's height, as --ed-bar-h on the shell, for anything that
-     sticks to the bottom of the page above it (the day menu's Define travel
-     foot). The bar wraps and grows with an error, so it is watched. */
+  /* The sticky bar's height, as --ed-bar-h, for anything that sticks to the
+     bottom of the page above it (the day menu's Define travel foot) and for
+     the page's scroll-padding, which keeps a control Tab reaches clear of the
+     bar (a11y.css, WCAG 2.4.11). On the root, so <html> can read it. The bar
+     wraps and grows with an error, so it is watched. */
   function watchBar() {
     if (barWatch) barWatch.disconnect();
     barWatch = null;
-    const shell = root.querySelector('.ed-shell');
     const bar = $('ed-bar');
-    if (!shell || !bar || typeof ResizeObserver !== 'function') return;
-    const measure = () => shell.style.setProperty('--ed-bar-h', bar.offsetHeight + 'px');
+    if (!bar || typeof ResizeObserver !== 'function') return;
+    const measure = () => document.documentElement.style.setProperty('--ed-bar-h', bar.offsetHeight + 'px');
     measure();
     barWatch = new ResizeObserver(measure);
     barWatch.observe(bar);

@@ -142,7 +142,10 @@ const EstimatesView = (() => {
   async function showDetail(projectId, eid, state) {
     window.scrollTo(0, 0);
     const found = await resolve(projectId, eid, state, () => showDetail(projectId, eid));
-    if (found) EstimateDetail.mount(root, found.estimate, handlers(found.project));
+    if (!found) return;
+    EstimateDetail.mount(root, found.estimate, handlers(found.project));
+    // Reached from a menu or a button that went with the last screen: start at its heading.
+    LSCUtil.landFocus(root);
   }
 
   /* The call sheet (trip-planner task 10): the estimate's trips as crew see
@@ -151,7 +154,10 @@ const EstimatesView = (() => {
   async function showCallSheet(projectId, eid, state) {
     window.scrollTo(0, 0);
     const found = await resolve(projectId, eid, state, () => showCallSheet(projectId, eid, null));
-    if (found) CallSheetPage.mount(root, found.estimate, found.project, handlers(found.project));
+    if (!found) return;
+    // Its heading arrives with the call sheet, after the fetch.
+    await CallSheetPage.mount(root, found.estimate, found.project, handlers(found.project));
+    LSCUtil.landFocus(root);
   }
 
   /* projectId null for a new project. A held estimate (the folder's, or the

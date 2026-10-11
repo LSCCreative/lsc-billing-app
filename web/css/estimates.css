@@ -1057,9 +1057,10 @@
   color: var(--color-text-primary);
 }
 
-/* The toast clears the bar instead of sitting on Save. */
+/* The toast clears the bar instead of sitting on Save: the bar's measured
+   height (watchBar), which grows when it wraps on a phone. */
 body:has(.ed-bar) .export-toast {
-  bottom: var(--space-11);
+  bottom: calc(var(--ed-bar-h, var(--space-11)) + var(--space-4));
 }
 
 @media (min-width: 768px) {
@@ -1095,7 +1096,7 @@ body:has(.ed-bar) .export-toast {
     margin-left: 0;
   }
   .ed-autosave-link {
-    min-height: 0;
+    min-height: var(--target-min);
     text-align: right;
   }
 }

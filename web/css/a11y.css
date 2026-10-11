@@ -75,6 +75,50 @@ a:focus-visible {
   box-shadow: var(--shadow-focus);
 }
 
+/* ── Focus not hidden (WCAG 2.4.11) ────────────────────────────────────────
+   Tab scrolls the next control into view, and without these it lands under
+   the sticky header (going back up) or under a screen's sticky foot bar
+   (going down): measured 18 controls fully hidden on the editor at 1280, 30
+   on Settings at 375 (ui-clarity task 14). The editor's bar wraps and grows,
+   so its height is measured into --ed-bar-h (estimate-editor.js watchBar);
+   Settings' bar is one row of one button at every width. */
+html {
+  scroll-padding-top: calc(var(--header-h) + var(--space-6));
+}
+html:has(.ed-bar) {
+  scroll-padding-bottom: calc(var(--ed-bar-h, var(--space-11)) + var(--space-6));
+}
+html:has(.set-save-bar) {
+  scroll-padding-bottom: calc(var(--control-h) + var(--space-10));
+}
+
+/* ── Target size (WCAG 2.5.8) ───────────────────────────────────────────────
+   Below 768px every target is 44px (responsive.css, and --control-h-sm
+   becomes --touch-min). From 768px nothing a pointer aims at is under 24px;
+   these measured 14–23px tall (ui-clarity task 14). A label that wraps a
+   checkbox is the checkbox's target, so it takes the small control height:
+   28px here, 44px on a phone. In a media query so the phone's 44px rules,
+   which this file would otherwise outrank by loading last, still apply. */
+.mjp-toggle,
+.sn-check,
+.set-check {
+  min-height: var(--control-h-sm);
+}
+@media (min-width: 768px) {
+  .btn-sm,
+  .btn-xs,
+  .line-move,
+  .lab-unit-sel,
+  .onset-edit {
+    min-height: var(--target-min);
+  }
+  .del-btn,
+  .line-handle {
+    min-width: var(--target-min);
+    min-height: var(--target-min);
+  }
+}
+
 /* ── Field-level errors ─────────────────────────────────────────────────────
    LSCUtil.showFieldErrors() sets aria-invalid="true" on each field a failed
    save names; this is its visible half. --err-text, the colour the message

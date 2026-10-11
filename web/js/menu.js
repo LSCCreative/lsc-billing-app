@@ -33,8 +33,8 @@
  * exactly as a click on a visible button would.
  *
  * BELOW 768px it opens as a bottom sheet: 48px rows, a Cancel row, a
- * backdrop, and Tab kept inside it (the modal trap). Esc, Cancel and the
- * backdrop close it and return focus to the button. */
+ * backdrop, Tab kept inside it (the modal trap) and #app-view inert behind
+ * it. Esc, Cancel and the backdrop close it and return focus to the button. */
 
 const LSCMenu = (() => {
   const PHONE = window.matchMedia('(max-width: 767px)');
@@ -104,7 +104,7 @@ const LSCMenu = (() => {
     const text = opts.icon ? '' : esc(opts.label);
     return (
       '<span class="menu">' +
-      '<button type="button" class="' + (opts.btnClass || 'btn btn-quiet btn-sm') + ' menu-btn" id="' + id + '-btn"' +
+      '<button type="button" class="' + (opts.btnClass || 'btn btn-quiet btn-sm') + ' menu-btn' + (opts.icon ? ' menu-btn-icon' : '') + '" id="' + id + '-btn"' +
       ' aria-haspopup="menu" aria-expanded="false" aria-controls="' + id + '"' +
       (opts.ariaLabel || opts.icon ? ' aria-label="' + esc(opts.ariaLabel || opts.label) + '"' : '') + '>' +
       icon + text + (opts.icon ? '' : '<span class="menu-caret" aria-hidden="true"></span>') + '</button>' +
@@ -154,7 +154,7 @@ const LSCMenu = (() => {
     close(false);
     const sheet = PHONE.matches;
     const home = opts.home ? { parent: list.parentNode, next: list.nextSibling } : null;
-    cur = { opener, list, home, sheet, onSelect: opts.onSelect || null, backdrop: null, cancel: null };
+    cur = { opener, list, home, sheet, onSelect: opts.onSelect || null, backdrop: null, cancel: null, inerted: null };
 
     list.classList.add('menu-pop');
     list.classList.toggle('is-sheet', sheet);
@@ -172,6 +172,14 @@ const LSCMenu = (() => {
       list.insertAdjacentHTML('beforeend',
         '<button type="button" class="menu-item menu-cancel" role="menuitem" tabindex="-1" data-menu-cancel>' +
         '<span class="menu-text">' + (done ? 'Done' : 'Cancel') + '</span></button>');
+      /* The page behind the backdrop is out of reach to a screen reader's
+         swipe too, as Tab already is (task 14). The sheet lives in <body>,
+         outside #app-view. */
+      const app = document.getElementById('app-view');
+      if (app && !app.inert) {
+        app.inert = true;
+        cur.inerted = app;
+      }
     }
     document.body.appendChild(list);
     list.hidden = false;
@@ -197,8 +205,9 @@ const LSCMenu = (() => {
      click put it. */
   function close(returnFocus) {
     if (!cur) return;
-    const { opener, list, home, backdrop } = cur;
+    const { opener, list, home, backdrop, inerted } = cur;
     cur = null;
+    if (inerted) inerted.inert = false;
     document.removeEventListener('pointerdown', onOutside, true);
     window.removeEventListener('hashchange', onHash);
     PHONE.removeEventListener('change', onModeChange);

@@ -320,8 +320,6 @@
   margin-bottom: var(--space-7);
 }
 .csp-bar .btn { min-height: var(--touch-min); }
-/* The shared .back-btn is a bare line of text, 21px tall above 768px: under the 24px minimum. */
-#csp-back { min-height: var(--control-h-sm); }
 .csp-bar .spinner { margin-right: var(--space-3); }
 .csp-error:not(:empty) {
   max-width: 44rem;

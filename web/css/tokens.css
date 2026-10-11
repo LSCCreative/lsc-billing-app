@@ -147,8 +147,10 @@
   --control-h:     36px;             /* buttons and inputs, desktop */
   --control-h-sm:  28px;
   --touch-min:     44px;             /* every target below 768px */
+  --target-min:    24px;             /* every pointer target from 768px (WCAG 2.5.8) */
 
   /* ── Layout ────────────────────────────────────────────────────────────── */
+  --header-h:          52px;     /* the sticky app header, every width */
   --max-width-content: 68ch;     /* agreement text, long notes */
   --max-width-wide:    1080px;   /* today's #main */
   --max-width-page:    calc(var(--max-width-wide) + var(--rail-width) + var(--space-8));  /* editor with its rail: the panels keep 1000 */

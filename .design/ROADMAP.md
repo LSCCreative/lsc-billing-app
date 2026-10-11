@@ -2,7 +2,7 @@
 
 The one record of what is built, what is live, and what happens next, across every track and every
 session working in this folder. **Read this first**, then only the HANDOVER of the track you are
-working on (it has the detail, decisions and traps). Last consolidated **2026-10-11** (trip-planner task 16).
+working on (it has the detail, decisions and traps). Last consolidated **2026-10-12** (ui-clarity task 14).
 
 **Keep it true:** when a task changes the order, a branch, a deploy wave, a seam between tracks or
 the user's to-do list, update this file in the same commit. Per-task logs stay in the track's
@@ -13,13 +13,13 @@ HANDOVER/TASKS, never here.
 | | Code | State |
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `70845d8`, schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
-| **ui-clarity** | branch `ui-clarity` `850f904`, **behind `main`** | Tasks 1–7, 9–13 built and now live. Its worktree must **merge `main`** before its next commit. Tasks 14, 8+15, 16, 18 still to do. |
+| **ui-clarity** | branch `ui-clarity`, fast-forwarded to `main` then task 14 on top (unpushed) | Tasks 1–7, 9–13 live; **task 14 done** (frontend only, no server change). Next: wave 1 (now just Pages), 16, 18. |
 | **trip-planner** | deployed as `main` `70845d8`; the `trip-planner` branch is deleted (2026-10-12) | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
 main = trip-planner (live, v16, 70845d8), which contains ui-clarity's 850f904
-ui-clarity (worktree) ── still at 850f904: merge main, then tasks 14, 8+15, 16, 18
+ui-clarity (worktree) ── main + task 14; then wave 1, 16, 18
 ```
 
 `main` gets each line only when it deploys. `main` now holds everything through trip-planner.
@@ -28,7 +28,7 @@ ui-clarity (worktree) ── still at 850f904: merge main, then tasks 14, 8+15, 
 
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
-| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
+| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **Wave 1** *(Sonnet/medium, deploy)*, ask first; then **16** *(Opus/high, frontend)* |
 | **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`main` is checked out here; no feature branch now) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
@@ -41,10 +41,8 @@ ui-clarity (worktree) ── still at 850f904: merge main, then tasks 14, 8+15, 
   it; it is also connected to the user's **real Google account**, refresh token stored in it). **Since
   task 14 a save there would write events to that real calendar** (5 s later), so the configs that use
   it carry `GOOGLE_CALENDAR_WRITE=0`; build and check writing on `/tmp/lsc-billing-scratch-sync` with
-  `api-scratch-sync` (a copy with no Google account, and a pretend Google). A
-  ui-clarity build (v15) **refuses to start on it**. For ui-clarity use its own data dir, e.g.
-  `/tmp/lsc-billing-scratch-uic`: seed the `dev` account (launch.json's comment), run the API with
-  that `DATA_DIR`, then `node .design/ui-clarity/seed-review.js server` for the review dataset.
+  `api-scratch-sync` (a copy with no Google account, and a pretend Google). ui-clarity (v16 since it took `main`) uses its own copy, `/tmp/lsc-billing-scratch-uic`, with
+  launch.json's `api-uic` (:8081) and `web-uic` (:5174); the config's comment says how to make it.
 - **One API on :8080, one web on :5173.** They belong to this folder's line (trip-planner). A
   worktree runs its previews on other ports (e.g. web 5174, API 8081 with `CORS_ORIGINS` and
   `APP_URL` set to match). The Maps browser key works only from :5173, which ui-clarity doesn't need.
@@ -70,12 +68,13 @@ files both lines touched.
 
 ### Line 1: ui-clarity (tracker: [`ui-clarity/TASKS.md`](ui-clarity/TASKS.md))
 
-1. **Task 14: accessibility and responsive pass** *(Opus/high, **frontend**)*. Covers ui-clarity's
-   own screens (menus, panels, the agreement builder, Project page, Invoice, editor rail and bar).
-   Leaves a VoiceOver list for a person.
-2. **Wave 1, deploy ui-clarity 1–14** *(Sonnet/medium)*: tasks 8 and 15 as one deploy. NAS first
-   (no migration: it's v15), then Pages by merging `ui-clarity` into `main` and pushing.
-   **Needs from the user:** the agreement header wording (task 4) approved, and the OK to deploy.
+1. ~~Task 14: accessibility and responsive pass~~, done 2026-10-12 (HANDOVER; a VoiceOver list for a
+   person is in §5).
+2. **Wave 1, deploy ui-clarity 14** *(Sonnet/medium)*: tasks 1–7 and 9–13 already went live inside
+   wave 3, so this is task 14 alone, frontend only: **Pages only** (fast-forward `main` to
+   `ui-clarity` and push; no NAS trip, no server change).
+   **Needs from the user:** the OK to deploy. (The agreement header wording went live with wave 3;
+   approving or rewording it no longer blocks a deploy.)
    **After:** the user fills Settings → Business email, phone and Signs for the business, and checks
    the 13 clauses. *(If the user wants the agreement builder sooner, task 8 can ship 1–13 now and
    task 15 follows after 14; one wave is fewer NAS trips.)*
@@ -117,14 +116,14 @@ Both lines change these. Merge `ui-clarity` forward often and read the other sid
 
 | Where | ui-clarity | trip-planner |
 |---|---|---|
-| `menu.js` | task 14 may fix keys/focus | task 13 added checkbox items (`menuitemcheckbox`, `ITEM` selector, stays open on choose) |
+| `menu.js` | task 14 (done): `menu-btn-icon`, `#app-view` inert under a phone sheet | task 13 added checkbox items (`menuitemcheckbox`, `ITEM` selector, stays open on choose) |
 | `views/settings.js`, `css/settings.css` | task 14 (agreement builder, Account) | Home base, Google Calendar section |
 | `calendar.js`, `views/home.js`, `views/home-week.js`, `views/booking-block.js` | task 14 (panels, focus) | task 13 Google tiles, bands, pop-up, `.cal-tools`/`.cal-gnote` slots, Calendars ▾ (`gcal-menu.js`) |
 | `views/estimate-editor.js`, `css/estimates.css` | tasks 11–12 rail, sticky bar, panels (done) | autosave bar (Done / Save), travel foot, FROM TRIP lines, the day card's Google mark (`watchGoogleSync`) |
 | `views/booking-block.js`, `css/booking.css` | task 14 (panels, focus) | the day card's `.day-sync` line + Try again, `setSync()` (task 14) |
 | `mail.js` | task 16 rebuilds `shell()` for seven templates | `callSheetEmail` (an eighth) already calls `shell()`: keep the signature |
 | a11y passes | task 14: its screens | task 15 **done**: travel view, Share, call sheet, Google settings, Calendars ▾ |
-| `.back-btn` (app.css:71) | task 14: a bare 21px line above 768px, under WCAG 2.5.8's 24px; give it a `min-height` (Project page, Invoice, editor) | only `#csp-back` (call-sheet.css) is patched; its rule can go once the shared one is fixed |
+| `.back-btn` (app.css:71) | task 14 (done): `min-height: var(--control-h-sm)` | `#csp-back`'s own rule deleted (task 14) |
 | `calendar.css` `.cal-goto` | task 14 may touch the bar | task 15: Go to date no longer clips at 375 (`min-width: 9.5rem`, label may wrap) |
 | design reviews | task 18 | task 17 |
 | `tokens.css` | the token source; task 13 warmed `--color-status-neutral` | uses tokens only; inherits on merge |
@@ -138,7 +137,7 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 
 **Decisions**
 - [ ] **Feature 4, "day-based media tree":** what it is and where it stands (§2).
-- [ ] **ui-clarity task 4's agreement header wording:** approve or reword (blocks wave 1).
+- [ ] **ui-clarity task 4's agreement header wording:** live since wave 3; approve or reword.
 - [ ] **Wave 1 timing:** one deploy after task 14 (recommended), or task 8 now and 15 later.
 - [ ] **Projects list cards:** keep the 11 terracotta totals, or make them white (ui-clarity task 13).
 - [ ] **ui-clarity task 16:** approve the email look (blocks wave 2).
@@ -150,8 +149,9 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
   an agent do it, with permission) before wave 3.
 - [ ] Be present for trip-planner task 18 (live Google check: the trip planner's own routes, and a
   real project end to end).
-- [ ] **VoiceOver passes:** production-booking, price-calculator, service-rate-tiers, the list
-  ui-clarity task 14 will leave, and trip-planner's (five short checks at the end of "Decisions
+- [ ] **VoiceOver passes:** production-booking, price-calculator, service-rate-tiers, ui-clarity's
+  (five checks at the end of "Decisions made in task 14" in its HANDOVER, plus Jump to… in
+  Safari with the keyboard), and trip-planner's (five short checks at the end of "Decisions
   made in task 15" in its HANDOVER).
 - [ ] **Safari:** service-rate-tiers R8 (select-on-focus after a mouse click).
 - [ ] **account-recovery:** the live test of Forgot password.

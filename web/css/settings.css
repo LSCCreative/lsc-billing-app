@@ -289,6 +289,10 @@
 .set-save-bar .btn {
   white-space: nowrap;
 }
+/* The toast (a clause's Undo) sits above the bar, not on Save Settings. */
+body:has(.set-save-bar) .export-toast {
+  bottom: calc(var(--control-h) + var(--space-9));
+}
 
 /* ── "Preview with a project…" ────────────────────────────────────────────── */
 

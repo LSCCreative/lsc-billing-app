@@ -363,7 +363,7 @@ const EstimateDetail = (() => {
       '<td class="tv" style="color:var(--ok)">' + fmt(t.estTakeHome) + '</td></tr>' +
       '<tr><td class="tl">Total hours</td><td class="tv">' + esc(t.totalHours || 0) + '</td></tr>' +
       '</table></div>' +
-      '<div class="notes-card"><h4>Internal notes</h4><p>' +
+      '<div class="notes-card"><h2>Internal notes</h2><p>' +
       (notes ? esc(notes) : '<em style="color:var(--muted)">No notes added.</em>') +
       '</p></div></div>'
     );

@@ -68,7 +68,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:26px;padding-bottom:16px;border-bottom:1px solid var(--border)}
 .page-title{font-family:var(--font-family-display);font-weight:700;font-size:30px;color:var(--text);letter-spacing:.02em}
 .page-sub{color:var(--color-text-secondary);font-size:var(--font-size-base);margin-top:var(--space-2)}
-.back-btn{display:inline-flex;align-items:center;gap:var(--space-3);color:var(--color-text-secondary);font-size:var(--font-size-base);background:none;border:none;border-radius:var(--radius-sm);cursor:pointer;padding:0;margin-bottom:var(--space-6);transition:color var(--duration-fast) var(--easing-default)}
+.back-btn{display:inline-flex;align-items:center;min-height:var(--control-h-sm);gap:var(--space-3);color:var(--color-text-secondary);font-size:var(--font-size-base);background:none;border:none;border-radius:var(--radius-sm);cursor:pointer;padding:0;margin-bottom:var(--space-6);transition:color var(--duration-fast) var(--easing-default)}
 .back-btn:hover{color:var(--color-text-primary)}
 .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .proj-card{background:var(--surface);border:1px solid var(--border);padding:22px;cursor:pointer;transition:.15s;position:relative;overflow:hidden}
@@ -162,7 +162,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .tl{color:var(--muted)}.tv{text-align:right;font-weight:600}
 .net-row td{color:var(--accent);font-size:15px;font-weight:700;background:color-mix(in srgb,var(--color-accent-primary) 10%,transparent)}
 .notes-card{border:1px solid var(--border);padding:18px}
-.notes-card h4{font-size:var(--font-size-sm);color:var(--color-text-secondary);font-weight:var(--font-weight-medium);margin-bottom:var(--space-4)}
+.notes-card h2{font-size:var(--font-size-sm);color:var(--color-text-secondary);font-weight:var(--font-weight-medium);margin-bottom:var(--space-4)}
 .notes-card p{color:var(--muted);line-height:1.8;font-size:12px}
 .spinner{width:11px;height:11px;border:2px solid color-mix(in srgb,currentColor 25%,transparent);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:none}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -174,6 +174,11 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .toast-dot.ok{background:var(--color-status-success)}
 .toast-dot.err{background:var(--color-status-error)}
 .toast-link{color:var(--accent);cursor:pointer;text-decoration:underline;font-size:11px;margin-left:4px}
+/* The toast's one action (Undo): quiet, terracotta as text, with its key beside it (toast.js; ui-clarity task 14). */
+.toast-action{display:inline-flex;align-items:center;gap:var(--space-3);min-height:var(--control-h-sm);margin-left:var(--space-2);padding:0 var(--space-4);background:none;border:0;border-radius:var(--radius-sm);color:var(--accent-text);font:var(--font-weight-semibold) var(--font-size-sm)/1 var(--font-family-body);cursor:pointer}
+.toast-action:hover{color:var(--color-text-primary)}
+.toast-key{font:var(--font-weight-normal) var(--font-size-xs)/1 var(--font-family-mono);color:var(--color-text-secondary)}
+@media (hover:none){.toast-key{display:none}}
 .pricing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:22px}
 .pricing-sec-label{font-family:var(--font-family-display);font-weight:var(--font-weight-bold);font-size:var(--font-size-lg);line-height:var(--line-height-tight);color:var(--color-text-primary)}
 .pricing-table{width:100%;border-collapse:collapse}

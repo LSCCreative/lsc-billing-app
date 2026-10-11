@@ -67,8 +67,9 @@
   min-height: 44px;
 }
 @media (min-width: 768px) {
+  /* The small button's own height (was 0: a 20px target, under 24). */
   .booking-days-bar .btn {
-    min-height: 0;
+    min-height: var(--control-h-sm);
   }
 }
 .booking-empty {

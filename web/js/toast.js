@@ -17,11 +17,18 @@
  * focus is in it, so there is time to reach the button. Choosing it hides the
  * toast and calls run(). The next toast replaces the action with its own (or
  * none): an Undo only ever undoes the thing its message names.
+ *
+ * ⌘Z / CTRL+Z (ui-clarity task 14) runs an Undo while it shows. The button is
+ * the last thing in the page, so a keyboard user whose focus went to the next
+ * clause would otherwise Tab the whole page to reach it inside ten seconds.
+ * Not from a text field: there the key is the field's own undo.
  */
 
 const Toast = (() => {
   const PLAIN_MS = 5000;
   const ACTION_MS = 10000;
+  const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const KEY = MAC ? '⌘Z' : 'Ctrl+Z';
 
   let els = null;
   let timer = null;
@@ -35,8 +42,16 @@ const Toast = (() => {
     btn.type = 'button';
     btn.className = 'toast-action';
     btn.hidden = true;
+    btn.setAttribute('aria-keyshortcuts', MAC ? 'Meta+Z' : 'Control+Z');
     root.appendChild(btn);
     els = { root, dot: root.querySelector('#toast-dot'), msg: root.querySelector('#toast-msg'), btn };
+    document.addEventListener('keydown', (e) => {
+      if (!action || action.label !== 'Undo' || e.key.toLowerCase() !== 'z') return;
+      if (!(MAC ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+      e.preventDefault();
+      btn.click();
+    });
 
     btn.addEventListener('click', () => {
       const run = action && action.run;
@@ -76,6 +91,7 @@ const Toast = (() => {
     action = (opts && opts.action) || null;
     els.btn.hidden = !action;
     els.btn.textContent = action ? action.label : '';
+    if (action && action.label === 'Undo') els.btn.insertAdjacentHTML('beforeend', ' <kbd class="toast-key">' + KEY + '</kbd>');
     clearTimeout(timer);
     // A neutral "working on it" toast stays until its outcome replaces it.
     lasts = type === 'ok' || type === 'err' ? (action ? ACTION_MS : PLAIN_MS) : 0;

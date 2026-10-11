@@ -92,6 +92,28 @@
         "5180"
       ],
       "port": 5180
+    },
+    {
+      "_comment": "The ui-clarity worktree's own API (ROADMAP §2): its own copy of the scratch data with no Google account, stub mailer, port 8081 so it never collides with this folder's :8080. Make the copy with a better-sqlite3 backup of /tmp/lsc-billing-scratch-sync into /tmp/lsc-billing-scratch-uic, then DELETE FROM google_event_sync and google_account. The worktree's gitignored web/js/config.js points at :8081.",
+      "name": "api-uic",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd server && GOOGLE_CALENDAR_WRITE=0 DATA_DIR=/tmp/lsc-billing-scratch-uic PORT=8081 CORS_ORIGINS=http://localhost:5174 COOKIE_SAMESITE=none COOKIE_SECURE=1 APP_URL=http://localhost:5174/ node scripts/dev-stub-mail.js"
+      ],
+      "port": 8081
+    },
+    {
+      "name": "web-uic",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5174",
+        "--directory",
+        "web"
+      ],
+      "port": 5174
     }
   ]
 }

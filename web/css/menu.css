@@ -22,6 +22,11 @@
 .menu-list[hidden] {
   display: none;
 }
+/* A ⋯ with no word is square at least: 28px, 44px on a phone (task 14). */
+.menu-btn-icon {
+  min-width: var(--control-h-sm);
+  justify-content: center;
+}
 
 /* The caret: the panel chevron's shape, pointing down; up while open. */
 .menu-caret {

@@ -296,7 +296,11 @@ person looks at. State the tag out loud and pause for the user to switch before 
     buttons, no blue-grey and no double terracotta.
   - _Depends on: 1–3._
 
-- [ ] **14. Accessibility and responsive pass** (frontend — Opus/high) **Frontend**
+- [x] **14. Accessibility and responsive pass** (frontend — Opus/high) **Frontend**
+  - **Done** (2026-10-12): focus no longer hidden under the sticky bars (scroll-padding), ⌘Z for
+    the toast's Undo, editor add/remove focus and announcements, menu sheets inert behind, 24px
+    desktop / 44px phone targets, Projects search edge, two markup fixes. 706 server tests pass.
+    Detail and the VoiceOver list: HANDOVER "Decisions made in task 14".
   - Across tasks 3, 5, 6, 9–12:
     - Contrast checked per surface.
     - Every menu, panel toggle, card and sub-clause usable by keyboard alone.

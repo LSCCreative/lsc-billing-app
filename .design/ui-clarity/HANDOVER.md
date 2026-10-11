@@ -133,12 +133,14 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     `.dash-panel`, `.goals-ty`, …), now one rule at the end of `app.css`; dialogs and the toast got
     their radius; `--color-status-neutral` (Proposed, Draft) was the last blue-grey; the UPID
     fix-up had a terracotta Save per group. `scratchpad/sweep13.js`-style checks: see TASKS.
-- **Next: task 14, "Accessibility and responsive pass"** (frontend — Opus/high, **Frontend
-  task**), then 16. These need no NAS or live app: build and verify only against local
-  scratch, never the live site or API. **Build in a git worktree on `ui-clarity`** (this folder's
-  checkout belongs to `trip-planner`), with a **v15 scratch DB of its own**: `/tmp/lsc-billing-scratch`
-  is v16 now and a ui-clarity server refuses it (ROADMAP §2). Commit on `ui-clarity`, don't push;
-  the trip-planner session merges each commit forward.
+  - [x] Task 14, the accessibility and responsive pass. Built 2026-10-12 in the worktree
+    `.claude/worktrees/ui-clarity` (after a fast-forward to `main`, so the branch is v16 now), with
+    its own data `/tmp/lsc-billing-scratch-uic` and launch.json's `api-uic` (:8081) + `web-uic`
+    (:5174). What failed, what passed and the VoiceOver list: "Decisions made in task 14".
+- **Next: wave 1** (tasks 8 + 15 as one deploy, *Sonnet/medium*, deploy). Ask the user first, and
+  the agreement header wording (task 4, below) needs their OK. The branch already carries `main`
+  (v16), so the server it ships is v16. Then task 16 (Opus/high, **Frontend task**). Build and
+  verify against local scratch only; commit on `ui-clarity` in its worktree, don't push.
 
 ## Waiting on the user
 
@@ -158,6 +160,79 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
+
+## Decisions made in task 14 (tell the user)
+
+Checked headless (real CDP keys, axe-core, a contrast and target probe, a Tab-walk for hidden
+focus) on the Project page (4 states), Invoice (3), the editor (draft, NBK-014, new), the estimate
+view, Settings (agreement, business, account), Projects, Home, Clients and Finance, at 1280, 800,
+375 and 320. Shots in `screenshots/task14/` (local only).
+
+**Fixed**
+- **Focus hidden by the sticky bars (WCAG 2.4.11):** Tab put 18 controls fully under the editor's
+  bar at 1280, 30 under Settings' Save bar at 375, and Shift+Tab put the Invoice header under the
+  app header on a phone. `a11y.css` now gives the page `scroll-padding` (top: the new
+  `--header-h`; bottom: the editor's measured `--ed-bar-h`, now set on `<html>`, or Settings' bar).
+  Re-walked: 0 hidden anywhere.
+- **The toast sat on Save settings.** It now rises above Settings' bar, as it already did on the
+  editor (there it follows the bar's measured height now).
+- **Undo was out of a keyboard's reach:** after deleting a clause or sub-clause, focus goes to the
+  next one and the Undo button is the last thing in the page, inside 10 s. **⌘Z / Ctrl+Z runs the
+  toast's Undo** while it shows (not from a text field). The button is styled now (it was the
+  browser's grey) and shows its key, hidden on touch screens.
+- **Editor rows:** "+ Add service" focuses the new line's hours, "+ Add deliverable" its name (the
+  task 11 leftover); × moves focus to the row that took its place, the one above, or the
+  section's picker. Each is said in `#editor-live` ("Hero film removed and its 2 post lines.").
+- **Opening a screen from a menu** (View estimate, the call sheet) left focus on nothing: both
+  now land on their heading (`landFocus`), as the Project page and Invoice did.
+- **Phone sheets:** `#app-view` is `inert` while a menu sheet is open, so VoiceOver's swipe can't
+  leave it (Tab already couldn't).
+- **Targets:** `.back-btn` is 28px (was 21; `#csp-back`'s patch is gone); every icon-only ⋯ is
+  square, 44px on a phone (the Clauses panel's ⋯ was 28px wide); from 768px nothing a pointer
+  aims at is under `--target-min` (24px): ×, the line handle, Move to, unit selects, small
+  buttons, "Edit on the day", "+ Add Date TBC day" (20px), the autosave link; checkbox labels take
+  the small control height (28px, 44 on a phone).
+- **Projects search** had a 1.3:1 edge; it takes the input fill and `--input-border` (3:1).
+- **Markup:** the rentals list's `<li role=group>` (axe: serious) is a list item holding the group;
+  the estimate view's "Internal notes" is an `<h2>` (was `<h4>` under an `<h1>`).
+
+**Checked and left (passes)**
+- Menus (APG): Enter/Space/↓ open at the first item, ↑ at the last, arrows wrap, Home/End,
+  type-ahead, Esc and Tab return to the button; a sheet traps Tab and ends with Cancel. Dialogs
+  from a menu trap Tab and return focus to the menu's button.
+- Panels: toggles are buttons, Enter and Space, focus stays. The rail lands on the panel's head
+  and marks it. Move to and drag keep focus on the line and say where it went.
+- The builder: Alt+↑/↓ and ⋯ Move up/down keep focus on the handle and say "Deposit moved to
+  clause 3 of 13."; delete focuses the card that took its place or the one above; add focuses
+  the title; sub-clauses the same (Indent, Outdent, Move, Delete, Undo). Drag has two non-drag
+  ways (WCAG 2.5.7).
+- Reduced motion: `a11y.css` and `tokens.css` zero every transition; nothing scrolls smoothly.
+- 44px below 768px on every screen of this track; no sideways scroll at 320, 375, 800 or 1280.
+- Contrast: no text under 4.5:1. The probe's other flags are disabled fields (GST rate, Save
+  extras, which WCAG exempts), the logo's full stop, and the pencilled hatch, which it can't read
+  (ink 6.0:1 on the dark stripe, 8:1 on the light).
+
+**Seen, not changed**
+- **Jump to… (the editor below 1100px) acts on `change`.** On macOS and iOS that fires only on a
+  pick; where arrow keys change a closed select in place (Firefox/Windows, and Chrome's emulated
+  phone) each arrow jumps (WCAG 3.2.2). A guard would cost Mac keyboard users a second Enter and
+  can't be tested headless. Left; check it in Safari with the keyboard.
+- Inline links in a sentence stay their line's height (Settings → Business in a hint, Finance's
+  dashboard sentences): WCAG's inline exception.
+- Home's weekday headers (axe `empty-table-header`, minor): their name is an `aria-label`. As
+  trip-planner left it.
+
+**For a person with VoiceOver (macOS Safari, then iOS)**
+1. Project page: the header reads the next action, then "Project actions, menu button"; open it,
+   hear the items and the count; Esc returns to the button. On iOS the sheet: can you swipe out
+   of it? (You shouldn't.)
+2. Invoice: Actions ▾ and Documents ▾ name the invoice; Mark paid… opens its dialog at the date;
+   after Mark paid, the toast is spoken.
+3. Editor: + Add service, then hear "… added." and land in its hours; × says "… removed."; Move to
+   says "Moved … to Thu 29 Oct: $1,120.00."; the rail's current section reads as current.
+4. Settings → Service agreement: a clause card reads "Clause 2, Deposit, collapsed"; Alt+↓ on its
+   handle says where it went; delete a sub-clause, hear it, then ⌘Z and hear "restored".
+5. The toast: does VoiceOver read "Undo ⌘Z" sensibly as the button's name?
 
 ## Decisions made in task 13 (tell the user)
 
