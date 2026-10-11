@@ -129,7 +129,8 @@ transfer, a secret rotation), redo them here:
 What the workflow does on every run, so nothing here needs to be repeated by hand:
 
 - Writes `web/js/config.js` (gitignored — never committed, since it would hardcode the NAS
-  hostname into a public repo) from the `LSC_API_BASE` secret.
+  hostname into a public repo) from the `LSC_API_BASE` secret, and the optional Maps secrets
+  `LSC_MAPS_KEY` / `LSC_MAPS_ID` (section 7).
 - Appends `?v=<short commit sha>` to every local `<script src="js/...">` and
   `<link href="css/...">` reference in `web/index.html`, so a new deploy is always a new URL and
   a browser's cached copy of, say, `js/calc.js` can never silently disagree with the server's
@@ -217,6 +218,53 @@ NAS-local files, alongside `.env` and `data/`, that must not be blindly overwrit
   create/edit/reload an estimate (proves the save reaches the NAS's real SQLite database, not a
   cache), and check `LSCCalc.computeTotals.length === 4` in devtools (per `web/README.md`'s
   existing convention, confirms the page isn't running a stale cached `calc.js`).
+
+## 7. Trip planner and Google Calendar (trip-planner, schema v16)
+
+Everything here is optional per feature: a missing value makes that one feature say it isn't set
+up, and the rest of the app works. Real values are in `.credentials.local.md` only (the repo is
+public). **Deploy order: NAS first, then Pages.** v16 adds the trip, call sheet and calendar
+tables, and the Pages build calls routes only v16 serves.
+
+**NAS: `server/.env`** (commented in `server/.env.example`), then `docker compose up -d`. A
+`restart` keeps the old env (section 4).
+
+| Variable | Value | Without it |
+| --- | --- | --- |
+| `GOOGLE_MAPS_SERVER_KEY` | the **LSC Billing — server** key (Maps Static API only) | call sheets have no route map |
+| `GOOGLE_OAUTH_CLIENT_ID` | the OAuth client **LSC Billing — NAS calendar** | Settings → Google Calendar says it isn't set up |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | the same client's secret | as above |
+| `GOOGLE_OAUTH_REDIRECT_URI` | `https://billing.lsccreative.studio/api/google/oauth/callback` | worked out from the request, which can come out `http://` behind the tunnel and be refused by Google |
+| `APP_ORIGIN` | leave unset | where consent returns the browser (`#/settings/calendar`); unset, it is `APP_URL`, which the NAS already has |
+
+Never set `GOOGLE_CALENDAR_WRITE=0` on the NAS. That's the off switch for dev servers on a copy
+of a real database, and with it the live app would stop writing bookings to Google.
+
+**Pages: two repository secrets** (Settings → Secrets and variables → Actions), read by
+`deploy-pages.yml` into the generated `web/js/config.js`:
+
+| Secret | Value | Without it |
+| --- | --- | --- |
+| `LSC_MAPS_KEY` | the **LSC Billing — browser** key (website-restricted, 4 APIs) | the travel view says Google Maps isn't set up; the build warns but deploys |
+| `LSC_MAPS_ID` | the Map ID **LSC Billing — trip planner** | the map loads but numbered pins can't draw |
+
+The browser key's website restriction must list `https://lsccreative.github.io/*` (it does, with
+`http://localhost:5173/*` for local previews). A local preview on any other port is refused by
+Google until that port is added there.
+
+**After the deploy** (in this order):
+1. Sign in on the live site, Settings → Google Calendar → **Connect**, and approve with the
+   Workspace account. Settings should then read "Connected · As <account> since …" with the
+   calendars listed.
+2. Switch on the calendars to show on Home.
+3. Press **Sync existing bookings** once: it writes every current confirmed and pencilled day
+   to the primary calendar. Later saves keep them in step on their own.
+4. Check that a trip routes in the travel view (proves the browser key and Map ID) and that a call
+   sheet shows its route map (proves the server key).
+
+The consent screen is Internal (Workspace only), so there's no Google verification and no 7-day
+token expiry. Usage stays far below the free caps; a $1 budget alert on the Cloud billing account
+is still worth setting (the user's to do).
 
 ## Left open, on purpose
 

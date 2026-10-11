@@ -251,7 +251,9 @@ local `server/.env`. Test the OAuth flow against
   times inside Maps' "typically" range; leg 1 took a road 0.8 km longer, see HANDOVER); the
   calendar half is task 14's live check of 2026-10-11 (the user's call). Results in HANDOVER.
 
-- [ ] **19. Update docs** *(backend: Sonnet/high)*: `DEPLOYMENT.md` (new env:
+- [x] **19. Update docs** *(backend: Sonnet/high)*: **Done** (commit in HANDOVER). `DEPLOYMENT.md` §7 (NAS
+  env, Pages secrets, after-deploy steps), `server/.env.example`'s Google section, `web/README.md`'s
+  config.js keys, CLAUDE.md row. Original spec: `DEPLOYMENT.md` (new env:
   `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_MAPS_SERVER_KEY`, `APP_ORIGIN`;
   the Pages secrets `LSC_MAPS_KEY`, `LSC_MAPS_ID`), `web/README.md` (config.js keys), and the
   CLAUDE.md track row.

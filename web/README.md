@@ -27,8 +27,8 @@ css/a11y.css             accessibility pass: global focus-visible rings,
                          placeholders, field errors. Loaded LAST of all
 fonts/*.woff2          Delight 400/700 (from the old app) + CS Felice Mono. Metro
                          Sans joins them once its web licence is confirmed
-js/config.js             the API address. Gitignored — copy from
-                         config.example.js
+js/config.js             the API address and the Google Maps browser key + Map
+                         ID. Gitignored — copy from config.example.js
 js/api.js                the only place that calls fetch; classifies failures.
                          postPdf() is the one binary path (PDF export)
 js/calc.js               the money model. A byte-identical copy of
@@ -61,6 +61,8 @@ js/views/settings.js     Settings, #/settings: business, GST, payment, estimates
 js/documents.js          deposit / validity / due-days / message / agreement
                          defaults and the agreement's fill-in fields; a
                          byte-identical copy of server/src/documents.js
+js/call-sheet.js         the call sheet's markup (app, public page, PDF); a
+                         byte-identical copy of server/src/call-sheet.js
 js/app.js                boot + top-level view switching
 ```
 
@@ -110,8 +112,18 @@ so the rows always add up to the total beneath them.
 cp js/config.example.js js/config.js
 ```
 
-Then point `LSC_API_BASE` at your API. `js/config.js` is gitignored so the real
-NAS hostname stays out of a public repo.
+Then fill in its three values. `js/config.js` is gitignored so none of them reach the public
+repo; on Pages, `deploy-pages.yml` writes it from repository secrets of the same names.
+
+| Key | What | Empty |
+| --- | --- | --- |
+| `LSC_API_BASE` | the API's address, no trailing slash (`http://localhost:8080` locally) | required |
+| `LSC_MAPS_KEY` | the **LSC Billing — browser** Google key (trip planner, Places search) | the travel view says Google Maps isn't set up |
+| `LSC_MAPS_ID` | the Map ID **LSC Billing — trip planner** (numbered pins) | the map draws, its pins don't |
+
+The two Google values are in `.credentials.local.md`. The browser key only works from
+`https://lsccreative.github.io/*` and `http://localhost:5173/*`, so preview the frontend on port
+5173 (the `web` launch config does).
 
 ## Running it locally
 

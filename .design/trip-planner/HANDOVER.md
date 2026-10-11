@@ -3,17 +3,19 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 19, Sonnet, effort high (backend/docs, not a frontend task)**: update
-`DEPLOYMENT.md` (new env `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
-`GOOGLE_MAPS_SERVER_KEY`, `APP_ORIGIN`; Pages secrets `LSC_MAPS_KEY`, `LSC_MAPS_ID`),
-`web/README.md` (config.js keys) and the CLAUDE.md track row. Then task 20, the deploy (ask first).
-Tasks 1–18 are done: the live Google check (task 18) is below. Waiting on the user, not blocking:
-the two should-fix items from task 17 (km rounding across surfaces; the R pin over S) and the
-Routes preference (below). The scratch DB `/tmp/lsc-billing-scratch` is connected to the
-user's real Google account (all four calendars on): **never run a write-capable build on it**
-except for a live check (see Traps).
+**Next: task 20, the deploy, Sonnet, effort medium (deploy, not a frontend task). Ask the user
+first.** The steps are in `.design/nas-hosted-billing/DEPLOYMENT.md` §7 (written in task 19):
+merge `ui-clarity` and `main` in as they stand (fetch + diff `origin/main`; memory: deploy base
+check), NAS online, **NAS (v16) first, then Pages**; set the NAS env (`GOOGLE_MAPS_SERVER_KEY`,
+`GOOGLE_OAUTH_CLIENT_ID`/`_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`; values in
+`.credentials.local.md`), the Pages secrets `LSC_MAPS_KEY`/`LSC_MAPS_ID`, then Connect and Sync
+existing bookings on the live site. Tasks 1–19 are done. Waiting on the user, not blocking: the
+two should-fix items from task 17 (km rounding across surfaces; the R pin over S) and the Routes
+preference (task 18). The scratch DB `/tmp/lsc-billing-scratch` is connected to the user's real
+Google account (all four calendars on): **never run a write-capable build on it** except for a
+live check (see Traps).
 
-## State as of 2026-10-11 (task 18)
+## State as of 2026-10-11 (task 19)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -127,6 +129,10 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   45 shots at 1280/768/375 (headless, `api-scratch-sync`, the pretend Google), no sideways
   scroll anywhere. 2 must-fix, both fixed; 2 should-fix left for the user (below). 706 server
   tests pass (1 new).
+- [x] **Task 19** docs: `DEPLOYMENT.md` §7 (the NAS env table, never `GOOGLE_CALENDAR_WRITE=0`
+  there, the two Pages secrets, the browser key's origins, the after-deploy steps), the Google
+  section of `server/.env.example` (the redirect URI left commented so a local `.env` keeps the
+  localhost callback), and `web/README.md`'s `config.js` table and `call-sheet.js` copy rule.
 - [x] **Task 18** live Google check, 2026-10-11, `8e84be7`. **Maps:** a trip built in the travel view by
   search alone (headless Chrome, real browser key, `api-scratch-sync` so nothing reached the real
   calendar) on scratch `est_43f5777a` day `d_nbk0`, Wed 28 Oct 8:00: Marrickville Metro → Bondi
