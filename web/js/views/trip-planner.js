@@ -306,6 +306,8 @@ const TripPlanner = (() => {
       '<p class="trip-q-msg" id="trip-q-msg" role="status"></p>' +
       '</div>' +
       '<div class="trip-map" role="region" aria-label="Map of ' + esc(day.title) + '’s route, no stops yet">' +
+      // The map is a dozen Tab stops of Google's own controls ahead of the list; every spot can be set without it.
+      '<button type="button" class="btn btn-sm trip-skip">Skip the map</button>' +
       '<div class="trip-map-canvas"></div>' +
       // The pending pin's card: its address and the one way to take it besides the pin and Enter.
       '<div class="trip-pending" hidden>' +
@@ -323,7 +325,7 @@ const TripPlanner = (() => {
       '</div>' +
       '<div class="trip-stops">' +
       '<div class="trip-stops-bar">' +
-      '<h4 class="trip-stops-h">Destinations</h4>' +
+      '<h4 class="trip-stops-h" id="trip-stops-h" tabindex="-1">Destinations</h4>' +
       // A toggle, so its name stays put and aria-pressed says which way it is.
       '<button type="button" class="btn btn-quiet btn-sm trip-details-btn" aria-pressed="false" hidden>' +
       '<span class="trip-switch" aria-hidden="true"></span>Show trip details</button>' +
@@ -348,6 +350,9 @@ const TripPlanner = (() => {
       '<p class="trip-also" hidden></p>' +
       '</section>' +
       '<p class="sr-only trip-live" aria-live="polite"></p>' +
+      // The route's own words, apart from the stop changes that cause them, so a reorder's
+      // "moved to stop 3" isn't replaced mid-sentence when the new figures land.
+      '<p class="sr-only trip-live-route" aria-live="polite"></p>' +
       '</div>' +
       '</section>'
     );
@@ -498,6 +503,7 @@ const TripPlanner = (() => {
     const listEl = q('.trip-cells');
     const adds = q('.trip-adds');
     const liveEl = q('.trip-live');
+    const routeLiveEl = q('.trip-live-route');
 
     let map = null;
     let mapReady = false;
@@ -528,11 +534,12 @@ const TripPlanner = (() => {
     const placedCount = () => cells.filter((c) => (c.role === 'return' ? false : isPlaced(c))).length +
       (cells.some((c) => c.role === 'return') && destinations().some(isPlaced) ? 1 : 0);
 
-    function say(text) {
+    function say(text, region) {
+      const target = region || liveEl;
       // Cleared first, so the same words twice are announced twice.
-      liveEl.textContent = '';
+      target.textContent = '';
       setTimeout(() => {
-        if (alive) liveEl.textContent = text;
+        if (alive) target.textContent = text;
       }, 30);
     }
 
@@ -639,7 +646,7 @@ const TripPlanner = (() => {
         routing = false;
         routeError = err.message;
         paint();
-        say('Route not updated. ' + err.message);
+        say('Route not updated. ' + err.message, routeLiveEl);
         return;
       }
       // A newer change has its own route on the way, or the view has closed (the stops then read as changed when it reopens).
@@ -654,7 +661,7 @@ const TripPlanner = (() => {
       emit();
       paint();
       fit(true);
-      say('Route updated: ' + totalKm(totals.km) + ', ' + durationSpoken(totals.minutes) + '.');
+      say('Route updated: ' + totalKm(totals.km) + ', ' + durationSpoken(totals.minutes) + '.', routeLiveEl);
     }
 
     /* What the totals say about the stored route. */
@@ -950,8 +957,20 @@ const TripPlanner = (() => {
           html += '<button type="button" class="btn btn-ghost trip-add trip-add-return">Return trip</button>';
         }
       }
+      /* The add buttons are rebuilt on every paint, and a route can land while
+         one holds focus (it is where focusNext() just put it). The same button
+         gets focus back; one that has gone (Return trip, once used) hands it to
+         the next thing to do, so it never falls to the page. */
+      const hadAdd = adds.contains(document.activeElement)
+        ? ['trip-add-start', 'trip-add-dest', 'trip-add-return'].find((c) => document.activeElement.classList.contains(c))
+        : null;
       adds.innerHTML = html;
       adds.hidden = !html;
+      if (hadAdd) {
+        const again = adds.querySelector('.' + hadAdd + ':not(:disabled)');
+        if (again) again.focus();
+        else focusNext();
+      }
       q('.trip-cap').hidden = !full;
 
       const n = placedCount();
@@ -1036,6 +1055,8 @@ const TripPlanner = (() => {
       if (!pending) return;
       q('.trip-pending-addr').textContent = pending.looking ? 'Finding the address…' : pending.address;
       q('.trip-use').disabled = Boolean(pending.looking);
+      // It sits at the map's foot, which a phone's sticky bar can cover (css: scroll-margin).
+      card.scrollIntoView({ block: 'nearest' });
     }
 
     /* The pending pin, its card's button or Enter: the waiting cell takes the spot. */
@@ -1090,6 +1111,8 @@ const TripPlanner = (() => {
         .join('');
       list.hidden = false;
       input.setAttribute('aria-expanded', 'true');
+      // Its last rows can fall under the editor's sticky bar on a short phone.
+      list.scrollIntoView({ block: 'nearest' });
     }
 
     /* Home base first for START (T9): on an empty field, and for a query it matches. */
@@ -1562,6 +1585,7 @@ const TripPlanner = (() => {
     });
 
     q('.trip-back').addEventListener('click', () => onBack());
+    q('.trip-skip').addEventListener('click', () => q('#trip-stops-h').focus());
     retry.addEventListener('click', () => {
       startMap();
       retry.blur();

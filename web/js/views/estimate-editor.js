@@ -1690,7 +1690,7 @@ const EstimateEditor = (() => {
   let syncLooks = 0;
   let syncTimer = null;
   let syncState = {}; // { dayId: 'pending' | 'error' } as last heard
-  function watchGoogleSync(fromReply) {
+  function watchGoogleSync(fromReply, delay) {
     if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
     const pending = (map) => Object.keys(map || {}).some((id) => map[id] === 'pending');
     if (fromReply) {
@@ -1716,7 +1716,7 @@ const EstimateEditor = (() => {
       syncState = map || {};
       booking.setSync(syncState);
       if (pending(syncState)) watchGoogleSync(null);
-    }, 8000);
+    }, delay || 8000);
   }
 
   async function retryGoogleSync(dayId) {
@@ -4944,6 +4944,10 @@ const EstimateEditor = (() => {
     }
 
     watchBar();
+    // The folder's reply doesn't say which days Google refused: ask the estimate once, so a day stuck
+    // from an earlier session is marked on open and not only after the next save.
+    syncLooks = 0;
+    watchGoogleSync(null, 600);
     LSCRouter.claim(onTripRoute);
     // A reload or a link to `?trip=<dayId>` (I1) reopens that day's travel view; an unknown day is dropped.
     const tripDay = options && options.trip;

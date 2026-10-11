@@ -1743,7 +1743,7 @@ const SettingsView = (() => {
           '<span class="gcal-meta" id="' + id + '-meta">' + esc(roleOf(c)) + '</span></span>' +
         '</label>' +
         '<input type="checkbox" role="switch" class="gcal-switch" id="' + id + '" data-cal="' + esc(c.id) + '"' +
-          ' aria-describedby="' + id + '-meta"' + (c.on ? ' checked' : '') + '>' +
+          (c.on ? ' checked' : '') + '>' +
       '</li>';
     }
 

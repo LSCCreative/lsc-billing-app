@@ -230,7 +230,7 @@ local `server/.env`. Test the OAuth flow against
 
 ## Stage E: Polish, review, deploy
 
-- [ ] **15. Responsive and accessibility pass** *(frontend: Opus/high)*: The travel view, Share
+- [x] **15. Responsive and accessibility pass** *(frontend: Opus/high)*: **Done** (commit in HANDOVER; fixes: focus lost after a route reply, a Skip the map button, the pending card and suggestions kept clear of the sticky bar, route announced apart from a move, 44px call-sheet footer links, Go to date no longer clipped, a day Google refused marked on open). Original spec: The travel view, Share
   dialog, call sheet pages, Settings → Google Calendar and Calendars ▾ at 375/768/1100+. The checks
   from the brief: 3:1 on the translucent buttons' label and border, 4.5:1 text; full keyboard paths
   (search combobox, reorder, disclosure, menus); live regions (route updates, Not saved states

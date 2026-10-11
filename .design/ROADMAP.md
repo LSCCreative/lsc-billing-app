@@ -2,7 +2,7 @@
 
 The one record of what is built, what is live, and what happens next, across every track and every
 session working in this folder. **Read this first**, then only the HANDOVER of the track you are
-working on (it has the detail, decisions and traps). Last consolidated **2026-10-11** (trip-planner task 14).
+working on (it has the detail, decisions and traps). Last consolidated **2026-10-11** (trip-planner task 15).
 
 **Keep it true:** when a task changes the order, a branch, a deploy wave, a seam between tracks or
 the user's to-do list, update this file in the same commit. Per-task logs stay in the track's
@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `a728420`, schema **v15** | production-booking A–E, account recovery, everything older. NAS and site back online since 2026-10-09. |
 | **ui-clarity** | branch `ui-clarity` `850f904` + this record, on `main`, unpushed | Tasks 1–7, 9–13 built. Nothing of it is live. |
-| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–14 built (stages A–D); task 14 live-checked on the real calendar. Nothing deployed. |
+| **trip-planner** | branch `trip-planner`, on `ui-clarity`, unpushed, schema **v16** | Tasks 1–15 built (stages A–D, and E's accessibility and responsive pass); task 14 live-checked on the real calendar. Nothing deployed. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -28,7 +28,7 @@ main (live, v15) ── ui-clarity (+33, UI system, agreement builder, three scr
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **14** a11y + responsive pass *(Opus/high, frontend)* |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **15** responsive + accessibility pass *(Opus/high, frontend)*|
+| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`trip-planner` is checked out here) | **16** code review *(Opus/high)* |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**
@@ -93,9 +93,10 @@ keeps the conflicts small: see §4 for the files both lines touch.
 2. ~~Task 14: writing bookings to Google~~, built and tested against a pretend Google
    (`google-sync.js`, Settings → Writing bookings, the day card's mark). **Live check on the user's
    calendar passed 2026-10-11** (create, move, re-time, accept, delete; HANDOVER).
-3. **Tasks 15–19:** responsive/a11y pass, code review, design review, live Google check *(with the
-   user present)*, docs (`DEPLOYMENT.md` env incl.
-   `GOOGLE_CALENDAR_WRITE`, `web/README.md`).
+3. ~~Task 15: responsive and accessibility pass~~, done (HANDOVER: what failed, what passed, and a
+   VoiceOver list for a person).
+   **Tasks 16–19:** code review, design review, live Google check *(with the user present)*, docs
+   (`DEPLOYMENT.md` env incl. `GOOGLE_CALENDAR_WRITE`, `web/README.md`).
 4. **Wave 3, deploy trip-planner** *(task 20, Sonnet/medium)*: only after wave 1 (and ideally wave 2),
    with `ui-clarity` and `main` merged in. **NAS first (v16 migration), then Pages.** New NAS env:
    `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_MAPS_SERVER_KEY`, `APP_URL`/`APP_ORIGIN`,
@@ -119,7 +120,9 @@ Both lines change these. Merge `ui-clarity` forward often and read the other sid
 | `views/estimate-editor.js`, `css/estimates.css` | tasks 11–12 rail, sticky bar, panels (done) | autosave bar (Done / Save), travel foot, FROM TRIP lines, the day card's Google mark (`watchGoogleSync`) |
 | `views/booking-block.js`, `css/booking.css` | task 14 (panels, focus) | the day card's `.day-sync` line + Try again, `setSync()` (task 14) |
 | `mail.js` | task 16 rebuilds `shell()` for seven templates | `callSheetEmail` (an eighth) already calls `shell()`: keep the signature |
-| a11y passes | task 14: its screens | task 15: travel view, Share, call sheet, Google settings |
+| a11y passes | task 14: its screens | task 15 **done**: travel view, Share, call sheet, Google settings, Calendars ▾ |
+| `.back-btn` (app.css:71) | task 14: a bare 21px line above 768px, under WCAG 2.5.8's 24px; give it a `min-height` (Project page, Invoice, editor) | only `#csp-back` (call-sheet.css) is patched; its rule can go once the shared one is fixed |
+| `calendar.css` `.cal-goto` | task 14 may touch the bar | task 15: Go to date no longer clips at 375 (`min-width: 9.5rem`, label may wrap) |
 | design reviews | task 18 | task 17 |
 | `tokens.css` | the token source; task 13 warmed `--color-status-neutral` | uses tokens only; inherits on merge |
 
@@ -144,8 +147,9 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
   an agent do it, with permission) before wave 3.
 - [ ] Be present for trip-planner task 18 (live Google check: the trip planner's own routes, and a
   real project end to end).
-- [ ] **VoiceOver passes:** production-booking, price-calculator, service-rate-tiers, and the list
-  ui-clarity task 14 will leave.
+- [ ] **VoiceOver passes:** production-booking, price-calculator, service-rate-tiers, the list
+  ui-clarity task 14 will leave, and trip-planner's (five short checks at the end of "Decisions
+  made in task 15" in its HANDOVER).
 - [ ] **Safari:** service-rate-tiers R8 (select-on-focus after a mouse click).
 - [ ] **account-recovery:** the live test of Forgot password.
 - [ ] **estimate-accuracy:** 5(b) tick Transport & Logistics Hrs as "Your time" on the live Rate Card;

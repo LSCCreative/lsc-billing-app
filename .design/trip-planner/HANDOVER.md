@@ -3,14 +3,15 @@
 Read this, then [`DECISIONS.md`](DECISIONS.md) (T1–T18, G1–G5, I1–I4, the user's; don't re-ask), then
 [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md).
 
-**Next: task 15, Opus, effort high, **Frontend task** (responsive and accessibility pass: the
-travel view, Share dialog, call sheet pages, Settings → Google Calendar incl. Writing bookings, and
-Calendars ▾). Stages A, B, C (tasks 1–11) and D (tasks 12–14) are built, and task 14's live check
-on the user's real calendar **passed** (2026-10-11, below). The scratch DB
+**Next: task 16, Opus, effort high** (code review: `/code-review high` on the branch; money
+derivations from tasks 1/4/6, the public allow-list, OAuth state and token handling, the sync
+engine's idempotency; the "Left for task 16" list under task 14's decisions). Not a frontend task.
+Stages A–E up to task 15 are built; task 14's live check on the user's real calendar passed
+(2026-10-11) and task 15's accessibility and responsive pass is done (below). The scratch DB
 `/tmp/lsc-billing-scratch` is connected to the user's real Google account (all four calendars on):
 **never run a write-capable build on it** except for a live check (see Traps).
 
-## State as of 2026-10-11 (task 14)
+## State as of 2026-10-11 (task 15)
 
 Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Building on branch
 **`trip-planner`** (off `ui-clarity`, unpushed).
@@ -111,9 +112,14 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   restarted, so the event was gone from Google: the PUT's 404 became a create), Settings said
   "1 day not synced" with Retry, no overflow at 375, 44px targets. The real Google Calendar was
   checked afterwards (the live check, below).
-- [ ] **Next: task 15**, responsive and accessibility pass. *Opus/high, **frontend**.* Add task 14's
-  surfaces to its list: Settings → Writing bookings (status line, Sync existing bookings, Retry;
-  `aria-disabled` while working, a polite live region) and the day card's `.day-sync` line.
+- [x] **Task 15** responsive and accessibility pass, commit in the log (`Trip planner: accessibility and
+  responsive pass (task 15)`). **Stage E's frontend is done.** 699 server tests pass (no server change).
+  Audited headless at 320/375/768/1280 with real key events, axe-core, a computed-contrast probe and a
+  target-size probe, over: the travel view (empty, with a search open, with a pending pin), the Share
+  dialog, Clear trip, the in-app and public call sheet, Settings → Google Calendar (all states incl.
+  Writing bookings in error), Calendars ▾ and the Google pop-up on Home month and week. What failed
+  and is fixed is under "Decisions made in task 15"; what passed is listed there too, so a later
+  pass doesn't repeat it. The VoiceOver list for a person is at the end of that section.
 - [x] **Task 14 live check, 2026-10-11, on the user's real calendar** (with their OK, from the
   scratch DB via the `api-scratch-live` launch config; the user had Google Calendar open in the
   pane). A test project "ZZ LIVE SYNC CHECK delete me" (UPID ZZTEST1, client Test Client) with a
@@ -126,6 +132,78 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   nothing). The DB was backed up first and no row or project was left behind; no other estimate
   was touched and Sync existing was never pressed. Not exercised live: bringing a deleted event
   back (409 → PUT) and Google refusing; both are covered by the stub tests only.
+
+## Decisions made in task 15 (agent's, within the brief)
+
+**Fixed**
+- **Focus fell to the page after a route reply.** `paint()` rebuilds the add buttons, and
+  `focusNext()` had just put focus on one of them (+ Destination, Return trip, + Add start
+  location). `paint()` now remembers which add button held focus and hands it to the new one (or
+  to `focusNext()` once that button has gone). The totals' Recalculate already did its own focus.
+- **Skip the map.** The map is ~9 Tab stops of Google's controls ahead of the list. A first button
+  inside the map region, clipped until focused, moves focus to the Destinations heading (now
+  `tabindex="-1"` with a ring like the totals heading). Hidden until the map is ready.
+- **The pending pin's card and the suggestion list sat under the editor's sticky bar** on a 667px
+  phone ("Use this location" was half covered). Both get `scroll-margin-bottom: bar + 16px` and
+  `scrollIntoView({ block: 'nearest' })` when they appear; verified at 375×667 and 320×568.
+- **A move's announcement was replaced by "Route updated"** in the same live region within a
+  second. The route's words now go to their own `.trip-live-route` region; a stop change keeps
+  `.trip-live`.
+- **Call sheet footer links** (email, phone) were 37px tall (the CSS header promised 44):
+  `min-height: var(--touch-min)`. The in-app page's Back (`#csp-back`) is 28px high from 768px.
+  The shared `.back-btn` itself is a bare 21px line above 768px (app.css:71), under WCAG 2.5.8's
+  24px; **left for ui-clarity task 14** (it owns the Project page, Invoice and the editor's
+  Back). Add a `min-height` there and `#csp-back`'s rule can go.
+- **Go to date was clipped** at 375 (`dd/mm/yy`): `.cal-goto-inp` has a 9.5rem floor now and
+  `.cal-goto` may wrap its label above it (calendar.css). On Home and the editor's calendar.
+- **Calendars ▾'s quiet line:** a used "Try again" is redrawn or removed under the finger, so focus
+  went to the page; it now goes to the new button or to Calendars ▾.
+- **Settings' calendar switches** read their role line twice ("Gear room Yours … Yours"): the
+  label already holds it, so the `aria-describedby` went.
+- **A day Google refused had no mark until the next save.** Neither the folder's reply nor the
+  list carries `googleSync`; the editor now asks the estimate once, 0.6 s after it opens
+  (`watchGoogleSync(null, 600)`), so the day card's quiet line shows on open.
+
+**Checked and left (passes)**
+- Contrast: no text under 4.5:1 on the travel view, Share, Clear trip, the call sheet (app and
+  public), Settings → Google Calendar and the pop-up; `+ Destination` text 7.9:1, its dashed border
+  3.3:1; quiet and plain `.btn` buttons rely on their label (no boundary is claimed, so 1.4.11
+  doesn't ask for one). The switch's off track is `--color-border-strong`.
+- Keyboard: combobox per APG (arrows wrap, Escape closes the list, then drops the pin, then stops
+  waiting; Enter picks and then confirms); Alt+↑/↓ and ⋯ Move up/down keep focus on the moved
+  stop's handle; detail blocks' Enter/Space; ⋯ menus return focus; Back lands on **Edit travel**;
+  Clear trip's dialog focuses Cancel, traps Tab and returns to ⋯ on Escape; Share traps Tab and
+  returns to Actions; Calendars ▾ checkbox items toggle with Space and stay open; the pop-up takes
+  focus on Close and Escape returns it to the tile.
+- Live regions: route and move/place messages polite and separate; the Not saved states are the
+  autosave bar's; `#ed-autosave-live` is empty by default.
+- Reduced motion: every transition and animation is 0.01 ms through a11y.css and tokens.css; the
+  map's own pan and fit are skipped (`REDUCED`).
+- 44px below 768px everywhere here except Google's own map controls (40px zoom buttons, 14px
+  attribution links) and inline links in a sentence ("Settings → Email" in the Share note).
+- 320px reflow: no horizontal scroll on the public page, the in-app call sheet, the travel view,
+  Settings, Home or the Project page.
+- axe-core (wcag2a/aa/21aa + best-practice): clean on the travel view at 375/768/1280 (also with a
+  search open), the dialogs, both call sheets and Settings. One `empty-table-header` minor on Home's
+  weekday headers (their name is an `aria-label`; the letters are CSS): left.
+
+**Seen, not changed**
+- The map's own tab stops are Google's (a `region` named "Map", zoom, attribution, Keyboard
+  shortcuts twice). Not ours to restyle.
+- The Settings page's sticky Save bar covers the last ~60px of the page on a phone (ui-clarity's).
+- A heading takes a ring when focus is sent to it by script; trip.css decided that on purpose.
+
+**For a person with VoiceOver (macOS Safari, then iOS)**
+1. Travel view: open from Define travel; is the heading read first; Tab past "Skip the map"; does
+   the stop list read as "Destination 2, Carriageworks…"; reorder with Alt+↑/↓ and hear the
+   move, then the route, one after the other.
+2. Add a stop: the search reads as a combobox, suggestions are announced as they move, the
+   pending pin's message is spoken, Enter confirms and "+ Destination" is where focus is.
+3. Call sheet page and the public link: headings per day, the map's description, each stop's
+   "Open in Google Maps" naming its stop.
+4. Settings → Google Calendar: each switch reads name, role line and on/off; Sync existing
+   bookings says "Syncing…" and the result is spoken.
+5. Calendars ▾ on Home: items read "checkbox, ticked"; toggling is heard.
 
 ## Decisions made in task 14 (agent's, within the brief)
 
@@ -628,6 +706,14 @@ redirect URIs) was **created 2026-10-11** by the agent with the user's OK; its I
 `.credentials.local.md` and the local `server/.env`. The NAS env needs both at deploy (task 20).
 
 ## Traps
+
+- **Any save re-checks every estimate that has a sync row**, so a hand-made `error` row in
+  `google_event_sync` (to see the day card's mark or Settings' "3 days not synced") is turned back
+  to `synced` by the next PUT anywhere. Set the rows, then look; don't save in between.
+- Headless audit scripts live in the session scratchpad only (puppeteer-core + axe-core from npm in
+  the scratchpad): in-page login, `page.keyboard` for real Tab/Enter/Alt, then a probe for overflow,
+  target size and contrast. A real mouse `click()` on a stop's remove button is fine; for menus use
+  the keyboard.
 
 - **Never run a write-capable build on `/tmp/lsc-billing-scratch`**: its `google_account` is the
   user's real calendar, and since task 14 a saved booking there is written to it. Use

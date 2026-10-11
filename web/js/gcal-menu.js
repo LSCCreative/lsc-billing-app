@@ -108,6 +108,8 @@ const LSCGcalMenu = (() => {
         text = 'Couldn’t load ' + joinAnd(st.missing) + ' from Google Calendar.';
         action = { label: 'Try again', run: refresh };
       }
+      // Its button was just used: the line is redrawn (or gone) under the finger, so focus must not fall to the page.
+      const hadFocus = box.contains(document.activeElement);
       box.hidden = !text;
       box.innerHTML = text
         ? '<span>' + esc(text) + '</span>' +
@@ -115,6 +117,10 @@ const LSCGcalMenu = (() => {
         : '';
       if (action) box.querySelector('.cal-gnote-act').addEventListener('click', action.run);
       if (slots.root) slots.root.classList.toggle('has-gnote', Boolean(text));
+      if (hadFocus) {
+        const next = (action && box.querySelector('.cal-gnote-act')) || (btn && btn.isConnected ? btn : null);
+        if (next) next.focus({ preventScroll: true });
+      }
     }
 
     function items() {

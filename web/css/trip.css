@@ -98,6 +98,34 @@
   position: absolute;
   inset: 0;
 }
+/* Skip the map: out of sight until it has focus, then over the map's corner.
+   Clipped rather than moved, so a focus inside the map's overflow never scrolls
+   it. Only while there is a map to skip. */
+.trip-skip {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  z-index: 4;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.trip-skip:focus,
+.trip-skip:focus-visible {
+  width: auto;
+  height: auto;
+  padding: 0 var(--space-5);
+  overflow: visible;
+  clip-path: none;
+  background: var(--color-bg-float);
+}
+.trip-map:not(.is-ready) .trip-skip {
+  display: none;
+}
 .trip-map-state {
   position: absolute;
   inset: 0;
@@ -208,6 +236,7 @@
 
 /* Its suggestions: over the map, like any menu. */
 .trip-suggest {
+  scroll-margin-bottom: calc(var(--ed-bar-h, 0px) + var(--space-5));
   position: absolute;
   top: calc(100% + var(--space-2));
   left: 0;
@@ -258,6 +287,8 @@
    it). It stands clear of what Google needs left visible: its logo and
    attribution along the bottom edge, and the zoom buttons on the right. */
 .trip-pending {
+  /* scrollIntoView on a phone stops above the editor's sticky bar, not under it. */
+  scroll-margin-bottom: calc(var(--ed-bar-h, 0px) + var(--space-5));
   position: absolute;
   left: var(--space-5);
   right: 60px;
@@ -799,10 +830,10 @@
 .trip-recalc[hidden] {
   display: none;
 }
-.trip-totals .trip-stops-h:focus {
+.trip-stops-h:focus {
   outline: none;
 }
-.trip-totals .trip-stops-h:focus-visible {
+.trip-stops-h:focus-visible {
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-focus);
 }

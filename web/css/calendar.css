@@ -88,8 +88,9 @@
 }
 .cal-goto {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   flex: 1 1 100%;
 }
 .cal-goto-label {
@@ -99,8 +100,9 @@
   white-space: nowrap;
 }
 .cal-goto-inp {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 9.5rem;
+  /* A dd/mm/yyyy date and its picker icon at 16px: any narrower and the year is clipped. */
+  min-width: 9.5rem;
   min-height: 44px;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
