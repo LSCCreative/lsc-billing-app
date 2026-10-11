@@ -106,19 +106,149 @@ const paragraphs = (text) => String(text || '').split(/\n{2,}/)
   .map((p) => p.trim()).filter(Boolean)
   .map((p) => `<p style="margin:0 0 14px">${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
 
-/* One shell for every email: plain, readable on a phone, no images to load. */
-function shell({ heading, bodyHtml, button, footer }) {
-  return '<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f2">' +
-    '<div style="max-width:560px;margin:0 auto;padding:28px 20px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1d1d1b">' +
-    `<h1 style="font-size:20px;line-height:1.3;margin:0 0 18px">${esc(heading)}</h1>` +
-    bodyHtml +
-    (button
-      ? `<p style="margin:22px 0"><a href="${esc(button.url)}" style="display:inline-block;background:#1d1d1b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:600">${esc(button.label)}</a></p>` +
-        `<p style="margin:0 0 14px;font-size:13px;color:#666">Or paste this address into your browser:<br>${esc(button.url)}</p>`
-      : '') +
-    (footer ? `<p style="margin:26px 0 0;font-size:13px;color:#666">${esc(footer)}</p>` : '') +
-    '</div></body></html>';
+/* The look (ui-clarity D2; U7, U8) is the client page's: paper, the logo and
+   wordmark over a terracotta rule, a white card, a terracotta button, the
+   business's details beneath. Hex rather than tokens, because mail clients
+   take inline styles only; the values are tokens.css's light theme. */
+const C = {
+  paper: '#F0EDE8',  // --lsc-white
+  card: '#FFFFFF',
+  edge: '#DDD6CC',   // the card's hairline
+  ink: '#0E0E0E',    // --lsc-black
+  muted: '#625C58',  // light --color-text-secondary: 6.6:1 on the card, 5.6:1 on paper
+  mark: '#C0603C',   // --lsc-terra: the rule and the wordmark's "Creative." (24px bold)
+  button: '#8C4832', // --lsc-terra-dk: white on it is 6.8:1
+};
+/* The client page's Delight and CS Felice Mono, loaded from Pages under names
+   of their own (an installed copy of either, with its own faces, is never
+   picked up instead). Apple Mail shows them; Gmail and Outlook drop the
+   @font-face, and Delight, a sans, falls back to Helvetica or Arial. */
+const SANS = "'LSC Delight','Helvetica Neue',Helvetica,Arial,sans-serif";
+const MONO = "'LSC Felice Mono',Menlo,Consolas,'Courier New',monospace";
+const SITE = { url: 'https://lsccreative.studio', label: 'lsccreative.studio' };
+
+/* APP_URL, where Pages serves the app, with one trailing slash: the base of
+   the logo and fonts. An email has no page to resolve a relative address
+   against, so '' (no APP_URL) means none of them: the email goes without,
+   and the wordmark still says who sent it. */
+const assetsOf = (appUrl) => (/^https?:\/\/\S+$/.test(String(appUrl || '').trim())
+  ? `${String(appUrl).trim().replace(/\/+$/, '')}/`
+  : '');
+
+/** The emails' logo (web/email/logo.png): a hosted PNG, because Gmail and
+    Outlook block SVG and attached images (U7). */
+const logoUrlOf = (appUrl) => (assetsOf(appUrl) ? `${assetsOf(appUrl)}email/logo.png` : '');
+
+/* The <head>'s styles: the fonts, and Outlook on Windows told to use Arial
+   (it falls back to Times when a stack starts with a font it lacks). */
+function headStyles(assets) {
+  const face = (name, file, weight) =>
+    `@font-face{font-family:'${name}';src:url('${esc(assets)}fonts/${file}') format('woff2');font-weight:${weight};font-style:normal}`;
+  return (assets
+    ? `<style>${face('LSC Delight', 'Delight-400.woff2', 400)}${face('LSC Delight', 'Delight-700.woff2', 700)}` +
+      `${face('LSC Felice Mono', 'CSFeliceMono-Regular.woff2', 400)}</style>`
+    : '') +
+    '<!--[if mso]><style>body,table,td,p,a,h1,span,div{font-family:Arial,sans-serif !important}</style><![endif]-->';
 }
+
+/* settings.business ({ name, abn, email, phone }), or an older caller's bare
+   `businessName`. */
+function businessOf(v) {
+  const b = (v && v.business) || {};
+  const s = (x) => String(x == null ? '' : x).trim();
+  return { name: s(b.name || (v && v.businessName)) || 'LSC Creative', abn: s(b.abn), email: s(b.email), phone: s(b.phone) };
+}
+
+/* "12345678901" → "12 345 678 901", as pdf.js prints it. */
+function formatAbn(abn) {
+  const digits = abn.replace(/\D/g, '');
+  return digits.length === 11 ? digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3 $4') : abn;
+}
+
+const quiet = (href, text) => `<a href="${esc(href)}" style="color:${C.muted};text-decoration:underline">${esc(text)}</a>`;
+
+/* The client footer: name · ABN · email · phone · site, only the parts that
+   are set. Each part holds together, so a narrow screen breaks between them. */
+function clientFooter(b) {
+  const phone = b.phone.replace(/[^\d+]/g, '');
+  return [
+    esc(b.name),
+    b.abn ? `ABN ${esc(formatAbn(b.abn))}` : '',
+    b.email ? (isEmail(b.email) ? quiet(`mailto:${b.email}`, b.email) : esc(b.email)) : '',
+    b.phone ? (phone ? quiet(`tel:${phone}`, b.phone) : esc(b.phone)) : '',
+    quiet(SITE.url, SITE.label),
+  ].filter(Boolean).map((part) => `<span style="white-space:nowrap">${part}</span>`).join('&nbsp;&middot; ');
+}
+
+/* The inbox's preview line: the card's first words, rather than the logo's
+   alt text and the wordmark, which come first in the markup. The padding
+   keeps a client from filling the rest of the line with the body. */
+function preheader(bodyHtml) {
+  let t = bodyHtml.replace(/<br>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (t.length > 140) t = `${t.slice(0, 140).replace(/&[^;\s]*$/, '').replace(/\s+\S*$/, '')}…`;
+  return t ? t + '&nbsp;&zwnj;'.repeat(40) : '';
+}
+
+/**
+ * One shell for every email (task 16): tables and inline styles, the way mail
+ * clients need them; 560px wide and readable at 320; and readable with
+ * images off, since the wordmark is text and the button's address is printed
+ * beneath it.
+ *
+ * @param {{heading:string, sub?:string, bodyHtml:string,
+ *          button?:{label:string, url:string}, business:object,
+ *          appUrl?:string, owner?:boolean}} v
+ *   `sub`: the project line under the heading. `business`: businessOf()'s.
+ *   `appUrl`: where the logo and fonts are served (APP_URL).
+ *   `owner`: a notice to the owner, without the client footer.
+ */
+function shell({ heading, sub, bodyHtml, button, business, appUrl, owner }) {
+  const b = business || businessOf({});
+  const assets = assetsOf(appUrl);
+  const logoUrl = logoUrlOf(appUrl);
+  const table = (attrs, rows) => `<table role="presentation" cellpadding="0" cellspacing="0" border="0"${attrs}>${rows}</table>`;
+  const logo = logoUrl
+    ? `<td valign="middle" style="padding:0 14px 0 0"><img src="${esc(logoUrl)}" width="96" height="56" alt="LSC Creative" ` +
+      `style="display:block;width:96px;height:56px;border:0;outline:none;text-decoration:none;font-family:${MONO};font-size:12px;line-height:16px;color:${C.muted}"></td>`
+    : '';
+  const mast = `<tr><td style="padding:0 0 14px;border-bottom:3px solid ${C.mark}">` +
+    table('', `<tr>${logo}<td valign="middle" style="font-family:${SANS};font-size:24px;line-height:28px;font-weight:700;letter-spacing:-0.01em;color:${C.ink}">` +
+      `LSC <span style="color:${C.mark}">Creative.</span></td></tr>`) +
+    '</td></tr>';
+  const cta = button
+    ? table(' width="100%" style="margin:10px 0 0"',
+      `<tr><td align="center" bgcolor="${C.button}" style="background:${C.button};border-radius:8px">` +
+      `<a href="${esc(button.url)}" style="display:block;padding:14px 20px;font-family:${SANS};font-size:17px;line-height:20px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:8px">${esc(button.label)}</a>` +
+      '</td></tr>') +
+      `<p style="margin:14px 0 0;font-family:${MONO};font-size:13px;line-height:1.5;color:${C.muted}">Or paste this address into your browser:<br>` +
+      `<span style="word-break:break-all">${quiet(button.url, button.url)}</span></p>`
+    : '';
+  const card = '<tr><td style="padding:22px 0 0">' +
+    table(` width="100%" bgcolor="${C.card}" style="background:${C.card};border:1px solid ${C.edge};border-radius:8px"`,
+      `<tr><td style="padding:28px 24px ${button ? 26 : 14}px;font-family:${SANS};font-size:17px;line-height:1.55;color:${C.ink};text-align:left">` +
+      `<h1 style="margin:0;font-family:${SANS};font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-0.01em;color:${C.ink}">${esc(heading)}</h1>` +
+      (sub ? `<p style="margin:6px 0 0;font-family:${MONO};font-size:14px;line-height:1.45;color:${C.muted}">${esc(sub)}</p>` : '') +
+      `<div style="margin:20px 0 0">${bodyHtml}</div>${cta}</td></tr>`) +
+    '</td></tr>';
+  const foot = `<tr><td style="padding:18px 2px 0;font-family:${MONO};font-size:12px;line-height:1.7;color:${C.muted};text-align:left">` +
+    (owner ? `${esc(b.name)} billing app` : clientFooter(b)) + '</td></tr>';
+  return '<!doctype html><html lang="en-AU"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only">' +
+    `<title>${esc(heading)}</title>${headStyles(assets)}</head>` +
+    `<body style="margin:0;padding:0;background:${C.paper};-webkit-text-size-adjust:100%;text-size-adjust:100%">` +
+    `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all">${preheader(bodyHtml)}</div>` +
+    table(` width="100%" bgcolor="${C.paper}" style="background:${C.paper}"`,
+      '<tr><td align="center" style="padding:28px 12px 40px">' +
+      // Outlook on Windows ignores max-width: a fixed column for it alone.
+      '<!--[if mso]><table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td><![endif]-->' +
+      table(' width="100%" style="max-width:560px;text-align:left"', mast + card + foot) +
+      '<!--[if mso]></td></tr></table><![endif]-->' +
+      '</td></tr>') +
+    '</body></html>';
+}
+
+const line = (...parts) => parts.filter(Boolean).join(' · ');
 
 /* What the client is told it is: an estimate is a "quote" to them (D103). */
 const KIND_WORDS = {
@@ -128,18 +258,25 @@ const KIND_WORDS = {
   single: { noun: 'Invoice', button: 'View the invoice' },
 };
 
+/*
+ * Every template takes, besides its own values, `business` (settings.business;
+ * a bare `businessName` still works) and `appUrl` (APP_URL, for the logo and
+ * fonts).
+ */
+
 /**
  * The estimate or invoice going to the client, with the owner's message.
  *
- * @param {{kind:'estimate'|'deposit'|'final'|'single', businessName:string,
- *          upid:string, projectName:string, number?:string, message:string,
- *          link:string}} v
+ * @param {{kind:'estimate'|'deposit'|'final'|'single', business:object,
+ *          appUrl:string, upid:string, projectName:string, number?:string,
+ *          message:string, link:string}} v
  */
 function documentEmail(v) {
   if (v.update) return updateEmail(v);
   const words = KIND_WORDS[v.kind] || KIND_WORDS.single;
   const label = v.kind === 'estimate' ? (v.upid || '') : (v.number || v.upid || '');
-  const business = v.businessName || 'LSC Creative';
+  const b = businessOf(v);
+  const business = b.name;
   const subject = `${words.noun}${label ? ` ${label}` : ''}${v.projectName ? `: ${v.projectName}` : ''} · ${business}`;
   const text = [
     String(v.message || '').trim(),
@@ -148,9 +285,11 @@ function documentEmail(v) {
   ].filter(Boolean).join('\n\n');
   const html = shell({
     heading: `${words.noun}${label ? ` ${label}` : ''}`,
-    bodyHtml: (v.projectName ? `<p style="margin:0 0 14px;color:#666">${esc(v.projectName)}</p>` : '') + paragraphs(v.message),
+    sub: v.projectName,
+    bodyHtml: paragraphs(v.message),
     button: { label: words.button, url: v.link },
-    footer: business,
+    business: b,
+    appUrl: v.appUrl,
   });
   return { subject, text, html };
 }
@@ -169,7 +308,8 @@ function documentEmail(v) {
 function updateEmail(v) {
   const quote = v.kind === 'estimate';
   const noun = quote ? 'quote' : 'invoice';
-  const business = v.businessName || 'LSC Creative';
+  const b = businessOf(v);
+  const business = b.name;
   const ref = quote ? v.upid : (v.number || v.upid);
   const title = `${quote ? 'Quote' : 'Invoice'} update`;
   const subject = `${title}${v.projectName ? `: ${v.projectName}` : ''}${ref ? ` (${ref})` : ''}`;
@@ -183,10 +323,11 @@ function updateEmail(v) {
   const text = [said, String(v.message || '').trim(), `${button}: ${v.link}`, business].filter(Boolean).join('\n\n');
   const html = shell({
     heading: title,
-    bodyHtml: (v.projectName ? `<p style="margin:0 0 14px;color:#666">${esc(v.projectName)}${ref ? ` · ${esc(ref)}` : ''}</p>` : '') +
-      paragraphs(said) + paragraphs(v.message),
+    sub: line(v.projectName, ref),
+    bodyHtml: paragraphs(said) + paragraphs(v.message),
     button: { label: button, url: v.link },
-    footer: business,
+    business: b,
+    appUrl: v.appUrl,
   });
   return { subject, text, html };
 }
@@ -210,7 +351,8 @@ function daysLine(rebook) {
  *
  * @param {{clientName:string, signedBy:string, role:string, upid:string,
  *          projectName:string, link:string, invoiceProblem?:string,
- *          rebook?:string[]}} v  `rebook`: the dates flagged as clashes
+ *          rebook?:string[], business:object, appUrl:string}} v
+ *          `rebook`: the dates flagged as clashes
  */
 function ownerSignedEmail(v) {
   const who = v.clientName || v.signedBy;
@@ -223,8 +365,12 @@ function ownerSignedEmail(v) {
   ];
   const html = shell({
     heading: `${who} signed the estimate`,
+    sub: line(v.projectName, v.upid),
     bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
     button: { label: 'Open the project', url: v.link },
+    business: businessOf(v),
+    appUrl: v.appUrl,
+    owner: true,
   });
   return { subject, text: `${lines.join('\n\n')}\n\nOpen the project: ${v.link}`, html };
 }
@@ -232,11 +378,12 @@ function ownerSignedEmail(v) {
 /**
  * The client's copy of what they signed, the PDF attached (D41, D66).
  *
- * @param {{businessName:string, contactName:string, upid:string,
+ * @param {{business:object, appUrl:string, contactName:string, upid:string,
  *          projectName:string}} v
  */
 function signedCopyEmail(v) {
-  const business = v.businessName || 'LSC Creative';
+  const b = businessOf(v);
+  const business = b.name;
   const hello = v.contactName ? `Hi ${v.contactName},` : 'Hi,';
   const lines = [
     hello,
@@ -248,8 +395,10 @@ function signedCopyEmail(v) {
     text: `${lines.join('\n\n')}\n\n${business}`,
     html: shell({
       heading: 'Your signed agreement',
+      sub: line(v.projectName, v.upid),
       bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
-      footer: business,
+      business: b,
+      appUrl: v.appUrl,
     }),
   };
 }
@@ -274,14 +423,16 @@ function crewDays(dates) {
  * The call sheet, to crew (trip-planner task 11; T13, I4): its link, never a
  * price. Each person gets their own copy, so no one sees who else was sent
  * it. The page always shows the latest saved trips (T18), and the email says
- * so, so an early email is still the one to keep.
+ * so, so an early email is still the one to keep. Crew are outside the
+ * business, so it carries the client footer.
  *
- * @param {{businessName:string, upid:string, projectName:string, note:string,
- *          link:string, dates:(string|null)[]}} v  `dates`: each day's
- *          'YYYY-MM-DD', or null for one with no date yet
+ * @param {{business:object, appUrl:string, upid:string, projectName:string,
+ *          note:string, link:string, dates:(string|null)[]}} v  `dates`:
+ *          each day's 'YYYY-MM-DD', or null for one with no date yet
  */
 function callSheetEmail(v) {
-  const business = v.businessName || 'LSC Creative';
+  const b = businessOf(v);
+  const business = b.name;
   const days = crewDays(v.dates);
   const subject = ['Call sheet', v.upid, v.projectName].filter(Boolean).join(' · ');
   const said = `${business} has shared the call sheet${v.projectName ? ` for ${v.projectName}` : ''}${days ? `: ${days}` : ''}. ` +
@@ -291,35 +442,38 @@ function callSheetEmail(v) {
   const text = [said, String(v.note || '').trim(), `${button}: ${v.link}`, business].filter(Boolean).join('\n\n');
   const html = shell({
     heading: 'Call sheet',
-    bodyHtml: (v.projectName || v.upid
-      ? `<p style="margin:0 0 14px;color:#666">${esc([v.projectName, v.upid].filter(Boolean).join(' · '))}</p>`
-      : '') + paragraphs(said) + paragraphs(v.note),
+    sub: line(v.projectName, v.upid),
+    bodyHtml: paragraphs(said) + paragraphs(v.note),
     button: { label: button, url: v.link },
-    footer: business,
+    business: b,
+    appUrl: v.appUrl,
   });
   return { subject, text, html };
 }
 
-/** Settings → Email's "Send a test email". */
-function testEmail({ businessName } = {}) {
-  const business = businessName || 'LSC Creative';
+/** Settings → Email's "Send a test email": in the clients' dress, footer and
+    all, since checking how they see it is what it's for. */
+function testEmail(v = {}) {
+  const b = businessOf(v);
   const text = 'This is a test email from the billing app. If you can read it, email is connected.';
   return {
-    subject: `Test email · ${business}`,
+    subject: `Test email · ${b.name}`,
     text,
-    html: shell({ heading: 'Email is connected', bodyHtml: paragraphs(text), footer: business }),
+    html: shell({ heading: 'Email is connected', bodyHtml: paragraphs(text), business: b, appUrl: v.appUrl }),
   };
 }
 
 /**
  * "Forgot password" (.design/account-recovery/): the one-time link to the
  * billing app's reset page. Says who asked, how long the link lasts, and that
- * ignoring it changes nothing.
+ * ignoring it changes nothing. It goes to the owner, so no client footer.
  *
- * @param {{username:string, link:string, minutes:number, businessName?:string}} v
+ * @param {{username:string, link:string, minutes:number, business?:object,
+ *          appUrl?:string}} v
  */
 function passwordResetEmail(v) {
-  const business = v.businessName || 'LSC Creative';
+  const b = businessOf(v);
+  const business = b.name;
   const lines = [
     `Someone asked to reset the password for ${v.username ? `“${v.username}”` : 'your account'} on the billing app.`,
     `The button below lets you choose a new one. It works once, for the next ${v.minutes} minutes.`,
@@ -332,12 +486,14 @@ function passwordResetEmail(v) {
       heading: 'Reset your password',
       bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
       button: { label: 'Reset your password', url: v.link },
-      footer: business,
+      business: b,
+      appUrl: v.appUrl,
+      owner: true,
     }),
   };
 }
 
 module.exports = {
-  createMailer, isEmail, NOT_CONFIGURED,
+  createMailer, isEmail, NOT_CONFIGURED, logoUrlOf,
   documentEmail, ownerSignedEmail, signedCopyEmail, testEmail, passwordResetEmail, callSheetEmail,
 };

@@ -24,7 +24,7 @@ const isIso = (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) && /^
 
 /* Status and test: no database write, so mounted ahead of the pre-write
    snapshot, as the PDF routes are. */
-function registerEmailRoutes(app, db, { mailer }) {
+function registerEmailRoutes(app, db, { mailer, appUrl }) {
   app.get('/api/email/status', (_req, res) => {
     const failed = db.prepare("SELECT COUNT(*) AS n FROM sends WHERE status = 'failed'").get().n;
     const last = failed
@@ -53,7 +53,7 @@ function registerEmailRoutes(app, db, { mailer }) {
     }
     if (!isEmail(to)) return res.status(400).json({ error: 'bad_recipient', message: 'Type an email address to send the test to.' });
     try {
-      await mailer.send({ to, ...testEmail({ businessName: (readSettings(db).business || {}).name }) });
+      await mailer.send({ to, ...testEmail({ business: readSettings(db).business || {}, appUrl }) });
       return res.json({ ok: true, to });
     } catch (err) {
       if (err.code === 'bad_recipient') return res.status(400).json({ error: err.code, message: err.message });

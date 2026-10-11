@@ -400,7 +400,8 @@ async function buildMail(db, row, ctx) {
       projectId: doc.project ? doc.project.id : null,
       mail: documentEmail({
         kind: doc.kind,
-        businessName: business.name,
+        business,
+        appUrl,
         upid: doc.upid,
         projectName: doc.projectName,
         number: doc.number,
@@ -437,6 +438,8 @@ async function buildMail(db, row, ctx) {
         invoiceProblem: detail.invoiceProblem,
         rebook: detail.rebook,
         link: `${appUrl}#/projects/${sigRow.project_id}`,
+        business,
+        appUrl,
       }),
     };
   }
@@ -446,7 +449,8 @@ async function buildMail(db, row, ctx) {
     projectId: sigRow.project_id,
     mail: {
       ...signedCopyEmail({
-        businessName: business.name,
+        business,
+        appUrl,
         // The person who signed, as they typed it (C12): they may not be the contact on file.
         contactName: sigRow.full_name,
         upid: doc.upid,

@@ -137,7 +137,8 @@ function registerRecoveryRoutes(app, db, { mailer, appUrl }) {
       username: account.username,
       link: `${appUrl}#/reset/${token}`,
       minutes: RESET_MINUTES,
-      businessName: (settings.business || {}).name,
+      business: settings.business || {},
+      appUrl,
     });
     const sending = mailer.send({ to: account.email, ...mail })
       .then(() => console.log('[password] reset link sent'))

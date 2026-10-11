@@ -16,7 +16,9 @@ process.env.DATA_DIR = TMP;
 process.env.NODE_ENV = 'test';
 
 const { openDatabase, nowIso } = require('../src/db');
-const { createMailer, documentEmail, ownerSignedEmail, signedCopyEmail, isEmail } = require('../src/mail');
+const {
+  createMailer, documentEmail, ownerSignedEmail, signedCopyEmail, callSheetEmail, testEmail, passwordResetEmail, isEmail, logoUrlOf,
+} = require('../src/mail');
 const sends = require('../src/sends');
 
 let db;
@@ -156,6 +158,94 @@ test('templates: the owner’s notice links to the project, and says when the in
   assert.match(signedCopyEmail({ businessName: 'LSC', contactName: '', upid: 'AUD-B', projectName: 'Harbour' }).text, /Thanks for accepting the quote for Harbour\./);
 });
 
+// ── The shell (ui-clarity task 16) ──────────────────────────────────────────
+
+const APP = 'https://lsc.example/billing/';
+const FULL = { name: 'LSC Creative', abn: '12345678901', email: 'hello@lsccreative.studio', phone: '0400 123 456' };
+const buttonHref = (html) => (html.match(/<a href="([^"]+)" style="display:block;padding:14px/) || [])[1];
+
+/* Every template, with its button's link (null: it has none) and whether it
+   goes to a client (crew count: they're outside the business). */
+function everyTemplate(business = FULL, appUrl = APP) {
+  const b = { business, appUrl };
+  return {
+    quote: [documentEmail({ ...b, kind: 'estimate', upid: 'AUD-B', projectName: 'Harbour', message: 'Hi', link: `${APP}c/#e/q` }), `${APP}c/#e/q`, true],
+    invoice: [documentEmail({ ...b, kind: 'deposit', number: 'INV-1', projectName: 'Harbour', message: '', link: `${APP}c/#i/d` }), `${APP}c/#i/d`, true],
+    update: [documentEmail({ ...b, kind: 'final', update: true, number: 'INV-2', projectName: 'Harbour', message: '', link: `${APP}c/#i/u` }), `${APP}c/#i/u`, true],
+    signedCopy: [signedCopyEmail({ ...b, contactName: 'Priya', upid: 'AUD-B', projectName: 'Harbour' }), null, true],
+    callSheet: [callSheetEmail({ ...b, upid: 'AUD-B', projectName: 'Harbour', note: '', link: `${APP}c/#s/c`, dates: ['2026-11-03'] }), `${APP}c/#s/c`, true],
+    test: [testEmail(b), null, true],
+    ownerSigned: [ownerSignedEmail({ ...b, clientName: 'Saltwater Co.', signedBy: 'Priya', role: 'Director', upid: 'AUD-B', projectName: 'Harbour', link: `${APP}#/projects/prj_1` }), `${APP}#/projects/prj_1`, false],
+    reset: [passwordResetEmail({ ...b, username: 'lachlan', minutes: 30, link: `${APP}#/reset/tok` }), `${APP}#/reset/tok`, false],
+  };
+}
+
+test('shell: every template carries the logo by absolute address with its alt, the wordmark, and its own link on the button', () => {
+  for (const [name, [m, link]] of Object.entries(everyTemplate())) {
+    assert.match(m.html, /<img src="https:\/\/lsc\.example\/billing\/email\/logo\.png" width="96" height="56" alt="LSC Creative"/, name);
+    assert.match(m.html, /LSC <span style="color:#C0603C">Creative\.<\/span>/, `${name}: the wordmark, which says who sent it with images off`);
+    assert.match(m.html, /@font-face\{font-family:'LSC Delight';src:url\('https:\/\/lsc\.example\/billing\/fonts\/Delight-700\.woff2'\)/, name);
+    if (link) {
+      assert.equal(buttonHref(m.html), link, `${name}: the button`);
+      assert.ok(m.html.includes(`>${link}</a></span></p>`), `${name}: the address printed under the button`);
+    } else {
+      assert.equal(buttonHref(m.html), undefined, `${name} has no button`);
+    }
+    assert.doesNotMatch(m.html, /<style>[^<]*(?:body|td|p)\{/, `${name}: the layout is inline; <style> holds only the fonts`);
+  }
+});
+
+test('shell: with no APP_URL there is no logo or fonts, and the wordmark still says who it is from', () => {
+  assert.equal(logoUrlOf('https://lsc.example/billing'), 'https://lsc.example/billing/email/logo.png');
+  assert.equal(logoUrlOf('http://localhost:5173/'), 'http://localhost:5173/email/logo.png');
+  for (const bad of ['', '/', 'lsc.example/billing', 'javascript:alert(1)', undefined]) assert.equal(logoUrlOf(bad), '', String(bad));
+  for (const [name, [m]] of Object.entries(everyTemplate(FULL, ''))) {
+    assert.doesNotMatch(m.html, /<img|@font-face/, name);
+    assert.match(m.html, /LSC <span[^>]*>Creative\.<\/span>/, name);
+  }
+});
+
+test('shell: the client footer shows only the business details that are set; owner notices go without it', () => {
+  const full = everyTemplate().quote[0].html;
+  assert.match(full, /LSC Creative<\/span>&nbsp;&middot; <span[^>]*>ABN 12 345 678 901<\/span>/);
+  assert.match(full, /href="mailto:hello@lsccreative\.studio"/);
+  assert.match(full, /href="tel:0400123456"[^>]*>0400 123 456</);
+  assert.match(full, /href="https:\/\/lsccreative\.studio"[^>]*>lsccreative\.studio</);
+
+  const bare = everyTemplate({ name: '', abn: '', email: '', phone: '' }).quote[0].html;
+  assert.doesNotMatch(bare, /ABN|mailto:|tel:/);
+  assert.match(bare, /LSC Creative<\/span>&nbsp;&middot; <span[^>]*><a href="https:\/\/lsccreative\.studio"/, 'the name falls back, the site is always there');
+
+  const phoneOnly = everyTemplate({ name: 'Saltwater <Films>', phone: '02 9000 0000' }).invoice[0].html;
+  assert.doesNotMatch(phoneOnly, /ABN|mailto:/);
+  assert.match(phoneOnly, /Saltwater &lt;Films&gt;<\/span>&nbsp;&middot; <span[^>]*><a href="tel:0290000000"/);
+
+  for (const [name, [m, , client]] of Object.entries(everyTemplate())) {
+    if (client) assert.match(m.html, /ABN 12 345 678 901/, `${name} has the client footer`);
+    else {
+      assert.doesNotMatch(m.html, /ABN|mailto:|lsccreative\.studio/, `${name} is the owner’s: no client footer`);
+      assert.match(m.html, /LSC Creative billing app/, name);
+    }
+  }
+});
+
+test('shell: nothing owner-only reaches a client email', () => {
+  for (const [name, [m, , client]] of Object.entries(everyTemplate())) {
+    if (!client || name === 'test') continue;
+    const all = m.subject + m.text + m.html;
+    assert.doesNotMatch(all, /#\/projects|#\/reset|billing app|Open the project|Create invoices|floor|take-home|set-aside|Cost Breakdown/i, name);
+    assert.doesNotMatch(all, /\bestimate\b/i, `${name}: a client is sent a quote, never an estimate (D103)`);
+  }
+});
+
+test('shell: the inbox preview is the card’s first words, hidden, and the plain text is unchanged', () => {
+  const m = documentEmail({ business: FULL, appUrl: APP, kind: 'estimate', upid: 'AUD-B', projectName: 'Harbour', message: 'Hi Priya,\nHere it is & more.', link: 'https://x/c/#e/abc' });
+  assert.match(m.html, /<div style="display:none;max-height:0;overflow:hidden;mso-hide:all">Hi Priya, Here it is &amp; more\.&nbsp;&zwnj;/);
+  assert.equal(m.text, 'Hi Priya,\nHere it is & more.\n\nView the quote: https://x/c/#e/abc\n\nLSC Creative');
+  const long = documentEmail({ business: FULL, kind: 'estimate', message: `${'word '.repeat(40)}& tail`, link: 'l' });
+  assert.match(long.html, /mso-hide:all">(?:word ){27}word…&nbsp;/, 'cut at a word, never mid-entity');
+});
+
 // ── The queue ───────────────────────────────────────────────────────────────
 
 test('queue: a due send goes out once, with the client’s link; a future one waits for its time', async () => {
@@ -169,6 +259,8 @@ test('queue: a due send goes out once, with the client’s link; a future one wa
   assert.equal(t.sent[0].to, 'priya@salt.example');
   assert.match(t.sent[0].text, new RegExp(`https://pages\\.example/app/c/#e/${p.token}`));
   assert.match(t.sent[0].subject, /^Quote MAIL-\d+: Harbour \d+ · LSC Creative$|^Quote MAIL-\d+: Harbour \d+ ·/);
+  // The shell's logo comes from APP_URL, the Pages base (task 16).
+  assert.match(t.sent[0].html, /<img src="https:\/\/pages\.example\/app\/email\/logo\.png"/);
   const row = sends.getSend(db, now.id);
   assert.deepEqual([row.status, row.sent_at, row.late, row.error], ['sent', iso(T0), 0, null]);
   assert.equal(sends.getSend(db, later.id).status, 'scheduled');

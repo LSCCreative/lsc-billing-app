@@ -137,17 +137,19 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     `.claude/worktrees/ui-clarity` (after a fast-forward to `main`, so the branch is v16 now), with
     its own data `/tmp/lsc-billing-scratch-uic` and launch.json's `api-uic` (:8081) + `web-uic`
     (:5174). What failed, what passed and the VoiceOver list: "Decisions made in task 14".
-- **Next: wave 1** (tasks 8 + 15 as one deploy, *Sonnet/medium*, deploy). Ask the user first, and
-  the agreement header wording (task 4, below) needs their OK. The branch already carries `main`
-  (v16), so the server it ships is v16. Then task 16 (Opus/high, **Frontend task**). Build and
-  verify against local scratch only; commit on `ui-clarity` in its worktree, don't push.
+  - [x] Wave 1 (tasks 8, 15): deployed 2026-10-12, Pages only, `main` `eda110d`.
+  - [~] Task 16, the branded email shell: **built 2026-10-12, waiting on the user's approval of the
+    look** (screenshots `screenshots/task16-*`, local). See "Decisions made in task 16".
+- **Next: the user approves the email look** (or asks for changes), then **wave 2** = task 17
+  (*Sonnet/medium*, deploy; **Pages before NAS**), then task 18 (Opus/high, **Frontend task**).
+  Commit on `ui-clarity` in its worktree; merge `main` in first if it has moved.
 
 ## Waiting on the user
 
-- **Task 4's header wording** (below): to read and approve, or reword, before task 8 deploys it.
+- **Task 16's email look:** approve or ask for changes. Blocks wave 2.
 
-The logo is in `Visual Design/CS-Felice-Mono-Monospaced-Font/` (`LogoDark_ No Text.png`
-for light grounds, `Logo Light_ No Text.png` for dark; 2000×2000, trim the margin) for task 16.
+The logo master is `Visual Design/CS-Felice-Mono-Monospaced-Font/LogoDark_ No Text.png`
+(`Logo Light_ No Text.png` is for dark grounds); task 16 trimmed it into `web/email/logo.png`.
 Metro Sans's licence (`Visual Design/Metro-Sans---Full-Family/Metro Sans License.pdf`) is free:
 commercial use, web embedding and redistribution are all allowed, so it is live in `web/fonts/`.
 
@@ -160,6 +162,38 @@ commercial use, web embedding and redistribution are all allowed, so it is live 
 - Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
   no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
   defaults like "New Service" untouched).
+
+## Decisions made in task 16 (tell the user)
+
+- **The look is the client page's:** paper, the logo (96×56) beside "LSC **Creative.**" over the
+  3px terracotta rule, a white card (heading; project · UPID line in mono; message), a full-width
+  `#8C4832` button with white text (6.8:1), the address printed under it, and a mono footer.
+- **Fonts:** the emails load Delight and CS Felice Mono from Pages under their own names
+  ('LSC Delight', 'LSC Felice Mono'), in a `<head>` `<style>` that holds only `@font-face`.
+  Everything else is inline. Apple Mail shows the brand fonts; Gmail and Outlook drop them, and
+  Delight (a sans) falls back to Helvetica/Arial, not tokens.css's Georgia. The own names matter:
+  this Mac has CS Felice Mono's Italic installed and Chrome picked it for the plain name. Outlook on
+  Windows is told Arial outright, since it falls to Times otherwise.
+- **The logo PNG is flattened onto the paper colour** (not transparent), so a mail client's dark
+  mode can't put the black heads on black. `color-scheme: light only` asks clients to leave it light.
+- **The test email wears the client footer** (it is how the user checks what clients see). The
+  owner notices (signed, password reset) end with "LSC Creative billing app" instead.
+- **The call sheet email gets the client footer** (crew are outside the business).
+- Every email now has the project line under the heading (the owner's "signed" notice and the
+  signed copy gained one), and a hidden preview line (the card's first words), so the inbox no
+  longer previews "LSC Creative LSC Creative.". The plain-text versions are byte-for-byte unchanged.
+- Templates take `business` (settings.business) and `appUrl` (APP_URL) now; a bare `businessName`
+  still works. No APP_URL means no logo and no fonts, and the wordmark still says who it's from.
+- Footer: name · ABN (spaced as the ATO prints it) · email (mailto) · phone (tel) ·
+  lsccreative.studio; only what is set; each part holds together on a narrow screen.
+- `node server/scripts/preview-mail.js [dir] [appUrl]` writes every template as .html + .txt;
+  `dev-stub-mail.js` (api-uic, api-scratch-mail) now saves each email's HTML in
+  `<DATA_DIR>/stub-mail/` and prints the path.
+- **For wave 2:** Pages first, then check `…/email/logo.png` returns 200 and a font file returns
+  `access-control-allow-origin: *` (GitHub Pages sends it; a font without it falls back quietly).
+  The NAS's `APP_URL` must be the Pages base (it already is: the client links use it).
+- **Trap:** `preview_start` runs launch.json from the main checkout, so `api-uic`/`web-uic` served
+  `main`'s code, not this worktree's. Start them from the worktree by hand (same env as launch.json).
 
 ## Decisions made in task 14 (tell the user)
 

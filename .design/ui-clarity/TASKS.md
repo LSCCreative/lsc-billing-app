@@ -322,6 +322,9 @@ person looks at. State the tag out loud and pause for the user to switch before 
 ## D2: branded emails
 
 - [ ] **16. The branded email shell** (frontend — Opus/high) **Frontend**
+  - **Built** 2026-10-12, 711 server tests pass; **waiting on the user's approval of the look**
+    (screenshots `screenshots/task16-*` at 600 and 320, brand fonts and fallback, images off).
+    Decisions: HANDOVER "Decisions made in task 16".
   - **The logo:** `Visual Design/CS-Felice-Mono-Monospaced-Font/LogoDark_ No Text.png` (dark heads,
     for the paper background; `Logo Light_ No Text.png` is for dark grounds). Each is 2000×2000 with a
     wide empty margin, so trim it to the mark before scaling.

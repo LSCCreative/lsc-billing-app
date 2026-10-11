@@ -159,7 +159,7 @@ function createApp(db, opts = {}) {
   // pre-write snapshot so exporting doesn't rotate real recovery points out
   // of the 10 kept.
   registerPdfRoutes(app, db);
-  registerEmailRoutes(app, db, { mailer });
+  registerEmailRoutes(app, db, { mailer, appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl });
 
   app.use('/api', preWriteBackup(db, config.backupDir));
 

@@ -318,7 +318,8 @@ function registerEstimateRoutes(app, db, opts = {}) {
       }
 
       const mail = callSheetEmail({
-        businessName: (readSettings(db).business || {}).name,
+        business: readSettings(db).business || {},
+        appUrl: opts.appUrl,
         upid: row.upid,
         projectName: row.name,
         note,
