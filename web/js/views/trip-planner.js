@@ -158,9 +158,11 @@ const TripPlanner = (() => {
     return 'r' + h.toString(16).padStart(8, '0');
   }
 
-  /* "4.5 km" under 10 km, "42 km" above; a total to the tenth: "186.2 km". */
+  /* "4.5 km" under 10 km, "42 km" above. A trip's total is the km its line
+     bills, whole and rounded up (calc.js tripLineQty), on every surface that
+     sums a trip up: 186.2 km reads "187 km". */
   const legKm = (km) => (km < 10 ? Math.round(km * 10) / 10 : Math.round(km)).toLocaleString('en-AU') + ' km';
-  const totalKm = (km) => (Math.round(km * 10) / 10).toLocaleString('en-AU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' km';
+  const totalKm = (km) => LSCCalc.tripLineQty({ totals: { km } }, 'km').toLocaleString('en-AU') + ' km';
 
   /* "48 min", "1 h 05" (IA Naming: "h" and "min", never "Hour"). */
   function duration(minutes) {
@@ -845,7 +847,9 @@ const TripPlanner = (() => {
         if (c.role === 'return' || !isPlaced(c)) continue;
         const name = nameOf(cells, c);
         const isStart = c === start;
-        const face = pinEl(chipOf(cells, c) === 'Start' ? 'S' : chipOf(cells, c), (isStart ? 'is-start' : '') + (isStart && looped ? ' is-loop' : ''));
+        // A return is always the start's spot (days.js), so it has no pin of
+        // its own and S stands for both, as on the call sheet's static map.
+        const face = pinEl(chipOf(cells, c) === 'Start' ? 'S' : chipOf(cells, c), isStart ? 'is-start' : '');
         // eslint-disable-next-line no-await-in-loop
         const m = await LSCMaps.pin(map, { lat: c.lat, lng: c.lng }, face, {
           title: (isStart && looped ? 'Start and return' : name) + ': ' + c.address,
@@ -1673,7 +1677,7 @@ const TripPlanner = (() => {
     const routed = Array.isArray(trip.legs) && trip.legs.length > 0 && trip.totals;
     return {
       stops: trip.stops.filter((s) => s.role === 'stop').length,
-      km: routed ? Math.round(trip.totals.km).toLocaleString('en-AU') + ' km' : '',
+      km: routed ? totalKm(trip.totals.km) : '',
       time: routed ? duration(trip.totals.minutes) : '',
     };
   }

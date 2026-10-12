@@ -52,6 +52,7 @@ const crypto = require('crypto');
 const { nowIso } = require('./db');
 const google = require('./google');
 const { durationText } = require('./call-sheet');
+const { tripLineQty } = require('./calc');
 
 const { ZONE, shiftDate } = google;
 const PRIMARY = 'primary';
@@ -104,7 +105,8 @@ function tripSummary(trip) {
   if (!stops) return '';
   const parts = [plural(stops, 'stop', 'stops')];
   const totals = trip.totals || {};
-  if (Number(totals.km) > 0) parts.push(`${Math.round(totals.km)} km`);
+  // Km as the day's km line bills it (calc.js tripLineQty), as on every other surface.
+  if (Number(totals.km) > 0) parts.push(`${tripLineQty(trip, 'km')} km`);
   if (Number(totals.minutes) > 0) parts.push(`${durationText(totals.minutes)} driving`);
   return parts.join(' · ');
 }

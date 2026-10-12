@@ -356,22 +356,6 @@
   color: var(--color-text-on-accent);
   font: var(--font-weight-normal) var(--font-size-sm) / 1 var(--font-family-mono);
 }
-/* START with a return trip: RETURN shares its spot, so its pin says both. */
-.trip-pin.is-loop .trip-pin-face::after {
-  content: 'R';
-  position: absolute;
-  top: -8px;
-  right: -10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--color-text-on-accent);
-  border-radius: var(--radius-full);
-  background: var(--color-accent-primary-active);
-  font-size: 10px;
-}
 /* The pending pin: hollow until it's used. */
 .trip-pin.is-pending {
   cursor: pointer;

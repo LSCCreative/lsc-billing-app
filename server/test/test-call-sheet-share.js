@@ -23,8 +23,10 @@ process.env.CORS_ORIGINS = 'https://pages.example';
 const { openDatabase, nowIso } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
-const { PRICING_SHAPE } = require('../src/calc');
+const { PRICING_SHAPE, tripLineQty } = require('../src/calc');
 const { createMailer, callSheetEmail } = require('../src/mail');
+const { markup } = require('../src/call-sheet');
+const { buildCallSheetHtml } = require('../src/pdf');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const APP_URL = 'https://pages.example/lsc/';
@@ -150,20 +152,48 @@ test('the folder gives each estimate its call sheet facts: null with no trip, el
   f = await folder(startOnly.projectId);
   assert.equal(f.body.estimates[0].callSheet, null);
 
+  // Each day as its km line bills it (31, 82), added up: 113, not 111.7 rounded.
   const est = await create([day('fs_a', '2026-11-03', trip(30.4)), day('fs_b', '2026-11-04', trip(81.3)), day('fs_c', '2026-11-05')]);
   f = await folder(est.projectId);
-  assert.deepEqual(f.body.estimates[0].callSheet, { days: 2, km: 112, on: false, token: null });
+  assert.deepEqual(f.body.estimates[0].callSheet, { days: 2, km: 113, on: false, token: null });
 
   const on = await link(est.id, true);
   f = await folder(est.projectId);
-  assert.deepEqual(f.body.estimates[0].callSheet, { days: 2, km: 112, on: true, token: on.body.token });
+  assert.deepEqual(f.body.estimates[0].callSheet, { days: 2, km: 113, on: true, token: on.body.token });
 
   // Off keeps the token, and on again gives the same one.
   await link(est.id, false);
   f = await folder(est.projectId);
-  assert.deepEqual(f.body.estimates[0].callSheet, { days: 2, km: 112, on: false, token: on.body.token });
+  assert.deepEqual(f.body.estimates[0].callSheet, { days: 2, km: 113, on: false, token: on.body.token });
   const again = await link(est.id, true);
   assert.equal(again.body.token, on.body.token);
+});
+
+test('one km rule on every surface: each day as its line bills it, the sheet\'s total their sum (task 17 should-fix)', async () => {
+  // The design review's days: 108.778 km and 32.717 km once said 109 and 33
+  // on the days but 141 on the sheet (141.495 rounded).
+  const a = trip(108.778);
+  const b = trip(32.717);
+  assert.deepEqual([tripLineQty(a, 'km'), tripLineQty(b, 'km')], [109, 33], 'what the km lines bill');
+  const est = await create([day('kr_a', '2026-11-03', a), day('kr_b', '2026-11-04', b)]);
+  const f = await folder(est.projectId);
+  assert.equal(f.body.estimates[0].callSheet.km, 142, 'the Project page\'s Call sheet row');
+
+  const owner = await api(`/api/estimates/${est.id}/call-sheet`);
+  const cs = owner.body.callSheet;
+  assert.deepEqual(cs.days.map((d) => d.totals.km), [109, 33], 'each day on the sheet');
+  assert.deepEqual(cs.summary, { days: 2, km: 142 });
+  const on = await link(est.id, true);
+  const pub = await api(`/public/call-sheets/${on.body.token}`);
+  assert.deepEqual(pub.body.callSheet.summary, { days: 2, km: 142 }, 'the public page');
+
+  // The page and the PDF draw those figures as they are.
+  for (const html of [markup(cs), buildCallSheetHtml(cs)]) {
+    assert.match(html, /2 days · 142 km/);
+    assert.match(html, /\b109 km\b/);
+    assert.match(html, /\b33 km\b/);
+    assert.doesNotMatch(html, /141 km/);
+  }
 });
 
 /* ── The email route ──────────────────────────────────────────────────────── */

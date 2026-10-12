@@ -6,7 +6,7 @@ const { readDays } = require('../days');
 const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
 const { readSettings } = require('../ratecard');
-const { depositAmount, finalInvoiceTotals, singleInvoiceTotals } = require('../calc');
+const { depositAmount, finalInvoiceTotals, singleInvoiceTotals, tripLineQty } = require('../calc');
 const { amountDue } = require('../invoices');
 const { docSettings } = require('../documents');
 const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays, callSheetDays } = require('../public');
@@ -143,18 +143,14 @@ function summarize(p, own, bills, ctx) {
  */
 /* The call sheet row's facts (trip-planner task 11): null until a day has a
    trip, else how many days and km it covers (the same figures as the sheet's
-   own summary, public.js callSheetView) and its link. Owner-only, like
-   `publicToken`. */
+   own summary, public.js callSheetView: each day's billed km, added up) and
+   its link. Owner-only, like `publicToken`. */
 function callSheetState(row, days) {
   const trips = callSheetDays(days);
   if (!trips.length) return null;
-  const km = trips.reduce((sum, d) => {
-    const n = d.trip.totals && d.trip.totals.km;
-    return sum + (typeof n === 'number' && Number.isFinite(n) ? n : 0);
-  }, 0);
   return {
     days: trips.length,
-    km: Math.round(km),
+    km: trips.reduce((sum, d) => sum + tripLineQty(d.trip, 'km'), 0),
     on: row.call_sheet_on === 1,
     token: row.call_sheet_token || null,
   };

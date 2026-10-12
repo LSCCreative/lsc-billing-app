@@ -269,6 +269,8 @@ test('tripSummary: stops, km and driving time, nothing without a destination', (
   assert.equal(tripSummary(trip()), '1 stop · 40 km · 1 h 2 min driving');
   assert.equal(tripSummary({ stops: [{ role: 'start' }] }), '');
   assert.equal(tripSummary(null), '');
+  const odd = { ...trip(), legs: [{ km: 20, minutes: 31 }, { km: 12.3, minutes: 31 }], totals: { km: 32.3, minutes: 62 } };
+  assert.match(tripSummary(odd), / 33 km /, 'km as the day\'s line bills it: 32.3 → 33, as on every other surface');
 });
 
 test('a pencilled day is written once, with the booking’s detail and no prices (G5)', async () => {

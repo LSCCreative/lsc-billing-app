@@ -263,10 +263,10 @@ test('the owner\'s call sheet: days in date order with Date TBC last, a day with
   assert.equal(cs.kind, 'call-sheet');
   assert.deepEqual([cs.upid, cs.name, cs.client], [est.upid, est.name, { businessName: 'Saltwater Co.' }]);
   assert.deepEqual(cs.business, { name: 'LSC Creative', email: 'hello@lsc.example', phone: '0412 000 000' });
-  assert.deepEqual(cs.summary, { days: 3, km: 90 });
+  assert.deepEqual(cs.summary, { days: 3, km: 93 }, 'each day\'s billed 31 km, added up (not 90.3 rounded)');
 
   const d = cs.days[0];
-  assert.deepEqual([d.startTime, d.routed, d.totals], ['07:00', true, { km: 30.1, minutes: 72 }]);
+  assert.deepEqual([d.startTime, d.routed, d.totals], ['07:00', true, { km: 31, minutes: 72 }], 'km as the line bills it: 30.1 → 31');
   assert.deepEqual(d.legs.map((l) => [l.km, l.minutes, l.departAt, l.arriveAt]),
     [[14.2, 31, '07:00', '07:31'], [9.8, 24, '09:01', '09:25'], [6.1, 17, '09:55', '10:12']]);
   assert.deepEqual(d.stops.map((s) => [s.role, s.n, s.mapLabel, s.arriveAt, s.leaveAt]), [

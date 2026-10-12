@@ -20,7 +20,7 @@
 
 const crypto = require('crypto');
 const { newId } = require('./db');
-const { gstTreatment } = require('./calc');
+const { gstTreatment, tripLineQty } = require('./calc');
 const { loadEstimate } = require('./estimate');
 const { readDays } = require('./days');
 const { readRentals } = require('./rentals');
@@ -699,7 +699,9 @@ function callSheetDay(day, mapUri) {
     // Whether the legs are the ones for these stops. False after a re-route
     // that failed: the page then shows the stops without drive times.
     routed: legsFit && legs.length > 0,
-    totals: { km: callSheetNumber(totals.km), minutes: callSheetNumber(totals.minutes) },
+    // Km as the day's km line bills it, whole and rounded up (calc.js
+    // tripLineQty), so a day, the sheet's total and the line agree.
+    totals: { km: tripLineQty(trip, 'km'), minutes: callSheetNumber(totals.minutes) },
     legs,
     stops,
     map: typeof mapUri === 'string' ? mapUri : null,
@@ -724,7 +726,8 @@ function callSheetView(estimate, business, maps, updatedAt) {
     client: { businessName: str(estimate.client && estimate.client.businessName) },
     business: { name: str(b.name), email: str(b.email), phone: str(b.phone) },
     updatedAt: str(updatedAt),
-    summary: { days: days.length, km: Math.round(days.reduce((sum, d) => sum + d.totals.km, 0)) },
+    // The days' own figures added up: 109 km + 33 km reads 142 km.
+    summary: { days: days.length, km: days.reduce((sum, d) => sum + d.totals.km, 0) },
     days,
   };
 }
