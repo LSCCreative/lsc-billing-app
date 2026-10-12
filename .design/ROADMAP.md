@@ -13,13 +13,13 @@ HANDOVER/TASKS, never here.
 | | Code | State |
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `4c7516b` (Pages and NAS both; wave 2 2026-10-12), schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
-| **ui-clarity** | branch `ui-clarity` = `main` `4c7516b` (worktree) | Tasks 1–17 **live**; task 18 (design review) done on `ui-clarity`, not deployed. Next: **wave 4** (Pages only, ask first), then the track closes. |
+| **ui-clarity** | branch `ui-clarity` = `main` `db1a8ce` (worktree) | Tasks 1–18 **live** (wave 4 deployed 2026-10-12, Pages only). Track closed; open should-fixes are the user's calls (§5). |
 | **trip-planner** | deployed as `main` `70845d8`; the `trip-planner` branch is deleted (2026-10-12) | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
 main = trip-planner (live, v16, 70845d8), which contains ui-clarity's 850f904
-ui-clarity (worktree) ── main 4c7516b + task 18; next wave 4 (Pages only)
+ui-clarity (worktree) ── equals main db1a8ce (wave 4 deployed)
 ```
 
 `main` gets each line only when it deploys. `main` now holds everything through trip-planner.
@@ -28,7 +28,7 @@ ui-clarity (worktree) ── main 4c7516b + task 18; next wave 4 (Pages only)
 
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
-| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | Task 18 done; **wave 4** *(Sonnet/medium, Pages only)*, then closes |
+| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **Closed.** Wave 4 deployed 2026-10-12 |
 | **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`main` is checked out here; no feature branch now) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
@@ -90,7 +90,7 @@ files both lines touched.
 5. ~~**Task 18: design review**~~ done 2026-10-12 (`ui-clarity/DESIGN_REVIEW.md`): must-fix items
    fixed (the editor's table money no longer terracotta, now mono; the Invoice's repeated terracotta),
    then every should-fix and could-improve at the user's "fix all". Web files only (incl. `web/c/`).
-6. **Wave 4, deploy task 18** *(Sonnet/medium)*: **Pages only** (no server change): fetch, merge
+6. ~~**Wave 4, deploy task 18**~~ done 2026-10-12, `main` `db1a8ce` *(Sonnet/medium)*: **Pages only** (no server change): fetch, merge
    `main` in if it moved, fast-forward `main` to `ui-clarity`, push. Ask first. ui-clarity then closes;
    its open should-fixes are the user's calls (§5).
 

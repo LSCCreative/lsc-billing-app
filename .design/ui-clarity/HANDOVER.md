@@ -143,14 +143,14 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
   (no migration, still v16), `docker compose up -d --build`, healthy, new `mail.js` in the container. Rollback:
   NAS `/volume4/lsc-billing/code-pre-wave2.tgz` (code) and `manual-backup/pre-wave2-20261012-110204.db`.
 - [x] Task 18, the design review: [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md). See "Decisions made in task 18".
-- **Next: wave 4** (Sonnet/medium, deploy): **Pages only** (web files, no server change). `git fetch`, merge
+- [x] Wave 4 (task 18): deployed 2026-10-12, Pages only, `main` `db1a8ce`; server tests 711/711; live `c/c.css` and `css/estimates.css` match the repo. The track is closed.
+- ~~**Next: wave 4**~~ (Sonnet/medium, deploy): **Pages only** (web files, no server change). `git fetch`, merge
   `main` in if it moved, fast-forward `main` to `ui-clarity`, push; check the live editor's money column
   on one real estimate. **Ask the user first.** Then the track closes.
 
 ## Waiting on the user
 
 - After wave 2: check the test email in Gmail on phone and desktop.
-- The OK for wave 4 (task 18's fixes, Pages only).
 - Task 18's open calls: **all fixed** at the user's "fix all" (round 2 in `DESIGN_REVIEW.md`).
 
 ## Decisions made in task 18 (tell the user)
