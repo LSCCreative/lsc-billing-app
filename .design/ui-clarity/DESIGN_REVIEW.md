@@ -102,7 +102,7 @@ too, and are fixed.
      task 10 intended.
    - See `before-invoice-final-draft-1280.png` against `review-invoice-final-draft-1280.png`.
 
-2. **Headline figures in terracotta: one decision for all of them** (open, **your call**).
+2. **Headline figures in terracotta: one decision for all of them** (fixed in round 2: white).
    - These are figures, not buttons, so the one-button rule holds. But together they're the
      largest terracotta on each screen:
      - the Project page's Total inc GST;
@@ -113,7 +113,7 @@ too, and are fixed.
      make all of them primary white so terracotta means only "press this". The review leaves them
      as built.
 
-3. **The editor's Summary panel is boxes inside a panel** (open, **your call**).
+3. **The editor's Summary panel is boxes inside a panel** (fixed in round 2).
    - Inside the Summary panel sit:
      - a bordered Surcharges box;
      - two bordered tile grids;
@@ -128,7 +128,7 @@ too, and are fixed.
      - Take the tint and border off the Total tile; its size already makes it the headline.
    - See the bottom of `review-editor-NBK014-1280.png`.
 
-4. **Move to ▾ on every line looks like an old button.**
+4. **Move to ▾ on every line looks like an old button** (fixed in round 2).
    - Each line's Move to is a boxed button with a typed "▾", unlike the chevron caret every other
      menu button uses (`menu.js`'s `.menu-caret`). On a phone it is a 44px boxed block under every
      line: four per day card.
@@ -146,28 +146,28 @@ too, and are fixed.
 
 ## Could Improve
 
-1. **Category tags are ringed; status chips are filled.**
+1. **Category tags are ringed; status chips are filled** (fixed in round 2).
    - "ADDITIONAL WORK", "EXPENSES", "LABOUR" and "FROM TRIP" are outlined mono boxes; status chips
      (CONFIRMED, PAID) are filled. They're the last outlined caps on the reworked screens.
    - _Suggestion:_ the inset fill with no ring, or plain mono secondary text with no box at all.
 
-2. **Agreement header chips are all terracotta.**
+2. **Agreement header chips are all terracotta** (fixed in round 2).
    - The Header panel shows 24 `{field}` chips in terracotta, plus 13 terracotta clause numbers.
      They mark fields as the brief asked, but they are the busiest terracotta in the app.
    - _Suggestion:_ chips in the primary or secondary text on the inset fill. The brace syntax
      already says "field".
 
-3. **The sign dialog on a phone reads through a small window.**
+3. **The sign dialog on a phone reads through a small window** (fixed in round 2).
    - At 375 the agreement box is about 300px tall inside a dialog that also scrolls: 13 clauses
      read through a slot.
    - _Suggestion:_ on a phone, let the text take the dialog's height and the form follow it, so
      the page scrolls as one. The client pages are otherwise out of this track's scope.
    - See `review-sign-dialog-375.png`.
 
-4. **The Summary's first tile row wraps at 1280.** "CLIENT PRICE (EX GST)" breaks onto two lines in
+4. **The Summary's first tile row wraps at 1280** (fixed in round 2). "CLIENT PRICE (EX GST)" breaks onto two lines in
    its fifth of the row. A shorter label ("Client ex GST") would keep the row even.
 
-5. **The landing focus ring.** Opening the editor puts focus on the closed Job details head, and the
+5. **The landing focus ring** (no change: not seen after a real click). Opening the editor puts focus on the closed Job details head, and the
    headless shots show its ring. After a real click, Chrome doesn't draw `:focus-visible` for
    programmatic focus, so a person shouldn't see it. Worth a glance on the iPhone.
 
@@ -216,3 +216,53 @@ too, and are fixed.
   - Every money cell is mono.
   - No sideways scroll at 1280, 800 or 375; one primary per view.
   - `npm test`: 711 pass.
+
+## Round 2: "fix all" (the user, 12 October 2026)
+
+The user asked for every open item to be fixed. Where an item was a choice (should-fix 2), the
+brief's direction was taken: terracotta marks only the thing to press.
+
+- **Headline figures are white.** These read in the primary text colour now:
+  - the Projects cards' totals (task 13's open question, settled by this);
+  - the Project page's Total inc GST;
+  - the Invoice's Balance due;
+  - the editor Summary's Total (inc GST);
+  - the read-only estimate's Total row, which also lost its terracotta tint for the inset fill.
+  - **Files:** `app.css` `.card-gross`, `.sum-value.accent`, `.net-row td`; `a11y.css`;
+    `project-folder.css` `.pf-total`; `invoice.css` `.inv-due-figure`.
+  - **Terracotta left in the app:** the primary buttons, nav's current underline, eyebrow UPIDs
+    (`--eyebrow-color`), today's date in the calendar, clause numbers and sub-clause letters (marks).
+- **The Summary panel is flat.**
+  - The bars, the Surcharges box and the Minimum Job Price line sit on the inset fill with the
+    panel radius and no border; their cells are divided by hairlines.
+  - The Total tile's inline tint and border are gone (`sum-total` class, no style).
+  - D88's order and sizes are unchanged. All of this is scoped to `#ed-summary` in
+    `estimates.css`.
+  - "Client Price (ex GST)" is now "Client price ex GST", which fits its tile at 1280.
+- **Move to and Add to a day are quiet menu buttons.**
+  - They have no box, use secondary text and the shared chevron (`.menu-caret`, which turns up
+    while open), and fill on hover.
+  - Add to a day moved from `btn-ghost` to `btn-quiet`.
+  - The phone keeps Move to at 44px, now aligned with the line's name.
+  - Checked: both menus open at 1280 and 375, as a sheet on the phone, and Esc returns focus to
+    Move to (`review-move-to-open-*`).
+- **Category tags** ("Additional work", "Expenses", "Labour", "FROM TRIP") are filled on the inset,
+  like a chip, with no ring (`app.css` `.bb-label-tag`, `trip.css` `.from-trip-chip`).
+- **The agreement header** has its field chips in the primary text with no ring, and the Intro label
+  in secondary (`settings.css`).
+- **The sign dialog on a phone:**
+  - The short-screen rule (the agreement runs full length and the dialog scrolls once) now also
+    applies below 560px wide, where the dialog is the whole screen (`c.css`).
+  - `c.js` resets the dialog's own scroll wherever it reset the text's (a new or changed agreement
+    opens at the top).
+  - Presentation only: the text, slots and hash are untouched.
+- **No faked bold in the app.** CS Felice Mono has one weight, so `<b>` subtotals in mono were
+  smeared by synthetic bold. `body { font-synthesis-weight: none }` in `app.css` stops that.
+  Delight and Metro Sans have real bolds, so nothing else changes. The client pages are untouched.
+- **Checks:**
+  - The probe's terracotta text: editor = the calendar's today mark; Project page and Invoice none;
+    agreement = the clause numbers.
+  - One primary per view and no sideways scroll at 1280, 800 and 375, on 24 states including the
+    Projects list.
+  - axe is unchanged (the editor's weekday headers, minor).
+  - 711 tests pass.

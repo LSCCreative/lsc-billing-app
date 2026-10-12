@@ -88,7 +88,7 @@
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-2xl);
   line-height: var(--line-height-tight);
-  color: var(--color-accent-text);
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -424,8 +424,7 @@
   text-transform: uppercase;
   color: var(--color-text-secondary);
 }
-/* The header's Balance due is the screen's terracotta figure; the panel's
-   repeat of it reads in the primary text (task 18). */
+/* Headline figures read in the primary text, not terracotta (task 18). */
 .inv-row.is-due dd {
   font-family: var(--font-family-display);
   font-weight: var(--font-weight-bold);

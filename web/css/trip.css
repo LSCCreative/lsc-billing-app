@@ -939,7 +939,7 @@
 .from-trip-chip {
   padding: var(--chip-pad);
   border-radius: var(--chip-radius);
-  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+  background: var(--color-bg-inset); /* filled like a chip, no ring (task 18) */
   color: var(--color-text-secondary);
   font: var(--chip-font);
   letter-spacing: var(--letter-spacing-wide);

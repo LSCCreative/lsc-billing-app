@@ -9,19 +9,14 @@
 }
 
 /* Terracotta as text reads --accent-text (#E08B68, 6.7:1 on a panel), never
-   --accent, which is a fill (white on it 4.98:1). */
-.card-gross,
-.sum-value.accent,
-.est-upid,
-.net-row td {
+   --accent, which is a fill (white on it 4.98:1). Headline figures (a card's
+   total, Total (inc GST), Balance due) are not terracotta: it marks the one
+   action (U17, task 18). */
+.est-upid {
   color: var(--accent-text);
 }
-/* The detail totals card's Total (inc GST) row sits on an accent tint: the
-   label reads --text (the tint marks the row) and the figure is the editor's
-   headline size. */
-.net-row td:first-child {
-  color: var(--text);
-}
+/* The detail totals card's Total (inc GST) row sits on the inset fill; the
+   figure is the editor's headline size. */
 .net-row td.tv {
   font-family: var(--font-family-display);
   font-size: 19px;

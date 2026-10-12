@@ -831,6 +831,7 @@
       showAgreement();
       field('sg-agree').checked = false;
       field('sg-text').scrollTop = 0;
+      dlg.scrollTop = 0; // a phone scrolls the dialog itself (task 18)
       showMsg('');
     }
     const faq = field('sg-faq');
@@ -904,6 +905,7 @@
       showAgreement();
       field('sg-agree').checked = false;
       field('sg-text').scrollTop = 0;
+      dlg.scrollTop = 0; // a phone scrolls the dialog itself (task 18)
       readiness();
       showMsg(body.message || 'The agreement has just been updated. Read it through again before you sign.');
       field('sg-text').focus();

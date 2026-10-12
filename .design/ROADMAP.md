@@ -88,8 +88,8 @@ files both lines touched.
 4. ~~**Wave 2, deploy D2**~~ done 2026-10-12 *(Sonnet/medium)*: **Pages before NAS** (the logo must be live first), then
    a test email the user checks in Gmail on phone and desktop.
 5. ~~**Task 18: design review**~~ done 2026-10-12 (`ui-clarity/DESIGN_REVIEW.md`): must-fix items
-   fixed (the editor's table money no longer terracotta, now mono; the Invoice's repeated terracotta).
-   Web files only.
+   fixed (the editor's table money no longer terracotta, now mono; the Invoice's repeated terracotta),
+   then every should-fix and could-improve at the user's "fix all". Web files only (incl. `web/c/`).
 6. **Wave 4, deploy task 18** *(Sonnet/medium)*: **Pages only** (no server change): fetch, merge
    `main` in if it moved, fast-forward `main` to `ui-clarity`, push. Ask first. ui-clarity then closes;
    its open should-fixes are the user's calls (§5).
@@ -145,11 +145,8 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 - [ ] **Feature 4, "day-based media tree":** what it is and where it stands (§2).
 - [ ] **ui-clarity task 4's agreement header wording:** live since wave 3; approve or reword.
 - [x] **Wave 1 timing:** done 2026-10-12, one Pages push.
-- [ ] **Terracotta headline figures** (ui-clarity task 13 and 18, decide together): the Projects cards' 11
-  totals, the Project page's Total, the Invoice's Balance due, the editor Summary's Total. Keep them
-  terracotta, or make them white so terracotta means only "press this" (`DESIGN_REVIEW.md` should-fix 2).
-- [ ] **The editor's Summary panel** (ui-clarity task 18, should-fix 3): flatten its bordered boxes and the
-  Total tile's terracotta tint, keeping production-booking D87/D88's order and sizes? Yes/no.
+- [x] **Terracotta headline figures and the Summary's boxes:** the user said "fix all" (2026-10-12): the
+  figures are white, the Summary is flat (ui-clarity task 18, round 2).
 - [x] **ui-clarity task 16:** email look approved 2026-10-12.
 - [ ] **estimate-accuracy:** `/grill-me` on its tasks 9, 10, 12–14 (each has an open decision).
 

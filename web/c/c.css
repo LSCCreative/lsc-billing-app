@@ -749,11 +749,12 @@ a:hover { color: var(--ink); }
 .sign-form .btn-primary[aria-busy="true"] { cursor: progress; background: var(--terra-dk); }
 .sign-hint { margin-top: 8px; font-size: 14px; color: var(--muted); min-height: 1.4em; }
 
-/* A short screen (a small phone, or any phone in landscape) has no room for
-   the agreement as a box of its own: it would shrink to a few lines that
-   scroll inside a form that scrolls too. There it runs at full length, and
-   the one scroll takes the client through it to the fields and Sign. */
-@media (max-height: 699px) {
+/* A phone, or any short screen, has no room for the agreement as a box of
+   its own: it would shrink to a few lines that scroll inside a form that
+   scrolls too. There it runs at full length, and the one scroll takes the
+   client through it to the fields and Sign (ui-clarity task 18 added the
+   phone's width; below 560 the dialog is the whole screen). */
+@media (max-width: 559px), (max-height: 699px) {
   .sign-form { height: auto; min-height: 100%; }
   .sign-text { flex: none; min-height: 0; overflow: visible; }
 }

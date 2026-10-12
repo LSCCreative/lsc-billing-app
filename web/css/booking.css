@@ -948,17 +948,34 @@
   color: var(--text);
   border-color: var(--border);
 }
+/* A quiet menu button, as Actions ▾ is (task 18): no box, the shared
+   chevron caret (menu.css). */
 .line-move {
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  color: var(--text);
-  font-family: var(--font-family-body);
-  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font: var(--font-weight-medium) var(--font-size-sm)/var(--line-height-snug) var(--font-family-body);
   padding: 2px 6px;
   cursor: pointer;
 }
-.line-move:hover {
-  border-color: var(--accent);
+.line-move:hover,
+.line-move[aria-expanded='true'] {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.line-move:hover .menu-caret,
+.line-move[aria-expanded='true'] .menu-caret,
+.onset-add:hover .menu-caret,
+.onset-add[aria-expanded='true'] .menu-caret {
+  color: currentColor;
+}
+.line-move[aria-expanded='true'] .menu-caret,
+.onset-add[aria-expanded='true'] .menu-caret {
+  transform: translateY(1px) rotate(-135deg);
 }
 .line-handle:focus-visible,
 .line-move:focus-visible {
@@ -973,8 +990,8 @@
   }
   .line-move {
     min-height: 44px;
-    padding: 4px 12px;
-    font-size: 13px;
+    padding: 4px 12px 4px 0;
+    font-size: var(--font-size-base);
   }
 }
 /* A touch screen at 768 and up with no mouse or trackpad (a tablet) can't

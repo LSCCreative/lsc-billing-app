@@ -151,12 +151,7 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
 
 - After wave 2: check the test email in Gmail on phone and desktop.
 - The OK for wave 4 (task 18's fixes, Pages only).
-- **Task 18's open calls** (`DESIGN_REVIEW.md`):
-  - Should-fix 2: headline figures in terracotta, decided together with task 13's Projects cards.
-  - Should-fix 3: flatten the editor Summary's boxes (production-booking D87/D88's layout).
-  - Should-fix 4: Move to ▾ restyled as a quiet menu button (no decision needed; a small frontend task
-    if wanted).
-  - Could-improves 1–5.
+- Task 18's open calls: **all fixed** at the user's "fix all" (round 2 in `DESIGN_REVIEW.md`).
 
 ## Decisions made in task 18 (tell the user)
 
@@ -171,8 +166,16 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
   in primary text, and "Less deposit …" in secondary.
 - Sentence case: "Add production service items", "Include overhead and markup in the calculation",
   and the phone's "Markup" (was "Mark-Up").
-- **Left as built for the user:** headline figures, the Summary's boxes (D87/D88), the ringed category
-  tags, the agreement header's terracotta chips, and the sign dialog's small reading window on a phone.
+- **Round 2 ("fix all", the user):**
+  - Headline figures are white everywhere (Projects cards, Project total, Balance due, the Summary's
+    Total, the estimate view's Total row); this settles task 13's Projects-cards question.
+  - The Summary is flat on the inset fill, in D88's order and sizes.
+  - Move to and Add to a day are quiet menu buttons with the shared chevron.
+  - Category tags and the agreement field chips are filled with no ring and no terracotta.
+  - The sign dialog runs full length on a phone (presentation only).
+  - `font-synthesis-weight: none` in the app.
+- **Terracotta left in the app:** primary buttons, nav's underline, eyebrow UPIDs, the calendar's
+  today, clause numbers and sub-clause letters. A new use needs a reason as good as those.
 - **Trap:** shell commands that `cd` into the scratchpad reset the session to the main checkout; use the
   worktree's absolute path for every edit (nothing landed in the main checkout).
 

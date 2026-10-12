@@ -1142,3 +1142,31 @@ body:has(.ed-bar) .export-toast {
     border-left-color: var(--color-accent-mark);
   }
 }
+
+/* ── The Summary panel's insides, flattened (ui-clarity task 18) ───────────
+   One layer in from the panel (the inset fill), divided by hairlines: no
+   outlined boxes inside a panel (U2), and no terracotta tint on Total (inc
+   GST), whose size already makes it the headline (D88 keeps the order and
+   sizes). Scoped to the editor, the bars' only user. */
+#ed-summary .summary-bar,
+#ed-summary .sur-box,
+#ed-summary .mjp-line {
+  border: 0;
+  border-radius: var(--panel-radius);
+  background: var(--color-bg-inset);
+}
+#ed-summary .sum-item {
+  border-right: 1px solid var(--color-border-hairline);
+}
+#ed-summary .sum-item:last-child {
+  border-right: 0;
+}
+@media (max-width: 767px) {
+  #ed-summary .sum-item {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border-hairline);
+  }
+  #ed-summary .sum-item:last-child {
+    border-bottom: 0;
+  }
+}

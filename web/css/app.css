@@ -24,6 +24,9 @@
 
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--font-family-body);font-size:13px;min-height:100vh;-webkit-font-smoothing:antialiased}
+/* No faked bold: CS Felice Mono has one weight, so a bold figure (a <b> subtotal) would be smeared, not
+   set; it stays regular and its colour marks it. Delight and Metro Sans have real bolds (task 18). */
+body{font-synthesis-weight:none}
 button,input,textarea,select{font-family:var(--font-family-body)}
 .delight{font-family:var(--font-family-display);font-weight:700}
 #app-header{display:flex;align-items:center;justify-content:space-between;padding:0 28px 0 24px;height:52px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;background:var(--bg)}
@@ -79,7 +82,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .card-name{font-family:var(--font-family-display);font-weight:700;font-size:18px;margin-bottom:4px;color:var(--text)}
 .card-client{color:var(--color-text-secondary);font-size:var(--font-size-sm);margin-bottom:var(--space-6)}
 .card-gross-label{font:var(--eyebrow-font);letter-spacing:var(--letter-spacing-wide);text-transform:uppercase;color:var(--color-text-secondary);margin-bottom:var(--space-2)}
-.card-gross{font-family:var(--font-family-display);font-weight:700;font-size:26px;color:var(--accent)}
+.card-gross{font-family:var(--font-family-display);font-weight:700;font-size:26px;color:var(--text)}
 .card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
 .card-date{color:var(--muted);font-size:10px}
 .tag{font-family:var(--font-figures);font-size:var(--font-size-xs);color:var(--color-text-secondary);white-space:nowrap}
@@ -99,7 +102,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .billing-block,.est-block,.pricing-section{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--panel-radius);margin-bottom:var(--panel-gap);overflow:hidden}
 .bb-head,.est-block-head,.pricing-sec-head{display:flex;justify-content:space-between;align-items:center;gap:var(--space-4) var(--panel-head-gap);min-height:calc(var(--control-h) + 2 * var(--space-4));background:none;padding:var(--space-4) var(--panel-pad-x);border-bottom:1px solid var(--color-border-hairline)}
 .bb-label,.est-block-label{font-family:var(--font-family-display);font-weight:var(--font-weight-bold);font-size:var(--font-size-lg);line-height:var(--line-height-tight);letter-spacing:var(--letter-spacing-normal);color:var(--color-text-primary)}
-.bb-label-tag{display:inline-block;margin-left:var(--space-4);padding:var(--chip-pad);border-radius:var(--chip-radius);box-shadow:inset 0 0 0 1px var(--color-border-subtle);font:var(--chip-font);letter-spacing:var(--letter-spacing-wide);text-transform:uppercase;color:var(--color-text-secondary);vertical-align:middle}
+.bb-label-tag{display:inline-block;margin-left:var(--space-4);padding:var(--chip-pad);border-radius:var(--chip-radius);background:var(--color-bg-inset);font:var(--chip-font);letter-spacing:var(--letter-spacing-wide);text-transform:uppercase;color:var(--color-text-secondary);vertical-align:middle}
 .bb-sum,.est-block-sum{font-size:var(--font-size-sm);font-weight:var(--font-weight-normal);color:var(--color-text-secondary);white-space:nowrap}
 .bb-sum b,.est-block-sum{font-family:var(--font-figures);font-weight:var(--font-weight-normal);font-size:var(--font-size-base);color:var(--color-text-primary)}
 .bb-sum b{margin-left:var(--space-2)}
@@ -144,7 +147,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .sum-item:last-child{border-right:none}
 .sum-label{font:var(--eyebrow-font);letter-spacing:var(--letter-spacing-wide);text-transform:uppercase;color:var(--color-text-secondary);margin-bottom:var(--space-3)}
 .sum-value{font-family:var(--font-family-display);font-weight:700;font-size:19px;color:var(--text)}
-.sum-value.accent{color:var(--accent)}
+.sum-value.accent{color:var(--text)}
 .form-actions{display:flex;gap:10px;justify-content:flex-end;padding-top:18px;border-top:1px solid var(--border)}
 .est-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:26px;padding-bottom:20px;border-bottom:1px solid var(--border)}
 .est-upid{font:var(--eyebrow-font);text-transform:uppercase;letter-spacing:var(--letter-spacing-wide);color:var(--eyebrow-color);margin-bottom:var(--space-2)}
@@ -162,7 +165,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .totals-card td{padding:9px 18px;border-bottom:1px solid var(--color-border-hairline);font-size:12px}
 .totals-card tr:last-child td{border-bottom:none}
 .tl{color:var(--muted)}.tv{text-align:right;font-weight:600}
-.net-row td{color:var(--accent);font-size:15px;font-weight:700;background:color-mix(in srgb,var(--color-accent-primary) 10%,transparent)}
+.net-row td{color:var(--text);font-size:15px;font-weight:700;background:var(--color-bg-inset)}
 .notes-card{border:1px solid var(--border);padding:18px}
 .notes-card h2{font-size:var(--font-size-sm);color:var(--color-text-secondary);font-weight:var(--font-weight-medium);margin-bottom:var(--space-4)}
 .notes-card p{color:var(--muted);line-height:1.8;font-size:12px}
