@@ -158,7 +158,7 @@ const EstimateDetail = (() => {
       (tag ? '<span class="post-tag">· ' + esc(tag) + '</span>' : '') +
       (note ? '<span class="sur-note est-sur-note">' + esc(note) + '</span>' : '') + '</td>' +
       '<td class="right muted-td" data-label="Qty">' + esc(qty) + '</td>' +
-      '<td class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</td>' +
+      '<td class="right muted-td" data-label="Markup">' + (def ? fmt(def.mu) : '—') + '</td>' +
       '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
     );
   }

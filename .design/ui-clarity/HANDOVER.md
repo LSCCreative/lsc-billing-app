@@ -142,12 +142,39 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
 - [x] Wave 2 (task 17): deployed 2026-10-12, `main` `4c7516b`. Pages first (logo 200), then NAS: code-only copy
   (no migration, still v16), `docker compose up -d --build`, healthy, new `mail.js` in the container. Rollback:
   NAS `/volume4/lsc-billing/code-pre-wave2.tgz` (code) and `manual-backup/pre-wave2-20261012-110204.db`.
-- **Next: task 18** (design review, Opus/high, **Frontend task**). Commit on `ui-clarity` in its worktree;
-  merge `main` in first if it has moved.
+- [x] Task 18, the design review: [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md). See "Decisions made in task 18".
+- **Next: wave 4** (Sonnet/medium, deploy): **Pages only** (web files, no server change). `git fetch`, merge
+  `main` in if it moved, fast-forward `main` to `ui-clarity`, push; check the live editor's money column
+  on one real estimate. **Ask the user first.** Then the track closes.
 
 ## Waiting on the user
 
 - After wave 2: check the test email in Gmail on phone and desktop.
+- The OK for wave 4 (task 18's fixes, Pages only).
+- **Task 18's open calls** (`DESIGN_REVIEW.md`):
+  - Should-fix 2: headline figures in terracotta, decided together with task 13's Projects cards.
+  - Should-fix 3: flatten the editor Summary's boxes (production-booking D87/D88's layout).
+  - Should-fix 4: Move to ▾ restyled as a quiet menu button (no decision needed; a small frontend task
+    if wanted).
+  - Could-improves 1–5.
+
+## Decisions made in task 18 (tell the user)
+
+- **Table money is never terracotta.** A line's client bill, the On set day subtotals and the
+  read-only estimate's bill column read in the primary text colour. Terracotta in the editor is now
+  Done/Save, the calendar's today mark and the Summary's headline total.
+- **Table money is mono everywhere in the editor** (U24, missed in tasks 11–12): client bill, Markup,
+  Rate, the On set amounts and the day totals take `--font-figures`. The mono face has one weight, so
+  the bill cell dropped its 600 (no synthetic bold); white against the grey Markup column marks it.
+  The phone's stacked labels (`data-label` ::before) stay in the body font.
+- **The Invoice's header Balance due is its one terracotta figure.** The Balance panel's total reads
+  in primary text, and "Less deposit …" in secondary.
+- Sentence case: "Add production service items", "Include overhead and markup in the calculation",
+  and the phone's "Markup" (was "Mark-Up").
+- **Left as built for the user:** headline figures, the Summary's boxes (D87/D88), the ringed category
+  tags, the agreement header's terracotta chips, and the sign dialog's small reading window on a phone.
+- **Trap:** shell commands that `cd` into the scratchpad reset the session to the main checkout; use the
+  worktree's absolute path for every edit (nothing landed in the main checkout).
 
 The logo master is `Visual Design/CS-Felice-Mono-Monospaced-Font/LogoDark_ No Text.png`
 (`Logo Light_ No Text.png` is for dark grounds); task 16 trimmed it into `web/email/logo.png`.

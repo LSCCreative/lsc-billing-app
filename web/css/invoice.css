@@ -403,7 +403,7 @@
   font-weight: var(--font-weight-semibold);
 }
 .inv-row.is-less dd {
-  color: var(--color-accent-text);
+  color: var(--color-text-secondary);
 }
 .inv-row.is-sub {
   padding: var(--space-3) 0 var(--space-3) var(--space-6);
@@ -424,11 +424,13 @@
   text-transform: uppercase;
   color: var(--color-text-secondary);
 }
+/* The header's Balance due is the screen's terracotta figure; the panel's
+   repeat of it reads in the primary text (task 18). */
 .inv-row.is-due dd {
   font-family: var(--font-family-display);
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-xl);
-  color: var(--color-accent-text);
+  color: var(--color-text-primary);
 }
 .inv-row.is-due.is-void dd {
   color: var(--color-text-tertiary);

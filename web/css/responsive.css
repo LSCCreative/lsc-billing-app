@@ -596,6 +596,7 @@
      room to give. */
   .gt-row > div::before {
     content: attr(data-label);
+    font-family: var(--font-family-body);
     flex: 0 0 auto;
     white-space: nowrap;
     font-size: var(--font-size-sm);

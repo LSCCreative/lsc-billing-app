@@ -367,6 +367,7 @@ person looks at. State the tag out loud and pause for the user to switch before 
 
 ## Review
 
-- [ ] **18. Design review:** run `/design-review` against the brief. Screenshots of the Project
+- [x] **18. Design review:** run `/design-review` against the brief.
+  - **Done** 2026-10-12: [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md). Must-fix: the editor's 24 terracotta line figures and its ~50 money cells in Metro Sans (now primary text, `--font-figures`); also the Invoice's repeated terracotta and three Title Case labels. 711 green; screenshots `screenshots/task18/` (`before-*` for the fixed screens). Open should-fixes are the user's calls (HANDOVER). Screenshots of the Project
   page, Invoice, Editor, agreement builder, sign dialog and one email at 1280, 800 and 375 go in
   `screenshots/`. Fix the must-fix items before closing the track.

@@ -119,7 +119,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .gt-row:hover{background:var(--row-hover)}
 .gt-row>div{padding:4px 10px;font-size:12px;display:flex;align-items:center}
 .gt-row>div.right{justify-content:flex-end}
-.gt-row>div.muted-td{color:var(--muted)}
+.gt-row>div.muted-td{color:var(--muted);font-family:var(--font-figures)}
 .gt-row .num-inp{width:100%;box-sizing:border-box}
 .gt-row .text-inp{width:100%;box-sizing:border-box}
 .gt-row .bill-cell{width:100%;text-align:right}
@@ -132,7 +132,9 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .num-inp:focus{border-color:var(--accent)}
 .text-inp{background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);font-size:12px;padding:5px 8px;outline:none;transition:.15s;width:100%}
 .text-inp:focus{border-color:var(--accent)}
-.bill-cell{color:var(--accent);font-weight:600;white-space:nowrap}
+/* A line's client bill: table money, so mono figures (U24) in the primary text
+   colour; terracotta is the view's one action (U17, task 18). */
+.bill-cell{color:var(--text);font-family:var(--font-figures);white-space:nowrap}
 .muted-td{color:var(--muted)}
 .right{text-align:right}
 .del-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px;line-height:1;transition:.15s}
@@ -153,7 +155,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .est-table td{padding:7px 14px;border-bottom:1px solid var(--color-border-hairline);font-size:12px}
 .est-table tr:last-child td{border-bottom:none}
 .est-table .right{text-align:right}
-.est-table .bill{color:var(--accent);font-weight:600}
+.est-table .bill{color:var(--text);font-family:var(--font-figures)}
 .est-totals{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
 .totals-card{border:1px solid var(--border);overflow:hidden}
 .totals-card table{width:100%;border-collapse:collapse}

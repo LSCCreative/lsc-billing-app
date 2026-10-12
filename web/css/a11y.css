@@ -11,10 +11,8 @@
 /* Terracotta as text reads --accent-text (#E08B68, 6.7:1 on a panel), never
    --accent, which is a fill (white on it 4.98:1). */
 .card-gross,
-.bill-cell,
 .sum-value.accent,
 .est-upid,
-.est-table .bill,
 .net-row td {
   color: var(--accent-text);
 }

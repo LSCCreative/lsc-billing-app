@@ -425,6 +425,8 @@
 }
 .day-items-sum b {
   color: var(--text);
+  font-family: var(--font-figures);
+  font-weight: var(--font-weight-normal);
 }
 .day-picker {
   border-top: 1px solid var(--border);
@@ -677,8 +679,7 @@
 }
 .onset-gtotal {
   margin-left: auto;
-  color: var(--accent-text);
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-figures);
 }
 .onset-lines {
   list-style: none;
@@ -709,7 +710,7 @@
 }
 .onset-amt {
   text-align: right;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-figures);
 }
 @media (min-width: 768px) {
   .onset-edit {

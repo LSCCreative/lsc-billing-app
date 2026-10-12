@@ -2,7 +2,7 @@
 
 The one record of what is built, what is live, and what happens next, across every track and every
 session working in this folder. **Read this first**, then only the HANDOVER of the track you are
-working on (it has the detail, decisions and traps). Last consolidated **2026-10-12** (ui-clarity task 14).
+working on (it has the detail, decisions and traps). Last consolidated **2026-10-12** (ui-clarity task 18).
 
 **Keep it true:** when a task changes the order, a branch, a deploy wave, a seam between tracks or
 the user's to-do list, update this file in the same commit. Per-task logs stay in the track's
@@ -13,13 +13,13 @@ HANDOVER/TASKS, never here.
 | | Code | State |
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `4c7516b` (Pages and NAS both; wave 2 2026-10-12), schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
-| **ui-clarity** | branch `ui-clarity` = `main` `4c7516b` (worktree) | Tasks 1–17 **live** (wave 1 Pages only; wave 2 Pages then NAS, 2026-10-12). Next: 18, then the user checks the test email. |
+| **ui-clarity** | branch `ui-clarity` = `main` `4c7516b` (worktree) | Tasks 1–17 **live**; task 18 (design review) done on `ui-clarity`, not deployed. Next: **wave 4** (Pages only, ask first), then the track closes. |
 | **trip-planner** | deployed as `main` `70845d8`; the `trip-planner` branch is deleted (2026-10-12) | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
 main = trip-planner (live, v16, 70845d8), which contains ui-clarity's 850f904
-ui-clarity (worktree) ── equals main 4c7516b; next 18
+ui-clarity (worktree) ── main 4c7516b + task 18; next wave 4 (Pages only)
 ```
 
 `main` gets each line only when it deploys. `main` now holds everything through trip-planner.
@@ -28,7 +28,7 @@ ui-clarity (worktree) ── equals main 4c7516b; next 18
 
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
-| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | Wave 2 done; **18** *(Opus/high, frontend)* |
+| **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | Task 18 done; **wave 4** *(Sonnet/medium, Pages only)*, then closes |
 | **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`main` is checked out here; no feature branch now) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
@@ -87,8 +87,12 @@ files both lines touched.
    give it the client footer like the other client emails, and add it to `test-mail.js`'s checks.
 4. ~~**Wave 2, deploy D2**~~ done 2026-10-12 *(Sonnet/medium)*: **Pages before NAS** (the logo must be live first), then
    a test email the user checks in Gmail on phone and desktop.
-5. **Task 18: design review** *(Opus/high, **frontend**)*. Fix the must-fix items. ui-clarity then
-   closes.
+5. ~~**Task 18: design review**~~ done 2026-10-12 (`ui-clarity/DESIGN_REVIEW.md`): must-fix items
+   fixed (the editor's table money no longer terracotta, now mono; the Invoice's repeated terracotta).
+   Web files only.
+6. **Wave 4, deploy task 18** *(Sonnet/medium)*: **Pages only** (no server change): fetch, merge
+   `main` in if it moved, fast-forward `main` to `ui-clarity`, push. Ask first. ui-clarity then closes;
+   its open should-fixes are the user's calls (§5).
 
 ### Line 2: trip-planner (tracker: [`trip-planner/TASKS.md`](trip-planner/TASKS.md))
 
@@ -141,7 +145,11 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 - [ ] **Feature 4, "day-based media tree":** what it is and where it stands (§2).
 - [ ] **ui-clarity task 4's agreement header wording:** live since wave 3; approve or reword.
 - [x] **Wave 1 timing:** done 2026-10-12, one Pages push.
-- [ ] **Projects list cards:** keep the 11 terracotta totals, or make them white (ui-clarity task 13).
+- [ ] **Terracotta headline figures** (ui-clarity task 13 and 18, decide together): the Projects cards' 11
+  totals, the Project page's Total, the Invoice's Balance due, the editor Summary's Total. Keep them
+  terracotta, or make them white so terracotta means only "press this" (`DESIGN_REVIEW.md` should-fix 2).
+- [ ] **The editor's Summary panel** (ui-clarity task 18, should-fix 3): flatten its bordered boxes and the
+  Total tile's terracotta tint, keeping production-booking D87/D88's order and sizes? Yes/no.
 - [x] **ui-clarity task 16:** email look approved 2026-10-12.
 - [ ] **estimate-accuracy:** `/grill-me` on its tasks 9, 10, 12–14 (each has an open decision).
 

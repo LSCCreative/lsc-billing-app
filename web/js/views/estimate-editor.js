@@ -73,7 +73,7 @@
  * on the cards too, each kind in its own group, and carry their card's
  * `dayId` the same way — but only production is ever surcharged (D3), so
  * they bill exactly as they would on no day. Every on-set line is added
- * through one service menu ("Add Production Service Items"). A line on no
+ * through one service menu ("Add production service items"). A line on no
  * day — every line saved before B2, and production saved before days — sits
  * on the last card, "Not on a day", priced exactly as before; a production
  * line there keeps a "Pick a day…" select until B2-5's Move to. The flat
@@ -505,7 +505,7 @@ const EstimateEditor = (() => {
       unitLine + '</div>' +
       '<div class="right" data-label="' + qtyLabel + '"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
       (line.qty || '') + '" aria-label="' + qtyLabel + ' for ' + esc(line.name) + '"></div>' +
-      '<div class="right muted-td" data-label="Mark-Up">' + (def ? fmt(def.mu) : '—') + '</div>' +
+      '<div class="right muted-td" data-label="Markup">' + (def ? fmt(def.mu) : '—') + '</div>' +
       /* A Production line on a surcharged day says why its price is higher,
          under the price, owner-only (the client's copy never says it, D8). */
       '<div class="right' + (section.id === 'prod' ? ' bill-col' : '') + '" data-label="Client bill">' +
@@ -562,7 +562,7 @@ const EstimateEditor = (() => {
       (line.qty || '') + '"' + (linked ? ' readonly' : '') + ' aria-label="' + qtyName + ' for ' + esc(line.name) +
       (linked ? ', from the trip' : '') + '"></div>' +
       '<div class="right muted-td" data-label="Rate">' + rateLabel + '</div>' +
-      '<div class="right muted-td" data-label="Mark-Up">' + muLabel + '</div>' +
+      '<div class="right muted-td" data-label="Markup">' + muLabel + '</div>' +
       '<div class="right" data-label="Client bill"><span class="bill-cell">—</span></div>' +
       '<div class="del-cell">' + (linked ? '' : '<button type="button" class="del-btn" title="Remove ' +
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button>') + '</div>';
@@ -1074,7 +1074,7 @@ const EstimateEditor = (() => {
   const OFF_DAY = BookingBlock.OFF;
   const groupBody = (panel, kind) => panel.querySelector('.gt-body[data-group="' + kind + '"]');
 
-  /* One card's items: "Add Production Service Items", which opens the service
+  /* One card's items: "Add production service items", which opens the service
      menu on this card (B2-4, D74), then its line groups, then the D26 hours
      hint. Built once per day and kept (dayPanels); the booking block moves it
      into the day's card on every paint. Not on a day's (OFF_DAY) is put in
@@ -1088,7 +1088,7 @@ const EstimateEditor = (() => {
     panel.innerHTML =
       '<div class="day-items-bar">' +
       '<button type="button" class="btn btn-ghost btn-sm day-menu-btn" aria-expanded="false">' +
-      (off ? 'Add items' : 'Add Production Service Items') + '</button>' +
+      (off ? 'Add items' : 'Add production service items') + '</button>' +
       '<span class="day-items-sum">' + (off ? 'Total' : 'Day total') + ' <b class="day-items-total">$0.00</b></span></div>' +
       '<p class="day-items-empty">' + (off ? 'Nothing here.' : 'Nothing on this day yet.') + '</p>' +
       DAY_GROUPS.map(([kind, label, head]) =>
@@ -1103,7 +1103,7 @@ const EstimateEditor = (() => {
   }
 
   // ── The service menu (B2-4, D74–D77) ──────────────────────────────────────
-  /* "Add Production Service Items" on a card opens one menu, the editor's
+  /* "Add production service items" on a card opens one menu, the editor's
      only way to add an on-set line (the brief's B2 principle 1). At ≥768 it
      swaps in for the calendar, in its column (BookingBlock.menuHost) — a
      labelled region, not a dialog, so the card it adds to stays in view and
@@ -2417,7 +2417,7 @@ const EstimateEditor = (() => {
       days.forEach((d) => {
         const panel = dayPanels.get(d.id);
         if (!panel) return;
-        panel.querySelector('.day-menu-btn').setAttribute('aria-label', 'Add Production Service Items to ' + d.title);
+        panel.querySelector('.day-menu-btn').setAttribute('aria-label', 'Add production service items to ' + d.title);
       });
       if (menu.target) paintMenuTitle();
     }
@@ -2595,7 +2595,7 @@ const EstimateEditor = (() => {
       '<label class="mjp-toggle" for="f-include-overhead">' +
       '<input type="checkbox" id="f-include-overhead" checked ' +
       'aria-describedby="mjp-toggle-hint">' +
-      '<span>Include Overhead &amp; Markup in Calculation</span></label>' +
+      '<span>Include overhead and markup in the calculation</span></label>' +
       '<span class="mjp-toggle-hint" id="mjp-toggle-hint">Advisory only — it never changes what ' +
       'the client is billed.</span></div>'
     );
