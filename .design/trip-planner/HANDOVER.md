@@ -13,7 +13,8 @@ login the agent should type. Rollback if needed: NAS `/volume4/lsc-billing/code-
 database can't be opened by v15 code, so restore the `.db` with the code. Because `main` now
 contains all of `ui-clarity`'s tasks 1–7 and 9–13, **the ui-clarity worktree must merge `main`
 before its next commit.** The two should-fix items from task 17 are
-fixed (`15ad279`, branch `trip-should-fix`, server + web: **NAS then Pages**, not deployed yet).
+fixed (`15ad279`) and **deployed 2026-10-12** (NAS then Pages, `main` `34c3213`; rollback NAS
+`code-pre-tsf.tgz`, `manual-backup/pre-tsf-20261012-150854.db`).
 Waiting on the user, not blocking: the Routes preference (task 18). The scratch DB `/tmp/lsc-billing-scratch` is connected to the user's real
 Google account (all four calendars on): **never run a write-capable build on it** except for a
 live check (see Traps).
