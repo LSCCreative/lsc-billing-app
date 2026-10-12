@@ -122,7 +122,7 @@ repo; on Pages, `deploy-pages.yml` writes it from repository secrets of the same
 | `LSC_MAPS_ID` | the Map ID **LSC Billing — trip planner** (numbered pins) | the map draws, its pins don't |
 
 The two Google values are in `.credentials.local.md`. The browser key only works from
-`https://lsccreative.github.io/*` and `http://localhost:5173/*`, so preview the frontend on port
+`https://app.lsccreative.studio/*` and `http://localhost:5173/*`, so preview the frontend on port
 5173 (the `web` launch config does).
 
 ## Running it locally

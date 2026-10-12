@@ -15,7 +15,7 @@ rationale, architecture diagram and experience principles: [DESIGN_BRIEF.md](DES
 
 ## State as of 2026-10-03
 
-Live: **https://lsccreative.github.io/lsc-billing-app/** talking to **https://billing.lsccreative.studio**
+Live: **https://app.lsccreative.studio/** (was `lsccreative.github.io/lsc-billing-app/` until 2026-10-13, DEPLOYMENT.md §5.1) talking to **https://billing.lsccreative.studio**
 (Cloudflare Tunnel to the NAS). Every section of TASKS.md is complete except a handful of
 redeploy-hardening items (see its "NAS redeploy fix"). Since the 2026-09-22 incident (a redeploy that
 overwrote the NAS's hand-edited `docker-compose.yml`), every deploy has worked by: `sqlite3 ".backup"`

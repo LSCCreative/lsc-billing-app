@@ -840,7 +840,7 @@ redirect URIs) was **created 2026-10-11** by the agent with the user's OK; its I
 
 - The repo is public. Keys never go in tracked files. The browser key reaches Pages through a
   GitHub secret written into the gitignored `web/js/config.js` by `deploy-pages.yml`.
-- The browser key only works from `https://lsccreative.github.io/*` and `http://localhost:5173/*`
+- The browser key only works from `https://app.lsccreative.studio/*` and `http://localhost:5173/*`
   (the console refused a wildcard port). Local previews on other ports need a row added.
 - Autosave vs `backup.js` preWriteBackup: every mutating request snapshots the whole DB. Autosave
   PUTs must be throttled (I2), or recovery points collapse to seconds.

@@ -4,7 +4,8 @@ For getting the NAS-hosted API reachable over HTTPS and the `web/` frontend publ
 [HANDOVER.md](HANDOVER.md) first if you haven't — this is the last section of that build.
 
 **Status: live as of 2026-09-14.** API at `https://billing.lsccreative.studio`, frontend at
-`https://lsccreative.github.io/lsc-billing-app/`. The steps below are the record of how it was
+**`https://app.lsccreative.studio/`** (since 2026-10-13; it was `https://lsccreative.github.io/lsc-billing-app/`,
+which GitHub now redirects to the new address). The steps below are the record of how it was
 done, kept as a runbook for redoing any part of it (a new NAS, a rotated tunnel, a fresh clone of
 the repo).
 
@@ -85,14 +86,14 @@ is terminating TLS and forwarding to the container.
 On the NAS, edit `server/.env` (per `server/.env.example`'s own comments):
 
 ```bash
-CORS_ORIGINS=https://lsccreative.github.io
+CORS_ORIGINS=https://app.lsccreative.studio,https://lsccreative.github.io
 COOKIE_SAMESITE=none
 COOKIE_SECURE=1
 ```
 
 **No trailing path** — `CORS_ORIGINS` matches the request's `Origin` header, which is scheme and
-host only (`https://lsccreative.github.io`), even though the deployed site itself lives at
-`https://lsccreative.github.io/lsc-billing-app/`. `COOKIE_SAMESITE=none` requires
+host only (`https://app.lsccreative.studio`). The github.io origin stays in the list only because
+it costs nothing; GitHub redirects that address to the custom domain. `COOKIE_SAMESITE=none` requires
 `COOKIE_SECURE=1` — browsers refuse the combination otherwise — which is exactly why step 3's
 HTTPS termination isn't optional.
 
@@ -140,7 +141,24 @@ What the workflow does on every run, so nothing here needs to be repeated by han
   personal access token needed).
 
 Push to `main` (or trigger manually from the Actions tab) to deploy. The deployed URL is
-`https://lsccreative.github.io/lsc-billing-app/`.
+`https://app.lsccreative.studio/`.
+
+### 5.1. Why the custom domain (2026-10-13)
+
+🔴 **The site and the API must share `lsccreative.studio`.** On `lsccreative.github.io` the session
+cookie from `billing.lsccreative.studio` was a *third-party* cookie, and Chrome on iPhone (Apple's
+engine), Safari, and Chrome in Incognito drop those: sign-in "worked", the next request 401'd, and
+the phone landed back on the login card. Now the two are the same site, so the cookie is
+first-party everywhere. Set up as:
+
+- **Cloudflare DNS** (the zone's nameservers are Cloudflare; Porkbun is only the registrar):
+  `CNAME app → lsccreative.github.io`, **DNS only** (grey cloud) so GitHub can issue and renew its
+  certificate. Without it, the zone's `*` record sends the name to Porkbun's parking page.
+- **GitHub → Settings → Pages → Custom domain** `app.lsccreative.studio`, Enforce HTTPS on. The
+  workflow deploy needs no `CNAME` file.
+- **NAS `.env`**: `APP_URL=https://app.lsccreative.studio/` and `CORS_ORIGINS` as in section 4,
+  then `docker compose up -d`.
+- **Google Maps browser key**: website restriction must list `https://app.lsccreative.studio/*`.
 
 ## 5.5. Redeploying `server/` code to the NAS (fix this before the next redeploy)
 
@@ -201,7 +219,7 @@ NAS-local files, alongside `.env` and `data/`, that must not be blindly overwrit
 
 ## 6. Verified end to end (2026-09-14)
 
-- `https://lsccreative.github.io/lsc-billing-app/` loads the login screen with no error banner.
+- `https://lsccreative.github.io/lsc-billing-app/` (now `https://app.lsccreative.studio/`) loads the login screen with no error banner.
 - The cross-origin `GET /api/session` preflight and request both return the correct
   `Access-Control-Allow-Origin: https://lsccreative.github.io` header, confirmed with `curl`
   against the real tunnel URL and separately in a real browser tab (network log matched).
@@ -248,8 +266,8 @@ of a real database, and with it the live app would stop writing bookings to Goog
 | `LSC_MAPS_KEY` | the **LSC Billing — browser** key (website-restricted, 4 APIs) | the travel view says Google Maps isn't set up; the build warns but deploys |
 | `LSC_MAPS_ID` | the Map ID **LSC Billing — trip planner** | the map loads but numbered pins can't draw |
 
-The browser key's website restriction must list `https://lsccreative.github.io/*` (it does, with
-`http://localhost:5173/*` for local previews). A local preview on any other port is refused by
+The browser key's website restriction must list `https://app.lsccreative.studio/*`, with
+`http://localhost:5173/*` for local previews. A local preview on any other port is refused by
 Google until that port is added there.
 
 **After the deploy** (in this order):
