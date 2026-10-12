@@ -14,7 +14,7 @@ HANDOVER/TASKS, never here.
 |---|---|---|
 | **Live** (NAS + Pages) | `main` `4c7516b` (Pages and NAS both; wave 2 2026-10-12), schema **v16** | Deployed 2026-10-11/12 as wave 3: trip planner, call sheet, Google Calendar, autosave, **and all of ui-clarity's tasks 1–7 and 9–13** (they ride in `main`'s history). Plus production-booking A–E, account recovery. Awaiting the user's Connect + Sync existing bookings. |
 | **ui-clarity** | branch `ui-clarity` = `main` `db1a8ce` (worktree) | Tasks 1–18 **live** (wave 4 deployed 2026-10-12, Pages only). Track closed; open should-fixes are the user's calls (§5). |
-| **trip-planner** | deployed as `main` `70845d8`; the `trip-planner` branch is deleted (2026-10-12) | All 20 tasks done and deployed. Nothing queued except the user's two should-fix items (km rounding, R pin) and the Routes tier choice. |
+| **trip-planner** | deployed as `main` `70845d8`; should-fixes on branch `trip-should-fix` (worktree `.claude/worktrees/trip-should-fix`, off `main` `7dd0a92`) | All 20 tasks done and deployed. Task 17's two should-fixes **built** 2026-10-12 (`15ad279`: one km rule, no R badge), server + web, **not deployed**: NAS then Pages, ask first. Then only the Routes tier choice. |
 | **production-booking** | `origin/production-booking` `39ccebd` | Live; that one commit (a HANDOVER line) isn't on `main`. Merge it at the next deploy. |
 
 ```
@@ -29,7 +29,7 @@ ui-clarity (worktree) ── equals main db1a8ce (wave 4 deployed)
 | Line | Session (on this Mac) | Checkout | Next task |
 |---|---|---|---|
 | **ui-clarity** | "Continue next task" | **its own git worktree** on `ui-clarity` (see the rules below) | **Closed.** Wave 4 deployed 2026-10-12 |
-| **trip-planner** | "Travel input feature for estimate editor" | **this folder** (`main` is checked out here; no feature branch now) | **Done and deployed** (wave 3, 2026-10-11/12). Nothing queued. |
+| **trip-planner** | "Travel input feature for estimate editor"; should-fixes in their own session | **this folder** (`main`); the should-fixes in worktree `.claude/worktrees/trip-should-fix` (API :8082 on `/tmp/lsc-billing-scratch-tsf`, web :5173, run from the worktree since launch.json is read from here) | Should-fixes built; next: deploy them (NAS then Pages), on the user's word. |
 | **"Feature 4: day-based media tree"** | "Feature 4 day-based media tree" | unknown | **Unknown.** It has written nothing to disk or git, and its session didn't receive the status request (held: different permission mode). The user to say what it is, or have that session add a row here. |
 
 **Rules for sharing this folder (two sessions build at once):**
@@ -149,6 +149,8 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
   figures are white, the Summary is flat (ui-clarity task 18, round 2).
 - [x] **ui-clarity task 16:** email look approved 2026-10-12.
 - [ ] **estimate-accuracy:** `/grill-me` on its tasks 9, 10, 12–14 (each has an open decision).
+- [x] **trip-planner km rule:** whole km, rounded up as the line bills it, totals the sum of the days (2026-10-12).
+- [ ] **trip-planner should-fix deploy** (`trip-should-fix`, `15ad279`): server + web, NAS then Pages; say when.
 
 **Things only a person can do**
 - [ ] **Wave 2 test email:** Settings → Email → Send a test email; check it in Gmail on phone and desktop.

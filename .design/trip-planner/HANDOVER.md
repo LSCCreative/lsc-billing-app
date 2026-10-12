@@ -12,9 +12,9 @@ login the agent should type. Rollback if needed: NAS `/volume4/lsc-billing/code-
 (code), `manual-backup/pre-v16-20261011-211953.db` (data, taken at v15), `.env.pre-v16`; a v16
 database can't be opened by v15 code, so restore the `.db` with the code. Because `main` now
 contains all of `ui-clarity`'s tasks 1–7 and 9–13, **the ui-clarity worktree must merge `main`
-before its next commit.** Waiting on the user, not blocking: the
-two should-fix items from task 17 (km rounding across surfaces; the R pin over S) and the Routes
-preference (task 18). The scratch DB `/tmp/lsc-billing-scratch` is connected to the user's real
+before its next commit.** The two should-fix items from task 17 are
+fixed (`15ad279`, branch `trip-should-fix`, server + web: **NAS then Pages**, not deployed yet).
+Waiting on the user, not blocking: the Routes preference (task 18). The scratch DB `/tmp/lsc-billing-scratch` is connected to the user's real
 Google account (all four calendars on): **never run a write-capable build on it** except for a
 live check (see Traps).
 
@@ -178,9 +178,17 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   start time, no clock times.
 - **The call sheet's dotted rail hangs off `.cs-stop-row`**, not `.cs-stop` (it started mid-disc
   and crossed the stop number). The PDF draws no rail.
-- **Left for the user (should-fix):** km figures that don't add up across surfaces (days 109 + 33,
-  sheet 141; totals 108.8 vs the billed 109), so pick whole km or one decimal everywhere; and the live map's R pin
-  sitting on S (the static map already leaves R out).
+- [x] **Should-fix 1, one km rule** (`15ad279`): the user chose **whole km, rounded up, as the line
+  bills it** (2026-10-12). Every trip summary calls `calc.js tripLineQty(trip, 'km')` (unchanged):
+  Trip totals (`trip-planner.js totalKm`, was 0.1 km), `TripPlanner.summary` (day card, menu foot,
+  Project page day lines; was nearest), the call sheet view (`public.js callSheetDay` puts the
+  billed km in `totals.km`, so `call-sheet.js` and the PDF are unchanged), `projects.js
+  callSheetState`, the Calendar event text (`google-sync.js tripSummary`). Totals are the **sum of
+  the days' figures** (109 + 33 = 142). Leg lines stay as they were (detail, not a total). Events
+  whose day's km rounds differently (e.g. 32.3: 32 → 33) re-push once after the deploy.
+- [x] **Should-fix 2, the R badge** (`15ad279`): the return is always the start's spot
+  (`days.js` copies it), so there is no "return elsewhere" case; the S pin's R badge
+  (`.trip-pin.is-loop`) is gone and the live map now matches the static map (S only).
 - **Checked and left:** the static map's black numbered pins (task 9's choice, matching the call
   sheet's discs); the heading focus ring in URL-loaded shots (`:focus-visible`, absent after a
   click); `.back-btn` size (ui-clarity's).
@@ -536,8 +544,8 @@ Design phases done 2026-10-08 (grill, brief, IA, tasks; tokens skipped). Buildin
   (`routedFor.stops`), so a trip whose stops changed *without* changing the leg count still shows
   its old times; the owner sees that in the editor ("Recalculate"). Task 10 may say nothing more.
 - **Days shown** = days whose trip has ≥ 1 destination (a start alone is no trip), date order,
-  Date TBC last, editor order within a date. `summary.km` is the sum of the stored totals, rounded
-  to the whole km (the row's "3 days · 412 km").
+  Date TBC last, editor order within a date. Each day's `totals.km` is its billed km
+  (`tripLineQty`) and `summary.km` their sum (the row's "3 days · 412 km"; task 17 should-fix 1).
 - **"Updated" (T18)** = the newest `production_days.updated_at` of the estimate, else the
   estimate's own. **`days.js replaceDays` now keeps a day's `updated_at` when a save changed
   nothing in it**, since every save replaces the days whole and autosave would otherwise restamp
@@ -652,7 +660,7 @@ API needs `pricingShape` from `GET /api/pricing`.
 - **Duplicate day copies the trip as it is** (routed for the source's date, so the copy reads
   "Day changed") and keeps its lines linked.
 - Summaries: `TripPlanner.summary/summaryText`; stops count destinations only ("5 stops"), km
-  rounded to the whole km, time "3 h 27"; "Trip · not routed yet" on the Project page when
+  as billed (whole, rounded up; task 17 should-fix 1), time "3 h 27"; "Trip · not routed yet" on the Project page when
   there's no route.
 - **Home base** uses `typeahead.js` over `LSCMaps.suggest/place` (no map), one session per
   pick; only a picked place saves. Never on a public route (`clientBusiness` allow-list).
@@ -696,7 +704,7 @@ API needs `pricingShape` from `GET /api/pricing`.
   re-route, or Back while one was on its way). A trip never routed shows "hasn't been routed
   yet" + Recalculate. **Opening never routes**, not even an unrouted trip.
 - Leg clock times are wall-clock `HH:MM` from the day's start time (`departAt`/`arriveAt`), only
-  when the day has one. Totals: km to 0.1, time "18 h 55"; the lines show the billed (rounded-up)
+  when the day has one. Totals: km as billed (whole, rounded up, since task 17 should-fix 1), time "18 h 55"; the lines show the billed (rounded-up)
   quantities.
 - **Linked lines exist only while the trip has ≥ 1 leg.** The editor (`syncTripLines`) makes
   each the first time it's needed, priced like a menu add (`unitSnap`, `markOwn`; the rates

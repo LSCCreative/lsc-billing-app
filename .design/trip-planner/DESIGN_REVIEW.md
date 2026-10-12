@@ -69,10 +69,15 @@ crossed the numbered stop discs.
    `review-project-desktop-1280.png`. _Fix:_ pick one rule. Either whole km everywhere a trip is
    summarised, with the sheet's total as the sum of the days' rounded figures, or one decimal
    everywhere. This changes what the owner sees, so it's the user's call.
+   _Fixed (`15ad279`):_ the user chose whole km, rounded up exactly as the km line bills it
+   (`calc.js tripLineQty`). Days read 109 and 33, the sheet and the Call sheet row 142, Trip
+   totals 109, on every surface (app, public page, PDF, Calendar text).
 2. **On the live map, the R pin sits on top of the S pin** at the same spot
    (`review-travel-desktop-1280.png`). The static map on the call sheet already leaves R out
    ("RETURN has no pin"). _Fix:_ hide the R marker when the return is the start's spot, or offset
    it, so the two maps agree.
+   _Fixed (`15ad279`):_ the R was a badge on the S pin; the return is always the start's spot
+   (`days.js`), so the badge is gone and S alone marks both, as on the static map.
 
 ## Could Improve
 
