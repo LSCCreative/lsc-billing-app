@@ -157,10 +157,7 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
   an agent do it, with permission) before wave 3.
 - [ ] Be present for trip-planner task 18 (live Google check: the trip planner's own routes, and a
   real project end to end).
-- [ ] **VoiceOver passes:** production-booking, price-calculator, service-rate-tiers, ui-clarity's
-  (five checks at the end of "Decisions made in task 14" in its HANDOVER, plus Jump to… in
-  Safari with the keyboard), and trip-planner's (five short checks at the end of "Decisions
-  made in task 15" in its HANDOVER).
+- [x] **VoiceOver passes:** cancelled by the user 2026-10-12 ("they are fine"). The lists in the HANDOVERs stay as reference only.
 - [ ] **Safari:** service-rate-tiers R8 (select-on-focus after a mouse click).
 - [ ] **account-recovery:** the live test of Forgot password.
 - [ ] **estimate-accuracy:** 5(b) tick Transport & Logistics Hrs as "Your time" on the live Rate Card;
@@ -174,7 +171,7 @@ change to the bar (task 14) must be merged into `barActs()` by hand, not taken w
 | [`hubspot-crm-sync/`](hubspot-crm-sync/HANDOVER.md) | everything (design done) | a HubSpot credential, created with the user |
 | [`production-booking/`](production-booking/HANDOVER.md) | task 31 Stripe | **held** (D101), don't build |
 | [`nas-hosted-billing/`](nas-hosted-billing/TASKS.md) | redeploy hardening (compose data volume, a written redeploy procedure) | nothing; its "missed redeploy" items predate v13–v15 and are probably stale: check before acting |
-| [`service-rate-tiers/`](service-rate-tiers/HANDOVER.md), [`price-calculator/`](price-calculator/HANDOVER.md) | VoiceOver; R8 | a person |
+| [`service-rate-tiers/`](service-rate-tiers/HANDOVER.md), [`price-calculator/`](price-calculator/HANDOVER.md) | R8 (VoiceOver cancelled) | a person |
 | [`overhead-finance/`](overhead-finance/DESIGN_REVIEW.md) | four optional could-improves | nothing; low priority |
 | [`account-recovery/`](account-recovery/HANDOVER.md) | the user's live test | a person |
 
