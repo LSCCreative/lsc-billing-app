@@ -355,7 +355,8 @@ person looks at. State the tag out loud and pause for the user to switch before 
   - _Modifies: `mail.js`, `sends.js`, `signing.js`, `routes/email.js`, `test-mail.js`. New:
     `web/email/logo.png`._
 
-- [ ] **17. Deploy D2** (deploy — Sonnet/medium)
+- [x] **17. Deploy D2** (deploy — Sonnet/medium)
+  - **Done** 2026-10-12 as wave 2: Pages first (`main` `4c7516b`, logo 200), then NAS (code only, no migration, boot log clean, healthy). Backups: `manual-backup/pre-wave2-20261012-110204.db`, `code-pre-wave2.tgz`. Test email waits on the user.
   - **Pages before NAS this time:** the logo must already be live at its URL before any email
     references it. Push `main`, check that the logo URL returns 200, then tar the server to the
     NAS and check the boot log.

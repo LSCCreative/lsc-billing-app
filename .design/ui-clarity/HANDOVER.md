@@ -139,9 +139,11 @@ it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
     (:5174). What failed, what passed and the VoiceOver list: "Decisions made in task 14".
   - [x] Wave 1 (tasks 8, 15): deployed 2026-10-12, Pages only, `main` `eda110d`.
   - [x] Task 16, the branded email shell (`752ab81`): built 2026-10-12, **look approved by the user** (screenshots `screenshots/task16-*`, local). See "Decisions made in task 16".
-- **Next: wave 2** = task 17
-  (*Sonnet/medium*, deploy; **Pages before NAS**), then task 18 (Opus/high, **Frontend task**).
-  Commit on `ui-clarity` in its worktree; merge `main` in first if it has moved.
+- [x] Wave 2 (task 17): deployed 2026-10-12, `main` `4c7516b`. Pages first (logo 200), then NAS: code-only copy
+  (no migration, still v16), `docker compose up -d --build`, healthy, new `mail.js` in the container. Rollback:
+  NAS `/volume4/lsc-billing/code-pre-wave2.tgz` (code) and `manual-backup/pre-wave2-20261012-110204.db`.
+- **Next: task 18** (design review, Opus/high, **Frontend task**). Commit on `ui-clarity` in its worktree;
+  merge `main` in first if it has moved.
 
 ## Waiting on the user
 
