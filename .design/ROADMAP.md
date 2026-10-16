@@ -7,11 +7,11 @@ unless you hit a real misunderstanding).
 
 ## 1. Live
 
-`main` `15a60c5` (code unchanged since `34c3213`; deployed NAS then Pages 2026-10-12), schema **v16**.
+`main` `937aebb` (deployed NAS then Pages 2026-10-17), schema **v17**.
 Every track is built, reviewed and deployed: nas-hosted base, price-calculator / Finance, overhead-
 finance, service-rate-tiers, estimate-accuracy tasks 1–3, 5a, 6, production-booking A–E (surcharges,
 booking, Home calendar, projects, invoices, client pages, e-signing, Resend email), account recovery,
-trip planner + call sheet + Google Calendar read/write + autosave, ui-clarity 1–18 (panels, menus,
+own kit (per-asset Recovery, kit lines, multi-year CSV), trip planner + call sheet + Google Calendar read/write + autosave, ui-clarity 1–18 (panels, menus,
 agreement builder, branded email, Metro Sans). Site moved to `app.lsccreative.studio` 2026-10-13.
 
 | What | Setting (verified in Cloudflare / Google consoles 2026-10-13) |
@@ -29,7 +29,7 @@ first). `origin/production-booking` holds one docs-only commit not on `main`; ig
 
 | Track | Open | Blocked on |
 |---|---|---|
-| [`own-kit/`](own-kit/TASKS.md) | **Next build; K1–K9 done (code only, undeployed, schema v17 in `db.js`).** K10 (deploy) open; K1–K10: per-asset Recovery (Overhead Floor / On-Set Kit), day rate, "Add On-Set Equipment" pop-up and own-kit lines, "Kit Hire - …" on documents, multi-year CSV, schema v17. Supersedes estimate-accuracy 9. Decisions K-D1–K-D11 are the user's | nothing; ask before deploying |
+| [`own-kit/`](own-kit/TASKS.md) | **Built and deployed 2026-10-17 (K1–K10).** Move the folder to the archive when convenient | the user: set each asset's Recovery, replacement cost/cycle on floor assets, day rates on kit assets |
 | [`estimate-accuracy/`](estimate-accuracy/TASKS.md) | 7 (relabel Overhead "Tax", no decision needed), 10, 12–14 (each has an open decision: `/grill-me` first), 4 and 5(b) (user checks), 15 deploy, 16 review | grill decisions; user |
 | production-booking task 31 | Stripe card payment, **on hold (D101): don't build** | the user |
 | nas-hosted redeploy hardening | compose data volume as `${HOST_DATA_DIR:-./data}`, a written redeploy procedure (now in `DEPLOYMENT.md`) | nothing; low priority |
@@ -60,7 +60,7 @@ Scrapped, don't rebuild: HubSpot CRM sync (2026-10-13), expected booking rate (e
 
 - Sessions share this folder: never `git checkout` another branch here; use a worktree.
 - One API on :8080, one web on :5173 (the Maps browser key works only from :5173).
-- Scratch DB `/tmp/lsc-billing-scratch` is v16 and holds the user's **real Google account**: see
+- Scratch DB `/tmp/lsc-billing-scratch` is v16 (migrates to v17 on first boot of the new build) and holds the user's **real Google account**: see
   `WORKING_NOTES.md` before running anything that saves. Back up before checks that send, void or
   mark paid.
 - The repo is public: keys and passwords live only in `.credentials.local.md`, `server/.env` and the

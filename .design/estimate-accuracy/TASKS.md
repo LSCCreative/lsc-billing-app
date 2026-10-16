@@ -92,7 +92,7 @@ the seven accuracy gaps in tasks 8–14 (task 8 since scrapped by the user).
   and whatever else prints the label._ Done when the note appears only for that category, the label
   reads the same everywhere, and it is verified at 375px.
 
-- [→] **9. "Own kit" on equipment hire: moved to `.design/own-kit/`** (decided 2026-10-13, tasks K1–K10).
+- [x] **9. "Own kit" on equipment hire: moved to `.design/own-kit/`** (decided 2026-10-13, tasks K1–K10). Done by own-kit, deployed 2026-10-17.
   Don't build it from here.
 
 - [ ] **10. A discount line** (money math — Opus/high): the only way to discount today is to cut

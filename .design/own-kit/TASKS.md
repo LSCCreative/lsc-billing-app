@@ -199,8 +199,13 @@ Tags: **(money — Opus/high)**, **(frontend — Opus/high)** = **Frontend task*
     redundant "Own kit" note; a day menu opens Equipment Hire when there is kit to add (once toggled,
     the user's choice stands).
 
-- [ ] **K10. Deploy** (deploy — Sonnet/medium): **ask the user first.** Back up the live DB; fetch and
+- [x] **K10. Deploy** (deploy — Sonnet/medium): **ask the user first.** Back up the live DB; fetch and
   diff `origin/main`; **NAS first** (v17; run the migration on a copy of the backup first), then Pages.
   Record in `ROADMAP.md` and `WORKING_NOTES.md` (the K-D6 rule, kit lines and rentals), tick
   estimate-accuracy task 9 as done by this track. After: the user sets each asset's Recovery, fills
   replacement cost/cycle on floor assets and day rates on kit assets.
+
+  **Done 2026-10-17:** live DB backed up to `data/exports/pre-v17-deploy.db`; v17 run on a copy first
+  (3 assets read `recovery: 'rate'`, 0 FK problems); NAS rebuilt (`migrated to v17`, healthy, multi-year
+  CSV route 401 not 404), then Pages (`main` `937aebb`). Still the user's: set each asset's Recovery,
+  fill replacement cost/cycle on floor assets and day rates on kit assets.
