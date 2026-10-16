@@ -385,6 +385,13 @@
     width: 100%;
     justify-content: space-between;
   }
+  /* The multi-year export's From / To stack like the FY picker above, and
+     its long label gets the row to itself rather than overflowing. */
+  .dep-multi-row .btn {
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+  }
 
   /* ── Gutters ─────────────────────────────────────────────────────────────
      24px of the tablet band becomes 16px, which is 16px more content on a

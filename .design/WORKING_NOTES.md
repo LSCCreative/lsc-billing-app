@@ -28,7 +28,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   simplify. An auto day under the floor is badged, not wrong.
 - Depreciation gives two numbers from one table: the ATO figure for the accountant, and a straight-
   line replacement reserve over the user's own cycle for the rate. Schedules are computed on read;
-  a lodged FY is frozen by an append-only `depreciation_locks` row.
+  a lodged FY is frozen by an append-only `depreciation_locks` row. Every export (single-FY and
+  multi-year CSV) reads a lodged FY from that snapshot, so a lodged year's closing value can differ
+  from the next live year's opening value once an asset is edited; the multi-year headings say
+  "(lodged)" for that reason.
 - **Accounting traps (each yields a plausible wrong number):** deduction is apportioned by business-
   use %, the adjustable value is not; `daysHeld` runs from `start_date` not `purchase_date`;
   Australian FY is 1 Jul–30 Jun, one shared FY helper, never `getFullYear()`; leave and sick days are

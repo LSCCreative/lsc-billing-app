@@ -431,6 +431,47 @@
   display: block;
 }
 
+/* The multi-year export (own-kit K7): under the year's own CSV and lock,
+   ruled off from them because it isn't about the year selected above. */
+.dep-multi {
+  margin: 16px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.dep-multi-h {
+  margin: 0 0 10px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text);
+}
+.dep-multi-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-bottom: 8px;
+}
+.dep-multi-row .btn {
+  white-space: nowrap;
+}
+#dep-multi-spin {
+  display: none;
+}
+.dep-multi-error {
+  display: none;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.dep-multi-error.show {
+  display: block;
+}
+
 /* ── The decline curve ──────────────────────────────────────────────────────
    Between the register and the schedule: an asset's view, so it sits under
    the list of assets, and the schedule → CSV → lock run stays unbroken at the

@@ -117,7 +117,7 @@ Tags: **(money — Opus/high)**, **(frontend — Opus/high)** = **Frontend task*
 
 ## Interactions & States
 
-- [ ] **K7. Multi-year accountant CSV** (money — Opus/high): add `GET /api/depreciation-schedule-multi.csv
+- [x] **K7. Multi-year accountant CSV** (money — Opus/high): add `GET /api/depreciation-schedule-multi.csv
   ?from=<FY>&to=<FY>` (default prior FY → current FY) producing one row per asset with: Asset
   Description, Date Purchased, Purchase Price (AUD), Business Use %, Taxable Cost Base (cost base ×
   business use, informational), Depreciation Method, Effective Life (Yrs), then per FY Opening Value /
@@ -128,7 +128,21 @@ Tags: **(money — Opus/high)**, **(frontend — Opus/high)** = **Frontend task*
   choice defaulting to prior + current; the single-FY export stays. Done when: test fixtures with a part-
   year asset, a part-personal asset, a disposal, a pool and a lodged year reconcile to the single-FY
   export figures year by year. _Modifies: `routes/depreciation.js`, `views/depreciation.js`. Reuses:
-  `financialYearSchedule`, `buildCsv`'s helpers._
+  `financialYearSchedule`, `buildCsv`'s helpers._ **Built:** `buildMultiCsv` / `resolveFyRange` in
+  `routes/depreciation.js`; 400 `invalid_fy` / `fy_range_invalid` (From after To) /
+  `fy_range_too_long` (over 10 years); file `depreciation-schedule-<from>-to-<to>.csv`. Lodged FYs'
+  headings end "(lodged)". Rows in register order, then assets that exist only in a lodged snapshot
+  (deleted since; notes say so). Method in words; Business Use % and Taxable Cost Base are today's
+  (a lodged row at a different % gets a note). Notes: first used (start ≠ purchase), opening value
+  entered, part year (days held, not in the disposal year), disposal sentence (with any capital gain),
+  disposal after the range. Pool rows: blank cost base, additions / proceeds / assessable income in
+  notes; pool claims count in the totals. Page: "Several years at once" under the year's CSV and lock,
+  outside the per-year body (survives a year change or an empty year); From / To list the schedule's
+  years plus last year; a reversed or too-long range disables the button with an inline message.
+  Tests: `test-depreciation-csv.js` (own DB, 8 tests: reconcile each FY row by row and in total against
+  the single-FY export, lodged frozen / next live, deleted asset, part-personal, part year, disposal,
+  pool, defaults, refusals, formula defusal); 8 mutations each fail a test; 748/748. Checked 1280 /
+  800 / 375 headless on a throwaway DB (default range, reversed range, export, toast, no overflow).
 
 ## Responsive & Polish
 

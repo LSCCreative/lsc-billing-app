@@ -161,6 +161,10 @@ const DepreciationView = (() => {
   let schedLoadingFy = null;
   let schedSeq = 0; // a reply for an FY the user has since moved off is ignored
   let announcePending = false; // set by the FY <select>, spent by renderScheduleBody
+  // The multi-year export's range (K7). null = prior FY to current FY.
+  let multiFrom = null;
+  let multiTo = null;
+  let multiDownloading = false;
   // The decline curve's picker. null = the first chartable asset.
   let chartAssetId = null;
   let pendingFocus = null; // an id to focus once the next reply renders
@@ -731,6 +735,122 @@ const DepreciationView = (() => {
     }
   }
 
+  // ── The multi-year export (own-kit K7) ───────────────────────────────────
+
+  const MULTI_MAX_YEARS = 10; // the route refuses more (fy_range_too_long)
+  const priorFy = () => fyLabel(startYearOf(currentFinancialYear()) - 1 + '-07-01');
+
+  /* The schedule's year list, plus last year when no asset reaches back that
+     far, so the default range is always on offer. Newest first, as above. */
+  function multiOptions() {
+    const list = fyOptions();
+    if (!list.includes(priorFy())) list.push(priorFy());
+    return list;
+  }
+
+  function multiRange() {
+    const list = multiOptions();
+    const from = list.includes(multiFrom) ? multiFrom : priorFy();
+    const to = list.includes(multiTo) ? multiTo : currentFinancialYear();
+    return { from, to };
+  }
+
+  /* Why the range can't be exported, or null. The server has the same rules;
+     these say so before the click rather than after it. */
+  function multiProblem({ from, to }) {
+    const span = startYearOf(to) - startYearOf(from) + 1;
+    if (span < 1) return 'The From year must be on or before the To year.';
+    if (span > MULTI_MAX_YEARS) return 'Choose at most ' + MULTI_MAX_YEARS + ' financial years.';
+    return null;
+  }
+
+  function multiSelect(id, value) {
+    return (
+      '<select id="' + id + '" class="doc-type-select" aria-describedby="dep-multi-note">' +
+      multiOptions()
+        .map((label) =>
+          '<option value="' + esc(label) + '"' + (label === value ? ' selected' : '') + '>' +
+          esc(fyDisplay(label)) + (label === currentFinancialYear() ? ' (this year)' : '') + '</option>')
+        .join('') +
+      '</select>'
+    );
+  }
+
+  function multiMarkup() {
+    const range = multiRange();
+    const problem = multiProblem(range);
+    return (
+      '<div class="dep-multi" role="group" aria-labelledby="dep-multi-h">' +
+      '<h3 class="dep-multi-h" id="dep-multi-h">Several years at once</h3>' +
+      '<div class="dep-multi-row">' +
+      '<label class="dep-fy"><span class="sum-label">From</span>' + multiSelect('dep-multi-from', range.from) + '</label>' +
+      '<label class="dep-fy"><span class="sum-label">To</span>' + multiSelect('dep-multi-to', range.to) + '</label>' +
+      '<button type="button" class="btn btn-sm" id="dep-multi-csv"' + (problem ? ' disabled' : '') + '>' +
+      '<span class="spinner" id="dep-multi-spin"></span><span>Export asset schedule (multi-year CSV)</span></button>' +
+      '</div>' +
+      '<p class="dep-actions-note" id="dep-multi-note">One row per asset with each year’s opening value, claim and ' +
+      'closing value side by side, then disposals, notes and a totals row. A lodged year is its lodged figures.</p>' +
+      '<div class="dep-multi-error' + (problem ? ' show' : '') + '" id="dep-multi-error" role="alert">' +
+      esc(problem || '') + '</div>' +
+      '</div>'
+    );
+  }
+
+  /* A range change redraws only the button and the message, so focus stays
+     on the <select> being operated. */
+  function syncMulti() {
+    const problem = multiProblem(multiRange());
+    const btn = $('dep-multi-csv');
+    if (btn) btn.disabled = Boolean(problem) || multiDownloading;
+    const el = $('dep-multi-error');
+    if (el) {
+      el.textContent = problem || '';
+      el.classList.toggle('show', Boolean(problem));
+    }
+  }
+
+  async function downloadMultiCsv() {
+    const range = multiRange();
+    if (multiDownloading || multiProblem(range)) return;
+    multiDownloading = true;
+    syncMulti();
+    if ($('dep-multi-spin')) $('dep-multi-spin').style.display = 'inline-block';
+    const span = range.from === range.to ? range.from : range.from + '-to-' + range.to;
+    try {
+      const reply = await LSCApi.getCsv(
+        '/api/depreciation-schedule-multi.csv?from=' + encodeURIComponent(range.from) +
+        '&to=' + encodeURIComponent(range.to)
+      );
+      LSCUtil.saveFile(reply.blob, reply.filename || 'depreciation-schedule-' + span + '.csv');
+      Toast.ok(
+        'Asset schedule downloaded, ' + fyDisplay(range.from) +
+        (range.from === range.to ? '' : ' to ' + fyDisplay(range.to)) + '.'
+      );
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      const el = $('dep-multi-error');
+      if (el) {
+        el.textContent = failureText(err, 'export the asset schedule');
+        el.classList.add('show');
+      }
+    } finally {
+      multiDownloading = false;
+      if ($('dep-multi-spin')) $('dep-multi-spin').style.display = 'none';
+      const btn = $('dep-multi-csv');
+      if (btn) btn.disabled = Boolean(multiProblem(multiRange()));
+    }
+  }
+
+  function bindMulti() {
+    const from = $('dep-multi-from');
+    const to = $('dep-multi-to');
+    const btn = $('dep-multi-csv');
+    if (from) from.addEventListener('change', () => { multiFrom = from.value; syncMulti(); });
+    if (to) to.addEventListener('change', () => { multiTo = to.value; syncMulti(); });
+    if (btn) btn.addEventListener('click', downloadMultiCsv);
+  }
+
   async function lodge() {
     if (lodging || !sched || sched.fy !== selectedFy) return;
     const fy = selectedFy;
@@ -847,7 +967,7 @@ const DepreciationView = (() => {
       '<label class="dep-fy"><span class="sum-label">Financial year</span>' +
       '<select id="dep-fy" class="doc-type-select">' + options + '</select></label></div>' +
       '<p class="dep-live" id="dep-sched-status" aria-live="polite"></p>' +
-      '<div id="dep-sched-body">' + scheduleBodyMarkup() + '</div></section>'
+      '<div id="dep-sched-body">' + scheduleBodyMarkup() + '</div>' + multiMarkup() + '</section>'
     );
   }
 
@@ -1998,6 +2118,7 @@ const DepreciationView = (() => {
       iawoRaw = this.value;
     });
     $('dep-iawo-save').addEventListener('click', saveThreshold);
+    bindMulti();
     const fySelect = $('dep-fy');
     if (fySelect) {
       fySelect.addEventListener('change', () => {

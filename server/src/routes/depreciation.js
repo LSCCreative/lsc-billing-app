@@ -1,8 +1,8 @@
 'use strict';
 
 const { newId, nowIso } = require('../db');
-const { currentFinancialYear, fyBounds } = require('../calc');
-const { financialYearSchedule } = require('../depreciation');
+const { currentFinancialYear, fyBounds, round2, businessUseShare } = require('../calc');
+const { financialYearSchedule, costBaseOf, daysInclusive } = require('../depreciation');
 const { writeSnapshot } = require('./overhead');
 
 function loadAsset(row) {
@@ -320,6 +320,212 @@ function buildCsv(schedule, assets) {
   return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
 
+/* ── The multi-year asset schedule (own-kit K7, K-D11) ──────────────────────
+
+   One row per asset across a run of FYs, the years side by side, for the
+   accountant who wants this year and last on one sheet. Every money cell is
+   the single-FY schedule's own figure for that year (Opening = opening
+   adjustable value, Claim = deductible, Closing = closing adjustable value),
+   so each FY's three columns reconcile with that year's single-FY export.
+   A lodged FY reads its frozen snapshot, as the single-FY export does; its
+   headings say "(lodged)", because a lodged year's closing value need not
+   equal the next year's live opening value once an asset was edited. */
+
+const MULTI_MAX_YEARS = 10;
+
+const METHOD_NAMES = {
+  diminishing_value: 'Diminishing value',
+  prime_cost: 'Prime cost',
+  instant_writeoff: 'Instant asset write-off',
+  small_business_pool: 'Small business pool',
+  low_value_pool: 'Low value pool',
+};
+
+const fyToken = (startYear) => `FY${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
+
+/** ?from= and ?to=, defaulting to the prior FY and the current one. */
+function resolveFyRange(query) {
+  const current = fyBounds(currentFinancialYear());
+  const to = typeof query.to === 'string' && query.to.trim() ? fyBounds(query.to) : current;
+  const from = typeof query.from === 'string' && query.from.trim()
+    ? fyBounds(query.from)
+    : fyBounds(fyToken((to || current).startYear - 1));
+  if (!from || !to) return { error: 'invalid_fy', message: 'That isn’t a financial year this app recognises.' };
+  if (from.startYear > to.startYear) {
+    return { error: 'fy_range_invalid', message: 'The From year must be on or before the To year.' };
+  }
+  if (to.startYear - from.startYear + 1 > MULTI_MAX_YEARS) {
+    return { error: 'fy_range_too_long', message: `Choose at most ${MULTI_MAX_YEARS} financial years.` };
+  }
+  const labels = [];
+  for (let y = from.startYear; y <= to.startYear; y += 1) labels.push(fyToken(y));
+  return { labels };
+}
+
+/* 2027-03-12 → 12/03/2027, the way the notes column reads to an Australian. */
+function auDate(iso) {
+  const m = typeof iso === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || '');
+}
+
+/* Money inside a sentence: $1,234.50, and a real minus sign for a negative. */
+function noteMoney(n) {
+  const v = Number(n) || 0;
+  const s = '$' + Math.abs(v).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v < 0 ? '−' + s : s;
+}
+
+/**
+ * @param years  [{ fy, lodged, schedule }] in FY order; `schedule` is the
+ *               frozen snapshot for a lodged year, else the live recompute.
+ * @param assets the current assets table (raw rows), in register order.
+ */
+function buildMultiCsv(years, assets) {
+  const assetsById = new Map(assets.map((a) => [a.id, a]));
+  const header = [
+    'Asset Description', 'Date Purchased', 'Purchase Price (AUD)', 'Business Use %',
+    'Taxable Cost Base', 'Depreciation Method', 'Effective Life (Yrs)',
+  ];
+  for (const y of years) {
+    const tag = y.lodged ? ' (lodged)' : '';
+    header.push(`${y.fy} Opening Value${tag}`, `${y.fy} Claim${tag}`, `${y.fy} Closing Value${tag}`);
+  }
+  header.push('Disposal Date', 'Disposal Proceeds', 'Balancing Adjustment', 'Notes');
+  const lines = [csvRow(header)];
+
+  /* Every asset any year in the range has a row for, keyed by id: today's
+     register order first, then any that exist only in a lodged snapshot
+     (deleted since), in the order they were met. */
+  const byId = new Map();
+  for (const y of years) {
+    for (const row of y.schedule.assets || []) {
+      if (!byId.has(row.assetId)) byId.set(row.assetId, new Map());
+      byId.get(row.assetId).set(y.fy, row);
+    }
+  }
+  const registerIndex = new Map(assets.map((a, i) => [a.id, i]));
+  const at = (id) => (registerIndex.has(id) ? registerIndex.get(id) : assets.length);
+  const ids = [...byId.keys()].sort((a, b) => at(a) - at(b));
+
+  const lastEnd = fyBounds(years[years.length - 1].fy).end;
+  let totalCostBase = 0;
+  const totalClaim = new Map(years.map((y) => [y.fy, 0]));
+
+  for (const id of ids) {
+    const rows = byId.get(id);
+    const asset = assetsById.get(id);
+    const latest = [...rows.values()].pop();
+    const use = asset ? asset.business_use_pct : latest.businessUsePct;
+    // Cost base × business use: informational, the part of the cost that is
+    // ever deductible. Not a schedule figure, so not frozen by a lodgement.
+    const costBase = asset ? round2(costBaseOf(asset) * businessUseShare(asset)) : null;
+    if (costBase !== null) totalCostBase += costBase;
+
+    const cells = [
+      csvText(asset ? asset.name : latest.name),
+      asset ? asset.purchase_date || '' : '',
+      csvMoney(asset ? asset.cost_inc_gst : null),
+      use === null || use === undefined ? '' : use,
+      csvMoney(costBase),
+      asset ? METHOD_NAMES[asset.method] || asset.method : '',
+      asset && asset.effective_life_years !== null && asset.effective_life_years !== undefined
+        ? asset.effective_life_years : '',
+    ];
+    const notes = [];
+    if (!asset) notes.push('No longer in the register: figures are as lodged.');
+    if (asset && asset.start_date && asset.start_date !== asset.purchase_date) {
+      notes.push(`First used ${auDate(asset.start_date)}.`);
+    }
+    if (asset && asset.opening_adjustable_value !== null && asset.opening_adjustable_value !== undefined) {
+      notes.push(
+        `Entered at ${noteMoney(asset.opening_adjustable_value)} adjustable value` +
+        (asset.opening_value_fy ? ` from ${asset.opening_value_fy}.` : '.')
+      );
+    }
+
+    let disposal = null;
+    for (const y of years) {
+      const row = rows.get(y.fy);
+      if (!row) {
+        cells.push('', '', '');
+        continue;
+      }
+      cells.push(csvMoney(row.openingAdjustableValue), csvMoney(row.deductible), csvMoney(row.closingAdjustableValue));
+      totalClaim.set(y.fy, totalClaim.get(y.fy) + (row.deductible || 0));
+
+      const bounds = fyBounds(y.fy);
+      if (row.disposed) {
+        disposal = row;
+      } else if (row.daysHeld < daysInclusive(bounds.start, bounds.end)) {
+        notes.push(`Part year in ${y.fy}: ${row.daysHeld} days held.`);
+      }
+      if (y.lodged && row.businessUsePct !== undefined && use !== null && use !== undefined && row.businessUsePct !== use) {
+        notes.push(`${y.fy} was lodged at ${row.businessUsePct}% business use.`);
+      }
+    }
+
+    if (disposal) {
+      // A snapshot from before rows carried their inputs falls back to the
+      // asset, as the single-FY export does.
+      const date = disposal.disposalDate !== undefined ? disposal.disposalDate : asset ? asset.disposal_date : null;
+      const proceeds = disposal.disposalProceeds !== undefined
+        ? disposal.disposalProceeds
+        : asset ? (asset.disposal_proceeds || 0) : null;
+      cells.push(date || '', csvMoney(proceeds), csvMoney(disposal.balancingAdjustment));
+      notes.push(
+        `Disposed ${auDate(date)} for ${noteMoney(proceeds)}: balancing adjustment ` +
+        noteMoney(disposal.balancingAdjustment) +
+        (disposal.capitalGain ? `, capital gain ${noteMoney(disposal.capitalGain)}.` : '.')
+      );
+    } else {
+      cells.push('', '', '');
+      if (asset && asset.disposal_date && asset.disposal_date > lastEnd) {
+        notes.push(`Disposed ${auDate(asset.disposal_date)}, after this range.`);
+      }
+    }
+    cells.push(notes.join(' '));
+    lines.push(csvRow(cells));
+  }
+
+  /* Pools as rows, as in the single-FY export: the pool balance under the
+     Opening / Closing headings and the pool's (fully deductible) decline as
+     the Claim. Pooled assets have no row of their own, so their cost isn't in
+     Taxable Cost Base; the notes give each year's additions instead. */
+  for (const pool of Object.keys(POOL_NAMES)) {
+    const rows = new Map();
+    for (const y of years) {
+      const row = (y.schedule.pools || []).find((p) => p.pool === pool);
+      if (row) rows.set(y.fy, row);
+    }
+    if (!rows.size) continue;
+    const cells = [POOL_NAMES[pool], '', '', '', '', METHOD_NAMES[pool], ''];
+    const notes = [];
+    for (const y of years) {
+      const row = rows.get(y.fy);
+      if (!row) {
+        cells.push('', '', '');
+        continue;
+      }
+      cells.push(csvMoney(row.openingBalance), csvMoney(row.deductible), csvMoney(row.closingBalance));
+      totalClaim.set(y.fy, totalClaim.get(y.fy) + (row.deductible || 0));
+      if (row.additions) notes.push(`${y.fy} additions ${noteMoney(row.additions)} (business share).`);
+      if (row.disposalProceeds) notes.push(`${y.fy} disposal proceeds ${noteMoney(row.disposalProceeds)}.`);
+      if (row.assessableIncome) {
+        notes.push(`${y.fy} assessable income ${noteMoney(row.assessableIncome)} (pool taken below nil).`);
+      }
+    }
+    cells.push('', '', '', notes.join(' '));
+    lines.push(csvRow(cells));
+  }
+
+  const totals = ['Total', '', '', '', csvMoney(round2(totalCostBase)), '', ''];
+  for (const y of years) totals.push('', csvMoney(round2(totalClaim.get(y.fy))), '');
+  totals.push('', '', '', '');
+  lines.push(csvRow(totals));
+
+  return '﻿' + lines.join('\r\n') + '\r\n';
+}
+
 /* ── Divergence: a lodged FY against today's recompute ─────────────────────
 
    Line by line, not totals only. Comparing the two totals missed any edit
@@ -552,6 +758,31 @@ function registerDepreciationRoutes(app, db) {
 
     const csv = buildCsv(schedule, assets);
     res.attachment(`depreciation-schedule-${fy}.csv`);
+    res.type('text/csv; charset=utf-8');
+    res.send(csv);
+  });
+
+  // The multi-year asset schedule (see buildMultiCsv). Each FY in the range
+  // follows the single-FY rule above: a lodged year is its frozen figures.
+  app.get('/api/depreciation-schedule-multi.csv', (req, res) => {
+    const range = resolveFyRange(req.query);
+    if (range.error) return res.status(400).json(range);
+
+    const assets = allAssets(db);
+    const opts = scheduleOpts(db);
+    const years = range.labels.map((fy) => {
+      const lock = latestLock(db, fy);
+      return {
+        fy,
+        lodged: !!lock,
+        schedule: lock ? JSON.parse(lock.figures_json) : financialYearSchedule(assets, fy, opts),
+      };
+    });
+
+    const csv = buildMultiCsv(years, assets);
+    const first = range.labels[0];
+    const last = range.labels[range.labels.length - 1];
+    res.attachment(`depreciation-schedule-${first === last ? first : `${first}-to-${last}`}.csv`);
     res.type('text/csv; charset=utf-8');
     res.send(csv);
   });

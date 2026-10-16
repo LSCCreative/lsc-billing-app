@@ -29,7 +29,7 @@ first). `origin/production-booking` holds one docs-only commit not on `main`; ig
 
 | Track | Open | Blocked on |
 |---|---|---|
-| [`own-kit/`](own-kit/TASKS.md) | **Next build; K1–K6 done (code only, undeployed, schema v17 in `db.js`).** K7–K10 open; K1–K10: per-asset Recovery (Overhead Floor / On-Set Kit), day rate, "Add On-Set Equipment" pop-up and own-kit lines, "Kit Hire - …" on documents, multi-year CSV, schema v17. Supersedes estimate-accuracy 9. Decisions K-D1–K-D11 are the user's | nothing; ask before deploying |
+| [`own-kit/`](own-kit/TASKS.md) | **Next build; K1–K7 done (code only, undeployed, schema v17 in `db.js`).** K8–K10 open; K1–K10: per-asset Recovery (Overhead Floor / On-Set Kit), day rate, "Add On-Set Equipment" pop-up and own-kit lines, "Kit Hire - …" on documents, multi-year CSV, schema v17. Supersedes estimate-accuracy 9. Decisions K-D1–K-D11 are the user's | nothing; ask before deploying |
 | [`estimate-accuracy/`](estimate-accuracy/TASKS.md) | 7 (relabel Overhead "Tax", no decision needed), 10, 12–14 (each has an open decision: `/grill-me` first), 4 and 5(b) (user checks), 15 deploy, 16 review | grill decisions; user |
 | production-booking task 31 | Stripe card payment, **on hold (D101): don't build** | the user |
 | nas-hosted redeploy hardening | compose data volume as `${HOST_DATA_DIR:-./data}`, a written redeploy procedure (now in `DEPLOYMENT.md`) | nothing; low priority |
