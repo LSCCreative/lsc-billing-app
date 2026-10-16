@@ -146,11 +146,23 @@ Tags: **(money — Opus/high)**, **(frontend — Opus/high)** = **Frontend task*
 
 ## Responsive & Polish
 
-- [ ] **K8. Accessibility and responsive pass** (frontend — Opus/high, **Frontend task**): the asset
+- [x] **K8. Accessibility and responsive pass** (frontend — Opus/high, **Frontend task**): the asset
   modal's new fields and warnings, the pop-up (focus trap via `LSCModal`, Esc, multi-select keyboard use,
   labelled checkboxes), the Own kit tag and its row on a stacked phone table (`data-label` on every cell),
   the register tags (not colour alone). Breakpoints 1280 / 800 / 375. Done when: a headless axe run and
-  keyboard walk show nothing new.
+  keyboard walk show nothing new. **Done:** axe-core 4.10 headless at 1280 / 800 / 375 on a throwaway DB
+  over the Depreciation page (register, K7 block), the asset modal (kit asset), the estimate editor with
+  kit lines, the pop-up, and the day menu: no violation on any own-kit element. Two pre-existing minor
+  `empty-table-header` hits remain (the register's actions `<th>`, the same pattern in four other
+  tables; the calendar's day column heads), not new. Keyboard: modal opens on Name, Tab reaches the
+  Recovery radios and Day rate, arrow keys switch Recovery with focus kept through the re-render and the
+  move spoken after the 1 s announce delay, Escape returns to Edit; pop-up from Equipment Hire and from a
+  day menu's Equipment Hire group opens on the first checkbox, Space ticks, Tab runs checkboxes → Days
+  each → Cancel → Add and wraps (trap), Enter adds and returns focus to the opener (phone: the sheet
+  closes first, focus to the card's menu button), Escape closes with nothing added. Phone: every kit-row
+  cell has a `data-label` (Markup is hidden, as on vendor rows); register Recovery tags and warnings are
+  words. One fix: the pop-up's "Days each" was 40px tall, now 44 (`booking.css`); every other new
+  control measured ≥ 44px at 375.
 
 ## Review
 

@@ -1453,7 +1453,7 @@
 }
 .kp-days .num-inp {
   width: 88px;
-  min-height: 40px;
+  min-height: 44px; /* a touch target, and level with Cancel / Add beside it */
   font-size: 16px; /* no zoom on focus in iOS Safari */
   font-family: var(--font-figures);
 }
