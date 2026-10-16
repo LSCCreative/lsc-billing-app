@@ -134,7 +134,8 @@
      scrolling by 3px at 768 to fitting, and the register from 194px of scroll
      to 138 (three assets, scratch data). */
   .dep-scroll .est-table th,
-  .dep-scroll .est-table td {
+  .dep-scroll .est-table td,
+  .dep-scroll .est-table td.right {
     padding-left: 10px;
     padding-right: 10px;
   }

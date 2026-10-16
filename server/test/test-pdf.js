@@ -780,8 +780,8 @@ test('client PDF: an own-kit line prints "Kit Hire - <asset>" with its days and 
     const hire = html.slice(from, html.indexOf('</div></div>', from) + 12);
     assert.match(hire, /Kit Hire - Sony FX6 <span[^>]*>&middot; 2 days<\/span><\/div>/, docType);
     assert.match(hire, /Kit Hire - DJI RS4 <span[^>]*>&middot; 1 day<\/span><\/div>/, docType);
-    // A vendor's line is as it was: its Item, no days, no vendor.
-    assert.match(hire, /Aputure 600d<\/div>/, docType);
+    // A vendor's line: its Item and days like kit (design review 2026-10-17), never its vendor.
+    assert.match(hire, /Aputure 600d <span[^>]*>&middot; 1 day<\/span><\/div>/, docType);
     assert.doesNotMatch(html, /Hire Co/, docType);
     // No line price in the block: only a production day's items carry one.
     assert.deepEqual(moneyIn(hire), [], docType);
@@ -800,7 +800,7 @@ test('invoice PDF: a single invoice from the accepted snapshot lists kit lines t
     totals: singleInvoiceTotals(estimate.totals, extras), issuedAt: '2026-11-02', dueAt: '2026-11-16',
   };
   const html = buildInvoiceDocHtml(single, DAY_PRICING, T20_SETTINGS);
-  assert.match(html, /Equipment Hire.*Kit Hire - Sony FX6 <span[^>]*>&middot; 2 days<\/span>.*Kit Hire - DJI RS4 <span[^>]*>&middot; 1 day<\/span>.*Aputure 600d<\/div>/s);
+  assert.match(html, /Equipment Hire.*Kit Hire - Sony FX6 <span[^>]*>&middot; 2 days<\/span>.*Kit Hire - DJI RS4 <span[^>]*>&middot; 1 day<\/span>.*Aputure 600d <span[^>]*>&middot; 1 day<\/span><\/div>/s);
   assert.doesNotMatch(html, /\$300\.00|\$600\.00|\$80\.00/);
   assert.doesNotMatch(html, KIT_INTERNAL);
   assert.match(html, /\$2,244\.00/);

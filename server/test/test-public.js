@@ -158,7 +158,7 @@ test('sending freezes v1: a 43-character link, and the client view the page read
     .labourSections.find((sec) => sec.id === 'post').label;
   assert.deepEqual(e.sections, [
     { label: postLabel, items: [{ name: 'Edit', tag: 'Brand film' }] },
-    { label: 'Equipment Hire', items: [{ name: 'Drone package', tag: '' }] },
+    { label: 'Equipment Hire', items: [{ name: 'Drone package', tag: '1 day' }] },
   ]);
   assert.deepEqual(e.totals, { treatment: 'none', exGst: est.totals.clientPriceExGst, gst: 0, total: est.totals.totalIncGst });
   assert.match(e.disclaimer, /proposed dates are not locked in/);
@@ -1214,7 +1214,7 @@ test('client page: a kit line is "Kit Hire - <asset>" with its days, no price; t
   const r = await pub(token);
   assert.equal(r.status, 200);
   const hire = r.body.estimate.sections.find((s) => s.label === 'Equipment Hire');
-  assert.deepEqual(hire.items, [{ name: 'Kit Hire - Sony FX6', tag: '2 days' }, { name: 'Drone package', tag: '' }]);
+  assert.deepEqual(hire.items, [{ name: 'Kit Hire - Sony FX6', tag: '2 days' }, { name: 'Drone package', tag: '1 day' }]);
   // The total is the client's figure; how the kit line is counted never shows.
   assert.equal(r.body.estimate.totals.total, est.totals.totalIncGst);
   assert.doesNotMatch(JSON.stringify(r.body), KIT_LEAK);
@@ -1240,7 +1240,7 @@ test('invoice page: an invoice from the accepted snapshot lists the kit line the
   const single = r.body.invoices.find((i) => i.kind === 'single');
   const inv = (await pubInv(await live(single))).body.invoice;
   const hire = inv.sections.find((s) => s.label === 'Equipment Hire');
-  assert.deepEqual(hire.items, [{ name: 'Kit Hire - Sony FX6', tag: '2 days' }, { name: 'Drone package', tag: '' }]);
+  assert.deepEqual(hire.items, [{ name: 'Kit Hire - Sony FX6', tag: '2 days' }, { name: 'Drone package', tag: '1 day' }]);
   assert.doesNotMatch(JSON.stringify(inv), KIT_LEAK);
   assert.doesNotMatch(JSON.stringify(inv), FORBIDDEN);
 });

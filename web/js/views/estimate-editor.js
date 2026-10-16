@@ -1334,6 +1334,10 @@ const EstimateEditor = (() => {
     if (!booking) return;
     closeMenu(false);
     if (kind) menu.open = { [kind]: true };
+    /* Equipment Hire starts open when there is kit to add, so "+ Add On-Set
+       Equipment" isn't two taps deep; once the group is toggled, that choice
+       stands (menu.open keeps it). */
+    else if (menu.open.equip === undefined && kitAssets().ready.length) menu.open.equip = true;
     menu.target = dayKey;
     menu.trigger = trigger || null;
     menu.count = 0;
@@ -2034,9 +2038,10 @@ const EstimateEditor = (() => {
 
     const { ready, unrated } = kitAssets();
     const onEstimate = new Set(rowsIn('equip').filter(isKitRow).map((tr) => tr.dataset.assetId));
-    const where = key === OFF_DAY ? 'Not on a day' : cardName(key);
+    // The card's own subtitle for Not on a day: "Adding to Not on a day" read as a typo.
+    const where = key === OFF_DAY ? 'Not tied to a shoot day' : 'Adding to ' + cardName(key);
     const unratedNote = unrated
-      ? '<p class="kp-note">' + plural(unrated, 'kit asset has', 'kit assets have') + ' no day rate above $0 yet, so ' +
+      ? '<p class="kp-note">' + plural(unrated, 'kit asset has', 'kit assets have') + ' no day rate yet, or a $0 one, so ' +
         (unrated === 1 ? 'it isn’t' : 'they aren’t') + ' listed. Give ' + (unrated === 1 ? 'it' : 'each') +
         ' one in Finance → Overhead → Depreciation.</p>'
       : '';
@@ -2050,13 +2055,13 @@ const EstimateEditor = (() => {
         '<span class="kp-main"><span class="kp-name">' + esc(kitName(a)) + '</span>' +
         '<span class="kp-meta">' + esc(DepreciationView.categoryLabel(a.category)) +
         (added ? '<span class="kp-tag" id="' + id + '-added">Already added</span>' : '') + '</span></span>' +
-        '<span class="kp-rate">' + money(LSCCalc.numOrNull(a.dayRate)) + '<span class="kp-per"> a day</span></span>' +
+        '<span class="kp-rate">' + fmt(LSCCalc.numOrNull(a.dayRate)) + '<span class="kp-per"> a day</span></span>' +
         '</label></li>';
     }).join('');
 
     overlay.innerHTML =
       '<div class="modal-box kp-box" role="dialog" aria-modal="true" aria-labelledby="kp-title" aria-describedby="kp-where">' +
-      '<p class="ad-eyebrow" id="kp-where">Adding to ' + esc(where) + '</p>' +
+      '<p class="ad-eyebrow" id="kp-where">' + esc(where) + '</p>' +
       '<h2 class="modal-title" id="kp-title">Add On-Set Equipment</h2>' +
       (ready.length
         ? '<p class="kp-intro">Your own gear, billed at its day rate. It counts as your income, not a cost passed through.</p>' +
@@ -2123,7 +2128,7 @@ const EstimateEditor = (() => {
     }
     const names = assets.map(kitName);
     const said = 'Added ' + (names.length > 2 ? plural(names.length, 'kit item', 'kit items') : names.join(' and ')) +
-      ' to ' + (key === OFF_DAY ? 'Not on a day' : cardName(key)) + '.';
+      (key === OFF_DAY ? ', not tied to a shoot day.' : ' to ' + cardName(key) + '.');
     const status = menu.el && menu.el.querySelector('#day-menu-status');
     if (status) status.textContent = said;
     if (opener && opener.isConnected) opener.focus();
@@ -3674,8 +3679,9 @@ const EstimateEditor = (() => {
         const bill = paintRow(tr, costBill(line));
         subtotal += bill;
         if (kind === 'equip' && isKitRow(tr)) {
+          // The name already says Kit Hire: no "Own kit" note under it.
           tally(kind, rowDayId(tr), bill, onSetLine(LSCCalc.equipLineName(kitLineOf(tr)),
-            plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, 'Own kit', false));
+            plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, '', false));
           return;
         }
         // Gear reads as its Item, with its vendor under it (B2-7).

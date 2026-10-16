@@ -1279,6 +1279,9 @@
 .kit-rate {
   font-family: var(--font-figures);
   white-space: nowrap;
+  /* The input's 8px padding and 1px border, so a shown rate's figures line
+     up with a typed one's in the same column. */
+  padding-right: 9px;
 }
 /* The estimate detail (K6): the tag sits under the line's printed name,
    "Kit Hire - <asset>", where a hire line has its vendor. */

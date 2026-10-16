@@ -55,8 +55,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   line's name through the editor's `kitName()`, never from `asset.name` directly. Use `LSCCalc.isKitHire`
   for "is this kit", and `DepreciationView.categoryLabel` for a category's words.
 - Every document names a hire line through `calc.js equipLineName` (kit: "Kit Hire - <assetName>").
-  Client documents price no hire line, kit included (only production-day items carry a price); the
-  kit's days go in the item's `tag`. Days × rate shows only on the owner's detail and the Cost Breakdown.
+  Client documents price no hire line, kit included (only production-day items carry a price); every
+  hire line's days go in the item's `tag` (vendor hire too, since 2026-10-17), so changing hire days on a
+  sent quote is a client-facing change (resend). Days × rate shows only on the owner's detail and the
+  Cost Breakdown, which never says "own kit" or "income" (it can be forwarded to a client).
 - Double counting is possible (gear entered as one-off expense and as an asset). The annual cost is
   shown split Operating / Replacement reserve, with a soft prompt on large one-offs.
 - Overhead items are entered GST-exclusive (a hint, no toggle). Every labour row's internal `rate`

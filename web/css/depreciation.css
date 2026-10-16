@@ -682,6 +682,31 @@
   color: var(--muted);
   border-color: var(--border);
 }
+/* An asset's name is the user's own text, up to 200 characters: one with no
+   spaces would otherwise set the Asset column's width and push every other
+   column out of the register (design review, should-fix 3). */
+.dep-table .dep-name,
+.dep-sched-table .dep-name {
+  overflow-wrap: anywhere;
+}
+/* At 768–1099 the register scrolls sideways, and Recovery, its last figure
+   column, sat under the pinned actions until scrolled to: the gap warnings
+   (K-D3) went unseen. There the block moves under the asset's name instead,
+   and the column goes (design review, should-fix 1). The copy in the name
+   cell is display:none everywhere else, so it is read once. */
+.dep-rec-inline {
+  display: none;
+}
+@media (min-width: 768px) and (max-width: 1099px) {
+  .dep-table .dep-rec-th,
+  .dep-table .dep-rec-td {
+    display: none;
+  }
+  .dep-rec-inline {
+    display: block;
+    margin-top: 6px;
+  }
+}
 /* Stacked under 768px the cell is a label-and-value row, so the block sits
    to the right like every other value, its lines aligned to that edge. */
 @media (max-width: 767px) {

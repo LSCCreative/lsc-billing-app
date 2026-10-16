@@ -340,8 +340,10 @@ const DepreciationView = (() => {
       .map(
         (a) =>
           '<tr data-id="' + esc(a.id) + '"' + (isDisposed(a) ? ' class="dep-disposed"' : '') + '>' +
-          '<td data-label="Asset">' + esc(a.name || 'Untitled') +
-          (isDisposed(a) ? ' <span class="dep-tag">Disposed ' + esc(a.disposalDate) + '</span>' : '') + '</td>' +
+          '<td class="dep-name" data-label="Asset">' + esc(a.name || 'Untitled') +
+          (isDisposed(a) ? ' <span class="dep-tag">Disposed ' + esc(a.disposalDate) + '</span>' : '') +
+          // The same block again, shown in place of the Recovery column at 768–1099 (depreciation.css).
+          '<div class="dep-rec-inline">' + recoveryCellMarkup(a) + '</div></td>' +
           '<td class="muted-td" data-label="Category">' + esc(labelOf(CATEGORIES, a.category)) + '</td>' +
           '<td class="muted-td dep-nowrap" data-label="Start date">' + esc(a.startDate || '—') + '</td>' +
           '<td class="right" data-label="Cost (inc GST)">' + fmt(a.costIncGst) + '</td>' +
@@ -368,7 +370,7 @@ const DepreciationView = (() => {
       '<th>Start date</th><th class="right">Cost (inc GST)</th><th>Method</th>' +
       '<th class="right">Business use</th>' +
       '<th class="right">Adjustable value<span class="dep-th-sub">30 Jun ' + esc(fyBounds(fy).end.slice(0, 4)) + '</span></th>' +
-      '<th>Recovery</th><th></th>' +
+      '<th class="dep-rec-th">Recovery</th><th></th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div></div>'
     );
   }
@@ -471,7 +473,7 @@ const DepreciationView = (() => {
         const use = rowUse(r, byId.get(r.assetId));
         return (
           '<tr>' +
-          '<td data-label="Asset">' + esc(r.name || 'Untitled') +
+          '<td class="dep-name" data-label="Asset">' + esc(r.name || 'Untitled') +
           (r.disposed ? ' <span class="dep-tag">Disposed</span>' : '') + changedTag(changedIds.has(r.assetId)) + '</td>' +
           '<td class="right muted-td" data-label="Days held">' + esc(String(r.daysHeld)) + '</td>' +
           '<td class="right" data-label="Opening adjustable value">' + fmt(r.openingAdjustableValue) + '</td>' +
@@ -560,7 +562,7 @@ const DepreciationView = (() => {
         const use = rowUse(r, asset);
         return (
           '<tr>' +
-          '<td data-label="Asset">' + esc(r.name || 'Untitled') + '</td>' +
+          '<td class="dep-name" data-label="Asset">' + esc(r.name || 'Untitled') + '</td>' +
           '<td class="muted-td" data-label="Disposal date">' + esc(disposal.date || '—') + '</td>' +
           '<td class="right" data-label="Disposal proceeds">' + fmt(disposal.proceeds) + '</td>' +
           '<td class="right" data-label="Adjustable value at disposal">' + fmt(r.closingAdjustableValue) + '</td>' +

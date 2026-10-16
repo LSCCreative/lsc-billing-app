@@ -166,7 +166,7 @@ Tags: **(money — Opus/high)**, **(frontend — Opus/high)** = **Frontend task*
 
 ## Review
 
-- [ ] **K9. Money review, then design review**: `/code-review` (xhigh) of the track's diff for a field
+- [x] **K9. Money review, then design review**: `/code-review` (xhigh) of the track's diff for a field
   that prices but doesn't print (or the reverse), a saved estimate that now totals differently, a
   two-copy `calc.js` drift, and a kit line leaking onto a public route; fix, then `/design-review`
   against the screens changed. List fixes in this file under "Code review fixes" and "Design review
@@ -185,6 +185,19 @@ Tags: **(money — Opus/high)**, **(frontend — Opus/high)** = **Frontend task*
   - Not changed: the Cost Breakdown keeps kit lines as plain hire with no "own kit"/income wording, on
     purpose (it can be forwarded to a client; `test-pdf.js` pins that).
   Two mutations each fail a test; 749/749.
+
+  **Design review fixes** (2026-10-17, `DESIGN_REVIEW.md`; no must-fix; all ten applied, checked at 1280 /
+  800 / 375 on a scratch copy):
+  - 768–1099: the register's Recovery block (tag, figure, gap warning) prints under the asset's name and
+    the column goes (`.dep-rec-inline`), so the K-D3 warnings aren't under the pinned actions.
+  - Phone cards: right-aligned depreciation cells had 14px padding against 10px (`responsive.css`).
+  - Asset names wrap anywhere (`.dep-name`), so a long unbroken name can't widen the register.
+  - **Days on every hire line** on client documents (the user's call): `pdf.js serviceGroups` tags vendor
+    hire with its days too, so the quote/invoice PDFs and client pages match. Five tests updated.
+  - Pop-up: eyebrow "Not tied to a shoot day" off a day (and the spoken "Added …"), rates with cents,
+    unrated note reworded; kit rates inset to line up with typed ones; the On set summary drops the
+    redundant "Own kit" note; a day menu opens Equipment Hire when there is kit to add (once toggled,
+    the user's choice stands).
 
 - [ ] **K10. Deploy** (deploy — Sonnet/medium): **ask the user first.** Back up the live DB; fetch and
   diff `origin/main`; **NAS first** (v17; run the migration on a copy of the backup first), then Pages.

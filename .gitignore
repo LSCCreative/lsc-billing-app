@@ -38,6 +38,7 @@ LSC-Service-Agreement*
 
 # Review screenshots: local only, often large (see each track's HANDOVER)
 Project build archive/tracks/*/screenshots/
+.design/*/screenshots/
 
 # Secrets: use 1Password Environments
 .env
