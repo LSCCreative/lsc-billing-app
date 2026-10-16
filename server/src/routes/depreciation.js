@@ -345,6 +345,12 @@ const fyToken = (startYear) => `FY${startYear}-${String((startYear + 1) % 100).p
 
 /** ?from= and ?to=, defaulting to the prior FY and the current one. */
 function resolveFyRange(query) {
+  /* A repeated ?from= or ?to= arrives as an array: refused, never read as
+     "not given", which would quietly export the default years instead. */
+  const bad = (v) => v !== undefined && typeof v !== 'string';
+  if (bad(query.from) || bad(query.to)) {
+    return { error: 'invalid_fy', message: 'That isn’t a financial year this app recognises.' };
+  }
   const current = fyBounds(currentFinancialYear());
   const to = typeof query.to === 'string' && query.to.trim() ? fyBounds(query.to) : current;
   const from = typeof query.from === 'string' && query.from.trim()
@@ -523,7 +529,7 @@ function buildMultiCsv(years, assets) {
   totals.push('', '', '', '');
   lines.push(csvRow(totals));
 
-  return '﻿' + lines.join('\r\n') + '\r\n';
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
 }
 
 /* ── Divergence: a lodged FY against today's recompute ─────────────────────

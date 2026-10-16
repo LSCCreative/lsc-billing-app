@@ -190,7 +190,9 @@ const DepreciationView = (() => {
     if (isDisposed(a)) return null;
     if (isKit(a)) {
       const rate = numOrNull(a.dayRate);
-      return rate === null ? 'No day rate, so it can’t be added to an estimate yet.' : null;
+      if (rate === null) return 'No day rate, so it can’t be added to an estimate yet.';
+      // Out of the reserve and billing $0 a day: its cost is recovered nowhere.
+      return rate > 0 ? null : 'A $0 day rate bills nothing, so it can’t be added to an estimate.';
     }
     const cost = numOrNull(a.replacementCostEstimate);
     const years = numOrNull(a.replacementCycleYears);
@@ -1770,9 +1772,11 @@ const DepreciationView = (() => {
         html = 'Not in your rates: it’s billed as Kit Hire on the jobs that use it.';
       }
       const rate = parseFloat(form.dayRate);
-      if (!disposed && !(Number.isFinite(rate) && rate >= 0)) {
+      if (!disposed && !(Number.isFinite(rate) && rate > 0)) {
         kind = kind || 'is-gap';
-        html += ' Add a day rate, or it can’t be added to an estimate.';
+        html += rate === 0
+          ? ' A $0 day rate bills nothing: give it a rate, or it can’t be added to an estimate.'
+          : ' Add a day rate, or it can’t be added to an estimate.';
       }
     } else if (disposed) {
       html = 'It’s been disposed of, so it adds nothing to your rates.';

@@ -172,6 +172,20 @@ Tags: **(money — Opus/high)**, **(frontend — Opus/high)** = **Frontend task*
   against the screens changed. List fixes in this file under "Code review fixes" and "Design review
   fixes".
 
+  **Code review fixes** (2026-10-17; core money clean: calc.js copies identical, kit income / GST /
+  pass-through exclusions and the stray-flag sweep hold, nothing internal on public routes):
+  - A $0 day rate no longer counts as rated: register and modal warn ("bills nothing"), and the pop-up
+    lists only kit above $0 (a $0 kit asset left the reserve and billed nothing, recovered nowhere).
+  - Google event: Crew and Gear blocks read `line.name`, which crew/hire lines don't have, so they were
+    always empty; now role / `equipLineName` (kit "Kit Hire - <asset>"). Test in `test-google-sync.js`.
+  - Multi-year CSV: a repeated `?from=`/`?to=` is 400 `invalid_fy`, not silently the default years;
+    the BOM is `'﻿'`, not a literal invisible character.
+  - `pdf.js daysText` uses `qtyText` (new `day` unit); the editor's on-set summary names kit lines
+    through `equipLineName`, as documents do.
+  - Not changed: the Cost Breakdown keeps kit lines as plain hire with no "own kit"/income wording, on
+    purpose (it can be forwarded to a client; `test-pdf.js` pins that).
+  Two mutations each fail a test; 749/749.
+
 - [ ] **K10. Deploy** (deploy — Sonnet/medium): **ask the user first.** Back up the live DB; fetch and
   diff `origin/main`; **NAS first** (v17; run the migration on a copy of the backup first), then Pages.
   Record in `ROADMAP.md` and `WORKING_NOTES.md` (the K-D6 rule, kit lines and rentals), tick

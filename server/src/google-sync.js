@@ -52,7 +52,7 @@ const crypto = require('crypto');
 const { nowIso } = require('./db');
 const google = require('./google');
 const { durationText } = require('./call-sheet');
-const { tripLineQty } = require('./calc');
+const { tripLineQty, equipLineName } = require('./calc');
 
 const { ZONE, shiftDate } = google;
 const PRIMARY = 'primary';
@@ -117,9 +117,13 @@ function firstDestination(trip) {
   return stop ? String(stop.address).trim() : '';
 }
 
+/* How each kind of line is named: a production item by its name, crew by its
+   role, hire as every document names it (calc.js equipLineName, so own kit is
+   "Kit Hire - <asset>"). */
+const LINE_NAME = { prod: (l) => l.name, crew: (l) => l.role, equip: equipLineName };
 const namesOn = (rows, key, dayId) => (Array.isArray(rows[key]) ? rows[key] : [])
   .filter((line) => line && String(line.dayId) === dayId)
-  .map((line) => String(line.name || '').trim())
+  .map((line) => String(LINE_NAME[key](line) || '').trim())
   .filter(Boolean)
   .slice(0, MAX_ITEMS);
 

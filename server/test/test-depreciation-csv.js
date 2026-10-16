@@ -292,6 +292,9 @@ test('multi-year CSV: defaults to the prior and current FY; refuses a bad range'
   await refused('from=2025&to=FY2025-26', 'invalid_fy');
   await refused('from=FY2025-26&to=FY2024-25', 'fy_range_invalid');
   await refused('from=FY2014-15&to=FY2025-26', 'fy_range_too_long');
+  // A repeated parameter is refused, not read as "not given" (which would export the default years).
+  await refused('from=FY2024-25&to=FY2025-26&to=FY2026-27', 'invalid_fy');
+  await refused('from=FY2024-25&from=FY2025-26', 'invalid_fy');
 });
 
 test('multi-year CSV: a name a spreadsheet would run as a formula is defused', async () => {

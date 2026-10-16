@@ -61,12 +61,11 @@ function deliverableNames(activeRows) {
   return out;
 }
 
-/* "1 day", "2.5 days"; '' for none, so a kit line with no days prints its
-   name alone. */
+/* "1 day", "2.5 days" (qtyText); '' for none, so a kit line with no days
+   prints its name alone. */
 function daysText(days) {
   const n = Math.round((parseFloat(days) || 0) * 100) / 100;
-  if (!(n > 0)) return '';
-  return n + (n === 1 ? ' day' : ' days');
+  return n > 0 ? qtyText(n, 'day') : '';
 }
 
 /**
@@ -155,6 +154,7 @@ const UNIT_WORDS = {
   full: ['full day', 'full days'],
   half: ['half day', 'half days'],
   unit: ['unit', 'units'],
+  day: ['day', 'days'],
 };
 const PROPOSED_DISCLAIMER =
   'The proposed dates are not locked in and other project bookings may happen before this quote is agreed upon.';

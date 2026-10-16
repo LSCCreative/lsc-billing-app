@@ -1980,9 +1980,10 @@ const EstimateEditor = (() => {
      leaves out for having no day rate yet. $0 is a rate the owner set; blank
      is none (K1), read as the register reads it. */
   function kitAssets() {
+    // Above $0: a $0 kit asset would bill nothing while out of the reserve (depreciation.js recoveryGap).
     const rated = (a) => {
       const rate = LSCCalc.numOrNull(a.dayRate);
-      return rate !== null && rate >= 0;
+      return rate !== null && rate > 0;
     };
     const kitOnes = LSCData.depreciationAssets().filter((a) => LSCCalc.isKitHire(a) && !a.disposalDate);
     return {
@@ -2035,7 +2036,7 @@ const EstimateEditor = (() => {
     const onEstimate = new Set(rowsIn('equip').filter(isKitRow).map((tr) => tr.dataset.assetId));
     const where = key === OFF_DAY ? 'Not on a day' : cardName(key);
     const unratedNote = unrated
-      ? '<p class="kp-note">' + plural(unrated, 'kit asset has', 'kit assets have') + ' no day rate yet, so ' +
+      ? '<p class="kp-note">' + plural(unrated, 'kit asset has', 'kit assets have') + ' no day rate above $0 yet, so ' +
         (unrated === 1 ? 'it isn’t' : 'they aren’t') + ' listed. Give ' + (unrated === 1 ? 'it' : 'each') +
         ' one in Finance → Overhead → Depreciation.</p>'
       : '';
@@ -3673,7 +3674,7 @@ const EstimateEditor = (() => {
         const bill = paintRow(tr, costBill(line));
         subtotal += bill;
         if (kind === 'equip' && isKitRow(tr)) {
-          tally(kind, rowDayId(tr), bill, onSetLine(tr.dataset.assetName,
+          tally(kind, rowDayId(tr), bill, onSetLine(LSCCalc.equipLineName(kitLineOf(tr)),
             plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, 'Own kit', false));
           return;
         }

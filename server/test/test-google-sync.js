@@ -25,7 +25,7 @@ const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const { PRICING_SHAPE } = require('../src/calc');
 const google = require('../src/google');
-const { whenOf, tripSummary, eventIdOf, BACKOFF_MS } = require('../src/google-sync');
+const { whenOf, tripSummary, eventIdOf, eventFor, BACKOFF_MS } = require('../src/google-sync');
 
 const PASSWORD = 'correct-horse-battery-staple';
 const CLIENT = { clientId: 'client-123.apps.googleusercontent.com', clientSecret: 'CLIENT-SECRET-NEVER-SHOWN', redirectUri: 'http://localhost:8080/api/google/oauth/callback' };
@@ -720,4 +720,22 @@ test('a renewal Google refuses for another reason backs off; only a refused gran
   await sync.flush();
   assert.equal(rowOf('d_rl').state, 'synced');
   assert.equal(only().summary.startsWith('Pencil · '), true);
+});
+
+test('eventFor names crew by role and gear as documents do (own kit "Kit Hire - <asset>"), never a price', () => {
+  const ev = eventFor({
+    id: 'd_k', date: '2026-11-03', status: 'confirmed', name: 'Shoot', upid: 'GS-1',
+    active_rows_json: JSON.stringify({
+      prod: [{ name: 'Capture', dayId: 'd_k', qty: 1 }],
+      crew: [{ role: 'Gaffer', days: 1, cost: 700, dayId: 'd_k' }],
+      equip: [
+        { vendor: 'Kit Co', item: 'Aputure 600d', days: 1, cost: 240, dayId: 'd_k' },
+        { ownKit: true, assetId: 'da_1a2b3c4d', assetName: 'Sony FX6', item: 'Sony FX6', vendor: '', days: 1, cost: 300, dayId: 'd_k' },
+        { vendor: 'Kit Co', item: 'Not this day', days: 1, cost: 50, dayId: 'd_other' },
+      ],
+    }),
+  }, { appUrl: APP_URL });
+  assert.match(ev.description, /Crew:\n• Gaffer/);
+  assert.match(ev.description, /Gear:\n• Aputure 600d\n• Kit Hire - Sony FX6\n\n/);
+  assert.doesNotMatch(ev.description, /Not this day|\$|700|240|300/);
 });
