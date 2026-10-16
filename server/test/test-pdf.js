@@ -752,3 +752,72 @@ test('an agreement signed before task 4 (free text) prints as plain paragraphs; 
   assert.match(fb, /<h1 class="ag-title">ACCEPTANCE OF QUOTE<\/h1>/);
   assert.match(fb, /<p class="ag-signed">Signed for Acme/);
 });
+
+// ── The owner's own kit on the documents (own-kit K6, K-D10) ───────────────
+
+/* Two kit lines and a vendor's line, off any day, on a GST-exclusive card:
+   1,120 + 600 + 80 + 240 = 2,040 ex GST, 2,244 inc. */
+const kitLine = (assetName, days, cost) => ({ ownKit: true, assetId: 'dep_' + assetName.length, assetName, item: assetName, vendor: '', days, cost });
+const KIT_EST = () => Object.assign(bookedEstimate({
+  rows: {
+    prod: [cap()],
+    equip: [kitLine('Sony FX6', 2, 300), kitLine('DJI RS4', 1, 80), { vendor: 'Hire Co', item: 'Aputure 600d', days: 1, cost: 240 }],
+  },
+  days: [],
+  settings: EXCL,
+}), { upid: 'K6', status: 'accepted' });
+/* What a client must never read about a kit line: that it is the owner's,
+   how it is counted, or the asset it came from. */
+const KIT_INTERNAL = /own kit|ownKit|income|assetId|assetName|dep_\d/i;
+
+test('client PDF: an own-kit line prints "Kit Hire - <asset>" with its days and no price, like other hire (K6)', () => {
+  const est = KIT_EST();
+  assert.deepEqual([est.totals.clientPriceExGst, est.totals.totalIncGst], [2040, 2244]);
+  for (const docType of ['estimate', 'invoice']) {
+    const html = buildEstimateHtml({ ...est, docType, invoiceNumber: 'INV-K6' }, DAY_PRICING, BUSINESS);
+    // The Equipment Hire group: its label to the close of its last line.
+    const from = html.indexOf('Equipment Hire');
+    const hire = html.slice(from, html.indexOf('</div></div>', from) + 12);
+    assert.match(hire, /Kit Hire - Sony FX6 <span[^>]*>&middot; 2 days<\/span><\/div>/, docType);
+    assert.match(hire, /Kit Hire - DJI RS4 <span[^>]*>&middot; 1 day<\/span><\/div>/, docType);
+    // A vendor's line is as it was: its Item, no days, no vendor.
+    assert.match(hire, /Aputure 600d<\/div>/, docType);
+    assert.doesNotMatch(html, /Hire Co/, docType);
+    // No line price in the block: only a production day's items carry one.
+    assert.deepEqual(moneyIn(hire), [], docType);
+    assert.doesNotMatch(html, /\$300\.00|\$600\.00|\$80\.00/, docType + ': no day rate or line total');
+    assert.doesNotMatch(html, KIT_INTERNAL, docType);
+    assert.doesNotMatch(html, INTERNAL_WORDS, docType);
+    assert.match(html, /\$2,244\.00/, docType);
+  }
+});
+
+test('invoice PDF: a single invoice from the accepted snapshot lists kit lines the same way (K6)', () => {
+  const estimate = KIT_EST();
+  const extras = extrasTotals({ additional: [] }, DAY_PRICING, EXCL, false);
+  const single = {
+    kind: 'single', number: 'INV-K6', status: 'draft', estimate, extras: [],
+    totals: singleInvoiceTotals(estimate.totals, extras), issuedAt: '2026-11-02', dueAt: '2026-11-16',
+  };
+  const html = buildInvoiceDocHtml(single, DAY_PRICING, T20_SETTINGS);
+  assert.match(html, /Equipment Hire.*Kit Hire - Sony FX6 <span[^>]*>&middot; 2 days<\/span>.*Kit Hire - DJI RS4 <span[^>]*>&middot; 1 day<\/span>.*Aputure 600d<\/div>/s);
+  assert.doesNotMatch(html, /\$300\.00|\$600\.00|\$80\.00/);
+  assert.doesNotMatch(html, KIT_INTERNAL);
+  assert.match(html, /\$2,244\.00/);
+});
+
+test('Cost Breakdown: a kit line is "Kit Hire - <asset>", days at its rate, and the lines still add up (K6)', () => {
+  const est = KIT_EST();
+  const html = buildCostBreakdownHtml(est, DAY_PRICING, BUSINESS);
+  const cb = cbFigures(html);
+  assert.deepEqual(cb.text.filter((t) => / days? at /.test(t)), [
+    'Kit Hire - Sony FX6 · 2 days at $300.00$600.00',
+    'Kit Hire - DJI RS4 · 1 day at $80.00$80.00',
+    'Aputure 600d · 1 day at $240.00$240.00',
+  ]);
+  assert.equal(cb.items.reduce((a, b) => a + b, 0), cb.total[0]);
+  assert.equal(cb.total[0], 204000, 'the ex-GST items total');
+  // Forwardable to the client: hire like any other, nothing about how it's counted.
+  assert.doesNotMatch(html, KIT_INTERNAL);
+  assert.doesNotMatch(html, INTERNAL_WORDS);
+});

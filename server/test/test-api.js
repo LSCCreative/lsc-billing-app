@@ -1115,6 +1115,127 @@ test('depreciation assets: an opening value is dated to its FY, and keeps it acr
   await api(`/api/depreciation-assets/${created.asset.id}`, { method: 'DELETE' });
 });
 
+/**
+ * OWN KIT K1 (schema v17): an asset's recovery setting and day rate. These are
+ * stored and returned only; what they do to the reserve is K2, what they do to
+ * an estimate is K4 onwards.
+ */
+test('depreciation assets: recovery defaults to the Overhead Floor and the day rate to unset', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST', body: JSON.stringify(depreciationAssetPayload({ name: 'Default Recovery Camera' })),
+  }).then((r) => r.json());
+  assert.equal(created.asset.recovery, 'rate');
+  assert.equal(created.asset.dayRate, null);
+
+  // The list reads the same, so the register can tag every row.
+  const list = await api('/api/depreciation-assets').then((r) => r.json());
+  const listed = list.assets.find((a) => a.id === created.asset.id);
+  assert.equal(listed.recovery, 'rate');
+  assert.equal(listed.dayRate, null);
+  await api(`/api/depreciation-assets/${created.asset.id}`, { method: 'DELETE' });
+});
+
+test('depreciation assets: a kit asset saves without a rate; the rate is kept, cleared and carried', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST', body: JSON.stringify(depreciationAssetPayload({ name: 'Kit Camera', recovery: 'kit_hire' })),
+  });
+  assert.equal(created.status, 201);
+  const asset = (await created.json()).asset;
+  assert.deepEqual([asset.recovery, asset.dayRate], ['kit_hire', null], 'saved with no rate, not $0');
+  const put = (overrides) => api(`/api/depreciation-assets/${asset.id}`, {
+    method: 'PUT', body: JSON.stringify(depreciationAssetPayload({ name: 'Kit Camera', ...overrides })),
+  }).then((r) => r.json());
+
+  assert.equal((await put({ recovery: 'kit_hire', dayRate: 150 })).asset.dayRate, 150);
+  // A form field arrives as text; $0 is a real rate, not "unset".
+  assert.equal((await put({ recovery: 'kit_hire', dayRate: '175.5' })).asset.dayRate, 175.5);
+  assert.equal((await put({ recovery: 'kit_hire', dayRate: 0 })).asset.dayRate, 0);
+  await put({ recovery: 'kit_hire', dayRate: 150 });
+
+  // A write that doesn't mention either field (a tab from before v17) keeps both.
+  const silent = (await put({ name: 'Kit Camera Renamed' })).asset;
+  assert.deepEqual([silent.name, silent.recovery, silent.dayRate], ['Kit Camera Renamed', 'kit_hire', 150]);
+
+  // Back on the floor: the rate is kept, ready for a switch the other way.
+  const floor = (await put({ recovery: 'rate' })).asset;
+  assert.deepEqual([floor.recovery, floor.dayRate], ['rate', 150]);
+
+  // null and '' both clear it.
+  assert.equal((await put({ recovery: 'kit_hire', dayRate: null })).asset.dayRate, null);
+  await put({ dayRate: 150 });
+  assert.equal((await put({ dayRate: '' })).asset.dayRate, null);
+
+  await api(`/api/depreciation-assets/${asset.id}`, { method: 'DELETE' });
+});
+
+test('depreciation assets: switching to On-Set Kit takes the asset out of the overhead snapshot', async () => {
+  // writeSnapshot reads raw snake_case rows: the v17 column must reach calc.js.
+  const latest = async () => {
+    const snaps = (await api('/api/overhead-snapshots').then((r) => r.json())).snapshots;
+    return snaps[snaps.length - 1];
+  };
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST', body: JSON.stringify(depreciationAssetPayload({ name: 'Snapshot Kit Camera' })),
+  }).then((r) => r.json());
+  const id = created.asset.id;
+  const onFloor = await latest();
+
+  await api(`/api/depreciation-assets/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(depreciationAssetPayload({ name: 'Snapshot Kit Camera', recovery: 'kit_hire', dayRate: 150 })),
+  });
+  const onKit = await latest();
+  // (3000 ÷ 3) × 100% = 1000/yr leaves the total, and nothing else moves.
+  assert.equal(Math.round((onFloor.totalAnnual - onKit.totalAnnual) * 100) / 100, 1000);
+  assert.equal(
+    Math.round(((onFloor.byCategory.depreciation_reserve || 0) - (onKit.byCategory.depreciation_reserve || 0)) * 100) / 100,
+    1000
+  );
+
+  await api(`/api/depreciation-assets/${id}`, { method: 'DELETE' });
+});
+
+test('depreciation assets: an unknown recovery or a bad day rate is refused and nothing is stored', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST',
+    body: JSON.stringify(depreciationAssetPayload({ name: 'Kit Guard Camera', recovery: 'kit_hire', dayRate: 120 })),
+  }).then((r) => r.json());
+  const id = created.asset.id;
+  const put = (overrides) => api(`/api/depreciation-assets/${id}`, {
+    method: 'PUT', body: JSON.stringify(depreciationAssetPayload({ name: 'Kit Guard Camera', ...overrides })),
+  });
+  const refusal = async (overrides, error) => {
+    const res = await put(overrides);
+    assert.equal(res.status, 400, JSON.stringify(overrides));
+    const body = await res.json();
+    assert.equal(body.error, error, JSON.stringify(overrides));
+    assert.equal(typeof body.message, 'string');
+  };
+
+  for (const recovery of ['hire', '', null, 1, 'KIT_HIRE']) await refusal({ recovery }, 'recovery_invalid');
+  for (const dayRate of [-1, '-0.01', 'abc', ' ', true, [150], { v: 1 }, '1e999']) {
+    await refusal({ dayRate }, 'day_rate_invalid');
+  }
+  // The same rules on create.
+  const badCreate = await api('/api/depreciation-assets', {
+    method: 'POST', body: JSON.stringify(depreciationAssetPayload({ recovery: 'hire' })),
+  });
+  assert.equal(badCreate.status, 400);
+  assert.equal((await badCreate.json()).error, 'recovery_invalid');
+  const badRateCreate = await api('/api/depreciation-assets', {
+    method: 'POST', body: JSON.stringify(depreciationAssetPayload({ dayRate: -5 })),
+  });
+  assert.equal(badRateCreate.status, 400);
+  assert.equal((await badRateCreate.json()).error, 'day_rate_invalid');
+
+  // Nothing above was stored: the asset is as it was.
+  const list = await api('/api/depreciation-assets').then((r) => r.json());
+  const kept = list.assets.find((a) => a.id === id);
+  assert.deepEqual([kept.recovery, kept.dayRate], ['kit_hire', 120]);
+  assert.ok(!list.assets.some((a) => a.recovery === 'hire'));
+  await api(`/api/depreciation-assets/${id}`, { method: 'DELETE' });
+});
+
 test('pricing: Reset Defaults gives back Transport & Logistics Hrs as "Your time"', async () => {
   // estimate-accuracy task 5: the owner's own hours, on a fresh or reset card.
   assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
@@ -2925,4 +3046,83 @@ test('activity: Home\'s recent events across projects, newest first, named as th
   r = await get('?limit=50');
   assert.ok(!r.body.activity.some((e) => [a.projectId, b.projectId].includes(e.project.id)));
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity WHERE id LIKE 'act_t22_%'").get().n, 0);
+});
+
+/* ── Own kit on an estimate (own-kit K5, K-D6–K-D9) ──────────────────────────
+   An Equipment Hire line marked ownKit is the owner's own gear: it saves with
+   its asset named, prices as income (calc.js K4), keeps the day rate it was
+   added at, and is hired from no one, so it keeps no rental. */
+const { round2 } = require('../src/calc');
+const kitLine = (extra) => ({ ownKit: true, assetId: 'dep_0a1b2c3d', assetName: 'FX6 body', item: 'FX6 body', vendor: '', days: 2, cost: 250, ...(extra || {}) });
+
+test('estimates: an own-kit line saves as sent, bills like hire, prices as income and keeps no rental', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const days = [pbDay('kd1', null, 'proposed')];
+  const lens = { vendor: 'Lensworks', item: 'Cine zoom', days: 1, cost: 120, dayId: 'kd1' };
+  const kit = kitLine({ dayId: 'kd1' });
+  const rows = { prod: [capture('kd1')], equip: [kit, lens] };
+  const saved = await saveEstimate({ activeRows: rows, days, rentals: [rental('rn_k5lens', 'Lensworks')] });
+  assert.equal(saved.status, 201);
+  const e = saved.body.estimate;
+  assert.deepEqual(e.activeRows.equip, [kit, lens]);
+  assert.deepEqual(e.rentals.map((r) => r.id), ['rn_k5lens']);
+
+  // The same lines with the kit as a vendor's hire: the same client price and
+  // hours, but the kit's $500 moves from pass-through to income.
+  const asHire = { ...rows, equip: [{ vendor: '', item: 'FX6 body', days: 2, cost: 250, dayId: 'kd1' }, lens] };
+  const h = (await saveEstimate({ activeRows: asHire, days }, e.id)).body.estimate;
+  assert.equal(e.totals.totalIncGst, h.totals.totalIncGst);
+  assert.equal(e.totals.totalHours, h.totals.totalHours);
+  const moved = round2(h.totals.passThroughCost - e.totals.passThroughCost);
+  assert.ok(moved > 0);
+  assert.equal(round2(e.totals.incomeExGst - h.totals.incomeExGst), moved);
+  assert.equal(round2(h.totals.directJobCost - e.totals.directJobCost), moved);
+
+  // A kit line carrying a vendor (no screen sends one) still joins no rental.
+  const vendored = { equip: [kitLine({ vendor: 'Kitco' })] };
+  const v = await saveEstimate({ activeRows: vendored, rentals: [rental('rn_k5kit', 'Kitco')] }, e.id);
+  assert.equal(v.status, 200);
+  assert.deepEqual(v.body.estimate.rentals, []);
+  await dropEstimates(e.id);
+});
+
+test('estimates: an own-kit line keeps its day rate when the asset\'s rate changes', async () => {
+  const created = await api('/api/depreciation-assets', {
+    method: 'POST', body: JSON.stringify(depreciationAssetPayload({ name: 'Kit Light', recovery: 'kit_hire', dayRate: 90 })),
+  }).then((r) => r.json());
+  const asset = created.asset;
+  const line = kitLine({ assetId: asset.id, assetName: asset.name, item: asset.name, days: 1, cost: asset.dayRate });
+  const e = (await saveEstimate({ activeRows: { equip: [line] } })).body.estimate;
+  await api(`/api/depreciation-assets/${asset.id}`, {
+    method: 'PUT', body: JSON.stringify(depreciationAssetPayload({ name: 'Kit Light Mk II', recovery: 'kit_hire', dayRate: 140 })),
+  });
+  const read = (await api(`/api/estimates/${e.id}`).then((r) => r.json())).estimate;
+  assert.deepEqual(read.activeRows.equip, [line]);
+  assert.deepEqual(read.totals, e.totals);
+  // Re-saved as it stands, after the asset has gone: still the same line and price.
+  await api(`/api/depreciation-assets/${asset.id}`, { method: 'DELETE' });
+  const again = (await saveEstimate({ activeRows: read.activeRows }, e.id)).body.estimate;
+  assert.deepEqual([again.activeRows.equip, again.totals], [[line], e.totals]);
+  await dropEstimates(e.id);
+});
+
+test('estimates: own-kit lines are checked before anything is stored', async () => {
+  const bad = async (activeRows, extra) => (await saveEstimate({ activeRows, ...(extra || {}) })).body.error;
+  assert.equal(await bad({ equip: [kitLine({ ownKit: 'true' })] }), 'own_kit_invalid');
+  assert.equal(await bad({ equip: [kitLine({ ownKit: 1 })] }), 'own_kit_invalid');
+  assert.equal(await bad({ crew: [{ role: 'FX6 body', days: 1, cost: 250, ownKit: true, assetId: 'dep_1', assetName: 'FX6' }] }), 'own_kit_not_equipment');
+  assert.equal(await bad({ equip: [kitLine({ assetId: undefined })] }), 'own_kit_asset_invalid');
+  assert.equal(await bad({ equip: [kitLine({ assetId: 'dep 1' })] }), 'own_kit_asset_invalid');
+  assert.equal(await bad({ equip: [kitLine({ assetId: 42 })] }), 'own_kit_asset_invalid');
+  assert.equal(await bad({ equip: [kitLine({ assetName: '  ' })] }), 'own_kit_asset_name_invalid');
+  assert.equal(await bad({ equip: [kitLine({ assetName: 'x'.repeat(201) })] }), 'own_kit_asset_name_invalid');
+  assert.equal(await bad({ equip: [{ vendor: 'Lensworks', item: 'Zoom', days: 1, cost: 1, assetId: 'dep_1' }] }), 'asset_on_hire_line');
+  assert.equal(await bad({ equip: [{ vendor: 'Lensworks', item: 'Zoom', days: 1, cost: 1, assetName: 'Zoom' }] }), 'asset_on_hire_line');
+  // A day it doesn't have, like any other line; a negative figure, like any other line.
+  assert.equal(await bad({ equip: [kitLine({ dayId: 'nope' })] }, { days: [pbDay('kd2', null, 'proposed')] }), 'line_day_unknown');
+  assert.equal(await bad({ equip: [kitLine({ days: -1 })] }), 'negative_line_value');
+  // `ownKit: false` is a vendor's line, and saves.
+  const ok = await saveEstimate({ activeRows: { equip: [{ vendor: 'Lensworks', item: 'Zoom', days: 1, cost: 1, ownKit: false }] } });
+  assert.equal(ok.status, 201);
+  await dropEstimates(ok.body.estimate.id);
 });

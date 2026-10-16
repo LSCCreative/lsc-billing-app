@@ -1246,3 +1246,228 @@
     flex-direction: column;
   }
 }
+
+/* ── The owner's own kit (own-kit K5) ───────────────────────────────────────
+   A kit line on a card: the "Own kit" tag (words, not colour: the register's
+   On-Set Kit tag, drawn in --text) before the asset's name, where a hire line
+   has its Vendor and Item inputs. Its day rate is a figure, not a field. */
+.kit-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.kit-tag {
+  flex: 0 0 auto;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--text);
+  border: 1px solid var(--text);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.kit-asset {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kit-rate {
+  font-family: var(--font-figures);
+  white-space: nowrap;
+}
+/* The estimate detail (K6): the tag sits under the line's printed name,
+   "Kit Hire - <asset>", where a hire line has its vendor. */
+.est-vendor .kit-tag {
+  display: inline-block;
+  margin-top: 2px;
+}
+
+/* The menu's Equipment Hire group: a typed hire line, or the owner's kit. */
+.dm-blanks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Add On-Set Equipment ───────────────────────────────────────────────────
+   A bottom sheet on a phone, as the add-day dialog is; a centred box from
+   768px. A checklist: each asset a whole-row target (44px on a phone), its
+   name and category left, its day rate right in figures. A ticked row takes
+   the accent rule on its left edge, beside the tick itself. */
+#modal-own-kit {
+  align-items: flex-end;
+}
+#modal-own-kit .kp-box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  max-height: 90vh;
+  padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+  border-bottom: none;
+}
+@media (min-width: 768px) {
+  #modal-own-kit {
+    align-items: center;
+  }
+  #modal-own-kit .kp-box {
+    width: 520px;
+    max-width: 95vw;
+    max-height: 80vh;
+    padding: 26px 30px 22px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+#modal-own-kit .modal-title {
+  margin-bottom: 6px;
+}
+.kp-intro,
+.kp-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.kp-intro {
+  margin-bottom: 14px;
+}
+.kp-note {
+  margin-top: 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--accent-text);
+}
+.kp-empty {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--text);
+}
+.kp-set {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.kp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kp-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border-bottom: 1px solid var(--color-border-hairline);
+  border-left: 2px solid transparent;
+}
+.kp-item:last-child {
+  border-bottom: none;
+}
+.kp-item:has(.kp-check:checked) {
+  border-left-color: var(--accent);
+}
+.kp-check {
+  width: 18px;
+  height: 18px;
+  margin: 0 0 0 10px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.kp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 10px 8px 12px;
+  cursor: pointer;
+}
+.kp-row:hover .kp-name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.kp-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.kp-name {
+  font-size: 14px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.kp-tag {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  border: 1px solid var(--border);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+.kp-rate {
+  flex: 0 0 auto;
+  font-family: var(--font-figures);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.kp-per {
+  font-family: var(--font-family-body);
+  font-size: 11px;
+  color: var(--muted);
+}
+.kp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding-top: 16px;
+}
+.kp-days {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.kp-days label {
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+}
+.kp-days .num-inp {
+  width: 88px;
+  min-height: 40px;
+  font-size: 16px; /* no zoom on focus in iOS Safari */
+  font-family: var(--font-figures);
+}
+.kp-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+@media (max-width: 767px) {
+  .kp-actions {
+    width: 100%;
+  }
+  .kp-actions .btn {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+}

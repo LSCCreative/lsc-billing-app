@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 /**
  * MIGRATION v13 — projects, the new estimate statuses, invoices and activity
- * (.design/production-booking/ task 15; IA "Data Model", Stage D).
+ * (Project build archive/tracks/production-booking/ task 15; IA "Data Model", Stage D).
  *
  * Runs with foreign keys OFF (db.js `foreignKeysOff`, checked with
  * foreign_key_check before it commits). Step 2 rebuilds `estimates` to change

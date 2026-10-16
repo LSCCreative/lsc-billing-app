@@ -464,7 +464,7 @@ function testEmail(v = {}) {
 }
 
 /**
- * "Forgot password" (.design/account-recovery/): the one-time link to the
+ * "Forgot password" (Project build archive/tracks/account-recovery/): the one-time link to the
  * billing app's reset page. Says who asked, how long the link lasts, and that
  * ignoring it changes nothing. It goes to the owner, so no client footer.
  *

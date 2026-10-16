@@ -15,7 +15,7 @@
  */
 window.LSC_API_BASE = 'http://localhost:8080';
 
-/* The trip planner's Google Maps (.design/trip-planner/). Optional: without a
+/* The trip planner's Google Maps (Project build archive/tracks/trip-planner/). Optional: without a
  * key the travel view says Google Maps isn't set up. The key is the "LSC
  * Billing — browser" key, website-restricted to the Pages origin and
  * http://localhost:5173 (so preview locally on that port). The Map ID is what

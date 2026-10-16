@@ -1,6 +1,6 @@
 'use strict';
 
-/* The travel view (.design/trip-planner/, T8; task 2 the shell, task 3 the
+/* The travel view (Project build archive/tracks/trip-planner/, T8; task 2 the shell, task 3 the
  * stops, task 4 the route).
  *
  * One production day's trip, planned on a map. It takes over the Production

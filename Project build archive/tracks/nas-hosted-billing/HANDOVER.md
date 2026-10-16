@@ -3,9 +3,8 @@
 For a fresh agent picking this up. Root: the repo containing this `.design/` folder. Read
 [CLAUDE.md](../../CLAUDE.md) first for the model/effort guidance and the two-codebases warning.
 
-> **2026-09-22:** the Clients CRM described below is being replaced by a two-way HubSpot sync — see
-> [`../hubspot-crm-sync/HANDOVER.md`](../hubspot-crm-sync/HANDOVER.md). The `clients` table and
-> `client_json` snapshot behaviour documented here remain the starting point for that work.
+> **2026-10-13:** the HubSpot two-way sync designed on 2026-09-22 was scrapped by the user. The local
+> `clients` table and `client_json` snapshot behaviour documented here stay as the CRM.
 
 ## What this is
 

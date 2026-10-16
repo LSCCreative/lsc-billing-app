@@ -364,8 +364,7 @@ E (D38–D52) and brief (D53–D57) and IA (D58–D66). The ones a fresh agent i
 
 - The **Client Hub integration** (D53): listing a client's estimates and invoices inside the
   site's portal.
-- **HubSpot**: projects, invoices and signatures are local. The HubSpot track's scope (Companies +
-  Contacts only) is unchanged.
+- **HubSpot**: scrapped by the user 2026-10-13; projects, invoices and signatures are local.
 - **Recurring or retainer billing**; more than two payment stages (deposit + final only, or single).
 - **Card payment providers other than Stripe**; refunds and partial payments through Stripe (the
   owner handles those in Stripe).

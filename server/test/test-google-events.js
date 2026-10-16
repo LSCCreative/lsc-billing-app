@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Google events on the app's calendar (.design/trip-planner/ task 13; G2, G3):
+ * Google events on the app's calendar (Project build archive/tracks/trip-planner/ task 13; G2, G3):
  * GET /api/calendar?google=1 merges the switched-on calendars' events, minus
  * the app's own, as Sydney dates and times, cached five minutes per calendar
  * and range. A stub stands in for Google and records every request. No reply

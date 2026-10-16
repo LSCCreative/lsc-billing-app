@@ -48,7 +48,7 @@
  * the computed figure either way), and impossible in the empty state, where
  * there is no number to write at all. The stored value is simply inert.
  *
- * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/)
+ * SERVICE UNITS (2026-09-28, Project build archive/tracks/service-rate-tiers/)
  * A labour row is a service with three prices, `prices: { hour, half, full }`:
  * a number is a price set by the user, null is auto. The card's `serviceDay`
  * says how many billable hours a half and a full day are (8 / 4 by default,
@@ -128,7 +128,7 @@
  * The price field is described by the same facts as one plain sentence
  * (stateSentence, in a `hidden` span), not by the visible line.
  *
- * SURCHARGES AND PUBLIC HOLIDAYS (2026-10-02, .design/production-booking/
+ * SURCHARGES AND PUBLIC HOLIDAYS (2026-10-02, Project build archive/tracks/production-booking/
  * task 4). Two blocks below the tables.
  *
  *   - SURCHARGES is part of the card: `card.surcharges`, saved by Save
@@ -153,7 +153,7 @@
  *     "+ Add Additional work", which makes it under that id, empty: moving
  *     Overtime into it is the user's call (D14).
  *
- * CAPTURE AND DELIVERABLE TYPES (2026-10-03, .design/production-booking/
+ * CAPTURE AND DELIVERABLE TYPES (2026-10-03, Project build archive/tracks/production-booking/
  * B2-9). Both are part of the card, saved by Save Services, and read by
  * calc.js postPlan, which this screen never works anything out with.
  *

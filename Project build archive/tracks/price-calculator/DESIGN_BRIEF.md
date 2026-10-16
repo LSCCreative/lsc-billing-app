@@ -286,5 +286,5 @@ The site's existing bands are `≥1100px`, `1099–900px`, `899–768px`, `<768p
 - **Actual tax lodgement.** The CSV is handed to a human. No ATO integration, no BAS, no STP.
 - **Hardcoded ATO thresholds or effective lives.** Placeholders and a confirm note only.
 - **Invoicing, estimates and the PDF**, except the two `hoursPerUnit` changes named above.
-- **HubSpot CRM sync** — a separate track ([`.design/hubspot-crm-sync/`](../hubspot-crm-sync/)).
+- **HubSpot CRM sync** — scrapped 2026-10-13.
 - **Multi-user or multi-business support.** Still one operator, one business.

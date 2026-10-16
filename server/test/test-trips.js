@@ -2,7 +2,7 @@
 
 /**
  * Trips on production days and the travel lines they set
- * (.design/trip-planner/ task 1; decisions T2–T4, T7). A day carries its trip
+ * (Project build archive/tracks/trip-planner/ task 1; decisions T2–T4, T7). A day carries its trip
  * (days.js parseTrip), and a travel line marked `fromTrip` takes its quantity
  * from it on every estimate write (days.js applyTripLines), whatever was sent.
  */

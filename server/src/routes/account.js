@@ -2,7 +2,7 @@
 
 /**
  * The login's own details, and getting back in without the password
- * (.design/account-recovery/).
+ * (Project build archive/tracks/account-recovery/).
  *
  * Before the session gate (registerRecoveryRoutes):
  *   POST /api/password/forgot        { login }  username or email; emails a one-time link

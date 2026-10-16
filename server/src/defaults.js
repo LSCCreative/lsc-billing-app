@@ -15,7 +15,7 @@ const { PRICING_SHAPE, SURCHARGE_DEFAULTS } = require('./calc');
  * `directCost: true` means the row is billed straight through at cost, no
  * markup, and counts as a pass-through rather than revenue.
 *
- * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/; this replaced the
+ * SERVICE UNITS (2026-09-28, Project build archive/tracks/service-rate-tiers/; this replaced the
  * day rows of 2026-09-27). A labour row is a service with three prices,
  * `prices: { hour, half, full }`: a number is a price the user set, `null` is
  * auto — derived on read by calc.js's unitDef from the income floor and Target
@@ -55,7 +55,7 @@ const { PRICING_SHAPE, SURCHARGE_DEFAULTS } = require('./calc');
  * fuel line as well would charge for it twice. Only a fresh database and
  * Reset Defaults read this; the user renames a live row themselves.
  *
- * ADDITIONAL WORK AND SURCHARGES (2026-10-02, .design/production-booking/
+ * ADDITIONAL WORK AND SURCHARGES (2026-10-02, Project build archive/tracks/production-booking/
  * task 4). Overtime moves out of Production into a new "Additional work"
  * section (D14): Production (id `prod`) is the one section on set (D24), and
  * Overtime is billed after a long day, never surcharged. The id `additional`

@@ -3,7 +3,7 @@
 const { dayKind } = require('./calc');
 
 /**
- * Gear rentals (v12, .design/production-booking/ B2-2; IA "Data Model: Stage
+ * Gear rentals (v12, Project build archive/tracks/production-booking/ B2-2; IA "Data Model: Stage
  * B2"): when one vendor's hire on an estimate goes out and comes back. Read,
  * checked and replaced in one place for the estimate routes and the calendar,
  * as days.js does for days.
@@ -113,11 +113,12 @@ function parseRentals(raw) {
  * estimate's equipment lines. A rental with no items left goes (the brief's
  * B2 Key Interactions 1), and so does one with no vendor, which no line can
  * join. Dropped, not refused: removing the last item is how the owner removes
- * a rental.
+ * a rental. An own-kit line counts for no vendor, whatever it carries.
  */
 function rentalsWithGear(rentals, activeRows) {
   const equip = activeRows && Array.isArray(activeRows.equip) ? activeRows.equip : [];
-  const onLines = new Set(equip.filter((l) => l && typeof l === 'object').map((l) => vendorKey(l.vendor)));
+  // The owner's own kit is never hired from anyone (own-kit K-D9): it keeps no rental.
+  const onLines = new Set(equip.filter((l) => l && typeof l === 'object' && l.ownKit !== true).map((l) => vendorKey(l.vendor)));
   onLines.delete('');
   return rentals.filter((r) => onLines.has(vendorKey(r.vendor)));
 }

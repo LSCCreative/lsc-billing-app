@@ -14,7 +14,7 @@
  * calendars. It saves through its own routes (GcalPanel), never with Save
  * Settings, and Connect leaves the app for Google's consent page and comes
  * back to #/settings/calendar?connected=1 (or ?error=…).
- * Account (.design/account-recovery/) is the login itself: username, the
+ * Account (Project build archive/tracks/account-recovery/) is the login itself: username, the
  * email a "forgot password" link goes to, and the password. It saves on its
  * own, through PUT /api/account with the current password, never with Save
  * Settings: those fields aren't in `form`, so they don't make the page dirty.

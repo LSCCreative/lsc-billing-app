@@ -11,7 +11,7 @@
  */
 
 const { RESERVED_SECTION_IDS } = require('./ratecard');
-const { gstTreatment, costBreakdown, lineDef, round2 } = require('./calc');
+const { gstTreatment, costBreakdown, lineDef, round2, equipLineName, isOwnKit } = require('./calc');
 const { agreementLayout } = require('./documents');
 const callSheetDoc = require('./call-sheet');
 
@@ -61,6 +61,14 @@ function deliverableNames(activeRows) {
   return out;
 }
 
+/* "1 day", "2.5 days"; '' for none, so a kit line with no days prints its
+   name alone. */
+function daysText(days) {
+  const n = Math.round((parseFloat(days) || 0) * 100) / 100;
+  if (!(n > 0)) return '';
+  return n + (n === 1 ? ' day' : ' days');
+}
+
 /**
  * Every service the client is shown as a name, grouped as the client's PDF
  * lists them, with no prices: the labour sections in rate-card order (a post
@@ -92,11 +100,17 @@ function serviceGroups(activeRows, labourSections, sectionLabels, dayIds) {
 
   /* Since B2 a hire line has a vendor and an Item (D82). The client sees the
      Item; a line saved before B2 has its "vendor / item" text in `vendor`
-     only, and prints it as it always did. */
-  const eqName = (e) => String(e.item || '').trim() || e.vendor;
-  const eqActive = (ar.equip || []).filter((e) => eqName(e) || (e.days && e.cost));
+     only, and prints it as it always did. The owner's own kit prints as
+     "Kit Hire - <asset>" with its days, and no price, like any hire line
+     (K6, K-D10; the user's call 2026-10-16): only a production day's items
+     are priced on a client document. */
+  const eqActive = (ar.equip || []).filter((e) => e && (equipLineName(e) || (e.days && e.cost)));
   if (eqActive.length) {
-    out.push({ label: 'Equipment Hire', kind: 'extra', items: eqActive.map((e) => ({ name: eqName(e) || 'Equipment', tag: '' })) });
+    out.push({
+      label: 'Equipment Hire',
+      kind: 'extra',
+      items: eqActive.map((e) => ({ name: equipLineName(e) || 'Equipment', tag: isOwnKit(e) ? daysText(e.days) : '' })),
+    });
   }
 
   const tvActive = (ar.travel || []).filter((t) => (t.qty || 0) > 0);
@@ -120,7 +134,8 @@ function serviceItemsHtml(activeRows, labourSections, sectionLabels, dayIds) {
       ? g.items.map((it) =>
         '<div style="font-size:10.5pt;font-weight:600;color:#181818;margin-bottom:3px">' + esc(it.name) +
         (it.tag ? ' <span style="font-weight:400;color:#888">&middot; ' + esc(it.tag) + '</span>' : '') + '</div>').join('')
-      : g.items.map((it) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(it.name) + '</div>').join('');
+      : g.items.map((it) => '<div style="font-size:10pt;color:#181818;margin-bottom:2px">' + esc(it.name) +
+        (it.tag ? ' <span style="color:#888">&middot; ' + esc(it.tag) + '</span>' : '') + '</div>').join('');
     return head + body + '</div>';
   }).join('');
 }

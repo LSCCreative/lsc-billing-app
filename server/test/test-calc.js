@@ -1558,6 +1558,53 @@ test('the reserve raises the overhead rate, which is the point of it', () => {
 });
 
 /**
+ * ON-SET KIT LEAVES THE RESERVE (own-kit K2, K-D4). An asset whose recovery is
+ * `kit_hire` is billed to the client as a Kit Hire line on the jobs that use
+ * it, so the hourly rate must stop charging for it — or every client pays for
+ * it twice. Only the exact value `kit_hire` leaves; anything else stays in.
+ */
+test('an On-Set Kit asset leaves the reserve, in either field shape', () => {
+  assert.equal(replacementReserveTotal([{ ...CAMERA, recovery: 'kit_hire' }]), 0);
+  // A route-mapped camelCase asset reads the same one-word field.
+  const camel = { replacementCostEstimate: 6000, replacementCycleYears: 3, businessUsePct: 100 };
+  assert.equal(replacementReserveTotal([camel]), 2000);
+  assert.equal(replacementReserveTotal([{ ...camel, recovery: 'kit_hire' }]), 0);
+
+  // Overhead Floor, a row from before v17 and anything unrecognised stay in.
+  for (const recovery of ['rate', undefined, null, '', 'KIT_HIRE', 'hire']) {
+    assert.equal(replacementReserveTotal([{ ...CAMERA, recovery }]), 2000, String(recovery));
+  }
+});
+
+test('moving an asset to On-Set Kit lowers the business cost by exactly its reserve', () => {
+  const LENS = { replacement_cost_estimate: 3000, replacement_cycle_years: 4, business_use_pct: 80, recovery: 'rate' };
+  const floor = [{ ...CAMERA, recovery: 'rate' }, LENS];
+  const moved = [{ ...CAMERA, recovery: 'kit_hire' }, LENS];
+
+  // Before: 24,000 operating + (2,000 camera + 600 lens) reserve.
+  assert.equal(replacementReserveTotal(floor), 2600);
+  assert.equal(annualBusinessCost(OVERHEAD, floor), 26600);
+  // After: the camera's 2,000 leaves; the lens and operating costs don't move.
+  assert.equal(replacementReserveTotal(moved), 600);
+  assert.equal(annualBusinessCost(OVERHEAD, moved), 24600);
+  assert.equal(
+    annualBusinessCost(OVERHEAD, floor) - annualBusinessCost(OVERHEAD, moved),
+    replacementReserveTotal([{ ...CAMERA, recovery: 'rate' }])
+  );
+
+  // The Dashboard's Operating / Replacement split still sums to the total.
+  assert.equal(annualOverheadTotal(OVERHEAD) + replacementReserveTotal(moved), annualBusinessCost(OVERHEAD, moved));
+
+  // And the overhead rate (so every rate on the card) comes down with it.
+  const hours = annualBillableHours(REFERENCE_CAPACITY); // 1,776
+  assert.equal(overheadRatePerHour(annualBusinessCost(OVERHEAD, floor), hours), 14.98);
+  assert.equal(overheadRatePerHour(annualBusinessCost(OVERHEAD, moved), hours), 13.85);
+
+  // Every asset on kit: the business cost is operating costs alone.
+  assert.equal(annualBusinessCost(OVERHEAD, moved.map((a) => ({ ...a, recovery: 'kit_hire' }))), 24000);
+});
+
+/**
  * THE AUSTRALIAN FINANCIAL YEAR — 1 July to 30 June.
  *
  * Two string forms on purpose: `FY2025-26` is canonical and is what gets stored,
@@ -3314,7 +3361,7 @@ test('average job value counts accepted estimates; declined and sent ones are no
   assert.equal(averageJobValue([job('declined', '2026-09-01', 9000)], '2026-10-03'), null);
 });
 
-/* ── Trips (.design/trip-planner/ task 1, T3) ──────────────────────────────── */
+/* ── Trips (Project build archive/tracks/trip-planner/ task 1, T3) ──────────────────────────────── */
 
 const { tripLineQty, tripKindOf, tripRows } = require('../src/calc');
 
@@ -3405,4 +3452,179 @@ test('tripRows: an unpriced row reads as mu null, and a missing row as null', ()
   // A typed own-time price needs no floor.
   const typed = tripRows({ travelRows: [TRIP_CARD.travelRows[5]] });
   assert.equal(typed.hours.mu, 90);
+});
+
+/* ── The owner's own kit (own-kit K4, K-D6) ───────────────────────────────────
+   An Equipment Hire line marked `ownKit: true` is the owner's own gear hired
+   to the job: billed like any hire line, but income (taxed, no hours), never a
+   pass-through or a direct cost. Only the exact value `true` counts. */
+
+const { isOwnKit } = require('../src/calc');
+
+const KIT_CARD = { labourSections: [], travelRows: [], taxSetAsideRate: 0.3 };
+const KIT_UNREG = { gst: { registered: false } };
+const FX6 = { ownKit: true, assetId: 7, assetName: 'FX6 body', item: 'FX6 body', vendor: '', days: 1, cost: 300 };
+// K-D6's worked example as the brief writes it: 8 hrs at $110 plus a $300 kit line.
+const KIT_JOB = { prod: [{ name: 'Video Capture', qty: 8, mu: 110 }], equip: [FX6] };
+const unflagged = (rows) => ({ ...rows, equip: rows.equip.map(({ ownKit, ...line }) => line) });
+// An overhead rate and markup that make the job's overhead term $115: 8 × 12.5 × 1.15.
+const KIT_MJP = (t) => minimumJobPrice(t.directJobCost, t.totalHours, 12.5, 15);
+
+test('own kit: K-D6\'s worked example — client price 1,180, income 1,180, tax 354.00, Minimum Job Price 115.00', () => {
+  const t = computeTotals(KIT_JOB, KIT_CARD, KIT_UNREG);
+  assert.equal(t.clientPriceExGst, 1180);
+  assert.equal(t.totalIncGst, 1180);
+  assert.equal(t.incomeExGst, 1180);
+  assert.equal(t.taxSetAside, 354);
+  assert.equal(KIT_MJP(t), 115);
+
+  // Without the flag the same line is a vendor's invoice: same price, but
+  // income 880 and Minimum Job Price 415.00.
+  const v = computeTotals(unflagged(KIT_JOB), KIT_CARD, KIT_UNREG);
+  assert.equal(v.clientPriceExGst, 1180);
+  assert.equal(v.incomeExGst, 880);
+  assert.equal(v.taxSetAside, 264);
+  assert.equal(KIT_MJP(v), 415);
+});
+
+test('own kit: billed in the client price and in the Expenses subtotal, like any hire line', () => {
+  const t = computeTotals(KIT_JOB, KIT_CARD, KIT_UNREG);
+  assert.equal(t.labourTotal, 880);
+  assert.equal(t.expenseTotal, 300);
+  assert.equal(round2(t.labourTotal + t.expenseTotal), t.clientPriceExGst);
+});
+
+test('own kit: not a pass-through', () => {
+  assert.equal(computeTotals(KIT_JOB, KIT_CARD, KIT_UNREG).passThroughCost, 0);
+  assert.equal(computeTotals(unflagged(KIT_JOB), KIT_CARD, KIT_UNREG).passThroughCost, 300);
+});
+
+test('own kit: not a direct job cost, so it doesn\'t raise Minimum Job Price', () => {
+  assert.equal(computeTotals(KIT_JOB, KIT_CARD, KIT_UNREG).directJobCost, 0);
+  assert.equal(computeTotals(unflagged(KIT_JOB), KIT_CARD, KIT_UNREG).directJobCost, 300);
+});
+
+test('own kit: adds no hours, so the overhead share is the labour\'s alone', () => {
+  const kit2 = { ...KIT_JOB, equip: [{ ...FX6, days: 3 }] };
+  const t = computeTotals(kit2, KIT_CARD, KIT_UNREG, { overheadRate: 12.5 });
+  assert.equal(t.totalHours, 8);
+  assert.equal(t.overheadShare, 100);
+  // (880 + 900 − 100) × 0.3: taxed on profit like the labour beside it.
+  assert.equal(t.incomeExGst, 1780);
+  assert.equal(t.taxSetAside, 504);
+  assert.equal(t.estTakeHome, 1176);
+});
+
+test('own kit beside a vendor\'s hire line: only the vendor\'s is passed through', () => {
+  const rows = { ...KIT_JOB, equip: [FX6, { vendor: 'Lens hire', item: 'Cine lens', days: 2, cost: 150 }] };
+  const t = computeTotals(rows, KIT_CARD, KIT_UNREG);
+  assert.equal(t.clientPriceExGst, 1480);
+  assert.equal(t.expenseTotal, 600);
+  assert.equal(t.passThroughCost, 300);
+  assert.equal(t.directJobCost, 300);
+  assert.equal(t.incomeExGst, 1180);
+  assert.equal(KIT_MJP(t), 415);
+});
+
+test('own kit, GST registered and exclusive: GST on the kit like the rest, and the income is ex GST', () => {
+  const t = computeTotals(KIT_JOB, KIT_CARD, { gst: GST_EXCLUSIVE });
+  assert.equal(t.clientPriceExGst, 1180);
+  assert.equal(t.gst, 118);
+  assert.equal(t.totalIncGst, 1298);
+  assert.equal(t.incomeExGst, 1180);
+  assert.equal(t.taxSetAside, 354);
+  assert.equal(t.passThroughCost, 0);
+  assert.equal(t.directJobCost, 0);
+});
+
+test('own kit, GST-inclusive card: its GST is backed out of the income, and nothing is a cost', () => {
+  const t = computeTotals(KIT_JOB, KIT_CARD, { gst: GST_INCLUSIVE });
+  assert.equal(t.totalIncGst, 1180);
+  assert.equal(t.clientPriceExGst, 1072.73);
+  assert.equal(t.gst, 107.27);
+  assert.equal(round2(t.clientPriceExGst + t.gst), t.totalIncGst);
+  // 1180 / 1.1 = 1072.73 of income, all of it the owner's.
+  assert.equal(t.incomeExGst, 1072.73);
+  assert.equal(t.taxSetAside, 321.82);
+  assert.equal(t.passThroughCost, 0);
+  assert.equal(t.directJobCost, 0);
+
+  const v = computeTotals(unflagged(KIT_JOB), KIT_CARD, { gst: GST_INCLUSIVE });
+  assert.equal(v.totalIncGst, 1180);
+  assert.equal(v.incomeExGst, 800);
+  assert.equal(v.passThroughCost, 272.73);
+});
+
+test('own kit on a GST-free estimate: the listed rate is the price and all of it is income', () => {
+  const t = computeTotals(KIT_JOB, KIT_CARD, { gst: GST_INCLUSIVE }, { gstFree: true });
+  assert.equal(t.gst, 0);
+  assert.equal(t.totalIncGst, 1180);
+  assert.equal(t.incomeExGst, 1180);
+  assert.equal(t.passThroughCost, 0);
+});
+
+test('a hire line without the flag totals identically: absent, false or any stray value is a vendor\'s line', () => {
+  const settingsList = [KIT_UNREG, { gst: GST_EXCLUSIVE }, { gst: GST_INCLUSIVE }];
+  const stray = [undefined, false, null, 'true', 1, 'yes', {}, []];
+  // The worked-example fixture (JOB) with asset fields added, and the kit job.
+  const jobs = [
+    [JOB, JOB_PRICING],
+    [{ ...JOB, equip: JOB.equip.map((l) => ({ ...l, assetId: 7, assetName: 'FX6 body' })) }, JOB_PRICING],
+    [unflagged(KIT_JOB), KIT_CARD],
+  ];
+  for (const [rows, card] of jobs) {
+    for (const s of settingsList) {
+      for (const opts of [undefined, { overheadRate: 25 }, { gstFree: true }]) {
+        const before = computeTotals(unflagged(rows), card, s, opts);
+        for (const v of stray) {
+          const flagged = { ...rows, equip: rows.equip.map((l) => ({ ...l, ownKit: v })) };
+          assert.deepEqual(computeTotals(flagged, card, s, opts), before, `ownKit: ${JSON.stringify(v)}`);
+        }
+      }
+    }
+  }
+  // And the fixture's pinned figures haven't moved.
+  const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
+  assert.equal(t.clientPriceExGst, 3560);
+  assert.equal(t.passThroughCost, 1420);
+  assert.equal(t.incomeExGst, 2040);
+});
+
+test('isOwnKit: only the exact value true', () => {
+  assert.equal(isOwnKit(FX6), true);
+  for (const v of [undefined, false, null, 'true', 1, 'yes']) assert.equal(isOwnKit({ ...FX6, ownKit: v }), false);
+  assert.equal(isOwnKit(null), false);
+  assert.equal(isOwnKit(undefined), false);
+});
+
+test('costBreakdown: an own-kit line is listed under Equipment Hire marked ownKit, and the lines still add up', () => {
+  const rows = { ...KIT_JOB, equip: [FX6, { vendor: 'Lens hire', item: 'Cine lens', days: 2, cost: 150 }] };
+  const totals = computeTotals(rows, KIT_CARD, { gst: GST_EXCLUSIVE });
+  const b = costBreakdown(rows, KIT_CARD, { totals });
+  assert.equal(b.equip.length, 2);
+  // Named as every document names it (equipLineName, K6).
+  assert.deepEqual(b.equip[0], { index: 0, name: 'Kit Hire - FX6 body', days: 1, cost: 300, amount: 300, ownKit: true });
+  assert.equal('ownKit' in b.equip[1], false);
+  assert.equal(b.target, 1480);
+  assert.equal(b.adjustment, 0);
+  assert.equal(b.stale, false);
+});
+
+// ── equipLineName: how every document names a hire line (own-kit K6) ──────
+
+test('equipLineName: kit is "Kit Hire - <asset>" from its snapshot; a vendor line is its Item, or old vendor text', () => {
+  const { equipLineName } = require('../src/calc');
+  const kit = { ownKit: true, assetId: 'dep_1', assetName: 'Sony FX6', item: 'Sony FX6', vendor: '', days: 2, cost: 300 };
+  assert.equal(equipLineName(kit), 'Kit Hire - Sony FX6');
+  // The line's own snapshot of the name, trimmed; the Item only if it has none.
+  assert.equal(equipLineName({ ...kit, assetName: '  DJI RS4 ', item: 'Old name' }), 'Kit Hire - DJI RS4');
+  assert.equal(equipLineName({ ...kit, assetName: '', item: 'Sony FX6' }), 'Kit Hire - Sony FX6');
+  assert.equal(equipLineName({ ...kit, assetName: '', item: '' }), 'Kit Hire');
+  // Only the exact flag: anything else is a vendor's line, named as before K6.
+  assert.equal(equipLineName({ ...kit, ownKit: 'true' }), 'Sony FX6');
+  assert.equal(equipLineName({ vendor: 'Lensworks', item: 'Cine zoom kit' }), 'Cine zoom kit');
+  assert.equal(equipLineName({ vendor: 'Lens hire / Matte box' }), 'Lens hire / Matte box');
+  assert.equal(equipLineName({ vendor: 'Grip Co', item: '  ' }), 'Grip Co');
+  assert.equal(equipLineName({ days: 1, cost: 50 }), '');
+  assert.equal(equipLineName(null), '');
 });

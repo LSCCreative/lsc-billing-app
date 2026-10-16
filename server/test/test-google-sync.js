@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Writing bookings to Google Calendar (.design/trip-planner/ task 14; G4, G5,
+ * Writing bookings to Google Calendar (Project build archive/tracks/trip-planner/ task 14; G4, G5,
  * IA flow 9). A stub stands in for Google's Calendar API and keeps the events
  * it is told about, so a test reads what the user's calendar would hold. The
  * clock is a fake the test moves, so back-off and "today" are exact. No reply

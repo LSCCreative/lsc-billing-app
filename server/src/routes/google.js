@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Connecting Google Calendar (.design/trip-planner/ task 12; G1, G2, I3).
+ * Connecting Google Calendar (Project build archive/tracks/trip-planner/ task 12; G1, G2, I3).
  *
  * THE FLOW
  * Settings → Google Calendar → Connect sends the browser (a top-level

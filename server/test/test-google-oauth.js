@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Connecting Google Calendar (.design/trip-planner/ task 12; G1, G2, I3): the
+ * Connecting Google Calendar (Project build archive/tracks/trip-planner/ task 12; G1, G2, I3): the
  * OAuth start and callback, the state check, the stored account, the calendar
  * toggles, token renewal and disconnect. A stub stands in for Google; every
  * request it gets is recorded so the tests can say what was (and wasn't) sent.

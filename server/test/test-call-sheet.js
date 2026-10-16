@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * The call sheet (.design/trip-planner/ task 9; T12, T13, T18, I4): the
+ * The call sheet (Project build archive/tracks/trip-planner/ task 9; T12, T13, T18, I4): the
  * allow-listed schedule of an estimate's trips, the link that shares it, and
  * the Maps Static image behind each day. Google is never called: the fetch is
  * a stub that counts and records what it was asked.

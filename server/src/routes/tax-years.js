@@ -9,7 +9,7 @@ const { fyBounds, normaliseTaxYear } = require('../calc');
  * Profit Goals screen. Nothing is seeded or built in: the scale changes with
  * the federal budget, so the screen prefills placeholders the user confirms
  * with their accountant and saves as theirs — the same rule as effective lives
- * and the write-off threshold (.design/price-calculator/HANDOVER.md).
+ * and the write-off threshold (Project build archive/tracks/price-calculator/HANDOVER.md).
  */
 function loadTaxYear(row) {
   return {

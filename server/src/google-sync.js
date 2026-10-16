@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Writing bookings to Google Calendar (.design/trip-planner/ task 14; G1, G4,
+ * Writing bookings to Google Calendar (Project build archive/tracks/trip-planner/ task 14; G1, G4,
  * G5, IA flow 9).
  *
  * WHAT IT DOES

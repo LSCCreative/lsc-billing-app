@@ -30,6 +30,8 @@ function loadAsset(row) {
     disposalProceeds: row.disposal_proceeds,
     disposalReason: row.disposal_reason,
     notes: row.notes,
+    recovery: row.recovery,
+    dayRate: row.day_rate,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -110,6 +112,50 @@ function resaleProblem(body) {
   return Number.isFinite(n) && n >= 0
     ? null
     : { error: 'expected_resale_invalid', message: 'Expected resale value must be $0 or more.' };
+}
+
+const RECOVERIES = ['rate', 'kit_hire'];
+
+/**
+ * The own-kit fields (migration v17), resolved for a write. `existing` is the
+ * stored row on a PUT, null on a POST.
+ *
+ *   recovery  'rate' (Overhead Floor) or 'kit_hire' (On-Set Kit). Left out of
+ *             the body it is kept as stored (a create defaults to 'rate'): a
+ *             tab or client from before v17 sends the whole asset back and must
+ *             not quietly move a kit asset onto the floor. Anything else,
+ *             null included, is refused here rather than left to the CHECK.
+ *   dayRate   a number of dollars, 0 or more, one day of the asset's hire.
+ *             Left out it is kept as stored; null or '' clears it (no rate set
+ *             yet is a real state, never 0). Kept whatever `recovery` is, so
+ *             switching an asset back and forth loses nothing; the pricing
+ *             side ignores it unless the asset is on-set kit.
+ *
+ * @returns {{recovery:string, dayRate:number|null}|{error:string, message:string}}
+ */
+function kitFields(body, existing) {
+  let recovery = existing ? existing.recovery : 'rate';
+  if (body.recovery !== undefined) {
+    if (!RECOVERIES.includes(body.recovery)) {
+      return { error: 'recovery_invalid', message: 'Recovery must be Overhead Floor or On-Set Kit.' };
+    }
+    recovery = body.recovery;
+  }
+  let dayRate = existing ? existing.day_rate : null;
+  const v = body.dayRate;
+  if (v !== undefined) {
+    if (v === null || v === '') {
+      dayRate = null;
+    } else {
+      const numeric = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '');
+      const n = numeric ? Number(v) : NaN;
+      if (!Number.isFinite(n) || n < 0) {
+        return { error: 'day_rate_invalid', message: 'The day rate must be $0 or more.' };
+      }
+      dayRate = n;
+    }
+  }
+  return { recovery, dayRate };
 }
 
 /* The schedule's options from the goals row: the write-off threshold that the
@@ -352,7 +398,7 @@ function registerDepreciationRoutes(app, db) {
     res.json({ ok: true, assets: allAssets(db).map(loadAsset) });
   });
 
-  function writeFields(body, openingFy) {
+  function writeFields(body, openingFy, kit) {
     return [
       body.name || '',
       body.category,
@@ -383,6 +429,8 @@ function registerDepreciationRoutes(app, db) {
         ? null : Number(body.disposalProceeds),
       body.disposalReason || '',
       body.notes || '',
+      kit.recovery,
+      kit.dayRate,
     ];
   }
 
@@ -397,6 +445,8 @@ function registerDepreciationRoutes(app, db) {
     if (problem) return res.status(400).json(problem);
     const openingFy = openingFyFor(body);
     if (openingFy.error) return res.status(400).json(openingFy);
+    const kit = kitFields(body, null);
+    if (kit.error) return res.status(400).json(kit);
     const id = newId('da');
     const now = nowIso();
     db.prepare(`
@@ -405,9 +455,9 @@ function registerDepreciationRoutes(app, db) {
         cost_inc_gst, gst_amount, gst_credit_claimed, method, effective_life_years,
         business_use_pct, opening_adjustable_value, opening_value_fy, car_limit, replacement_cycle_years,
         replacement_cost_estimate, expected_resale_value, disposal_date, disposal_proceeds, disposal_reason,
-        notes, created_at, updated_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(id, ...writeFields(body, openingFy.value), now, now);
+        notes, recovery, day_rate, created_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(id, ...writeFields(body, openingFy.value, kit), now, now);
     writeSnapshot(db);
     const row = db.prepare('SELECT * FROM depreciation_assets WHERE id = ?').get(id);
     res.status(201).json({ ok: true, asset: loadAsset(row) });
@@ -430,6 +480,8 @@ function registerDepreciationRoutes(app, db) {
     ) {
       openingFy = { value: existing.opening_value_fy };
     }
+    const kit = kitFields(body, existing);
+    if (kit.error) return res.status(400).json(kit);
     const now = nowIso();
     db.prepare(`
       UPDATE depreciation_assets SET
@@ -438,9 +490,9 @@ function registerDepreciationRoutes(app, db) {
         business_use_pct = ?, opening_adjustable_value = ?, opening_value_fy = ?, car_limit = ?,
         replacement_cycle_years = ?, replacement_cost_estimate = ?, expected_resale_value = ?,
         disposal_date = ?, disposal_proceeds = ?, disposal_reason = ?,
-        notes = ?, updated_at = ?
+        notes = ?, recovery = ?, day_rate = ?, updated_at = ?
       WHERE id = ?
-    `).run(...writeFields(body, openingFy.value), now, req.params.id);
+    `).run(...writeFields(body, openingFy.value, kit), now, req.params.id);
     writeSnapshot(db);
     const row = db.prepare('SELECT * FROM depreciation_assets WHERE id = ?').get(req.params.id);
     res.json({ ok: true, asset: loadAsset(row) });

@@ -8,7 +8,7 @@
  * specific than "those details didn't work" — saying which half was wrong would
  * undo that.
  *
- * GETTING BACK IN (.design/account-recovery/)
+ * GETTING BACK IN (Project build archive/tracks/account-recovery/)
  * The same card has four more states, swapped in place:
  *   forgot   "Username or email" → POST /api/password/forgot
  *   sent     check your inbox. Worded "if that matches", because the server

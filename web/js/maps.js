@@ -1,6 +1,6 @@
 'use strict';
 
-/* Google Maps, in one place (.design/trip-planner/, T1; task 2).
+/* Google Maps, in one place (Project build archive/tracks/trip-planner/, T1; task 2).
  *
  * Every call the browser makes to Google goes through this file: loading the
  * script, the map itself, address search and reverse geocoding (task 3),

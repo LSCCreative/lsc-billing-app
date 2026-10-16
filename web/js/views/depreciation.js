@@ -72,6 +72,21 @@
  * "Decline in value", "adjustable value", "disposal" — the IA doc's glossary.
  * Not "depreciation", "book value" or "sale": this table sits one scroll below
  * the replacement reserve, and the words are what keep the two numbers apart.
+ * So the register's "current tax book value" (own-kit K3) is headed Adjustable
+ * value: this FY's closing figure from the same LSCDepreciation chain.
+ *
+ * RECOVERY: OVERHEAD FLOOR OR ON-SET KIT (own-kit K3, decisions K-D3/K-D4)
+ * Each asset is paid for one of two ways. Overhead Floor (`rate`, the default)
+ * puts its replacement reserve in every rate. On-Set Kit (`kit_hire`) leaves
+ * the reserve (calc.js isKitHire) and is billed per day as Kit Hire on the
+ * jobs that use it. The modal's Recovery choice is structural, like method:
+ * the reserve fields show for the floor, the Day rate for kit. Switching keeps
+ * what the hidden fields hold and still sends them (the route keeps both
+ * sides too), so flipping back and forth loses nothing. The register tags
+ * each row and flags the two gaps that quietly under-recover: a floor asset
+ * with no replacement cost or cycle adds $0 to every rate, and a kit asset with
+ * no day rate can't go on an estimate. A tax-only car (its cost is billed per
+ * km) isn't flagged: leaving its reserve blank is the advice kmHintMarkup gives.
  */
 
 const DepreciationView = (() => {
@@ -110,6 +125,13 @@ const DepreciationView = (() => {
     return found ? found.label : String(value || '—');
   };
 
+  /* The two values migration v17's CHECK accepts, with what each one means
+     said once, here, for the modal's choice and the register's tag. */
+  const RECOVERIES = [
+    { value: 'rate', label: 'Overhead Floor', sub: 'Its replacement reserve is in every rate on your card.' },
+    { value: 'kit_hire', label: 'On-Set Kit', sub: 'Billed per day as Kit Hire on the jobs that use it.' },
+  ];
+
   let root = null;
   let handlers = null;
   let overlay = null;
@@ -147,6 +169,31 @@ const DepreciationView = (() => {
   const $m = (id) => overlay.querySelector('#' + id);
   const assets = () => LSCData.depreciationAssets();
   const isDisposed = (a) => Boolean(a.disposalDate);
+  // The exact value only (calc.js isKitHire): anything else is on the floor.
+  const isKit = LSCCalc.isKitHire;
+  const numOrNull = LSCCalc.numOrNull;
+
+  /* A car whose wear Overhead already bills per km: its blank reserve is the
+     advice, not a gap (see kmHintMarkup). */
+  function billedPerKm(a) {
+    const perKm = numOrNull(LSCData.goals().vehicleCostPerKm);
+    return a.category === 'vehicle' && perKm !== null && perKm >= 0;
+  }
+
+  /* What's missing for this asset's recovery to work, in words, or null.
+     Disposed gear recovers nothing either way, so it's never flagged. */
+  function recoveryGap(a) {
+    if (isDisposed(a)) return null;
+    if (isKit(a)) {
+      const rate = numOrNull(a.dayRate);
+      return rate === null ? 'No day rate, so it can’t be added to an estimate yet.' : null;
+    }
+    const cost = numOrNull(a.replacementCostEstimate);
+    const years = numOrNull(a.replacementCycleYears);
+    if ((cost !== null && years !== null && years > 0) || billedPerKm(a)) return null;
+    return 'No replacement ' + (cost === null && !(years > 0) ? 'cost or cycle' : cost === null ? 'cost' : 'cycle') +
+      ', so it contributes $0 to your rates.';
+  }
 
   const failureText = (err, action) =>
     err.kind === 'network'
@@ -167,11 +214,14 @@ const DepreciationView = (() => {
     // The threshold drives the small business pool's low-pool-value rule.
     const schedule = LSCDepreciation.financialYearSchedule(list, fy, { iawoThreshold: LSCData.goals().iawoThreshold });
     const deduction = schedule ? schedule.totalDeductible : null;
+    // Held kit only: disposed gear is out of the reserve on its own account.
+    const kit = list.filter((a) => isKit(a) && !isDisposed(a)).length;
     return (
       '<div class="proj-card oh-summary dep-summary">' +
       '<div class="oh-stat"><div class="sum-label">Replacement reserve / year</div>' +
       '<div class="oh-stat-value">' + fmt(replacementReserveTotal(list)) + '</div>' +
-      '<div class="dep-stat-sub">In every rate on your card</div></div>' +
+      '<div class="dep-stat-sub">In every rate on your card' +
+      (kit ? ' — not your On-Set Kit (' + kit + '), which is billed per day' : '') + '</div></div>' +
       '<div class="oh-stat"><div class="sum-label">Tax deduction, ' + esc(fyDisplay(fy)) + '</div>' +
       '<div class="oh-stat-value">' + (deduction === null ? '—' : fmt(deduction)) + '</div>' +
       '<div class="dep-stat-sub">For your accountant — in no rate</div></div>' +
@@ -197,15 +247,52 @@ const DepreciationView = (() => {
         'They differ on purpose. Diminishing value front-loads the deduction — large in year one, small by year ' +
           'four — which would swing your day rate 30–40% for gear still in daily use. Pricing wants the steady ' +
           'number; tax wants the ATO’s.',
+        '<strong>On-Set Kit</strong> is the exception on the pricing side. Gear you set to On-Set Kit is billed to ' +
+          'the jobs that use it, at its day rate, as a Kit Hire line, so it’s left out of the replacement reserve: ' +
+          'otherwise every job would pay for it through your rates as well. Its tax deduction is unchanged.',
       ],
     });
   }
 
   // ── The register ──────────────────────────────────────────────────────────
 
-  function reserveOf(asset) {
-    const r = replacementReserveTotal([asset]);
-    return r > 0 ? fmt(r) : '—';
+  /* The asset's tax value at the end of this FY: the closing adjustable value
+     the schedule below prints for it. A pooled asset has none of its own (it
+     declines as part of the pool), and one disposed of by then, or not yet
+     started, isn't held at that date. A disposal dated after 30 June is still
+     held, so it shows its value. */
+  function adjustableValueText(asset, fy) {
+    if (LSCDepreciation.isPooledMethod(asset.method)) return '<span class="dep-cell-note">In pool</span>';
+    if (isDisposed(asset) && String(asset.disposalDate) <= fyBounds(fy).end) return '—';
+    const row = LSCDepreciation.assetSchedule(asset, fy);
+    return row ? fmt(row.closingAdjustableValue) : '—';
+  }
+
+  /* How the asset is paid for: the tag says which way (in words, so not by
+     colour alone), the figure says how much, and a gap says what's missing.
+     One wrapping span, for the same reason as balancingText(): a stacked
+     cell is a flex row of label and value. */
+  function recoveryCellMarkup(asset) {
+    const kit = isKit(asset);
+    let figure = '';
+    if (isDisposed(asset)) {
+      figure = '';
+    } else if (kit) {
+      const rate = numOrNull(asset.dayRate);
+      figure = rate === null ? '' : fmt(rate) + ' / day';
+    } else {
+      const r = replacementReserveTotal([asset]);
+      // A tax-only car: say where its wear is recovered, not just leave a blank.
+      figure = r > 0 ? fmt(r) + ' / yr' : billedPerKm(asset) ? '<span class="dep-cell-note">Billed per km</span>' : '';
+    }
+    const gap = recoveryGap(asset);
+    return (
+      '<span class="dep-rec">' +
+      '<span class="dep-tag dep-rec-tag' + (kit ? ' is-kit' : '') + '">' + esc(labelOf(RECOVERIES, kit ? 'kit_hire' : 'rate')) + '</span>' +
+      (figure ? '<span class="dep-rec-fig">' + figure + '</span>' : '') +
+      (gap ? '<span class="dep-rec-gap">' + esc(gap) + '</span>' : '') +
+      '</span>'
+    );
   }
 
   function registerMarkup() {
@@ -238,6 +325,9 @@ const DepreciationView = (() => {
       );
     }
 
+    const fy = currentFinancialYear();
+    const valueLabel = 'Adjustable value, 30 Jun ' + fyBounds(fy).end.slice(0, 4);
+
     /* data-label on every cell: below 768px responsive.css stacks .est-table
        rows and prints these as headings. A column without one loses its label. */
     const rows = list
@@ -247,11 +337,12 @@ const DepreciationView = (() => {
           '<td data-label="Asset">' + esc(a.name || 'Untitled') +
           (isDisposed(a) ? ' <span class="dep-tag">Disposed ' + esc(a.disposalDate) + '</span>' : '') + '</td>' +
           '<td class="muted-td" data-label="Category">' + esc(labelOf(CATEGORIES, a.category)) + '</td>' +
-          '<td class="muted-td" data-label="Start date">' + esc(a.startDate || '—') + '</td>' +
+          '<td class="muted-td dep-nowrap" data-label="Start date">' + esc(a.startDate || '—') + '</td>' +
           '<td class="right" data-label="Cost (inc GST)">' + fmt(a.costIncGst) + '</td>' +
           '<td class="muted-td" data-label="Method">' + esc(labelOf(METHODS, a.method)) + '</td>' +
           '<td class="right" data-label="Business use">' + esc(String(num(a.businessUsePct))) + '%</td>' +
-          '<td class="right" data-label="Replacement reserve / yr">' + reserveOf(a) + '</td>' +
+          '<td class="right" data-label="' + esc(valueLabel) + '">' + adjustableValueText(a, fy) + '</td>' +
+          '<td class="dep-rec-td" data-label="Recovery">' + recoveryCellMarkup(a) + '</td>' +
           '<td class="oh-act" data-label="">' +
           '<button type="button" class="btn btn-ghost btn-sm" data-dep-edit="' + esc(a.id) + '"' +
           ' aria-label="Edit ' + esc(a.name || 'this asset') + '">Edit</button>' +
@@ -269,7 +360,9 @@ const DepreciationView = (() => {
       '<div class="est-block" id="dep-register">' + head +
       '<div class="dep-scroll"><table class="est-table oh-table dep-table"><thead><tr><th>Asset</th><th>Category</th>' +
       '<th>Start date</th><th class="right">Cost (inc GST)</th><th>Method</th>' +
-      '<th class="right">Business use</th><th class="right">Replacement reserve / yr</th><th></th>' +
+      '<th class="right">Business use</th>' +
+      '<th class="right">Adjustable value<span class="dep-th-sub">30 Jun ' + esc(fyBounds(fy).end.slice(0, 4)) + '</span></th>' +
+      '<th>Recovery</th><th></th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div></div>'
     );
   }
@@ -1385,6 +1478,40 @@ const DepreciationView = (() => {
     );
   }
 
+  /* Overhead Floor / On-Set Kit: two radios in a fieldset, drawn as a pair
+     of tiles that each say what the choice does, so it's chosen on meaning
+     rather than on a label. Arrow keys move between them, as for any radio
+     group; the change re-renders the box (see bindModal). */
+  function recoveryChoiceMarkup() {
+    return (
+      '<fieldset class="dep-recovery"><legend>Recovery</legend><div class="dep-recovery-opts">' +
+      RECOVERIES.map((r) => {
+        const id = r.value === 'kit_hire' ? 'dep-rec-kit' : 'dep-rec-rate';
+        return (
+          '<label class="dep-rec-opt" for="' + id + '">' +
+          '<input type="radio" name="dep-recovery" id="' + id + '" value="' + r.value + '" data-key="recovery"' +
+          (form.recovery === r.value ? ' checked' : '') + ' aria-describedby="' + id + '-sub">' +
+          '<span class="dep-rec-opt-body"><span class="dep-rec-opt-label">' + esc(r.label) + '</span>' +
+          '<span class="dep-rec-opt-sub" id="' + id + '-sub">' + esc(r.sub) + '</span></span></label>'
+        );
+      }).join('') +
+      '</div></fieldset>'
+    );
+  }
+
+  /* On-Set Kit hides the reserve fields rather than clearing them: what was
+     typed is kept, and saved, in case the asset goes back on the floor. Said
+     only when there is something there to keep. */
+  function unusedReserveNote() {
+    const kept = [form.replacementCycleYears, form.replacementCostEstimate, form.expectedResaleValue]
+      .some((v) => String(v).trim() !== '');
+    if (!kept) return '';
+    return (
+      '<p class="oh-hint dep-unused full">Replace every, Replacement cost and Expected resale aren’t used for ' +
+      'On-Set Kit. What’s in them is kept, in case you move it back to Overhead Floor.</p>'
+    );
+  }
+
   function modalMarkup() {
     const needsLife = Boolean(NEEDS_LIFE[form.method]);
     const lifePlaceholder = LIFE_HINT[form.category] ? 'e.g. ' + LIFE_HINT[form.category] : 'years';
@@ -1393,7 +1520,7 @@ const DepreciationView = (() => {
       '<h2 class="modal-title" id="dep-modal-title">' + (editing ? 'Edit asset' : 'Add asset') + '</h2>' +
 
       '<div class="form-grid">' +
-      field('dep-name', 'Asset name', inputHtml('dep-name', 'text', 'name', 'placeholder="e.g. Sony FX6 body"'), '', true) +
+      field('dep-name', 'Asset name', inputHtml('dep-name', 'text', 'name', 'maxlength="200" placeholder="e.g. Sony FX6 body"'), '', true) +
       field('dep-category', 'Category',
         '<select id="dep-category" data-key="category"><option value="" disabled' + (form.category ? '' : ' selected') +
         '>Choose a category</option>' + optionsMarkup(CATEGORIES, form.category) + '</select>') +
@@ -1450,18 +1577,26 @@ const DepreciationView = (() => {
           'already in the value you entered.') +
       '</div>' +
 
-      '<h3 class="dep-group">For pricing</h3><div class="form-grid">' +
-      // Above the replacement fields it is about (task 6b), for a Vehicle only.
-      (form.category === 'vehicle' ? kmHintMarkup() : '') +
-      field('dep-cycle', 'Replace every (years)',
-        inputHtml('dep-cycle', 'number', 'replacementCycleYears', 'min="0" step="0.5"', true),
-        'How long you actually keep one before replacing it.') +
-      field('dep-replace', 'Replacement cost ($)',
-        inputHtml('dep-replace', 'number', 'replacementCostEstimate', 'min="0" step="1"', true),
-        'What the next one will cost, not what this one did.') +
-      field('dep-resale', 'Expected resale ($) — optional',
-        inputHtml('dep-resale', 'number', 'expectedResaleValue', 'min="0" step="1"', true),
-        'What you expect this one to sell for when you replace it. Only the difference needs saving up.') +
+      '<h3 class="dep-group">For pricing</h3>' +
+      recoveryChoiceMarkup() +
+      '<div class="form-grid">' +
+      (form.recovery === 'kit_hire'
+        ? field('dep-day-rate', 'Day rate ($)',
+            inputHtml('dep-day-rate', 'number', 'dayRate', 'min="0" step="1" inputmode="decimal"', true),
+            'One day’s hire, as it goes on an estimate’s Equipment Hire line. Each line keeps the rate it was ' +
+              'added at, so changing this later doesn’t move saved estimates.') +
+          unusedReserveNote()
+        : // Above the replacement fields it is about (task 6b), for a Vehicle only.
+          (form.category === 'vehicle' ? kmHintMarkup() : '') +
+          field('dep-cycle', 'Replace every (years)',
+            inputHtml('dep-cycle', 'number', 'replacementCycleYears', 'min="0" step="0.5"', true),
+            'How long you actually keep one before replacing it.') +
+          field('dep-replace', 'Replacement cost ($)',
+            inputHtml('dep-replace', 'number', 'replacementCostEstimate', 'min="0" step="1"', true),
+            'What the next one will cost, not what this one did.') +
+          field('dep-resale', 'Expected resale ($) — optional',
+            inputHtml('dep-resale', 'number', 'expectedResaleValue', 'min="0" step="1"', true),
+            'What you expect this one to sell for when you replace it. Only the difference needs saving up.')) +
       '<p class="oh-hint dep-reserve-line full" id="dep-reserve-line"></p>' +
       '</div>' +
       // The reserve line, spoken once typing pauses — see LSCUtil.announce().
@@ -1481,24 +1616,67 @@ const DepreciationView = (() => {
     );
   }
 
-  /* The reserve this asset will add, live, from the form — the one number in
-     the modal that moves every rate on the card. */
+  /* What this asset does to the rates, live, from the form — the one line in
+     the modal that moves every rate on the card. On the floor it's the reserve
+     it adds. On-Set Kit adds nothing, so the line says what leaves the floor
+     when a floor asset is switched (the brief's "so the rate drop isn't a
+     surprise"), worked out on a `rate` copy since the kit copy reserves $0.
+     `is-move` marks a switch of a saved asset; `is-gap` a missing figure. */
   function refreshReserveLine() {
     const el = $m('dep-reserve-line');
     if (!el) return;
-    const r = replacementReserveTotal([
+    const floor = replacementReserveTotal([
       {
         replacementCostEstimate: parseFloat(form.replacementCostEstimate),
         replacementCycleYears: parseFloat(form.replacementCycleYears),
         expectedResaleValue: parseFloat(form.expectedResaleValue) || 0,
         businessUsePct: form.businessUsePct === '' ? 100 : parseFloat(form.businessUsePct),
         disposalDate: editing ? editing.disposalDate : null,
+        recovery: 'rate',
       },
     ]);
-    el.textContent =
-      r > 0
-        ? 'Adds ' + fmt(r) + ' a year to your replacement reserve — and so to every rate on your card.'
-        : 'Leave both blank to track this for tax only; it then adds nothing to your rates.';
+    const disposed = Boolean(editing && editing.disposalDate);
+    const wasKit = Boolean(editing) && isKit(editing);
+    let html;
+    let kind = '';
+
+    if (form.recovery === 'kit_hire') {
+      if (editing && !wasKit && floor > 0) {
+        kind = 'is-move';
+        html =
+          'Moving it to On-Set Kit takes <strong>' + fmt(floor) + ' a year</strong> out of your replacement reserve, ' +
+          'and every rate on your card comes down with it. Bill it as Kit Hire on the jobs that use it.';
+      } else {
+        html = 'Not in your rates: it’s billed as Kit Hire on the jobs that use it.';
+      }
+      const rate = parseFloat(form.dayRate);
+      if (!disposed && !(Number.isFinite(rate) && rate >= 0)) {
+        kind = kind || 'is-gap';
+        html += ' Add a day rate, or it can’t be added to an estimate.';
+      }
+    } else if (disposed) {
+      html = 'It’s been disposed of, so it adds nothing to your rates.';
+    } else if (floor > 0) {
+      kind = wasKit ? 'is-move' : '';
+      html =
+        (wasKit ? 'Moving it to Overhead Floor adds ' : 'Adds ') + '<strong>' + fmt(floor) + ' a year</strong> to ' +
+        'your replacement reserve — and so to every rate on your card.';
+    } else {
+      const costBlank = String(form.replacementCostEstimate).trim() === '';
+      const cycleBlank = String(form.replacementCycleYears).trim() === '';
+      if (costBlank && cycleBlank) {
+        html = 'Leave both blank to track this for tax only; it then adds nothing to your rates.';
+      } else if (costBlank || cycleBlank) {
+        kind = 'is-gap';
+        html = 'Fill in both Replace every and Replacement cost, or it adds nothing to your rates.';
+      } else {
+        // Both typed, still $0: resale at or above the cost, or 0% business use.
+        html = 'Nothing is left to save up after resale and business use, so it adds nothing to your rates.';
+      }
+    }
+    el.innerHTML = html;
+    el.classList.toggle('is-move', kind === 'is-move');
+    el.classList.toggle('is-gap', kind === 'is-gap');
   }
 
   function problems() {
@@ -1555,15 +1733,21 @@ const DepreciationView = (() => {
       ['replacementCostEstimate', 'dep-replace', 'The replacement cost must be 0 or more, or blank.'],
       ['expectedResaleValue', 'dep-resale', 'Expected resale must be 0 or more, or blank.'],
     ];
+    /* The fields the Recovery choice hides are still sent (see the header),
+       so they're still checked; a refusal for one that isn't on screen says
+       where to find it, since there's no field to point at. */
+    const where = (id, msg) =>
+      $m(id) ? msg : msg + ' It’s under ' + (id === 'dep-day-rate' ? 'On-Set Kit' : 'Overhead Floor') + ' in Recovery.';
+    optional.push(['dayRate', 'dep-day-rate', 'The day rate must be 0 or more, or blank.']);
     optional.forEach(([key, id, msg]) => {
       if (f[key] === '' || f[key] === undefined) return;
       const v = parseFloat(f[key]);
-      if (!Number.isFinite(v) || v < 0) found.push({ msg, field: $m(id) });
+      if (!Number.isFinite(v) || v < 0) found.push({ msg: where(id, msg), field: $m(id) });
     });
     if (f.replacementCycleYears !== '') {
       const c = parseFloat(f.replacementCycleYears);
       if (!Number.isFinite(c) || c <= 0) {
-        found.push({ msg: 'Replace every … years must be more than 0, or blank.', field: $m('dep-cycle') });
+        found.push({ msg: where('dep-cycle', 'Replace every … years must be more than 0, or blank.'), field: $m('dep-cycle') });
       }
     }
     return found;
@@ -1594,6 +1778,9 @@ const DepreciationView = (() => {
       replacementCycleYears: numOrNullText(f.replacementCycleYears),
       replacementCostEstimate: numOrNullText(f.replacementCostEstimate),
       expectedResaleValue: numOrNullText(f.expectedResaleValue),
+      // Both always sent: a blank day rate is null ("no rate yet"), never 0.
+      recovery: f.recovery === 'kit_hire' ? 'kit_hire' : 'rate',
+      dayRate: numOrNullText(f.dayRate),
       // Carried through untouched — see "EDIT MUST CARRY THE DISPOSAL FIELDS
       // THROUGH" in the header.
       disposalDate: editing ? editing.disposalDate || null : null,
@@ -1685,23 +1872,27 @@ const DepreciationView = (() => {
     opener = null;
   }
 
-  /* Structural fields — method and category — change which inputs exist
-     (effective life, car limit), so they re-render the box. Focus goes back to
-     the control that changed. Everything else writes to the form in place. */
+  /* Structural fields — method, category and recovery — change which inputs
+     exist (effective life, car limit, the reserve fields or the day rate), so
+     they re-render the box. Focus goes back to the control that changed. A
+     Recovery switch also speaks the line under it: what the switch does to
+     the rates is the point of it. Everything else writes to the form in place. */
   function bindModal() {
     overlay.querySelectorAll('[data-key]').forEach((el) => {
       const key = el.getAttribute('data-key');
-      const structural = key === 'method' || key === 'category';
-      const event = el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input';
+      const structural = key === 'method' || key === 'category' || key === 'recovery';
+      const event = el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'radio' ? 'change' : 'input';
       el.addEventListener(event, () => {
         form[key] = el.type === 'checkbox' ? el.checked : el.value;
         if (structural) {
           renderModal();
           const again = $m(el.id);
           if (again) again.focus();
+          if (key === 'recovery') LSCUtil.announce($m('dep-reserve-live'), $m('dep-reserve-line').textContent);
           return;
         }
-        if (key === 'replacementCostEstimate' || key === 'replacementCycleYears' || key === 'businessUsePct' || key === 'expectedResaleValue') {
+        if (key === 'replacementCostEstimate' || key === 'replacementCycleYears' || key === 'businessUsePct' ||
+            key === 'expectedResaleValue' || key === 'dayRate') {
           refreshReserveLine();
           LSCUtil.announce($m('dep-reserve-live'), $m('dep-reserve-line').textContent);
         }
@@ -1743,6 +1934,8 @@ const DepreciationView = (() => {
       replacementCycleYears: toField(a.replacementCycleYears),
       replacementCostEstimate: toField(a.replacementCostEstimate),
       expectedResaleValue: toField(a.expectedResaleValue),
+      recovery: isKit(a) ? 'kit_hire' : 'rate',
+      dayRate: toField(a.dayRate),
       notes: toField(a.notes),
     };
     baseline = snapshot();
@@ -1858,5 +2051,9 @@ const DepreciationView = (() => {
     openModal(null, openedBy, prefill);
   }
 
-  return { mount, openAdd };
+  /* A category's label, for the estimate editor's Add On-Set Equipment list,
+     so the words are kept here only. */
+  const categoryLabel = (value) => labelOf(CATEGORIES, value);
+
+  return { mount, openAdd, categoryLabel };
 })();

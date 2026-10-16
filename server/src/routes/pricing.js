@@ -12,7 +12,7 @@ const { SERVICE_UNITS, cardShapeOutdated, serviceDayOk } = require('../calc');
  * matters most for is units: taxSetAsideRate is a FRACTION, and a 35 stored
  * here would set aside 35× every job's income.
  *
- * pricing_shape_outdated (v9, .design/service-rate-tiers/). This route writes
+ * pricing_shape_outdated (v9, Project build archive/tracks/service-rate-tiers/). This route writes
  * the card as one whole document, so a browser still running the web build from
  * before v9 — a cached Pages copy, a tab left open over the deploy — would read
  * the new card, not understand it, and save the old shape back over it. Any

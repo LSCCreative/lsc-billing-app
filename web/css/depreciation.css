@@ -504,3 +504,162 @@
 .oh-chart-date.dep-decline-fy-now {
   fill: var(--oh-chart-accent);
 }
+
+/* ── Recovery: Overhead Floor / On-Set Kit (own-kit K3) ─────────────────────
+   In the modal, a pair of radio tiles, each saying what the choice does. The
+   radio stays native (accent-color) so its checked state, keyboard and focus
+   ring are the browser's; the tile border follows it via :has(). Stacked on a
+   phone, side by side once there is room for two sentences. */
+.dep-recovery {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.dep-recovery legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+.dep-recovery-opts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+@media (min-width: 560px) {
+  .dep-recovery-opts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.dep-rec-opt {
+  position: relative;
+  display: block;
+  min-height: 44px;
+  padding: 12px 14px 12px 40px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dep-rec-opt input {
+  position: absolute;
+  top: 13px;
+  left: 14px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.dep-rec-opt:hover {
+  border-color: var(--muted);
+}
+.dep-rec-opt:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.dep-rec-opt-body {
+  display: block;
+}
+.dep-rec-opt-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.dep-rec-opt-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.dep-unused {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* The live line under the fields. A switch of a saved asset is the thing to
+   read before saving, so it gets the double-count hint's accent rule (a
+   "look at this", not an error); a missing figure says so in --accent-text. */
+.dep-reserve-line strong {
+  font-weight: 600;
+  font-family: var(--font-figures);
+}
+.dep-reserve-line.is-move {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+}
+.dep-reserve-line.is-gap {
+  color: var(--accent-text);
+}
+
+/* In the register: a tag naming the recovery (words, not colour), the
+   figure it recovers by, and the gap when one is missing. On-Set Kit's tag is
+   drawn in --text, the floor's stays muted: the floor is the default, kit is
+   the exception worth seeing down the column. The gap uses the accent rule
+   and --accent-text, the screen's "look at this", never the error red. */
+.dep-th-sub {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+}
+.dep-cell-note {
+  color: var(--muted);
+}
+.dep-rec {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.dep-table .dep-rec-tag {
+  margin-left: 0;
+}
+.dep-table .dep-rec-tag.is-kit {
+  color: var(--text);
+  border-color: var(--text);
+}
+.dep-rec-fig {
+  font-family: var(--font-figures);
+  color: var(--text);
+  white-space: nowrap;
+}
+.dep-rec-gap {
+  max-width: 26ch;
+  padding-left: 7px;
+  border-left: 2px solid var(--accent);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--accent-text);
+}
+.dep-table tr.dep-disposed .dep-rec-tag.is-kit {
+  color: var(--muted);
+  border-color: var(--border);
+}
+/* Stacked under 768px the cell is a label-and-value row, so the block sits
+   to the right like every other value, its lines aligned to that edge. */
+@media (max-width: 767px) {
+  .dep-rec {
+    align-items: flex-end;
+    text-align: right;
+  }
+  .dep-rec-gap {
+    padding-left: 0;
+    padding-right: 7px;
+    border-left: 0;
+    border-right: 2px solid var(--accent);
+  }
+}
+/* A date that wraps "2025-/08-/10" down three lines is worse than the few
+   pixels of extra scroll it costs in the 768–1099 band. */
+.dep-table td.dep-nowrap {
+  white-space: nowrap;
+}
+.dep-rec-fig .dep-cell-note {
+  font-family: var(--font-family-body);
+}

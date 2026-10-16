@@ -816,8 +816,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v16', () => {
-  assert.equal(LATEST_VERSION, 16);
+test('the schema knows it is at v17', () => {
+  assert.equal(LATEST_VERSION, 17);
 });
 
 /**
@@ -1280,7 +1280,7 @@ test('v14 adds the version, signature and send tables and an unset link, changin
 
 /**
  * MIGRATION v15 — the account's email and password reset links
- * (.design/account-recovery/). Additive: the account keeps its login and reads
+ * (Project build archive/tracks/account-recovery/). Additive: the account keeps its login and reads
  * its email as unset, and running it again changes nothing.
  */
 test('v15 gives the account an unset email and an empty reset table, changing nothing else', () => {
@@ -1305,7 +1305,7 @@ test('v15 gives the account an unset email and an empty reset table, changing no
 
 /**
  * MIGRATION v16 — trips, call sheet links and the Google Calendar tables
- * (.design/trip-planner/ task 1). Additive: every v15 day reads as having no
+ * (Project build archive/tracks/trip-planner/ task 1). Additive: every v15 day reads as having no
  * trip, every estimate as having no call sheet link (off), the three new
  * tables start empty, and running it again changes nothing.
  */
@@ -1316,7 +1316,7 @@ test('v16 adds an unset trip to every day, an off call sheet link and three empt
   const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
   assert.ok(before.production_days.length, 'the fixture has days to carry across');
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 16 });
   assert.deepEqual([result.from, result.to, result.applied], [15, 16, 1]);
   const after = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
   assert.ok(after.production_days.every((r) => r.trip_json === null), 'no day has a trip');
@@ -1328,7 +1328,7 @@ test('v16 adds an unset trip to every day, an off call sheet link and three empt
 
   // Run again: nothing moves, and no column is added twice.
   db.prepare('DELETE FROM schema_version WHERE version >= 16').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 16 }).applied, 1);
   assert.deepEqual(dump(db, 'production_days'), after.production_days);
   assert.deepEqual(dump(db, 'estimates'), after.estimates);
 
@@ -1349,6 +1349,50 @@ test('v16 adds an unset trip to every day, an off call sheet link and three empt
               VALUES ('d_other', 'e', 'lost', 'x')`).run(), /CHECK/);
   db.prepare('DELETE FROM estimates WHERE id = ?').run(day.estimate_id);
   assert.equal(db.prepare('SELECT event_id FROM google_event_sync WHERE day_id = ?').get(day.id).event_id, 'ev1');
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+/**
+ * MIGRATION v17 — asset recovery setting and day rate (own-kit K1). Additive:
+ * every asset already in the register reads 'rate' (the Overhead Floor, which
+ * is what it was doing) with no day rate, nothing else on the row moves, and
+ * running it again changes nothing.
+ */
+test('v17 reads every existing asset as Overhead Floor with no day rate, and guards both columns', () => {
+  const db = openDatabase(tempDbPath('v17-upgrade'), { migrate: false });
+  db.pragma('foreign_keys = ON');
+  migrate(db, { to: 16 });
+  const insert = db.prepare(`
+    INSERT INTO depreciation_assets
+      (id, name, category, purchase_date, start_date, cost_inc_gst, method, effective_life_years,
+       replacement_cycle_years, replacement_cost_estimate, created_at, updated_at)
+    VALUES (?, ?, 'camera', '2024-07-01', '2024-07-01', 6600, 'prime_cost', 5, 4, 7000, 'x', 'x')
+  `);
+  insert.run('da_old1', 'A7S III');
+  insert.run('da_old2', 'FX3');
+  const before = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
+  assert.ok(!('recovery' in before[0]) && !('day_rate' in before[0]), 'v16 has neither column');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [16, 17, 1]);
+  const after = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
+  assert.deepEqual(after.map((r) => [r.recovery, r.day_rate]), [['rate', null], ['rate', null]]);
+  assert.deepEqual(after.map(({ recovery: _r, day_rate: _d, ...rest }) => rest), before);
+
+  // Run again: nothing moves, and no column is added twice.
+  db.prepare("UPDATE depreciation_assets SET recovery = 'kit_hire', day_rate = 150 WHERE id = 'da_old1'").run();
+  const edited = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
+  db.prepare('DELETE FROM schema_version WHERE version >= 17').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all(), edited);
+
+  // The table refuses what the API would: an unknown recovery, a negative rate.
+  assert.throws(() => db.prepare("UPDATE depreciation_assets SET recovery = 'hire' WHERE id = 'da_old2'").run(), /CHECK/);
+  assert.throws(() => db.prepare("UPDATE depreciation_assets SET recovery = NULL WHERE id = 'da_old2'").run(), /NOT NULL/);
+  assert.throws(() => db.prepare('UPDATE depreciation_assets SET day_rate = -1 WHERE id = ?').run('da_old2'), /CHECK/);
+  db.prepare('UPDATE depreciation_assets SET day_rate = 0 WHERE id = ?').run('da_old2');
+  db.prepare('UPDATE depreciation_assets SET day_rate = NULL WHERE id = ?').run('da_old2');
   assert.deepEqual(db.pragma('foreign_key_check'), []);
   db.close();
 });

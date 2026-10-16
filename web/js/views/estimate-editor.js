@@ -38,7 +38,7 @@
  *     line's price for the one that client was quoted last time, matched by
  *     category and row id, then name. Turning it off puts the prices back.
  *
- * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/)
+ * SERVICE UNITS (2026-09-28, Project build archive/tracks/service-rate-tiers/)
  * A labour service sells by the hour, the half day or the full day, each with
  * its own price on the card (LSCCalc.unitDef — typed, or auto from the income
  * floor and Target Markup). The picker is service → unit → Add, and the unit
@@ -62,7 +62,7 @@
  * line is added at is frozen into its snapshot like any other: this file never
  * resolves a price after that except on one of the actions above.
  *
- * PRODUCTION ITEMS LIVE ON DAYS (2026-10-02, .design/production-booking/ task 7)
+ * PRODUCTION ITEMS LIVE ON DAYS (2026-10-02, Project build archive/tracks/production-booking/ task 7)
  * A Production line (section id `prod`, D24) belongs to a booked day (D4): it
  * is built inside that day's card in the Production Booking block and saves
  * with that day's `dayId` (read from where the row sits, never stored on the
@@ -597,6 +597,7 @@ const EstimateEditor = (() => {
      it joins no rental (confirmed 2026-10-03). */
   function buildCostRow(kind, line) {
     const isEquip = kind === 'equip';
+    if (isEquip && LSCCalc.isOwnKit(line)) return buildKitRow(line);
     const legacy = isEquip && !Object.prototype.hasOwnProperty.call(line, 'item');
     const costCol = isEquip ? 'Cost/day' : 'Day rate';
 
@@ -645,6 +646,64 @@ const EstimateEditor = (() => {
       tr.querySelector('.rental-hint').addEventListener('click', () => focusRental(vendorKey(vendor.value)));
     }
     addLineControls(tr, kind);
+    return tr;
+  }
+
+  /* ── The owner's own kit (own-kit K5, K-D6–K-D9) ──────────────────────────
+     A hire line for one of the owner's On-Set Kit assets, added from "Add
+     On-Set Equipment" (openKitPicker). It bills days × its day rate like any
+     hire, but calc.js counts it as income, not a pass-through (K4). Its rate
+     is the asset's when it was added (K-D7): shown, not typed, and re-adding
+     the asset is how to take a new one; "Update to current rates" leaves it
+     alone, as it does all hire. It has no vendor, so it joins no rental and
+     no vendor suggestion (K-D9). The asset's id and name ride on the row for
+     collect(); they are for display only. */
+  const isKitRow = (tr) => tr.dataset.ownKit === 'true';
+
+  // The rows hired from a vendor: every equipment line but the owner's own kit.
+  const hireRows = () => rowsIn('equip').filter((tr) => !isKitRow(tr));
+
+  // What a crew or hire row charges a day: typed, or a kit row's snapshot.
+  const costOf = (tr) => (isKitRow(tr) ? num(tr.dataset.cost) : num(inputValue(tr, '.cost-inp')));
+
+  // The line a kit row saves as (the server's kitLineProblem shape), with no day: collect() adds it.
+  function kitLineOf(tr) {
+    return {
+      ownKit: true,
+      assetId: tr.dataset.assetId,
+      assetName: tr.dataset.assetName,
+      item: tr.dataset.assetName,
+      vendor: '',
+      days: num(inputValue(tr, '.days-inp')),
+      cost: num(tr.dataset.cost),
+    };
+  }
+
+  function buildKitRow(line) {
+    const name = String(line.assetName || line.item || 'Own kit');
+    const cost = Math.max(0, num(line.cost));
+    const tr = document.createElement('div');
+    tr.className = 'gt-row expense-grid kit-row';
+    tr.dataset.rid = rid();
+    tr.dataset.kind = 'equip';
+    tr.dataset.ownKit = 'true';
+    tr.dataset.assetId = String(line.assetId || '');
+    tr.dataset.assetName = name;
+    tr.dataset.cost = String(cost);
+    const rateTip = 'Your day rate for ' + name + ' when it was added. To take a new rate, remove it and add it again.';
+    tr.innerHTML =
+      '<div data-label="Item"><p class="kit-name"><span class="kit-tag">Own kit</span>' +
+      '<span class="kit-asset">' + esc(name) + '</span></p></div>' +
+      '<div class="right" data-label="Days"><input class="num-inp days-inp" type="number" min="0" step="0.5" value="' +
+      (line.days || '') + '" aria-label="Days for ' + esc(name) + '"></div>' +
+      '<div class="right muted-td" data-label="Cost/day"><span class="kit-rate" title="' + esc(rateTip) + '">' +
+      fmt(cost) + '<span class="sr-only"> a day, the rate when it was added</span></span></div>' +
+      '<div class="right muted-td mu-cell">—</div>' +
+      '<div class="right" data-label="Total"><span class="bill-cell">—</span></div>' +
+      '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' + esc(name) +
+      '" aria-label="Remove ' + esc(name) + '">×</button></div>';
+    bindRow(tr, ['.days-inp']);
+    addLineControls(tr, 'equip');
     return tr;
   }
 
@@ -962,6 +1021,7 @@ const EstimateEditor = (() => {
   }
 
   function rowName(tr) {
+    if (isKitRow(tr)) return tr.dataset.assetName;
     const typed = tr.querySelector('.deliv-name-inp, .role-inp, .vendor-inp, .item-inp');
     return ((typed && typed.value) || tr.dataset.name || '').trim();
   }
@@ -1192,10 +1252,12 @@ const EstimateEditor = (() => {
           '</span></div>';
       }).join('');
     }
-    // No Rate Card list for crew or gear (D77): a typed row each.
+    // No Rate Card list for crew or gear (D77): a typed row each. Gear also
+    // takes the owner's own kit, from its pop-up (own-kit K5).
     return kind === 'crew'
       ? '<button type="button" class="btn btn-ghost btn-sm dm-blank" data-add="crew">+ Add crew member</button>'
-      : '<button type="button" class="btn btn-ghost btn-sm dm-blank" data-add="equip">+ Add hire item</button>';
+      : '<div class="dm-blanks"><button type="button" class="btn btn-ghost btn-sm dm-blank" data-add="equip">+ Add hire item</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm dm-blank dm-kit" aria-haspopup="dialog">+ Add On-Set Equipment</button></div>';
   }
 
   /* The menu's foot: "Define travel", or for a day with a trip "Edit travel",
@@ -1844,6 +1906,8 @@ const EstimateEditor = (() => {
         el.querySelector('#dm-g-' + kind).hidden = !menu.open[kind];
         return;
       }
+      const kitBtn = e.target.closest('.dm-kit');
+      if (kitBtn) return openKitFromMenu(kitBtn);
       const btn = e.target.closest('[data-add]');
       if (btn && !btn.disabled) addFromMenu(btn.dataset.add, btn.dataset.name, btn.dataset.unit);
     });
@@ -1896,6 +1960,189 @@ const EstimateEditor = (() => {
     if (field) field.focus();
   }
 
+  // ── Add On-Set Equipment (own-kit K5, K-D8) ───────────────────────────────
+  /* A pop-up over the owner's On-Set Kit: each asset whose Recovery is On-Set
+     Kit, with a day rate, not sold or written off (Finance → Overhead →
+     Depreciation is where each gets one). Tick any number; Add puts one kit
+     line per tick on the card it was opened for, at the asset's day rate now
+     (buildKitRow snapshots it). Opened from a day card's service menu it adds
+     to that day, 1 day each; from Equipment Hire's summary it adds to Not on a
+     day, at the estimate's number of days (at least 1). "Days each" is the one
+     field for the batch; each line's Days is its own after. An asset already
+     on the estimate says so, and can still be added for another day.
+
+     A dialog with the app's focus trap (LSCModal): Escape, Cancel or a click
+     outside closes it with nothing added, focus back where it came from. From
+     the phone's bottom sheet the sheet closes first: two modals don't stack. */
+  const picker = { overlay: null, opener: null, target: null };
+
+  /* The assets the pop-up lists (`ready`, A–Z) and how many kit assets it
+     leaves out for having no day rate yet. $0 is a rate the owner set; blank
+     is none (K1), read as the register reads it. */
+  function kitAssets() {
+    const rated = (a) => {
+      const rate = LSCCalc.numOrNull(a.dayRate);
+      return rate !== null && rate >= 0;
+    };
+    const kitOnes = LSCData.depreciationAssets().filter((a) => LSCCalc.isKitHire(a) && !a.disposalDate);
+    return {
+      ready: kitOnes.filter(rated).sort((x, y) =>
+        String(x.name || '').localeCompare(String(y.name || ''), undefined, { sensitivity: 'base' })),
+      unrated: kitOnes.filter((a) => !rated(a)).length,
+    };
+  }
+
+  function onPickerKeydown(event) {
+    if (!picker.overlay || picker.overlay.closest('[hidden]')) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      return closeKitPicker(true);
+    }
+    LSCModal.trapTab(picker.overlay, event);
+  }
+  function onPickerClick(event) {
+    if (event.target === picker.overlay) closeKitPicker(true);
+  }
+
+  function closeKitPicker(returnFocus) {
+    const o = picker.overlay;
+    if (!o || !o.classList.contains('open')) return;
+    o.classList.remove('open');
+    o.innerHTML = '';
+    document.removeEventListener('keydown', onPickerKeydown);
+    o.removeEventListener('click', onPickerClick);
+    const opener = picker.opener;
+    picker.opener = null;
+    picker.target = null;
+    if (returnFocus && opener && opener.isConnected) opener.focus();
+  }
+
+  /**
+   * @param {string} key — the card to add to: a day id, or OFF_DAY.
+   * @param {HTMLElement} opener — where focus goes back to.
+   * @param {number} days — "Days each" to start with.
+   */
+  function openKitPicker(key, opener, days) {
+    const overlay = document.getElementById('modal-own-kit');
+    if (!overlay || !booking) return;
+    closeKitPicker(false);
+    picker.overlay = overlay;
+    picker.opener = opener || null;
+    picker.target = key;
+
+    const { ready, unrated } = kitAssets();
+    const onEstimate = new Set(rowsIn('equip').filter(isKitRow).map((tr) => tr.dataset.assetId));
+    const where = key === OFF_DAY ? 'Not on a day' : cardName(key);
+    const unratedNote = unrated
+      ? '<p class="kp-note">' + plural(unrated, 'kit asset has', 'kit assets have') + ' no day rate yet, so ' +
+        (unrated === 1 ? 'it isn’t' : 'they aren’t') + ' listed. Give ' + (unrated === 1 ? 'it' : 'each') +
+        ' one in Finance → Overhead → Depreciation.</p>'
+      : '';
+
+    const list = ready.map((a) => {
+      const id = 'kp-a-' + String(a.id).replace(/[^A-Za-z0-9_-]/g, '');
+      const added = onEstimate.has(String(a.id));
+      return '<li class="kp-item"><input type="checkbox" class="kp-check" id="' + id + '" value="' + esc(a.id) + '"' +
+        (added ? ' aria-describedby="' + id + '-added"' : '') + '>' +
+        '<label class="kp-row" for="' + id + '">' +
+        '<span class="kp-main"><span class="kp-name">' + esc(kitName(a)) + '</span>' +
+        '<span class="kp-meta">' + esc(DepreciationView.categoryLabel(a.category)) +
+        (added ? '<span class="kp-tag" id="' + id + '-added">Already added</span>' : '') + '</span></span>' +
+        '<span class="kp-rate">' + money(LSCCalc.numOrNull(a.dayRate)) + '<span class="kp-per"> a day</span></span>' +
+        '</label></li>';
+    }).join('');
+
+    overlay.innerHTML =
+      '<div class="modal-box kp-box" role="dialog" aria-modal="true" aria-labelledby="kp-title" aria-describedby="kp-where">' +
+      '<p class="ad-eyebrow" id="kp-where">Adding to ' + esc(where) + '</p>' +
+      '<h2 class="modal-title" id="kp-title">Add On-Set Equipment</h2>' +
+      (ready.length
+        ? '<p class="kp-intro">Your own gear, billed at its day rate. It counts as your income, not a cost passed through.</p>' +
+          '<fieldset class="kp-set"><legend class="sr-only">On-Set Kit</legend><ul class="kp-list">' + list + '</ul></fieldset>' +
+          unratedNote +
+          '<div class="kp-foot">' +
+          '<div class="kp-days"><label for="kp-days">Days each</label>' +
+          '<input id="kp-days" class="num-inp" type="number" min="0.5" step="0.5" inputmode="decimal" value="' + days + '"></div>' +
+          '<div class="kp-actions"><button type="button" class="btn btn-ghost" id="kp-cancel">Cancel</button>' +
+          '<button type="button" class="btn btn-accent" id="kp-add" disabled>Add</button></div></div>'
+        : '<p class="kp-empty">No On-Set Kit with a day rate yet.</p>' +
+          (unratedNote || '<p class="kp-note">In Finance → Overhead → Depreciation, set an asset’s Recovery to ' +
+            'On-Set Kit and give it a day rate. It then shows here.</p>') +
+          '<div class="kp-foot"><div class="kp-actions"><button type="button" class="btn btn-ghost" id="kp-cancel">Close</button></div></div>') +
+      '</div>';
+
+    overlay.classList.add('open');
+    document.addEventListener('keydown', onPickerKeydown);
+    overlay.addEventListener('click', onPickerClick);
+    overlay.querySelector('#kp-cancel').addEventListener('click', () => closeKitPicker(true));
+
+    const add = overlay.querySelector('#kp-add');
+    if (!add) {
+      overlay.querySelector('#kp-cancel').focus();
+      return;
+    }
+    const daysInput = overlay.querySelector('#kp-days');
+    const checks = Array.from(overlay.querySelectorAll('.kp-check'));
+    const paintAdd = () => {
+      const n = checks.filter((c) => c.checked).length;
+      add.disabled = n === 0 || !(num(daysInput.value) > 0);
+      add.textContent = n ? 'Add ' + plural(n, 'item', 'items') : 'Add';
+    };
+    checks.forEach((c) => c.addEventListener('change', paintAdd));
+    daysInput.addEventListener('input', paintAdd);
+    add.addEventListener('click', () => {
+      const picked = checks.filter((c) => c.checked).map((c) => ready.find((a) => String(a.id) === c.value)).filter(Boolean);
+      addKit(key, picked, num(daysInput.value));
+    });
+    checks[0].focus();
+  }
+
+  /* The name a kit line keeps for its asset: trimmed and within the 200
+     characters the server allows a line (days.js kitLineProblem), so a long
+     or blank register name can't make the estimate unsaveable. */
+  const kitName = (a) => String((a && a.name) || '').trim().slice(0, 200).trim() || 'Untitled asset';
+
+  /* One kit line per asset onto the card, then the pop-up closes. Focus goes
+     back to the button that opened it; if that has gone (the phone's sheet
+     closed under it), to the first new line's Days. */
+  function addKit(key, assets, days) {
+    if (!assets.length || !(days > 0)) return;
+    const body = groupBody(panelFor(key), 'equip');
+    const rows = assets.map((a) => {
+      const tr = buildKitRow({ ownKit: true, assetId: String(a.id), assetName: kitName(a), days, cost: LSCCalc.numOrNull(a.dayRate) });
+      injectRow(body, tr);
+      return tr;
+    });
+    const opener = picker.opener;
+    closeKitPicker(false);
+    if (menu.el && menu.target === key) {
+      menu.count += rows.length;
+      paintMenuCount();
+    }
+    const names = assets.map(kitName);
+    const said = 'Added ' + (names.length > 2 ? plural(names.length, 'kit item', 'kit items') : names.join(' and ')) +
+      ' to ' + (key === OFF_DAY ? 'Not on a day' : cardName(key)) + '.';
+    const status = menu.el && menu.el.querySelector('#day-menu-status');
+    if (status) status.textContent = said;
+    if (opener && opener.isConnected) opener.focus();
+    else rows[0].querySelector('.days-inp').focus();
+    say(said);
+  }
+
+  /* From a card's service menu: that day, 1 day each. The phone's sheet goes
+     first; focus then comes back to the card's own menu button. */
+  function openKitFromMenu(btn) {
+    const key = menu.target;
+    if (key === null) return;
+    let opener = btn;
+    if (menu.sheet) {
+      opener = panelFor(key).querySelector('.day-menu-btn');
+      closeMenu(false);
+    }
+    openKitPicker(key, opener, 1);
+  }
+
   // ── Moving lines between cards (B2-5, D80, D81) ───────────────────────────
   /* A line's day is the card it sits in, and recalc prices every line from
      where it sits — so a move is the row itself moved into another card's
@@ -1922,6 +2169,7 @@ const EstimateEditor = (() => {
   function lineLabel(tr) {
     const kind = kindOf(tr);
     if (kind === 'crew') return inputValue(tr, '.role-inp').trim() || 'crew member';
+    if (kind === 'equip' && isKitRow(tr)) return tr.dataset.assetName;
     if (kind === 'equip') return inputValue(tr, '.item-inp').trim() || inputValue(tr, '.vendor-inp').trim() || 'hire item';
     const snap = snapOf(tr) || {};
     const day = kind === 'prod' && (snap.dayUnit === 'full' || snap.dayUnit === 'half') ? ' — ' + UNIT_ADDED[snap.dayUnit] : '';
@@ -2131,6 +2379,9 @@ const EstimateEditor = (() => {
           fresh = kind === 'prod'
             ? buildLabourRow(prod, labourDef(prod, line, pricing), line)
             : buildTravelRow(travelDef(line, pricing), line);
+        } else if (isKitRow(tr)) {
+          // Own kit keeps its snapshot: the copy bills the rate the original was added at (K-D7).
+          fresh = buildKitRow(kitLineOf(tr));
         } else {
           fresh = buildCostRow(kind, {
             role: inputValue(tr, '.role-inp'),
@@ -2183,7 +2434,7 @@ const EstimateEditor = (() => {
 
   function syncRentals() {
     if (!rentalsReady) return;
-    const lines = rowsIn('equip');
+    const lines = hireRows();
     const count = new Map(); // vendor key → its lines
     lines.forEach((tr) => {
       const k = vendorKey(vendorOf(tr));
@@ -2238,7 +2489,7 @@ const EstimateEditor = (() => {
     return rentals
       .filter((r) => r.key && r.key !== q && r.key.indexOf(q) !== -1)
       .sort((a, b) => (b.key.indexOf(q) === 0) - (a.key.indexOf(q) === 0))
-      .map((r) => ({ vendor: r.vendor, items: rowsIn('equip').filter((tr) => vendorKey(vendorOf(tr)) === r.key).length }));
+      .map((r) => ({ vendor: r.vendor, items: hireRows().filter((tr) => vendorKey(vendorOf(tr)) === r.key).length }));
   }
 
   const shownRentals = () => rentals.filter((r) => r.key);
@@ -2323,7 +2574,8 @@ const EstimateEditor = (() => {
      and moved, never rebuilt, so a date being typed survives a repaint. */
   function paintRentals() {
     if (!rentalsEl) return;
-    const lines = rowsIn('equip');
+    // Own kit is hired from no one: it has no rental and no "Add pickup and return dates".
+    const lines = hireRows();
     const shown = shownRentals();
     const empty = rentalsEl.querySelector('.rentals-empty');
     empty.textContent = lines.length
@@ -2477,6 +2729,10 @@ const EstimateEditor = (() => {
       '<div class="bb-head"><div><h3 class="bb-label" id="onset-h-' + kind + '">' + label + '</h3>' +
       '<span class="bb-label-tag">' + tag + '</span></div>' +
       '<div class="onset-head-r">' +
+      // Own kit for the whole job (own-kit K5): to Not on a day, at the estimate's day count.
+      (kind === 'equip'
+        ? '<button type="button" class="btn btn-quiet btn-sm onset-kit" aria-haspopup="dialog">Add On-Set Equipment</button>'
+        : '') +
       '<button type="button" class="btn btn-quiet btn-sm onset-add" aria-haspopup="menu" aria-expanded="false">' +
       'Add to a day<span class="sr-only">, ' + esc(ON_SET_MENU[kind]) + '</span><span class="menu-caret" aria-hidden="true"></span></button>' +
       '<span class="bb-sum">Subtotal <b id="sum-' + kind + '">$0.00</b></span></div></div>' +
@@ -3222,7 +3478,7 @@ const EstimateEditor = (() => {
       cost: num(inputValue(tr, '.cost-inp')),
     }));
 
-    activeRows.equip = rowsIn('equip').map((tr) => onDay(tr, {
+    activeRows.equip = rowsIn('equip').map((tr) => onDay(tr, isKitRow(tr) ? kitLineOf(tr) : {
       vendor: vendorOf(tr),
       item: inputValue(tr, '.item-inp').trim(),
       days: num(inputValue(tr, '.days-inp')),
@@ -3412,10 +3668,15 @@ const EstimateEditor = (() => {
       rowsIn(kind).forEach((tr) => {
         const line = {
           days: num(inputValue(tr, '.days-inp')),
-          cost: num(inputValue(tr, '.cost-inp')),
+          cost: costOf(tr),
         };
         const bill = paintRow(tr, costBill(line));
         subtotal += bill;
+        if (kind === 'equip' && isKitRow(tr)) {
+          tally(kind, rowDayId(tr), bill, onSetLine(tr.dataset.assetName,
+            plural(line.days, 'day', 'days') + ' × ' + fmt(line.cost), bill, 'Own kit', false));
+          return;
+        }
         // Gear reads as its Item, with its vendor under it (B2-7).
         const vendor = kind === 'equip' ? vendorOf(tr) : '';
         const name = kind === 'crew' ? inputValue(tr, '.role-inp').trim() : inputValue(tr, '.item-inp').trim() || vendor;
@@ -4788,6 +5049,8 @@ const EstimateEditor = (() => {
       block.addEventListener('click', (e) => {
         const add = e.target.closest('.onset-add');
         if (add) return openAddPop(add, kind);
+        const kitBtn = e.target.closest('.onset-kit');
+        if (kitBtn && booking) return openKitPicker(OFF_DAY, kitBtn, Math.max(1, booking.list().length));
         const edit = e.target.closest('.onset-edit');
         if (edit) editOnDay(edit.dataset.key, kind);
       });
@@ -4887,6 +5150,7 @@ const EstimateEditor = (() => {
 
     booking = null;
     closeMenu(false);
+    closeKitPicker(false);
     // The last estimate's travel view went with its form.
     if (trip.view) trip.view.destroy();
     trip.view = null;

@@ -144,7 +144,7 @@ const MIGRATIONS = [
     version: 4,
     name: 'overhead items, overhead snapshots, and goals',
     up(db) {
-      // Foundation for the Finance area (.design/overhead-finance/): an
+      // Foundation for the Finance area (Project build archive/tracks/overhead-finance/): an
       // Overhead page tracking real recurring costs, a Goals page stating
       // income/margin targets, and a computed Overhead Rate/hr that replaces
       // the Pricing screen's manually-guessed per-row `rate`. See
@@ -211,7 +211,7 @@ const MIGRATIONS = [
     version: 5,
     name: 'capacity fields, depreciation assets and lodgement locks',
     up(db) {
-      // Foundation for Finance & Price (.design/price-calculator/): real
+      // Foundation for Finance & Price (Project build archive/tracks/price-calculator/): real
       // working-days capacity in place of an assumed 48-week year, and a
       // capital-asset register that feeds both the accountant's depreciation
       // schedule and the gear replacement reserve inside the overhead rate.
@@ -458,7 +458,7 @@ const MIGRATIONS = [
     version: 7,
     name: 'money-math audit: tax years, super, bad debt, resale, opening-value FY',
     up(db) {
-      // From the 2026-09-28 money-math audit (.design/price-calculator/
+      // From the 2026-09-28 money-math audit (Project build archive/tracks/price-calculator/
       // HANDOVER.md, "What landed — audit fixes"). All additive: nullable
       // columns and one new table, no rebuild.
       //
@@ -551,7 +551,7 @@ const MIGRATIONS = [
     version: 9,
     name: 'rate card: each service priced per hour, half day and full day',
     up(db) {
-      // .design/service-rate-tiers/ (2026-09-28). No table changes: this
+      // Project build archive/tracks/service-rate-tiers/ (2026-09-28). No table changes: this
       // rewrites the JSON in pricing.data_json and estimates.active_rows_json.
       // Snapshot every legacy estimate line against the OLD card first, then
       // reshape the card (labour rows' mu / hoursPerUnit / dayUnit become
@@ -583,7 +583,7 @@ const MIGRATIONS = [
     version: 11,
     name: 'production days, public holidays, and the surcharge snapshot',
     up(db) {
-      // .design/production-booking/ task 2 (2026-10-02; IA "Data Model",
+      // Project build archive/tracks/production-booking/ task 2 (2026-10-02; IA "Data Model",
       // Stage A + B). All additive, and safe to run twice (the upgrade tests
       // rewind schema_version past it).
       //
@@ -653,7 +653,7 @@ const MIGRATIONS = [
     version: 12,
     name: 'gear rentals',
     up(db) {
-      // .design/production-booking/ B2-2 (2026-10-03; IA "Data Model: Stage
+      // Project build archive/tracks/production-booking/ B2-2 (2026-10-03; IA "Data Model: Stage
       // B2"). One new table, so nothing already stored moves. Safe to run
       // twice (the upgrade tests rewind schema_version past it).
       //
@@ -697,7 +697,7 @@ const MIGRATIONS = [
     // checked with foreign_key_check before it commits. See migrate().
     foreignKeysOff: true,
     up(db) {
-      // .design/production-booking/ task 15 (2026-10-03; IA "Data Model",
+      // Project build archive/tracks/production-booking/ task 15 (2026-10-03; IA "Data Model",
       // Stage D). The steps, and why, are in migrations/v13-projects.js.
       require('./migrations/v13-projects').migrateV13(db);
     },
@@ -706,7 +706,7 @@ const MIGRATIONS = [
     version: 14,
     name: 'sent versions, client links, signatures and the send queue',
     up(db) {
-      // .design/production-booking/ task 25 (IA "Stage E (v14)"). Additive
+      // Project build archive/tracks/production-booking/ task 25 (IA "Stage E (v14)"). Additive
       // only: new tables and two nullable columns, so no rebuild and no
       // foreign_keys dance.
       //
@@ -786,7 +786,7 @@ const MIGRATIONS = [
     version: 15,
     name: 'account email and password reset links',
     up(db) {
-      // .design/account-recovery/. Additive only. The account's email is where
+      // Project build archive/tracks/account-recovery/. Additive only. The account's email is where
       // a "forgot password" link goes; '' means none is set, and then no link
       // can be sent. A reset link's token is stored as its HMAC, as a
       // session's is, so a copy of billing.db holds no usable link.
@@ -808,7 +808,7 @@ const MIGRATIONS = [
     version: 16,
     name: 'trips, call sheet links and the Google Calendar tables',
     up(db) {
-      // .design/trip-planner/ task 1 (IA "Data & API" appendix). Additive
+      // Project build archive/tracks/trip-planner/ task 1 (IA "Data & API" appendix). Additive
       // only: nullable or defaulted columns and new tables, so no rebuild.
       //
       // A day's planned trip (days.js parseTrip); null is no trip.
@@ -867,6 +867,32 @@ const MIGRATIONS = [
           fetched_at TEXT NOT NULL
         );
       `);
+    },
+  },
+  {
+    version: 17,
+    name: 'asset recovery setting and day rate',
+    up(db) {
+      // .design/own-kit/ K1 (decisions K-D4, K-D5). Additive only: two columns
+      // on depreciation_assets, so no rebuild.
+      //
+      // recovery — how the business gets this asset's cost back. 'rate' (the
+      // register's "Overhead Floor", every existing row) keeps it in the
+      // replacement reserve that feeds the hourly rate; 'kit_hire' (On-Set
+      // Kit) takes it out of the reserve so it is billed per job as a kit line
+      // instead. Every row already in the register reads 'rate', which is what
+      // it was doing before the column existed.
+      //
+      // day_rate — what one day of the asset's own hire is billed at. Null is
+      // "no rate set yet" (a kit asset can be saved without one; it just can't
+      // be added to an estimate), never $0. Kept even when recovery is 'rate',
+      // so switching an asset back and forth doesn't lose the figure.
+      const addColumn = (column, ddl) => {
+        const has = db.prepare('PRAGMA table_info(depreciation_assets)').all().some((c) => c.name === column);
+        if (!has) db.exec(`ALTER TABLE depreciation_assets ADD COLUMN ${ddl};`);
+      };
+      addColumn('recovery', "recovery TEXT NOT NULL DEFAULT 'rate' CHECK (recovery IN ('rate', 'kit_hire'))");
+      addColumn('day_rate', 'day_rate REAL CHECK (day_rate IS NULL OR day_rate >= 0)');
     },
   },
 ];

@@ -33,7 +33,7 @@
  * treating the estimate as unregistered.
  *
  * OVERHEAD, GOALS AND THE COST BASIS
- * Added 2026-09-15 for the Finance area (.design/overhead-finance/). Four pure
+ * Added 2026-09-15 for the Finance area (Project build archive/tracks/overhead-finance/). Four pure
  * functions turn the real recurring cost of running the business into one
  * number — Overhead Rate/hr — which becomes the reference `rate` on every
  * labour row of the card, plus an advisory per-job floor (Minimum Job Price).
@@ -57,7 +57,7 @@
  *      knowingly, not overlooked.
  *
  *   2. CAPACITY IS FOUR REAL FIELDS, NOT AN ASSUMED 48-WEEK YEAR.
- *      SUPERSEDED 2026-09-27 (.design/price-calculator/). This used to read
+ *      SUPERSEDED 2026-09-27 (Project build archive/tracks/price-calculator/). This used to read
  *      "billable capacity annualises at 48 weeks, not 52 (WEEKS_PER_YEAR)":
  *      hours were entered per week and multiplied by an assumed 48, on the
  *      grounds that roughly four weeks of the year bill nothing.
@@ -103,7 +103,7 @@
  *      arithmetic change). Parameters here say markupPct.
  *
  * HOURS AND QUANTITY ARE NOT THE SAME THING (hoursPerUnit)
- * Added 2026-09-27 for the price calculator (.design/price-calculator/). The
+ * Added 2026-09-27 for the price calculator (Project build archive/tracks/price-calculator/). The
  * rate card now carries day-unit labour rows — `Video Capture — Full Day`,
  * `— Half Day` — alongside the hourly ones. A quantity of 2 on a full-day row
  * is two shoot days, which is roughly twenty billable hours, not two.
@@ -147,7 +147,7 @@
  * card and a renamed service silently fell out of the total while the PDF
  * still listed it. See lineDef below.
  *
- * SERVICE UNITS (2026-09-28, .design/service-rate-tiers/). A labour service
+ * SERVICE UNITS (2026-09-28, Project build archive/tracks/service-rate-tiers/). A labour service
  * carries three prices — `prices: { hour, half, full }` — instead of one `mu`,
  * and a card-level `serviceDay: { fullHours, halfHours }` (8 / 4) says how many
  * billable hours a day on a job is. That is deliberately NOT Capacity's
@@ -250,7 +250,7 @@
  * A `perKm` row is never also Your time or Direct (PUT /api/pricing refuses
  * that); if one ever were, `perKm` decides.
  *
- * A DAY'S TRIP SETS TWO TRAVEL QUANTITIES (2026-10-09, .design/trip-planner/
+ * A DAY'S TRIP SETS TWO TRAVEL QUANTITIES (2026-10-09, Project build archive/tracks/trip-planner/
  * task 1; the user's decisions T3, T4). A production day may carry a planned
  * trip (days.js parseTrip), and a travel line on that day marked
  * `fromTrip: 'km' | 'hours'` takes its quantity from the trip's totals, never
@@ -268,6 +268,30 @@
  *   - THE SERVER DERIVES IT on every estimate write (days.js applyTripLines),
  *     overriding whatever quantity was sent, and drops `fromTrip` from a line
  *     whose day has no trip.
+ *
+ * THE OWNER'S OWN KIT IS INCOME, NOT A PASS-THROUGH (2026-10-16, own-kit K4;
+ * the user's decision K-D6, "option A"). An Equipment Hire line is a vendor's
+ * invoice passed through at cost — except a line marked `ownKit: true`, which
+ * is the owner's own gear (an On-Set Kit asset, K-D4) hired to the job at its
+ * day rate. Counted exactly as an own-time travel line is:
+ *
+ *   - BILLED: days × cost, in the client price, like any hire line.
+ *   - INCOME: in incomeExGst, so tax is set aside on it.
+ *   - NO HOURS: gear is not the owner's time, so totalHours (and with it the
+ *     overhead share and Minimum Job Price's overhead term) doesn't move.
+ *   - NOT A COST: out of passThroughCost and directJobCost, so it doesn't
+ *     raise Minimum Job Price as if the business had paid someone for it. The
+ *     asset is recovered by this line instead of by the hourly rate
+ *     (replacementReserveTotal skips a `kit_hire` asset, K2), never by both.
+ *
+ * Only the exact value `true` counts, as with gstFree: anything else is a
+ * vendor's line, priced exactly as before this existed. The line's price is
+ * its own snapshot (K-D7); `assetId` / `assetName` are for display only.
+ *
+ * Every document names a kit line "Kit Hire - <asset name>" (K6, K-D10),
+ * through equipLineName, the one reader the Cost Breakdown, the client's PDF
+ * and page and the owner's screens share. The income treatment is never
+ * printed: to the client a kit line is hire like any other.
  */
 
 /** Money is stored and compared at cent precision, never as raw float sums. */
@@ -294,6 +318,27 @@ const NON_LABOUR_KEYS = { travel: 1, equip: 1, crew: 1, deliverables: 1 };
 /* Does a saved line carry its own price? `mu` is the marker: every line saved
    since 2026-09-28 has it, and no line saved before does. */
 const hasSnapshot = (line) => Boolean(line) && line.mu !== undefined && line.mu !== null && line.mu !== '';
+
+/** Is an Equipment Hire line the owner's own kit? See THE OWNER'S OWN KIT in the header. */
+function isOwnKit(line) {
+  return Boolean(line) && line.ownKit === true;
+}
+
+/**
+ * An Equipment Hire line as every document names it, or '' when it has no
+ * name. A kit line is "Kit Hire - <asset name>" from its own snapshot of the
+ * name (K-D7), so a renamed asset doesn't rename a saved line. A vendor's
+ * line is its Item since B2 (D82); one saved before has its "vendor / item"
+ * text in `vendor` only, and is named by that, as it always was.
+ */
+function equipLineName(line) {
+  if (!line || typeof line !== 'object') return '';
+  if (isOwnKit(line)) {
+    const asset = String(line.assetName || line.item || '').trim();
+    return asset ? 'Kit Hire - ' + asset : 'Kit Hire';
+  }
+  return String(line.item || '').trim() || String(line.vendor || '').trim();
+}
 
 /**
  * The definition a saved line prices from: its own snapshot when it has one,
@@ -506,14 +551,24 @@ function computeTotals(activeRows, pricing, settings, options) {
   }
 
   // ── Crew and equipment ──────────────────────────────────────────────────
-  // Always billed at cost: these are other people's invoices passing through.
+  // Billed at cost: these are other people's invoices passing through. The
+  // one exception is a hire line for the owner's own kit, which is income
+  // (K4; see THE OWNER'S OWN KIT in the header): billed like the rest, but
+  // kept apart so it never reaches the two cost figures below.
   let crewTotal = 0;
   for (const line of rows.crew || []) crewTotal += nonNeg(line.days) * nonNeg(line.cost);
 
   let equipTotal = 0;
-  for (const line of rows.equip || []) equipTotal += nonNeg(line.days) * nonNeg(line.cost);
+  let kitTotal = 0;
+  for (const line of rows.equip || []) {
+    const bill = nonNeg(line.days) * nonNeg(line.cost);
+    if (isOwnKit(line)) kitTotal += bill;
+    else equipTotal += bill;
+  }
 
-  const expenseTotal = travelTotal + crewTotal + equipTotal;
+  /* Everything that isn't a labour line, as billed: the editor's Expenses
+     subtotal. Own-time travel is in here though it is income, and so is kit. */
+  const expenseTotal = travelTotal + crewTotal + equipTotal + kitTotal;
   /* The two COST figures are ex-GST, like the client price they are measured
      against (2026-09-30, .design/estimate-accuracy/ task 3). expenseTotal is
      what the client is billed and stays as entered; these are what the
@@ -558,12 +613,13 @@ function computeTotals(activeRows, pricing, settings, options) {
   }
 
   // ── Take-home ───────────────────────────────────────────────────────────
-  // Income is labour plus travel income (see Travel above), ex-GST — GST
-  // collected belongs to the ATO. Tax is provisioned on PROFIT: income less
-  // the overhead this job's hours carry (options.overheadRate × totalHours),
-  // because running costs are deductible. With no overhead rate known the
-  // whole income is the base, which errs high, as the old model always did.
-  const incomeExGst = exGst(labourTotal + travelIncome);
+  // Income is labour plus travel income (see Travel above) plus own kit hire,
+  // ex-GST — GST collected belongs to the ATO. Tax is provisioned on PROFIT:
+  // income less the overhead this job's hours carry (options.overheadRate ×
+  // totalHours), because running costs are deductible. With no overhead rate
+  // known the whole income is the base, which errs high, as the old model
+  // always did.
+  const incomeExGst = exGst(labourTotal + travelIncome + kitTotal);
   const overheadRate = numOrNull(options && options.overheadRate);
   const overheadShare = overheadRate !== null && overheadRate > 0 ? totalHours * overheadRate : 0;
   const taxable = Math.max(0, incomeExGst - overheadShare);
@@ -897,7 +953,7 @@ function labourHoursBreakdown(activeRows, pricing) {
 }
 
 /* ── The cost of the business, and the financial year ────────────────────────
-   Added 2026-09-27 for .design/price-calculator/. Two things live here: the
+   Added 2026-09-27 for Project build archive/tracks/price-calculator/. Two things live here: the
    gear replacement reserve that joins operating costs to form the real annual
    cost of the business, and the Australian financial year helper everything
    dated depends on. */
@@ -927,6 +983,17 @@ function field(obj, camel, snake) {
 function isDisposed(asset) {
   const date = field(asset, 'disposalDate', 'disposal_date');
   return date !== null && date !== undefined && date !== '';
+}
+
+/**
+ * True when an asset is On-Set Kit: recovered by a day rate on the jobs that
+ * use it, not by the hourly rate (own-kit K-D4, migration v17). One word in
+ * both field shapes, so no field() call. Only the exact value counts: a row
+ * from before v17, or any other value, stays on the floor, erring the way the
+ * rest of this file errs — towards keeping a cost in.
+ */
+function isKitHire(asset) {
+  return !!asset && asset.recovery === 'kit_hire';
 }
 
 /**
@@ -983,6 +1050,14 @@ function businessUseShare(asset) {
  * year's tax schedule for the balancing adjustment — that is the other chain,
  * and the two deliberately disagree about a sold camera.
  *
+ * AN ON-SET KIT ASSET CONTRIBUTES NOTHING either (2026-10-15, own-kit K2).
+ * Its recovery is `kit_hire`: the client pays for it as a "Kit Hire" line on
+ * the jobs that use it, so reserving for it here as well would charge every
+ * job for it a second time. It stays on the tax schedule, which never reads
+ * recovery. Because every rate, the overhead snapshot and the Dashboard's
+ * Operating / Replacement split all read this one function, filtering here
+ * moves all of them together; nothing else needs to know.
+ *
  * @param {Array<object>} assets — depreciation_assets rows, either field shape.
  * @returns {number} the annual reserve at cent precision; 0 for no assets. Zero
  *   rather than null: unlike a missing overhead rate, "no gear recorded" is a
@@ -995,6 +1070,7 @@ function replacementReserveTotal(assets) {
   let total = 0;
   for (const asset of assets) {
     if (isDisposed(asset)) continue;
+    if (isKitHire(asset)) continue;
 
     const cost = numOrNull(field(asset, 'replacementCostEstimate', 'replacement_cost_estimate'));
     const years = numOrNull(field(asset, 'replacementCycleYears', 'replacement_cycle_years'));
@@ -1816,7 +1892,7 @@ function travelFloorComparison(pricing, settings, floorPerHour) {
 }
 
 /* ── Surcharges: weekend / public holiday, after hours, short notice ──────────
-   Added 2026-10-02 (.design/production-booking/, task 1; the brief's Key
+   Added 2026-10-02 (Project build archive/tracks/production-booking/, task 1; the brief's Key
    Interactions 1 is the spec and its worked examples are pinned in
    test-calc.js). Since task 2, computeTotals prices a `prod` line through
    them when the line's `dayId` names one of the estimate's days; a line on no
@@ -2547,15 +2623,19 @@ function costBreakdown(activeRows, pricing, options) {
       const amount = round2(nonNeg(line.days) * nonNeg(line.cost));
       const name = nameOf(line);
       if (!(amount > 0) && !name) return;
-      out.push({ index, name: name || fallback, days: nonNeg(line.days), cost: nonNeg(line.cost), amount });
+      const entry = { index, name: name || fallback, days: nonNeg(line.days), cost: nonNeg(line.cost), amount };
+      // The owner's own kit: income, not a vendor's invoice (K4, K-D6).
+      if (isOwnKit(line)) entry.ownKit = true;
+      out.push(entry);
       itemsCents += centsOf(amount);
       lineCount += 1;
     });
     return out;
   };
-  /* A hire line is named by its Item since B2 (D82), as on the client's PDF;
-     one saved before has its "vendor / item" text in `vendor` only. */
-  const equip = atCost('equip', (l) => String(l.item || '').trim() || l.vendor, 'Equipment');
+  /* A hire line is named as on the client's PDF (equipLineName). An own-kit
+     line stays in `equip`, so the listed lines still add up to the total, and
+     carries `ownKit: true`: the owner's income, not a cost passed through. */
+  const equip = atCost('equip', equipLineName, 'Equipment');
   const crew = atCost('crew', (l) => l.role, 'Crew');
 
   /* What the lines should add up to. A document with no stored totals (never
@@ -3049,6 +3129,9 @@ if (typeof module === 'object' && module.exports) {
   module.exports = {
     computeTotals,
     lineDef,
+    isOwnKit,
+    equipLineName,
+    isKitHire,
     lineSnapshot,
     normaliseTaxYear,
     incomeTax,
@@ -3117,6 +3200,9 @@ if (typeof module === 'object' && module.exports) {
   globalThis.LSCCalc = {
     computeTotals,
     lineDef,
+    isOwnKit,
+    equipLineName,
+    isKitHire,
     lineSnapshot,
     normaliseTaxYear,
     incomeTax,

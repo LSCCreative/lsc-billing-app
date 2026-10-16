@@ -34,7 +34,7 @@ function loadSnapshot(row) {
  *
  * total_annual is annualBusinessCost — operating costs plus the gear
  * replacement reserve — not annualOverheadTotal alone, because
- * .design/price-calculator/ moved every screen to annualBusinessCost and an
+ * Project build archive/tracks/price-calculator/ moved every screen to annualBusinessCost and an
  * asset-only edit (no overhead_items touched) must still move the trend line.
  * A change that only bumped total_annual on overhead-item writes would leave
  * the chart lying the moment someone edits gear instead.

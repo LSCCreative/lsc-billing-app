@@ -171,7 +171,7 @@ const LSCData = (() => {
        thing an auto price needs) and the rest of the floor's inputs. */
     autoPriceBlocker: () => LSCData.floorBlockers()[0] || { tab: 'goals', screen: 'Profit Goals', what: 'your Profit Goals' },
     /* What an auto price on the rate card is worked out from (calc.js unitDef,
-       .design/service-rate-tiers/): the income floor, Target Markup — a
+       Project build archive/tracks/service-rate-tiers/): the income floor, Target Markup — a
        PERCENT, stored in a column that predates the rename — and the GST
        settings, which decide whether the price carries GST inside it. One
        builder, so the Rate Card, the estimator's unit picker and the Dashboard

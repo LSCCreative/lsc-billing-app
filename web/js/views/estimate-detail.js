@@ -371,8 +371,14 @@ const EstimateDetail = (() => {
 
   /* A hire line as its Item, with its vendor muted under it (B2-7). A line
      saved before B2-7 has only `vendor`, its old one-field text, which reads
-     as the Item, as the client PDF prints it (item || vendor). */
+     as the Item, as the client PDF prints it (item || vendor). The owner's
+     own kit reads as the client's copy names it, "Kit Hire - <asset>"
+     (LSCCalc.equipLineName, K6), with the editor's "Own kit" tag under it:
+     owner-only, like the vendor. */
   function equipName(line) {
+    if (LSCCalc.isOwnKit(line)) {
+      return esc(LSCCalc.equipLineName(line)) + '<span class="est-vendor"><span class="kit-tag">Own kit</span></span>';
+    }
     const item = String(line.item || '').trim();
     const vendor = String(line.vendor || '').trim();
     if (!item) return esc(vendor || 'Equipment');
@@ -383,7 +389,7 @@ const EstimateDetail = (() => {
      invoice screen (task 20) shows the accepted estimate this way. */
   function itemsMarkup(estimate, pricing) {
     const activeRows = estimate.activeRows || {};
-    const equip = (activeRows.equip || []).filter((e) => costBill(e) > 0 || e.vendor || e.item);
+    const equip = (activeRows.equip || []).filter((e) => costBill(e) > 0 || LSCCalc.equipLineName(e));
     const crew = (activeRows.crew || []).filter((c) => costBill(c) > 0 || c.role);
     return (
       labourBlocks(estimate, pricing) +

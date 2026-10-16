@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Sharing the call sheet (.design/trip-planner/ task 11; T12, T13): the
+ * Sharing the call sheet (Project build archive/tracks/trip-planner/ task 11; T12, T13): the
  * Project page's row facts on the folder reply, the email route, and the
  * email crew get. A stub transport stands in for SMTP; Google is never called
  * (the email needs no map).

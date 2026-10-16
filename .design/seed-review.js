@@ -2,7 +2,7 @@
 // The review dataset for ui-clarity tasks 9–14: one project per state the
 // Project page and Invoice screen draw, on the local scratch API.
 //   1. Seed a fresh scratch DB (launch.json's api-scratch _comment), start
-//      api-scratch-mail, then: node .design/ui-clarity/seed-review.js server
+//      api-scratch-mail, then: node .design/seed-review.js server
 // DRF-001 draft · SNT-002 sent, email scheduled · EXP-003 sent, expired ·
 // ACC-004 accepted, no invoices · DEP-005 deposit overdue · DPD-006 signed by
 // the client, deposit paid, 14 activity rows · SGL-007 single paid ·

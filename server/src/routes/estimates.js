@@ -6,7 +6,8 @@ const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeL
 const { loadEstimate } = require('../estimate');
 const { buildCallSheetHtml, callSheetFilename, renderPdfBuffer } = require('../pdf');
 const {
-  readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, lineDeliverableProblem, dayIdTakenElsewhere,
+  readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, lineDeliverableProblem, kitLineProblem,
+  dayIdTakenElsewhere,
   lockedDay, replaceDays, applyTripLines,
 } = require('../days');
 const {
@@ -28,7 +29,7 @@ const CALL_SHEET_NOTE = 2000;
 const NEEDS_RESEND = Symbol('needs_resend');
 
 /**
- * pricing_shape_outdated, for estimate writes (v9, .design/service-rate-tiers/).
+ * pricing_shape_outdated, for estimate writes (v9, Project build archive/tracks/service-rate-tiers/).
  * A browser still running the web build from before v9 — a cached Pages copy, a
  * tab left open over the deploy — snapshots every labour line it adds at $0,
  * and its "Update to current rates" re-prices every labour line to $0: its
@@ -96,7 +97,8 @@ function prepareWrite(db, body, existing) {
     if (parsed.error) return { status: 400, body: { error: parsed.error } };
     days = parsed.days;
   }
-  const lineProblem = lineDayProblem(body.activeRows, days) || lineDeliverableProblem(body.activeRows);
+  const lineProblem = lineDayProblem(body.activeRows, days) || lineDeliverableProblem(body.activeRows) ||
+    kitLineProblem(body.activeRows);
   if (lineProblem) return { status: 400, body: { error: lineProblem } };
   const taken = dayIdTakenElsewhere(db, estimateId, days);
   if (taken) return { status: 400, body: { error: 'day_id_taken', dayId: taken } };

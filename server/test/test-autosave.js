@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Editor autosave on the server (.design/trip-planner/ task 7, IA "Estimate
+ * Editor autosave on the server (Project build archive/tracks/trip-planner/ task 7, IA "Estimate
  * writes (autosave)"). `baseUpdatedAt` refuses a write over a newer one
  * (every PUT); `X-LSC-Autosave: 1` is refused on anything but a draft. The
  * snapshot throttle (I2) is in test-backup.js.

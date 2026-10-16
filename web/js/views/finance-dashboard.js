@@ -68,7 +68,7 @@
  * THE HEADLINE DAY FLOORS USE THE CARD'S SERVICE DAY (2026-09-28)
  * This reverses the old decision here, which took them from Capacity's
  * billable hours per day because a card could have day rows of different
- * lengths. Since service rate tiers (.design/service-rate-tiers/, brief
+ * lengths. Since service rate tiers (Project build archive/tracks/service-rate-tiers/, brief
  * decision 4) there is one service day for the whole card, full and half, set
  * on the Rate Card, and every service's day is priced at it. So the headline
  * half / full-day floors are the hourly floor × LSCCalc.unitHours(card, 'half'

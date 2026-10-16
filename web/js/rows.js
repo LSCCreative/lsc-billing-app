@@ -90,12 +90,16 @@ const LSCRows = (() => {
     return def.directCost ? nonNeg(line.qty) : nonNeg(line.qty) * nonNeg(def.mu);
   }
 
+  /* A crew or hire line's bill. An own-kit line (LSCCalc.isOwnKit, own-kit K4)
+     bills exactly this too: calc.js counts it as income rather than a pass-
+     through, but the client is charged days × cost either way, so its row and
+     the section subtotal are the same figure. */
   function costBill(line) {
     return nonNeg(line.days) * nonNeg(line.cost);
   }
 
   /* ── What a labour row's quantity counts ──────────────────────────────────
-     Added 2026-09-27 (.design/price-calculator/). A labour row used to be
+     Added 2026-09-27 (Project build archive/tracks/price-calculator/). A labour row used to be
      priced by the hour, full stop, so both estimate screens headed the quantity
      column "Hours". Day rows broke that: a 2 on a full-day row is two shoot
      days. These say which unit a line sells in, by the same rule calc.js's

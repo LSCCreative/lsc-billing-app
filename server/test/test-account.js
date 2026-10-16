@@ -1,6 +1,6 @@
 'use strict';
 
-/* Account details and "forgot password" (.design/account-recovery/). */
+/* Account details and "forgot password" (Project build archive/tracks/account-recovery/). */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

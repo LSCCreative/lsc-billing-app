@@ -3,7 +3,7 @@
 
    Began as a port of the Electron app's <style> block. The Electron app is
    retired, and so is the Desktop Preservation Law that froze this file (U16,
-   .design/ui-clarity/). Edit these rules directly; don't add override layers.
+   Project build archive/tracks/ui-clarity/). Edit these rules directly; don't add override layers.
 
    Every value comes from tokens.css, which loads first: the --color-*,
    --space-*, --font-* names for anything new, and the legacy aliases (--bg,

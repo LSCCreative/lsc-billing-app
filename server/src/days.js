@@ -3,7 +3,7 @@
 const { dayKind, lineDef, tripKindOf, tripLineQty } = require('./calc');
 
 /**
- * Production days (v11, .design/production-booking/ task 2): an estimate's
+ * Production days (v11, Project build archive/tracks/production-booking/ task 2): an estimate's
  * booked days, read, checked and replaced in one place for the estimate routes
  * and the calendar.
  *
@@ -11,7 +11,7 @@ const { dayKind, lineDef, tripKindOf, tripLineQty } = require('./calc');
  * The id is made by the browser, because the editor's production lines point
  * at their day (`dayId`) before the estimate has ever been saved.
  *
- * Since v16 (.design/trip-planner/ task 1) a day may also carry `trip`, its
+ * Since v16 (Project build archive/tracks/trip-planner/ task 1) a day may also carry `trip`, its
  * planned drive (parseTrip), or null for none.
  */
 
@@ -388,6 +388,43 @@ function lineDeliverableProblem(activeRows) {
   return null;
 }
 
+/* An asset's id as db.js newId makes it ("da_1a2b3c4d"), kept loose. */
+const ASSET_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_ASSET_NAME = 200;
+
+/**
+ * The owner's own kit (own-kit K5, K-D6–K-D9; calc.js THE OWNER'S OWN KIT).
+ * A line's `ownKit` decides whether its hire is income or a pass-through, so
+ * it is checked like a price: a boolean, `true` only on an Equipment Hire
+ * line, and such a line names the asset it was added from (`assetId`,
+ * `assetName`). The asset isn't looked up: those are for display only (K-D7),
+ * and a saved line keeps them after the asset is renamed, re-rated or deleted.
+ * `assetId` / `assetName` on a vendor's line are refused, so a line can't
+ * look like kit on screen while it bills as a pass-through.
+ * @returns {string|null} an error code.
+ */
+function kitLineProblem(activeRows) {
+  const rows = activeRows || {};
+  const given = (line, f) => line[f] !== undefined && line[f] !== null;
+  for (const key of Object.keys(rows)) {
+    if (!Array.isArray(rows[key])) continue;
+    for (const line of rows[key]) {
+      if (!line || typeof line !== 'object') continue;
+      if (given(line, 'ownKit') && typeof line.ownKit !== 'boolean') return 'own_kit_invalid';
+      if (line.ownKit !== true) {
+        if (given(line, 'assetId') || given(line, 'assetName')) return 'asset_on_hire_line';
+        continue;
+      }
+      if (key !== 'equip') return 'own_kit_not_equipment';
+      if (typeof line.assetId !== 'string' || !ASSET_ID.test(line.assetId)) return 'own_kit_asset_invalid';
+      if (typeof line.assetName !== 'string' || !line.assetName.trim() || line.assetName.length > MAX_ASSET_NAME) {
+        return 'own_kit_asset_name_invalid';
+      }
+    }
+  }
+  return null;
+}
+
 /** A day id already used by another estimate, or null. */
 function dayIdTakenElsewhere(db, estimateId, days) {
   const owner = db.prepare('SELECT estimate_id FROM production_days WHERE id = ?');
@@ -488,6 +525,7 @@ module.exports = {
   lineDayProblem,
   applyTripLines,
   lineDeliverableProblem,
+  kitLineProblem,
   dayIdTakenElsewhere,
   lockedDay,
   replaceDays,

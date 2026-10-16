@@ -1192,3 +1192,55 @@ test('invoice page: the PDF is the owner’s, by link; refused while a tax invoi
   assert.deepEqual([blocked.status, await blocked.json()], [503, { error: 'pdf_unavailable' }]);
   await api('/api/settings', { method: 'PUT', body: JSON.stringify({}) });
 });
+
+// ── The owner's own kit on the client's pages (own-kit K6, K-D10) ──────────
+
+/* The shoot's lines with a kit line ahead of the vendor's: no production
+   items, so its days carry none (each test makes its own day ids). */
+const KIT_ROWS = {
+  deliverables: [{ id: 'dl1', name: 'Brand film', format: '16:9', duration: '2–3 min', qty: 1 }],
+  post: [capture(null, { name: 'Edit', mu: 900, deliverableId: 'dl1' })],
+  equip: [
+    { ownKit: true, assetId: 'dep_k6fx6', assetName: 'Sony FX6', item: 'Sony FX6', vendor: '', days: 2, cost: 275 },
+    { vendor: 'Hire Co', item: 'Drone package', days: 1, cost: 300 },
+  ],
+};
+const KIT_LEAK = /ownKit|assetId|assetName|dep_k6|own kit|income/i;
+
+test('client page: a kit line is "Kit Hire - <asset>" with its days, no price; the version stays as sent (K6)', async () => {
+  const est = await shoot({ activeRows: KIT_ROWS });
+  assert.equal(est.activeRows.equip[0].ownKit, true, 'saved as kit');
+  const { token } = await sent(est);
+  const r = await pub(token);
+  assert.equal(r.status, 200);
+  const hire = r.body.estimate.sections.find((s) => s.label === 'Equipment Hire');
+  assert.deepEqual(hire.items, [{ name: 'Kit Hire - Sony FX6', tag: '2 days' }, { name: 'Drone package', tag: '' }]);
+  // The total is the client's figure; how the kit line is counted never shows.
+  assert.equal(r.body.estimate.totals.total, est.totals.totalIncGst);
+  assert.doesNotMatch(JSON.stringify(r.body), KIT_LEAK);
+  assert.doesNotMatch(JSON.stringify(r.body), FORBIDDEN);
+  const view = db.prepare('SELECT client_view_json FROM estimate_versions WHERE estimate_id = ?').get(est.id);
+  assert.doesNotMatch(view.client_view_json, KIT_LEAK);
+
+  // Sent is frozen: the kit line's name is something the client reads, so
+  // renaming it is refused until the update is sent (D104), and the page
+  // still shows the name it was sent with.
+  const renamed = { ...est, activeRows: { ...est.activeRows, equip: [{ ...est.activeRows.equip[0], assetName: 'FX6 Mk II', item: 'FX6 Mk II' }, est.activeRows.equip[1]] } };
+  const put = await api(`/api/estimates/${est.id}`, { method: 'PUT', body: JSON.stringify(renamed) }).then(json);
+  assert.deepEqual([put.status, put.body.error], [409, 'resend_required']);
+  const again = (await pub(token)).body.estimate.sections.find((s) => s.label === 'Equipment Hire');
+  assert.equal(again.items[0].name, 'Kit Hire - Sony FX6');
+});
+
+test('invoice page: an invoice from the accepted snapshot lists the kit line the same way (K6)', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify(INV_SETTINGS) });
+  const est = await shoot({ activeRows: KIT_ROWS });
+  const r = await owner(`/api/projects/${est.projectId}/accept`, { invoicing: 'single' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const single = r.body.invoices.find((i) => i.kind === 'single');
+  const inv = (await pubInv(await live(single))).body.invoice;
+  const hire = inv.sections.find((s) => s.label === 'Equipment Hire');
+  assert.deepEqual(hire.items, [{ name: 'Kit Hire - Sony FX6', tag: '2 days' }, { name: 'Drone package', tag: '' }]);
+  assert.doesNotMatch(JSON.stringify(inv), KIT_LEAK);
+  assert.doesNotMatch(JSON.stringify(inv), FORBIDDEN);
+});

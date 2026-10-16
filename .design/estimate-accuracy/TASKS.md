@@ -1,26 +1,20 @@
-# Build Tasks: Estimate Accuracy
+# Estimate accuracy: open tasks
 
-Generated from: the money-logic audit of 2026-09-30 (overhead → capacity → goals → rate card →
-estimate), plus the user's answers the same day. There is no `DESIGN_BRIEF.md` for this track: it is
-an audit follow-up, and the findings and sample figures are under "Source" below. **Tasks 9–14
-change what the app charges or how a job is judged, and each one carries an open decision. Run
-`/grill-me` on them (9–10 first) before building — the recommendations below are mine, not the
-user's.**
-Date: 30 September 2026
+What is left of the 2026-09-30 money-logic audit. Done: 1, 2, 3, 5(a), 6a, 6b (live, schema v10).
+Scrapped: 8 (expected booking rate, the user is "not ready for it": don't re-propose). Superseded:
+11 (loadings, replaced by production-booking's surcharges). The built tasks' full text and the audit
+are in `Project build archive/tracks/estimate-accuracy/` (read only if something here is unclear).
 
-Every task carries a model/effort tag from root `CLAUDE.md`'s buckets, same convention as
-`.design/price-calculator/TASKS.md`:
+**Rules for this track.** Tasks 10–14 change what the app charges, and each has an open decision:
+run `/grill-me` on one before building it (task 9 is done as `.design/own-kit/`); the recommendations below are mine, not the user's.
+Money-math tasks are Opus/high; write the worked example into `test-calc.js` as written and break
+the line to prove a test fails. Pass-throughs (crew, hire, direct travel) are billed at cost and are
+not income unless a task says so (10 and 13 are the exceptions, both decisions). Task 14 reopens
+service-rate-tiers decision 13: decision only until the user says go. Deploy order NAS then Pages.
 
-- **(money math — Opus/high)**: anything touching `calc.js`, a stored price, or a screen that
-  *renders* a computed price or floor. Applies "regardless of how small the diff looks".
-- **(frontend — Opus/high)**: UI-build work with no money figure of its own.
-- **(copy — Sonnet/high)**: wording only, no arithmetic and no layout. Small enough for the cheaper
-  bucket; if a wording change starts needing a number computed, it is not this bucket any more.
-- **(deploy — Sonnet/medium)**: infra steps.
-
-State the bucket out loud and pause for the user to switch models before starting a task, as
-`CLAUDE.md` requires. This list was written on Sonnet, so **the money-math tasks are not to be
-started in that session.**
+**Settled by the user (don't re-ask):** Transport & Logistics Hrs is "Your time"; income tax stays
+out of the Overhead "Tax" category (task 7); the FY 2026–27 tax scale is saved on the live site
+(reported, unverified: task 4 checks it).
 
 ## Source: what the audit found
 
@@ -35,108 +29,7 @@ The arithmetic was sound, and every step reconciles (pay before tax minus its ta
 $65,000 target). The findings are the three things in tasks 1–3, the four settings in tasks 4–7, and
 the seven accuracy gaps in tasks 8–14 (task 8 since scrapped by the user).
 
-## Ground rules for every task
-
-- **`calc.js` is two byte-identical copies** (`server/src/calc.js`, `web/js/calc.js`). Every edit is
-  two edits; the drift test in `test-calc.js` fails otherwise. `depreciation.js` follows the same rule.
-- **Gate: `cd server && npm test`** after any server change (253 pass at the start of this track).
-  New pure functions and changed money rules get worked-example tests in `test-calc.js`. Route
-  changes get tests in `test-api.js`.
-- **For money math, check the mutation, not just the green suite**: break the line you wrote,
-  confirm a test fails, put it back. Record which mutations you checked in the task's "Done" note.
-- **A change that moves a rate says so**, as the 48-week-year retirement did: say how much on the user's real figures before it lands.
-- **Saved estimates never move.** A line keeps its own snapshot and an estimate keeps its stored
-  totals. Any new per-line field is optional, null-safe on read, and absent on every line already
-  saved, and its absence must total identically to before. Pin that with a test.
-- **Every new estimate field must reach three places:** `computeTotals`, the estimate editor's row
-  builder and `collect()`, and the client PDF / estimate detail. A field that prices but does not
-  print, or prints but does not price, is the bug this list exists to prevent.
-- **Schema changes are additive and null-safe.** The web build must survive an older server and
-  vice versa for a deploy. **Deploy NAS before Pages** for any change that adds a boot-time route or
-  column the web reads.
-- **Anything a person looks at is verified in a browser** against the scratch API (`api-scratch` in
-  `.claude/launch.json`, login `dev`; re-seed if `/tmp` was wiped). Real mouse clicks in the browser
-  pane don't always land, so use dispatched `.click()` and poll on a DOM condition. Measure at
-  1280 / 800 / 375. Above 1100px nothing may move except the new states.
-- **Every task's Done note goes in this file**, and `HANDOVER.md` is updated when a task finishes.
-- **Build on a branch (`estimate-accuracy`), not `main`** — pushing `main` deploys Pages. Tasks 1, 2
-  and 7 are web-only and safe to ship alone.
-
----
-
-## Group A — Three things that are wrong
-
-- [x] **1. Capacity's "Full-day hours" block is out of date** (copy — Sonnet/high): the block at
-  [`capacity.js:287`](../../web/js/views/capacity.js) says a Full Day row "starts at" Capacity's
-  billable hours per day, with a half day at half that. Since v9 a day on a job uses the Rate Card's
-  **Service Day** (8 / 4 hrs), which is deliberately not Capacity's figure; the Rate Card's own
-  popover says so. Someone who sets 6 billable hrs/day is told a full day is 6 hrs and sees 8 on the
-  card. Replace the block with a short pointer saying a day sold on a job takes its hours from the
-  Rate Card's Service Day setting, and that Capacity's figure is a yearly planning average used only
-  to work out the hourly floor. Remove the now-dead `cap-fullday-value` / `cap-halfday` writes in
-  `refreshOutcome` (lines 197–199) and the `.cap-fullday*` rules in `capacity.css`, or reuse them for
-  the pointer. _Modifies: `capacity.js`, `capacity.css`._ Done when no sentence on the screen says a
-  Full Day starts at billable hours per day, and the screen's a11y announcer and other fields are
-  untouched.
-
-  **Done 2026-09-30.** The block is now a pointer headed "Days sold on a job": a full or half day on
-  an estimate takes its hours from the Rate Card's Service Day setting, and Billable hours per day is
-  a yearly average that only sets the hourly floor. It shows no figure, so there is no second number
-  for "a day" to drift. Removed the `perDay` / `dayOk` block in `refreshOutcome` and the
-  `.cap-fullday-value*` CSS; `.cap-fullday` stays for the spacing. Nothing else referenced those ids
-  (grepped `web/`, `server/test`). Verified in the browser against `api-scratch`: the block renders,
-  typing 6 into Billable hours per day moves Annual billable hours 1,776 → 1,332 and back without
-  touching the pointer, no console errors, no page overflow at 375px. Copy only: no `calc.js` or
-  server change, so Pages alone; 253 tests still pass.
-
-- [x] **2. The Target Markup hint says less than markup does** (copy — Sonnet/high): the hint at
-  [`goals.js:466`](../../web/js/views/goals.js) says markup is added "for a job's minimum price and
-  the cost floor". It also sets every **auto price on the Rate Card** (income floor × (1 + markup),
-  rounded up), and moving 25% to 35% raises all of them about 8%. Reword to say so, keeping the
-  "a markup, not a margin" sentence and "enter 25 for 25%". Check the Rate Card's and Dashboard's own
-  markup wording says the same thing rather than something narrower. _Modifies: `goals.js`, maybe
-  `pricing.js` / `finance-dashboard.js` copy._ Done when all three places agree.
-
-  **Done 2026-09-30.** The Profit Goals hint now reads: "Added on top of cost. It sets every auto
-  price on your Rate Card (your income floor plus this markup) as well as a job's minimum price and
-  the cost floor, so raising it raises them all. A markup, not a margin: 25% on cost is a 20% share of
-  the price. Enter 25 for 25%, not 0.25." The header comment in `goals.js` says the same. **The other
-  two places needed no change:** the Dashboard's floor-comparison popover already says an auto hourly
-  price is "your floor plus your Target Markup", and the Rate Card has no sentence about markup at
-  all (only the Service Day popover, which is about days), so nothing there is narrower than the
-  truth. Deliberately not added to the Rate Card: it would be new copy on a screen this task did not
-  find wrong. The hint is one line longer than its neighbours in the three-column row and fits …
-
-- [x] **3. Direct costs on a GST-inclusive card are not ex-GST** (money math — Opus/high): when
-  `settings.gst.registered` and `pricesIncludeGst` are both true, `computeTotals` treats `billed` as
-  GST-inclusive, so crew, equipment and fuel costs typed in are inclusive too. Yet
-  [`directJobCost`](../../server/src/calc.js) and `passThroughCost` come back **inclusive** and feed
-  Minimum Job Price and the Income floor line, which compare against the **ex-GST** client price.
-  Effect: $1,100 of crew makes the quote look $100 worse against its floors than it is. Dormant while
-  the business is unregistered (the user is), so fix it before GST is ever switched on. Convert both
-  through the existing `exGst()` helper inside `computeTotals`; check `travelCost` (resold travel's
-  cost) takes the same conversion. Consumers: the editor's floor lines and cost breakdown
-  (`estimate-editor.js`, `directJobCost`) and the Pass-through Cost row in
-  [`estimate-detail.js:208`](../../web/js/views/estimate-detail.js), so confirm the detail row's label
-  and value agree. Stored estimates keep their stored totals. _Modifies: `calc.js` (both copies),
-  `estimate-detail.js` if its figure or label needs to follow._ Done when: tests pin, on a
-  GST-inclusive card, $1,000 ex-GST of crew at $1,100 entered gives `directJobCost` 1,000 and the
-  Income floor need 1,642.70 (sample figures, 10 hrs at $64.27 floor) rather than 1,742.70; the same
-  estimate on an unregistered card and on a GST-free estimate is unchanged; a sweep over prices
-  confirms nothing else in the totals moved. Mutation-check the divisor.
-
-  **Done 2026-09-30** (Opus/high, on branch `estimate-accuracy`). In `computeTotals` the `exGst`
-  helper now sits right after `pricesIncludeGst` and both cost figures go through it:
-  `passThroughCost = exGst(crew + equip + direct travel)` and
-  `directJobCost = exGst(that + travelCost)`, so resold travel's cost converts too. `expenseTotal`,
-  `labourTotal` and every as-billed figure are untouched. On an unregistered card, an exclusive card
-  and a GST-free estimate `exGst` is the identity, so nothing moves there. Both `calc.js` copies are
-  identical. **The estimate detail row** now reads "Pass-through Cost (ex GST)" whenever the stored
-  `gstTreatment` is `taxable`, which is true on both card types: an exclusive card's costs are typed
-  ex-GST. Otherwise it reads as before. The editor needed no change: its Minimum Job Price, Income floor
-  line and breakdown modal all read …
-
-## Group B — Settings and the decisions the user made
+## Open tasks
 
 - [ ] **4. Confirm the FY 2026–27 tax scale is live** (settings — user, then a check): the user
   reports on 2026-09-30 that they have saved it on the live site. Nothing to build. When a session has
@@ -185,14 +78,6 @@ the seven accuracy gaps in tasks 8–14 (task 8 since scrapped by the user).
   0 hours). **Deploy:** server-only (`defaults.js`), no migration. It changes nothing live until the
   live card is reset, so it can ride along with any NAS deploy.
 
-- [x] **6. Travel priced properly: your time at the floor, the car per km** (money math —
-  Opus/high). **Grilled with the user 2026-09-30; every decision below is theirs, don't re-ask.** It
-  started as "badge an own-time travel row under the floor". The user asked for more: travel time
-  priced **from the floor**, plus the car recovered **per km** at a rate they set on the Overhead
-  tab. Split into 6a and 6b, which can land separately (6a first). _Depends on: task 5._
-
-    **Done 2026-09-30** (Opus/high, branch `estimate-accuracy`).
-
 - [ ] **7. Keep income tax out of the Overhead "Tax" category** (frontend — Opus/high): Target Annual
   Revenue already adds the owner's income tax through the ATO scale, so income tax entered as an
   overhead item is counted twice and raises every rate. The category's label is display-only (the
@@ -207,38 +92,8 @@ the seven accuracy gaps in tasks 8–14 (task 8 since scrapped by the user).
   and whatever else prints the label._ Done when the note appears only for that category, the label
   reads the same everywhere, and it is verified at 375px.
 
-## Group C — Fields and rules that make an estimate more accurate
-
-Ordered by how much money they move. Each starts with **Decision needed** — settle it with the user
-before building; the recommendation is mine.
-
-- [—] **8. Expected booking rate — scrapped by the user, 2026-09-30.** They are not ready for
-  pricing on a booking rate. The income floor keeps assuming every billable hour is sold, and the
-  Target Markup keeps covering unsold time as well as profit. Don't rebuild it or re-propose it
-  unless the user raises it. The number is kept so 9–14 keep theirs.
-
-- [ ] **9. "Own kit" on equipment hire, and how each asset is recovered** (money math — Opus/high):
-  Equipment Hire lines are always treated as someone else's invoice, passed through at cost. If the
-  user bills their own camera kit there ($300/day on the sample), it counts as **$0 income** (no
-  tax set aside), raises Minimum Job Price by $300 as though it were a cost, and the client pays for
-  that gear twice because the same asset is already recovered through the hourly rate by the
-  replacement reserve. **Decision needed:** (a) how the user bills their own gear — as a line the
-  estimate carries ("own kit") or purely through the hourly rate; (b) if lines, whether each asset is
-  marked as recovered "through my hourly rate" (today's behaviour, default) or "through kit-hire
-  lines" (then the asset leaves `replacementReserveTotal`, so the rate stops charging for it).
-  Recommend both, with the default unchanged. **Build:** an optional `ownKit: true` on an equipment
-  line (a checkbox on the row, like travel's "Your time"), priced in `computeTotals` exactly as an
-  own-time travel line — billed, counted as income, taxed, **excluded from `directJobCost` and from
-  `passThroughCost`**, and no hours. An additive asset column `recovery` (`'rate'` | `'kit_hire'`,
-  default `'rate'`) which `replacementReserveTotal` respects, edited in the depreciation register and
-  shown on its disposal and schedule screens as informational. Check the Dashboard's Operating /
-  Replacement-reserve split and the double-count prompt read correctly with an asset on `kit_hire`.
-  Also cross-check the client PDF and estimate detail: the equipment line prints as before.
-  Worked example, sample figures: 8 hrs at $110 plus a $300 own-kit line gives client price 1,180,
-  income 1,180, tax 354.00 at 30%, and Minimum Job Price 115.00 (today: income 880 and MJP 415.00).
-  A line without the flag totals identically to before. _Modifies: `calc.js`, migration,
-  `routes/depreciation.js`, `estimate-editor.js`, `rows.js`, `estimate-detail.js`, `pdf.js`,
-  `depreciation.js` (view)._
+- [→] **9. "Own kit" on equipment hire: moved to `.design/own-kit/`** (decided 2026-10-13, tasks K1–K10).
+  Don't build it from here.
 
 - [ ] **10. A discount line** (money math — Opus/high): the only way to discount today is to cut
   hours, and that cuts both floor lines too, so a discount never shows. Quoting 20 real hours as 16
@@ -258,10 +113,6 @@ before building; the recommendation is mine.
   discount total identically. `averageJobValue` reads the discounted price, which is what was won.
   _Modifies: `calc.js`, migration, `routes/estimates.js`, `estimate-editor.js`, `estimate-detail.js`,
   `pdf.js`._
-
-- [—] **11. Loadings — superseded 2026-09-30** by the user's surcharge system (short notice,
-  weekend/holiday, after hours, production only), which is being designed in
-  [`.design/production-booking/`](../production-booking/DESIGN_BRIEF.md). Don't build a per-line loading.
 
 - [ ] **12. Minimum call per service** (money math — Opus/high): an on-site service (capture,
   drone) is rarely worth turning up for under a set number of hours. **Decision needed:** enforce
@@ -292,8 +143,6 @@ before building; the recommendation is mine.
   card-level "half-day loading (%)" beside Service Day, blank = 0, applied only to *auto* half-day
   prices (a typed price still wins), rounded up like the hourly. _Modifies: `calc.js` (`unitDef`),
   `pricing.js`, the Service Day popover copy._
-
-## Wrap-up
 
 - [ ] **15. Deploy** (deploy — Sonnet/medium): **ask the user first.** Back up the live DB
   (`sqlite3 ".backup"` into `/volume4/lsc-billing/data/backups/`), redeploy `server/` with the usual

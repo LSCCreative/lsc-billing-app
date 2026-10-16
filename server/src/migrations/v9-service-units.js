@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Schema v9 (2026-09-28, .design/service-rate-tiers/): a labour service carries
+ * Schema v9 (2026-09-28, Project build archive/tracks/service-rate-tiers/): a labour service carries
  * three prices — `prices: { hour, half, full }`, a number set by the user or
  * null for auto — instead of one `mu` with `hoursPerUnit` / `dayUnit`, and the
  * card gains `serviceDay: { fullHours: 8, halfHours: 4 }`.
