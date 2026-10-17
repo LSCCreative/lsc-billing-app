@@ -7,11 +7,11 @@ unless you hit a real misunderstanding).
 
 ## 1. Live
 
-`main` `937aebb` (deployed NAS then Pages 2026-10-17), schema **v17**.
+`main` `141c3e4` (deployed NAS then Pages 2026-10-17), schema **v17**.
 Every track is built, reviewed and deployed: nas-hosted base, price-calculator / Finance, overhead-
 finance, service-rate-tiers, estimate-accuracy tasks 1–3, 5a, 6, production-booking A–E (surcharges,
 booking, Home calendar, projects, invoices, client pages, e-signing, Resend email), account recovery,
-own kit (per-asset Recovery, kit lines, multi-year CSV), trip planner + call sheet + Google Calendar read/write + autosave, ui-clarity 1–18 (panels, menus,
+own kit (per-asset Recovery, kit lines, multi-year CSV), the Dashboard (Home renamed; small calendar, open projects / outstanding / paid lists), trip planner + call sheet + Google Calendar read/write + autosave, ui-clarity 1–18 (panels, menus,
 agreement builder, branded email, Metro Sans). Site moved to `app.lsccreative.studio` 2026-10-13.
 
 | What | Setting (verified in Cloudflare / Google consoles 2026-10-13) |
@@ -30,7 +30,6 @@ first). `origin/production-booking` holds one docs-only commit not on `main`; ig
 | Track | Open | Blocked on |
 |---|---|---|
 | [`own-kit/`](own-kit/TASKS.md) | **Built and deployed 2026-10-17 (K1–K10).** Move the folder to the archive when convenient | the user: set each asset's Recovery, replacement cost/cycle on floor assets, day rates on kit assets |
-| **dashboard** (the user's request 2026-10-17) | **Built, undeployed.** Home renamed "Dashboard": small calendar top right that grows into the full calendar (Collapse shrinks it), lists of open projects, outstanding invoices and recent payments, Coming up and Recent activity kept. Adds `GET /api/invoices?state=` and `GET /api/projects?stage=open` | ask before deploying: **NAS first** (new route), then Pages |
 | [`estimate-accuracy/`](estimate-accuracy/TASKS.md) | 7 (relabel Overhead "Tax", no decision needed), 10, 12–14 (each has an open decision: `/grill-me` first), 4 and 5(b) (user checks), 15 deploy, 16 review | grill decisions; user |
 | production-booking task 31 | Stripe card payment, **on hold (D101): don't build** | the user |
 | nas-hosted redeploy hardening | compose data volume as `${HOST_DATA_DIR:-./data}`, a written redeploy procedure (now in `DEPLOYMENT.md`) | nothing; low priority |
