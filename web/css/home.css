@@ -1,18 +1,25 @@
-/* Home (js/views/home.js, js/views/home-week.js): new classes only, so no
-   existing screen can move.
+/* The Dashboard (js/views/home.js, js/views/home-week.js): new classes only,
+   so no existing screen can move.
 
-   The production office's wall: the calendar is the board, and Coming up reads
-   like the top of a call sheet, a date block in Delight beside each day's
-   bookings, hairline rules between days. The status colours, chip and tiles
-   are calendar.css's, so a booking looks the same everywhere it appears.
+   Every block is a card (one layer up from the page, the panel tokens): the
+   three overview lists, the small calendar, Coming up and Recent activity. A
+   list row is a name over a meta line, the amount right in figures, then a
+   chip or a chevron, hairlines between rows. Coming up reads like the top of
+   a call sheet, a date block in Delight beside each day's bookings. The
+   status colours, dots, chips and tiles are calendar.css's and
+   project-folder.css's, so a booking or an invoice looks the same everywhere.
 
    Written phone first (min-width queries):
-     - under 768px: one column, the calendar in dots (its own container query),
-       then Coming up, then Recent activity;
-     - 768–1099: the calendar full width, the two lists side by side below it;
-     - 1100 and up: the calendar left, the two lists in a right column. */
+     - under 768px: one column: the calendar, the lists, Coming up, Recent
+       activity;
+     - 768 and up: the lists left; the calendar top right with Coming up and
+       Recent activity under it. Grown, the calendar spans the top (768–1099)
+       or takes the left column above the lists (1100 and up, 672px as it
+       always was);
+     - the lists go two up (Open projects beside Outstanding over Recent
+       payments) once their column is 600px wide (a container query). */
 
-/* ── The head: the title, and the Month / Week switch ─────────────────────── */
+/* ── The Month / Week switch (the full calendar's bar) ───────────────────── */
 
 .home-switch {
   display: flex;
@@ -57,33 +64,414 @@
 
 /* ── The layout ─────────────────────────────────────────────────────────────── */
 
-.home-layout {
+/* On a phone the two column wrappers step aside (display: contents), so their
+   cards are the grid's own and Coming up can sit between the lists and
+   Recent activity. */
+.dash {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 32px;
+  grid-template-areas: 'cal' 'lists' 'up' 'act';
+  gap: var(--space-6);
 }
-.home-side {
+.dash-main,
+.dash-side {
+  display: contents;
+}
+.dash-cal {
+  grid-area: cal;
+  min-width: 0;
+}
+.dash-lists { grid-area: lists; }
+#dash-up { grid-area: up; }
+#dash-act { grid-area: act; }
+
+/* Rows `auto 1fr`: the first row is the small calendar's (or the grown one's)
+   height, so whatever sits under it starts right below it, and any spare
+   height from the spanning column falls into the second row. */
+@media (min-width: 768px) {
+  .dash {
+    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'main cal'
+      'main side';
+    align-items: start;
+    gap: var(--space-7);
+  }
+  .dash.is-cal-full {
+    grid-template-areas:
+      'cal cal'
+      'main side';
+  }
+  .dash-main,
+  .dash-side {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: var(--space-7);
+    min-width: 0;
+  }
+  .dash-main {
+    grid-area: main;
+    container-type: inline-size;
+  }
+  .dash-side {
+    grid-area: side;
+  }
+  .dash-lists,
+  #dash-up,
+  #dash-act {
+    grid-area: auto;
+  }
+}
+/* 1000px of #main: 296 for the right column leaves the grown calendar 672,
+   past the 640 where its tiles carry the project name. */
+@media (min-width: 1100px) {
+  .dash {
+    grid-template-columns: minmax(0, 1fr) 296px;
+    gap: var(--space-7) var(--space-8);
+  }
+  .dash.is-cal-full {
+    grid-template-areas:
+      'cal side'
+      'main side';
+  }
+}
+
+.dash-lists {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 32px;
-  align-content: start;
+  gap: var(--space-6);
+  align-items: start;
+  min-width: 0;
 }
 @media (min-width: 768px) {
-  .home-side {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 24px;
+  .dash-lists {
+    gap: var(--space-7);
   }
 }
-/* 1000px of #main: 296 for the lists leaves the calendar 672, past the 640
-   where its tiles carry the project name. */
-@media (min-width: 1100px) {
-  .home-layout {
-    grid-template-columns: minmax(0, 1fr) 296px;
-    align-items: start;
+@container (min-width: 600px) {
+  .dash-lists {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'proj out'
+      'proj paid';
+    gap: var(--space-7);
   }
-  .home-side {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
+  #dash-proj { grid-area: proj; }
+  #dash-out { grid-area: out; }
+  #dash-paid { grid-area: paid; }
+}
+
+/* Growing and shrinking the calendar (home.js setCalSize): named only while
+   it moves, so no card is a stacking context the rest of the time. */
+.dash.is-moving .dash-cal { view-transition-name: dash-cal; }
+.dash.is-moving #dash-proj { view-transition-name: dash-proj; }
+.dash.is-moving #dash-out { view-transition-name: dash-out; }
+.dash.is-moving #dash-paid { view-transition-name: dash-paid; }
+.dash.is-moving #dash-up { view-transition-name: dash-up; }
+.dash.is-moving #dash-act { view-transition-name: dash-act; }
+::view-transition-group(dash-cal),
+::view-transition-group(dash-proj),
+::view-transition-group(dash-out),
+::view-transition-group(dash-paid),
+::view-transition-group(dash-up),
+::view-transition-group(dash-act) {
+  animation-duration: var(--duration-slow);
+  animation-timing-function: var(--easing-default);
+}
+
+/* ── A card ─────────────────────────────────────────────────────────────────── */
+
+.dash-card {
+  min-width: 0;
+  padding: var(--space-6) var(--panel-pad-x) var(--space-3);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+}
+@media (min-width: 768px) {
+  .dash-card {
+    padding: var(--space-6) var(--space-6) var(--space-4);
+  }
+}
+.dash-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.dash-card-titles {
+  min-width: 0;
+}
+.dash-card-title {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0.02em;
+  color: var(--color-text-primary);
+}
+.dash-card-sub {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.dash-card-sub:empty {
+  display: none;
+}
+/* The square action top right: to the list it summarises, or + New project. */
+.dash-card-act {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-inset);
+  color: var(--color-text-secondary);
+  transition: background var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default);
+}
+.dash-card-act:hover {
+  background: var(--color-bg-float);
+  color: var(--color-text-primary);
+}
+.dash-card-act:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+@media (min-width: 768px) {
+  .dash-card-act {
+    width: var(--control-h);
+    height: var(--control-h);
+  }
+}
+
+/* ── A list row ─────────────────────────────────────────────────────────────── */
+
+.dash-rows {
+  list-style: none;
+}
+.dash-rows li + li {
+  border-top: 1px solid var(--color-border-hairline);
+}
+.dash-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: var(--touch-min);
+  margin: 0 calc(-1 * var(--space-3));
+  padding: var(--space-5) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--easing-default);
+}
+.dash-row:hover {
+  background: var(--color-bg-hover);
+}
+.dash-row:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
+}
+.dash-row-main {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.dash-row-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+}
+.dash-row-meta,
+.dash-row .stage-line {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+.dash-row-meta.is-alert {
+  color: var(--color-status-error-text);
+}
+.dash-row-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.dash-row-end.is-stacked {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.dash-row-amt {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+.dash-row-go {
+  display: inline-flex;
+  margin-right: calc(-1 * var(--space-2));
+  color: var(--color-text-tertiary);
+  transition: color var(--duration-fast) var(--easing-default), transform var(--duration-fast) var(--easing-default);
+}
+.dash-row:hover .dash-row-go {
+  color: var(--color-text-primary);
+  transform: translateX(2px);
+}
+
+/* ── The small calendar (top right) ─────────────────────────────────────────
+   One button: this month in dots (calendar.css's shapes), today underlined
+   in the accent as on the full calendar, holidays shaded. */
+
+.dash-mini {
+  display: grid;
+  gap: var(--space-5);
+  width: 100%;
+  padding: var(--space-6);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--easing-default);
+}
+.dash-mini:hover {
+  border-color: var(--color-border-strong);
+}
+.dash-mini:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+.dash-mini-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+.dash-mini-month {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0.02em;
+}
+.dash-mini-year {
+  color: var(--color-text-secondary);
+}
+.dash-mini-grow {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-inset);
+  color: var(--color-text-secondary);
+  transition: background var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default);
+}
+.dash-mini:hover .dash-mini-grow {
+  background: var(--color-bg-float);
+  color: var(--color-text-primary);
+}
+.dash-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  row-gap: var(--space-1);
+}
+.dm-wd {
+  padding-bottom: var(--space-3);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-align: center;
+  color: var(--color-text-tertiary);
+}
+.dm-day {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+.dm-day.is-out {
+  color: var(--color-text-tertiary);
+}
+.dm-day.is-out .dm-mark {
+  opacity: 0.5;
+}
+.dm-day.is-holiday {
+  background: var(--color-bg-inset);
+}
+.dm-num {
+  min-width: 18px;
+  padding-bottom: var(--space-1);
+  text-align: center;
+}
+.dm-day.is-today .dm-num {
+  color: var(--color-accent-text);
+  box-shadow: inset 0 -2px 0 var(--color-accent-mark);
+}
+.dm-mark {
+  display: grid;
+  place-items: center;
+  height: 8px;
+}
+.dm-mark .cal-dot {
+  width: 6px;
+  height: 6px;
+}
+.dm-mark .cal-dot.is-proposed {
+  width: 5px;
+  height: 5px;
+}
+.dash-mini-sum {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── The grown calendar's bar: Month / Week, and Collapse ──────────────────── */
+
+.dash-cal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+.dash-cal-bar .home-switch {
+  flex: 0 1 220px;
+}
+.dash-cal-shrink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-min);
+}
+.dash-cal-shrink svg {
+  width: 16px;
+  height: 16px;
+}
+@media (min-width: 768px) {
+  .dash-cal-bar .home-switch {
+    flex: 0 0 auto;
+  }
+  .dash-cal-shrink {
+    min-height: var(--control-h-sm);
   }
 }
 
@@ -104,30 +492,8 @@
   flex: 1 1 200px;
 }
 
-/* ── The side panels ───────────────────────────────────────────────────────── */
+/* ── Empty, loading and failed lists ───────────────────────────────────────── */
 
-.home-panel-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 12px;
-  padding-bottom: 8px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
-.home-panel-title {
-  font-family: 'Delight', 'Georgia', serif;
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.02em;
-  color: var(--text);
-}
-.home-panel-sub {
-  font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
-  color: var(--muted);
-}
 .home-empty {
   padding: 10px 0;
   font-size: 12px;
@@ -786,7 +1152,15 @@
 @media (prefers-reduced-motion: reduce) {
   .home-switch-btn,
   .up-row,
-  .act-upid {
+  .act-upid,
+  .dash-card-act,
+  .dash-row,
+  .dash-row-go,
+  .dash-mini,
+  .dash-mini-grow {
     transition: none;
+  }
+  .dash-row:hover .dash-row-go {
+    transform: none;
   }
 }

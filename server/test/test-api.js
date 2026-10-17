@@ -2207,7 +2207,10 @@ test('projects list: one card per project, searched, filtered by stage and count
   assert.deepEqual(new Set(ids(found)),
     new Set([draft, sent, paidOld, paidNew, declined].map((e) => e.projectId)));
   assert.deepEqual(found.body.counts,
-    { active: 5, all: 5, draft: 1, sent: 1, accepted: 0, invoiced: 0, paid: 2, declined: 1 });
+    { active: 5, all: 5, open: 2, draft: 1, sent: 1, accepted: 0, invoiced: 0, paid: 2, declined: 1 });
+  // Open (the Dashboard's list): every stage short of paid or declined, however old.
+  assert.deepEqual(new Set(ids(await listProjects({ today, q: 't17', stage: 'open' }))),
+    new Set([draft, sent].map((e) => e.projectId)));
   assert.equal(found.body.total, 5);
   // Newest activity first, activity rows included: a later note puts the draft on top.
   db.prepare("INSERT INTO activity (id, project_id, at, kind) VALUES ('act_t17n', ?, '2099-01-01T00:00:00.000Z', 'note')")
@@ -3046,6 +3049,56 @@ test('activity: Home\'s recent events across projects, newest first, named as th
   r = await get('?limit=50');
   assert.ok(!r.body.activity.some((e) => [a.projectId, b.projectId].includes(e.project.id)));
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity WHERE id LIKE 'act_t22_%'").get().n, 0);
+});
+
+test('invoices list: the Dashboard\'s outstanding (most overdue first) and paid (newest first), at the stored amount', async () => {
+  const get = (q) => api('/api/invoices' + q).then(async (r) => ({ status: r.status, body: await r.json() }));
+  const before = { out: (await get('?state=outstanding&limit=50')).body, paid: (await get('?state=paid&limit=50')).body };
+  const a = await acceptedPair('T-DASH-A', 50);
+  const b = await acceptedPair('T-DASH-B', 30);
+  const mineOf = (reply) => reply.body.invoices.filter((i) => [a.est.projectId, b.est.projectId].includes(i.projectId));
+
+  // Drafts haven't gone to the client: not outstanding.
+  let out = await get('?state=outstanding&limit=50');
+  assert.equal(out.status, 200);
+  assert.deepEqual(mineOf(out), []);
+
+  // Sent: outstanding, the earlier due date first, at the amount the invoice stores.
+  assert.equal((await inv(a.dep.id, 'sent', { issuedAt: '2026-10-01', dueAt: '2026-10-20' })).status, 200);
+  assert.equal((await inv(b.dep.id, 'sent', { issuedAt: '2026-10-01', dueAt: '2026-10-10' })).status, 200);
+  out = await get('?state=outstanding&limit=50');
+  const mine = mineOf(out);
+  assert.deepEqual(mine.map((i) => i.id), [b.dep.id, a.dep.id]);
+  const stored = (await inv(b.dep.id)).body.invoice;
+  assert.deepEqual(
+    [mine[0].amountDue, mine[0].number, mine[0].kind, mine[0].status, mine[0].dueAt, mine[0].paidAt],
+    [stored.amountDue, stored.number, 'deposit', 'sent', '2026-10-10', null]);
+  assert.deepEqual(mine[0].project, { id: b.est.projectId, upid: 'T-DASH-B', name: 'T20 T-DASH-B', client: '' });
+  assert.equal(out.body.total, before.out.total + 2);
+  const aDue = (await inv(a.dep.id)).body.invoice.amountDue;
+  assert.equal(Math.round((out.body.sum - before.out.sum) * 100), Math.round((aDue + stored.amountDue) * 100));
+  // The limit cuts the page, not the total or the sum.
+  const one = await get('?state=outstanding&limit=1');
+  assert.deepEqual([one.body.invoices.length, one.body.total, one.body.sum], [1, out.body.total, out.body.sum]);
+
+  // Paid: out of outstanding, into paid, newest payment first.
+  assert.equal((await inv(b.dep.id, 'paid', { paidAt: '2026-10-02', via: 'bank' })).status, 200);
+  assert.equal((await inv(a.dep.id, 'paid', { paidAt: '2026-10-03', via: 'card' })).status, 200);
+  assert.deepEqual(mineOf(await get('?state=outstanding&limit=50')), []);
+  const paid = await get('?state=paid&limit=50');
+  assert.deepEqual(mineOf(paid).map((i) => [i.id, i.paidAt]), [[a.dep.id, '2026-10-03'], [b.dep.id, '2026-10-02']]);
+  assert.equal(paid.body.total, before.paid.total + 2);
+  // A legacy invoice was never recorded as sent: outstanding until it is paid.
+  db.prepare("UPDATE invoices SET kind = 'legacy', status = 'draft' WHERE id = ?").run(a.fin.id);
+  assert.deepEqual(mineOf(await get('?state=outstanding&limit=50')).map((i) => i.id), [a.fin.id]);
+
+  for (const bad of ['', '?state=draft', '?state=toString', '?state=paid&state=paid', '?state=paid&limit=0', '?state=paid&limit=51', '?state=paid&limit=2.5']) {
+    const r = await get(bad);
+    assert.equal(r.status, 400, bad);
+    assert.match(r.body.error, /^(state|limit)_invalid$/, bad);
+  }
+  dropProject(a.est.projectId);
+  dropProject(b.est.projectId);
 });
 
 /* ── Own kit on an estimate (own-kit K5, K-D6–K-D9) ──────────────────────────

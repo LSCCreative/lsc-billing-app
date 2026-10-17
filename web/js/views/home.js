@@ -1,16 +1,27 @@
 'use strict';
 
-/* Home (#/home, task 12): the production calendar the app opens on (D27).
+/* The Dashboard (#/home, task 12; renamed from "LSC Creative" 2026-10-17): the
+ * screen the app opens on (D27).
  *
- * What is booked, and when: every estimate's days at equal strength, in month
+ * THE CALENDAR sits top right, small: this month in dots, one button. Pressed,
+ * it grows into the full production calendar where it always was (left, 672px
+ * at desktop) with a Collapse button to shrink it back; the choice is kept in
+ * this browser. Full, it is every estimate's days at equal strength, in month
  * view (the shared js/calendar.js) or week view (views/home-week.js), with gear
- * rentals as bars (D84). Beside it, "Coming up", the next 14 days in date order
- * with all three statuses labelled, because a proposed date tomorrow still
- * needs a decision. And "Recent activity" (D52, task 22): the last 10 times a
- * job moved on (sent, accepted, invoiced, paid, declined) across every
- * project, from GET /api/activity, worded by the same ProjectCard.activityText
- * as the folder's log. Home stays a dashboard: nothing below those, and no
- * second Projects list (IA, Content Hierarchy).
+ * rentals as bars (D84).
+ *
+ * THREE OVERVIEW LISTS, each its latest five with a way to the rest: Open
+ * projects (GET /api/projects?stage=open: not yet paid or declined), Outstanding
+ * invoices (GET /api/invoices?state=outstanding, most overdue first) and Recent
+ * payments (state=paid). An invoice's amount is the one it stores, never
+ * re-priced here.
+ *
+ * And down the right, "Coming up", the next 14 days in date order with all
+ * three statuses labelled, because a proposed date tomorrow still needs a
+ * decision; and "Recent activity" (D52, task 22): the last 10 times a job
+ * moved on (sent, accepted, invoiced, paid, declined) across every project,
+ * from GET /api/activity, worded by the same ProjectCard.activityText as the
+ * folder's log.
  *
  * A tile opens a pop-up (D28): UPID, project, business, times, the day's
  * production items, and a button to the project folder. Coming up's and
@@ -34,13 +45,27 @@
 
 const HomeView = (() => {
   const C = LSCCalendar;
-  const { esc } = LSCUtil;
+  const { esc, money } = LSCUtil;
 
   const { STATUS_WORD } = C;
+  // The strongest booking on a day marks it on the small calendar.
+  const STATUS_RANK = { confirmed: 0, pencilled: 1, proposed: 2 };
 
   const COMING_UP_DAYS = 14;
   const ACTIVITY_COUNT = 10;
+  const LIST_COUNT = 5;
   const VIEW_KEY = 'lsc-home-view';
+  const SIZE_KEY = 'lsc-home-cal-size';
+
+  const icon = (paths) => '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + paths + '</svg>';
+  const ICON = {
+    open: icon('<path d="M7 17 17 7"/><path d="M7 7h10v10"/>'),
+    add: icon('<path d="M12 5v14"/><path d="M5 12h14"/>'),
+    next: icon('<path d="m9 18 6-6-6-6"/>'),
+    grow: icon('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'),
+    shrink: icon('<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>'),
+  };
 
   let root = null;
   let handlers = null;
@@ -48,7 +73,8 @@ const HomeView = (() => {
   let anchor = null;
   let anchorDay = null; // the day `anchor` was set on, so tomorrow's first visit starts on tomorrow
   let view = readView();
-  let cal = null; // the month or week component on show
+  let calSize = readSize(); // 'mini' (top right) or 'full'
+  let cal = null; // the month or week component on show, or the small calendar
   let rangeSeq = 0;
   /* Coming up's window, { from, to, asked }, while it waits on a calendar
      reply that covers it: the month on show usually does, so a visit is one
@@ -70,6 +96,20 @@ const HomeView = (() => {
       localStorage.setItem(VIEW_KEY, v);
     } catch (_) {
       // A private window or blocked storage: the choice lasts this visit only.
+    }
+  }
+  function readSize() {
+    try {
+      return localStorage.getItem(SIZE_KEY) === 'full' ? 'full' : 'mini';
+    } catch (_) {
+      return 'mini';
+    }
+  }
+  function saveSize(v) {
+    try {
+      localStorage.setItem(SIZE_KEY, v);
+    } catch (_) {
+      // As saveView.
     }
   }
 
@@ -179,13 +219,15 @@ const HomeView = (() => {
   async function loadRange(range, target, label, opts) {
     const mine = ++rangeSeq;
     const ticket = LSCRouter.ticket();
+    // The small calendar draws bookings only: Google's events are the full calendar's.
+    const google = !(opts && opts.noGoogle);
     target.range = range;
     if (coversUp(range)) upWanted.asked = true;
     const gone = () => !LSCRouter.isCurrent(ticket);
     const superseded = () => mine !== rangeSeq || cal !== target.component;
     let reply;
     try {
-      reply = await LSCApi.get('/api/calendar?from=' + range.from + '&to=' + range.to + '&google=1' +
+      reply = await LSCApi.get('/api/calendar?from=' + range.from + '&to=' + range.to + (google ? '&google=1' : '') +
         (opts && opts.refresh ? '&refresh=1' : ''));
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
@@ -194,11 +236,11 @@ const HomeView = (() => {
       // Coming up was waiting on this reply: it asks for itself, and says so if that fails too.
       if (claimUp(range)) loadComingUp();
       if (superseded()) return;
-      calMessage('Couldn’t load the bookings for ' + label + ': ' + failureText(err), () => loadRange(range, target, label));
+      calMessage('Couldn’t load the bookings for ' + label + ': ' + failureText(err), () => loadRange(range, target, label, opts));
       return;
     }
-    if (!gone()) googleSeen = reply;
     if (gone()) return;
+    if (google) googleSeen = reply;
     const days = reply.days || [];
     const w = claimUp(range);
     if (w) showComingUp(days.filter((d) => d.date >= w.from && d.date <= w.to), w.from);
@@ -267,7 +309,7 @@ const HomeView = (() => {
   }
 
   function currentAnchor() {
-    if (!cal) return anchor;
+    if (!cal || calSize !== 'full') return anchor;
     return view === 'week' ? cal.anchor : cal.selected;
   }
 
@@ -279,6 +321,143 @@ const HomeView = (() => {
     root.querySelectorAll('.home-switch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
     mountCalendar();
     if (focusBtn) focusBtn.focus();
+  }
+
+  // ── The small calendar (top right) ─────────────────────────────────────────
+
+  /* This month's six weeks, a dot under each booked day in the shape and
+     colour of its strongest booking (calendar.css .cal-dot), holidays shaded,
+     today underlined. The whole card is one button that grows it into the full
+     calendar; the grid is drawn inside it rather than replacing it, so a
+     button that has focus keeps it when the bookings come in. */
+  function mountMini(slot, today, onOpen) {
+    const ym = today.slice(0, 7);
+    const [y, m] = ym.split('-').map(Number);
+    const range = C.gridRange(ym);
+    let days = [];
+    let loaded = false; // the bookings are in, so the summary can say what they are
+    let hols = new Map();
+
+    slot.innerHTML =
+      '<button type="button" class="dash-mini" id="dash-cal-open" aria-label="Open the full calendar"' +
+      ' aria-describedby="dash-mini-sum">' +
+      '<span class="dash-mini-head"><span class="dash-mini-month">' + C.MONTHS[m - 1] +
+      ' <span class="dash-mini-year">' + y + '</span></span>' +
+      '<span class="dash-mini-grow">' + ICON.grow + '</span></span>' +
+      '<span class="dash-mini-grid" aria-hidden="true"></span>' +
+      '<span class="dash-mini-sum" id="dash-mini-sum">Loading this month’s bookings…</span>' +
+      '</button>';
+    const grid = slot.querySelector('.dash-mini-grid');
+    const sum = slot.querySelector('#dash-mini-sum');
+    slot.querySelector('#dash-cal-open').addEventListener('click', onOpen);
+
+    function draw() {
+      const marks = new Map();
+      days.forEach((d) => {
+        if (!C.isDate(d.date) || !STATUS_WORD[d.status]) return;
+        const was = marks.get(d.date);
+        if (!was || STATUS_RANK[d.status] < STATUS_RANK[was]) marks.set(d.date, d.status);
+      });
+      let cells = C.DAY_SHORT.map((w) => '<span class="dm-wd">' + w.charAt(0) + '</span>').join('');
+      for (let d = range.from; d <= range.to; d = C.addDays(d, 1)) {
+        const mark = marks.get(d);
+        cells += '<span class="dm-day' + (d.slice(0, 7) !== ym ? ' is-out' : '') + (d === today ? ' is-today' : '') +
+          (hols.has(d) ? ' is-holiday' : '') + '"><span class="dm-num">' + Number(d.slice(8)) + '</span>' +
+          '<span class="dm-mark">' + (mark ? '<span class="cal-dot is-' + mark + '"></span>' : '') + '</span></span>';
+      }
+      grid.innerHTML = cells;
+      if (!loaded) return;
+      const booked = Array.from(marks.keys()).filter((d) => d.slice(0, 7) === ym).length;
+      sum.textContent = C.MONTHS[m - 1] + ': ' +
+        (booked ? booked + ' booked day' + (booked === 1 ? '' : 's') : 'nothing booked yet');
+    }
+    draw();
+
+    return {
+      range,
+      setDays(list) {
+        days = Array.isArray(list) ? list : [];
+        loaded = true;
+        draw();
+      },
+      setHolidays(list) {
+        hols = C.holidayMap(list);
+        draw();
+      },
+      setGoogle() {}, // bookings only (loadRange's note)
+    };
+  }
+
+  function mountSmall() {
+    const slot = root.querySelector('#dash-mini-slot');
+    gcal = null;
+    calMessage('');
+    const target = { component: null, apply: null, range: null, label: 'this month' };
+    cal = mountMini(slot, LSCUtil.today(), () => setCalSize('full'));
+    target.component = cal;
+    target.apply = (days) => cal.setDays(days);
+    if (holidays) cal.setHolidays(holidays);
+    loadRange(cal.range, target, 'this month', { noGoogle: true });
+  }
+
+  /* The calendar's card, small or full. Full, its bar carries the Month /
+     Week switch and Collapse; the calendar's own bar (month, Go to date,
+     arrows, Calendars ▾) is unchanged below it. */
+  function drawCal() {
+    const full = calSize === 'full';
+    const box = root.querySelector('#dash-cal');
+    root.querySelector('.dash').classList.toggle('is-cal-full', full);
+    box.classList.toggle('is-full', full);
+    box.innerHTML =
+      '<h2 class="sr-only" id="home-cal-h">Production calendar</h2>' +
+      (full
+        ? '<div class="dash-cal-bar">' +
+          '<div class="home-switch" role="group" aria-label="Calendar view">' +
+          ['month', 'week'].map((v) =>
+            '<button type="button" class="home-switch-btn" data-view="' + v + '" aria-pressed="' + (v === view) + '">' +
+            (v === 'month' ? 'Month' : 'Week') + '</button>'
+          ).join('') +
+          '</div>' +
+          '<button type="button" class="btn btn-ghost btn-sm dash-cal-shrink" id="dash-cal-close">' +
+          ICON.shrink + '<span>Collapse</span></button>' +
+          '</div>'
+        : '') +
+      '<p class="home-cal-msg" id="home-cal-msg" role="status" hidden></p>' +
+      (full ? '<div id="home-cal-slot"></div>' : '<div id="dash-mini-slot"></div>');
+    if (full) {
+      box.querySelectorAll('.home-switch-btn').forEach((b) =>
+        b.addEventListener('click', () => setView(b.dataset.view, b)));
+      box.querySelector('#dash-cal-close').addEventListener('click', () => setCalSize('mini'));
+      mountCalendar();
+    } else {
+      mountSmall();
+    }
+  }
+
+  /* Grow or shrink, moving focus to the control that undoes it. Where the
+     browser has view transitions, the card grows from where it sat (and the
+     lists slide to their new places); with reduced motion it simply changes. */
+  function setCalSize(next) {
+    if (next === calSize || !root.querySelector('#dash-cal')) return;
+    anchor = currentAnchor();
+    calSize = next;
+    saveSize(next);
+    const focusOn = () => {
+      const el = root.querySelector(next === 'full' ? '#dash-cal-close' : '#dash-cal-open');
+      if (el) el.focus();
+    };
+    const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (typeof document.startViewTransition === 'function' && !still) {
+      // The cards carry view-transition names only while they move (home.css).
+      const dash = root.querySelector('.dash');
+      dash.classList.add('is-moving');
+      const move = document.startViewTransition(drawCal);
+      move.updateCallbackDone.then(focusOn, focusOn);
+      move.finished.finally(() => dash.classList.remove('is-moving'));
+    } else {
+      drawCal();
+      focusOn();
+    }
   }
 
   // ── Coming up ───────────────────────────────────────────────────────────────
@@ -419,6 +598,135 @@ const HomeView = (() => {
     box.innerHTML = activityMarkup(reply.activity || [], LSCUtil.today());
   }
 
+  // ── The overview lists ──────────────────────────────────────────────────────
+
+  // Whole days from `today` to a date: negative before it.
+  const dayGap = (ymd, today) => Math.round((Date.parse(ymd + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
+
+  function agoText(ymd, today) {
+    if (!C.isDate(ymd)) return '';
+    const n = -dayGap(ymd, today);
+    if (n <= 0) return 'Today';
+    return n === 1 ? 'Yesterday' : n + ' days ago';
+  }
+
+  function dueText(ymd, today) {
+    if (!C.isDate(ymd)) return 'No due date';
+    const n = dayGap(ymd, today);
+    if (n === 0) return 'Due today';
+    if (n === 1) return 'Due tomorrow';
+    if (n === -1) return 'Due yesterday';
+    return n > 0 ? 'Due in ' + n + ' days' : 'Due ' + -n + ' days ago';
+  }
+
+  /* One line: who or what, a meta line, then the amount and either a chip
+     (stacked under it) or the chevron. The whole line is the link. */
+  function rowMarkup(r) {
+    return '<li><a class="dash-row" href="#' + esc(r.href) + '">' +
+      '<div class="dash-row-main"><span class="dash-row-name">' + esc(r.name) + '</span>' + r.meta + '</div>' +
+      '<div class="dash-row-end' + (r.chip ? ' is-stacked' : '') + '">' +
+      '<span class="dash-row-amt fig">' + money(r.amount) + '</span>' +
+      (r.chip || '<span class="dash-row-go">' + ICON.next + '</span>') +
+      '</div></a></li>';
+  }
+
+  const invoiceName = (i) => i.project.client || i.project.name || 'Untitled';
+  const invoiceHref = (i) => InvoiceView.pathOf(i.projectId, i.id);
+  const metaLine = (parts, alert) => '<span class="dash-row-meta' + (alert ? ' is-alert' : '') + '">' +
+    parts.filter(Boolean).join(' · ') + '</span>';
+
+  const LISTS = {
+    proj: {
+      title: 'Open projects',
+      act: { href: '/projects/new', label: 'New project', icon: ICON.add },
+      url: (today) => '/api/projects?stage=open&limit=' + LIST_COUNT + '&today=' + today,
+      what: 'open projects',
+      empty: 'No open projects. A project shows here from its first estimate until it’s paid or declined.',
+      sub: (reply) => (reply.total ? reply.total + ' open' : ''),
+      rows: (reply, today) => (reply.projects || []).map((p) => ({
+        href: ProjectCard.pathOf(p),
+        name: p.name || 'Untitled estimate',
+        meta: ProjectCard.stageMarkup(p, today),
+        amount: p.totalIncGst,
+      })),
+    },
+    out: {
+      title: 'Outstanding invoices',
+      act: { href: '/projects?stage=invoiced', label: 'Invoiced projects', icon: ICON.open },
+      url: () => '/api/invoices?state=outstanding&limit=' + LIST_COUNT,
+      what: 'outstanding invoices',
+      empty: 'Nothing outstanding: every invoice sent has been paid.',
+      sub: (reply) => (reply.total ? money(reply.sum) + ' across ' + reply.total + ' invoice' + (reply.total === 1 ? '' : 's') : ''),
+      rows: (reply, today) => (reply.invoices || []).map((i) => {
+        const due = String(i.dueAt || '').slice(0, 10);
+        const overdue = C.isDate(due) && due < today;
+        const word = i.kind === 'legacy' ? 'Legacy' : overdue ? 'Overdue' : 'Sent';
+        const tone = overdue ? 'alert' : i.kind === 'legacy' ? 'neutral' : 'info';
+        return {
+          href: invoiceHref(i),
+          name: invoiceName(i),
+          meta: metaLine([esc(dueText(due, today)), i.number ? '<span class="ref">' + esc(i.number) + '</span>' : ''], overdue),
+          amount: i.amountDue,
+          chip: '<span class="pf-chip is-' + tone + '">' + word + '</span>',
+        };
+      }),
+    },
+    paid: {
+      title: 'Recent payments',
+      act: { href: '/projects?stage=paid', label: 'Paid projects', icon: ICON.open },
+      url: () => '/api/invoices?state=paid&limit=' + LIST_COUNT,
+      what: 'recent payments',
+      empty: 'No payments yet. An invoice marked paid shows here.',
+      sub: () => '',
+      rows: (reply, today) => (reply.invoices || []).map((i) => ({
+        href: invoiceHref(i),
+        name: invoiceName(i),
+        meta: metaLine([esc(agoText(String(i.paidAt || '').slice(0, 10), today)), i.number ? '<span class="ref">' + esc(i.number) + '</span>' : '']),
+        amount: i.amountDue,
+      })),
+    },
+  };
+
+  function cardMarkup(key) {
+    const L = LISTS[key];
+    return '<section class="dash-card" id="dash-' + key + '" aria-labelledby="dash-' + key + '-h">' +
+      '<div class="dash-card-head"><div class="dash-card-titles">' +
+      '<h2 class="dash-card-title" id="dash-' + key + '-h">' + esc(L.title) + '</h2>' +
+      '<p class="dash-card-sub" id="dash-' + key + '-sub"></p></div>' +
+      '<a class="dash-card-act" href="#' + esc(L.act.href) + '" aria-label="' + esc(L.act.label) + '" title="' + esc(L.act.label) + '">' +
+      L.act.icon + '</a></div>' +
+      '<div class="dash-card-body" id="dash-' + key + '-body"><p class="home-empty">Loading…</p></div>' +
+      '</section>';
+  }
+
+  async function loadList(key) {
+    const L = LISTS[key];
+    const box = root.querySelector('#dash-' + key + '-body');
+    const ticket = LSCRouter.ticket();
+    const today = LSCUtil.today();
+    let reply;
+    try {
+      reply = await LSCApi.get(L.url(today));
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
+      if (err.kind === 'auth') return handlers.onAuthLost();
+      box.innerHTML = '<p class="home-empty">Couldn’t load ' + L.what + ': ' + esc(failureText(err)) +
+        '</p><button type="button" class="btn btn-ghost btn-sm" id="dash-' + key + '-retry">Try again</button>';
+      box.querySelector('#dash-' + key + '-retry').addEventListener('click', () => {
+        box.innerHTML = '<p class="home-empty">Loading…</p>';
+        loadList(key);
+      });
+      return;
+    }
+    if (!LSCRouter.isCurrent(ticket) || !box.isConnected) return;
+    const rows = L.rows(reply, today);
+    root.querySelector('#dash-' + key + '-sub').textContent = L.sub(reply);
+    box.innerHTML = rows.length
+      ? '<ul class="dash-rows">' + rows.map(rowMarkup).join('') + '</ul>'
+      : '<p class="home-empty">' + esc(L.empty) + '</p>';
+  }
+
   // ── The screen ─────────────────────────────────────────────────────────────
 
   function render() {
@@ -430,43 +738,34 @@ const HomeView = (() => {
     }
     window.scrollTo(0, 0);
     root.innerHTML =
-      '<div class="page-head home-head"><div><h1 class="page-title">LSC Creative</h1>' +
-      '<div class="page-sub">' + esc(C.longDate(today, today)) + ' · Production calendar</div></div>' +
-      '<div class="home-switch" role="group" aria-label="Calendar view">' +
-      ['month', 'week'].map((v) =>
-        '<button type="button" class="home-switch-btn" data-view="' + v + '" aria-pressed="' + (v === view) + '">' +
-        (v === 'month' ? 'Month' : 'Week') + '</button>'
-      ).join('') +
-      '</div></div>' +
-      '<div class="home-layout">' +
-      '<section class="home-cal" aria-labelledby="home-cal-h">' +
-      '<h2 class="sr-only" id="home-cal-h">Production calendar</h2>' +
-      '<p class="home-cal-msg" id="home-cal-msg" role="status" hidden></p>' +
-      '<div id="home-cal-slot"></div>' +
-      '</section>' +
-      '<div class="home-side">' +
-      '<section class="home-panel" aria-labelledby="home-up-h">' +
-      '<div class="home-panel-head"><h2 class="home-panel-title" id="home-up-h">Coming up</h2>' +
-      '<p class="home-panel-sub" id="home-up-sub">Next ' + COMING_UP_DAYS + ' days</p></div>' +
+      '<div class="page-head home-head"><div><h1 class="page-title">Dashboard</h1>' +
+      '<div class="page-sub">' + esc(C.longDate(today, today)) + '</div></div></div>' +
+      '<div class="dash">' +
+      '<section class="dash-cal" id="dash-cal" aria-labelledby="home-cal-h"></section>' +
+      '<div class="dash-main"><div class="dash-lists">' +
+      cardMarkup('proj') + cardMarkup('out') + cardMarkup('paid') +
+      '</div>' +
+      '<section class="dash-card" id="dash-act" aria-labelledby="home-act-h">' +
+      '<div class="dash-card-head"><div class="dash-card-titles"><h2 class="dash-card-title" id="home-act-h">Recent activity</h2></div></div>' +
+      '<div id="home-act"><p class="home-empty">Loading…</p></div>' +
+      '</section></div>' +
+      '<div class="dash-side">' +
+      '<section class="dash-card" id="dash-up" aria-labelledby="home-up-h">' +
+      '<div class="dash-card-head"><div class="dash-card-titles"><h2 class="dash-card-title" id="home-up-h">Coming up</h2>' +
+      '<p class="dash-card-sub" id="home-up-sub">Next ' + COMING_UP_DAYS + ' days</p></div></div>' +
       '<div id="home-up"><p class="home-empty">Loading…</p></div>' +
       '</section>' +
-      '<section class="home-panel" aria-labelledby="home-act-h">' +
-      '<div class="home-panel-head"><h2 class="home-panel-title" id="home-act-h">Recent activity</h2></div>' +
-      '<div id="home-act"><p class="home-empty">Loading…</p></div>' +
-      '</section>' +
       '</div></div>';
-
-    root.querySelectorAll('.home-switch-btn').forEach((b) =>
-      b.addEventListener('click', () => setView(b.dataset.view, b)));
 
     upWanted = { from: today, to: C.addDays(today, COMING_UP_DAYS - 1), asked: false };
     holidays = null;
     loadHolidays();
-    mountCalendar(); // asks for its first range inside, which may cover Coming up's
+    drawCal(); // asks for its first range inside, which may cover Coming up's
     if (!upWanted.asked) {
       upWanted = null;
       loadComingUp();
     }
+    Object.keys(LISTS).forEach(loadList);
     loadActivity();
   }
 

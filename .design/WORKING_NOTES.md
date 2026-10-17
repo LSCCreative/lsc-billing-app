@@ -107,6 +107,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - A later rebuild of `estimates` or `projects` must flag the migration `foreignKeysOff: true`
   (`db.js`): days, rentals, invoices, estimate_versions, signatures hang off them. Run a migration on
   a copy of the live backup first (`foreign_key_check` refuses the whole boot).
+- Home (`#/home`) is the **Dashboard**. Its small calendar grows into the full one, and the choice is kept
+  in `localStorage` `lsc-home-cal-size`. The lists read `GET /api/projects?stage=open` (not paid or
+  declined, any age) and `GET /api/invoices?state=outstanding|paid`. The amount is the stored `amountDue`,
+  never re-priced, and an unpaid legacy invoice counts as outstanding.
 - Holidays are fetched in the editor once a day is dated; the server always prices with the real
   list on save.
 - Email is Resend over SMTP from `admin@lsccreative.studio` (`mail.js`, `sends.js`). A reset signs
@@ -137,6 +141,9 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   `±` glyphs). It has no tabular figures: money uses `--font-figures` (mono). Brand font masters in
   `Visual Design/` are gitignored (licence); only `.woff2` goes in `web/fonts/`.
 - Test money layouts with a five-figure total, not the fixtures (scratch tops out near $560).
+- Dashboard layout: below 768 the column wrappers (`.dash-main`, `.dash-side`) are `display: contents`,
+  so Coming up can sit between the lists and Recent activity. Any `grid-area` on their children must be
+  reset to `auto` at ≥768. View-transition names go on only while the calendar resizes (`.is-moving`).
 - Module globals are top-level `const`s: `window.LSCData` is undefined; use `typeof`.
 
 ## Testing and previews

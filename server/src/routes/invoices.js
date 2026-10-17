@@ -12,17 +12,39 @@ const {
 } = require('../pdf');
 const {
   EXTRAS_SECTION, parseExtras, billTotals, liveDeposit, replacementNumber, cannotEdit, voidReason,
-  invoiceJson, parseJson,
+  invoiceJson, parseJson, amountDue,
 } = require('../invoices');
-const { readFolder, logActivity, todayOf, isYmd } = require('./projects');
+const { readFolder, logActivity, todayOf, isYmd, projectBriefs } = require('./projects');
 const { sendRequest, addSend, cancelPending, sydneyDate } = require('../sends');
 const { newToken } = require('../public');
 
 const PAID_VIA = ['bank', 'card'];
+const LIST_LIMIT = 5;
+const LIST_MAX = 50;
+
+/* The Dashboard's two invoice lists, as SQL.
+   Outstanding: gone to the client and not paid. A legacy invoice never had a
+   send recorded, so it is outstanding until it is marked paid (projects.js
+   projectStage reads it as invoiced the same way). Most overdue first; one
+   with no due date after every dated one.
+   Paid: newest payment first. */
+const INVOICE_LISTS = {
+  outstanding: {
+    where: "(i.status = 'sent' OR (i.kind = 'legacy' AND i.status NOT IN ('paid', 'void')))",
+    order: 'i.due_at IS NULL, i.due_at, i.issued_at, i.id',
+  },
+  paid: {
+    where: "i.status = 'paid'",
+    order: 'i.paid_at DESC, i.id DESC',
+  },
+};
 
 /**
  * One invoice (production-booking task 20; IA "Invoice", D35–D37, D100).
  *
+ *   GET  /api/invoices?state=&limit=    the Dashboard's lists: `outstanding`
+ *                                       (sent, unpaid) or `paid`, one line
+ *                                       each, with `total` and `sum`.
  *   GET  /api/invoices/:id?today=       the invoice whole (invoices.js
  *                                       invoiceJson), with its project's
  *                                       summary and the project's invoices.
@@ -102,6 +124,49 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     db.prepare('UPDATE invoices SET totals_json = ?, less_invoice_id = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(totals), deposit.id, now, final.id);
   }
+
+  /* The Dashboard's lists: GET /api/invoices?state=outstanding|paid&limit=.
+     Each row is enough to draw one line and open the invoice: the amount is
+     the stored amountDue (what the invoice bills, the figure Mark paid logs),
+     never re-priced. `total` and `sum` cover every match, not just the page. */
+  app.get('/api/invoices', (req, res) => {
+    const state = req.query.state;
+    if (typeof state !== 'string' || !Object.hasOwn(INVOICE_LISTS, state)) {
+      return res.status(400).json({ error: 'state_invalid' });
+    }
+    const list = INVOICE_LISTS[state];
+    const limit = req.query.limit === undefined ? LIST_LIMIT : Number(req.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > LIST_MAX) {
+      return res.status(400).json({ error: 'limit_invalid' });
+    }
+    const rows = db.prepare(`
+      SELECT i.id, i.project_id, i.kind, i.number, i.status, i.totals_json, i.issued_at, i.due_at, i.paid_at,
+             p.upid, p.client_id
+        FROM invoices i JOIN projects p ON p.id = i.project_id
+       WHERE ${list.where}
+       ORDER BY ${list.order}
+    `).all();
+    const projectOf = projectBriefs(db);
+    const due = rows.map((r) => amountDue(r.kind, parseJson(r.totals_json, {})));
+    const sum = Math.round(due.reduce((a, b) => a + b, 0) * 100) / 100;
+    res.json({
+      ok: true,
+      invoices: rows.slice(0, limit).map((r, n) => ({
+        id: r.id,
+        projectId: r.project_id,
+        kind: r.kind,
+        number: r.number || null,
+        status: r.status,
+        amountDue: due[n],
+        issuedAt: r.issued_at || null,
+        dueAt: r.due_at || null,
+        paidAt: r.paid_at || null,
+        project: projectOf(r),
+      })),
+      total: rows.length,
+      sum,
+    });
+  });
 
   app.get('/api/invoices/:id', (req, res) => reply(req, res, req.params.id));
 

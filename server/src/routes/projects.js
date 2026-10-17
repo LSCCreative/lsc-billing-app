@@ -27,6 +27,9 @@ const HOME_KINDS = ['sent', 'opened', 'accepted', 'signed', 'invoices_created', 
 const HOME_LIMIT = 10;
 const HOME_MAX = 50;
 
+/* The Dashboard's "Open projects": every stage short of paid or declined. */
+const OPEN_STAGES = ['draft', 'sent', 'accepted', 'invoiced'];
+
 /* A real calendar date: '2026-13-01' and '2026-02-30' are not (an invalid
    Date's toISOString throws, so it is checked first). */
 const isYmd = (s) => {
@@ -80,6 +83,33 @@ const sendOf = (row) => {
   const detail = parseDetail(row.detail_json);
   return { at: row.at, version: detail.version, validUntil: detail.validUntil };
 };
+
+/* A project as a one-line reference, { id, upid, name, client }, named as its
+   card is: its lead estimate's name and client. Home's Recent activity and the
+   Dashboard's invoice lists. Make one per request: it remembers each project
+   it has looked up. `row` carries project_id, upid and client_id. */
+function projectBriefs(db) {
+  const leadOf = db.prepare(`
+    SELECT name, client_json FROM estimates WHERE project_id = ?
+     ORDER BY status = 'declined', updated_at DESC, id LIMIT 1
+  `);
+  const clientOf = db.prepare('SELECT business_name FROM clients WHERE id = ?');
+  const seen = new Map();
+  return (row) => {
+    if (!seen.has(row.project_id)) {
+      const lead = leadOf.get(row.project_id);
+      const snapshot = lead ? parseDetail(lead.client_json) : {};
+      const record = row.client_id ? clientOf.get(row.client_id) : null;
+      seen.set(row.project_id, {
+        id: row.project_id,
+        upid: row.upid,
+        name: lead ? lead.name : '',
+        client: snapshot.businessName || (record && record.business_name) || '',
+      });
+    }
+    return seen.get(row.project_id);
+  };
+}
 
 /* The columns summarize() reads from an estimate. */
 const ESTIMATE_COLUMNS = 'id, project_id, upid, name, date, status, client_json, total_inc_gst, updated_at';
@@ -601,9 +631,11 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
  * GET /api/projects — one card per project, newest activity first.
  *
  * Query:
- *   stage   `active` (the default), `all`, or one of projects.js STAGES. Active
- *           is every project except paid and declined ones settled more than
- *           90 days ago, unless `q` is given: a search looks at everything.
+ *   stage   `active` (the default), `all`, `open`, or one of projects.js STAGES.
+ *           Active is every project except paid and declined ones settled more
+ *           than 90 days ago, unless `q` is given: a search looks at everything.
+ *           Open (the Dashboard's list) is every project not yet paid or
+ *           declined, however old.
  *   q       matched, ignoring case, against the UPID (the project's, and the
  *           old one a project waiting for the fix-up still carries), every
  *           estimate's name, and the client's business and contact name.
@@ -688,27 +720,7 @@ function registerProjectRoutes(app, db, opts = {}) {
        WHERE a.kind IN (SELECT value FROM json_each(?))
        ORDER BY a.at DESC, a.id DESC LIMIT ?
     `).all(JSON.stringify(HOME_KINDS), limit);
-    // The project's name and client as summarize() picks them: its lead estimate's.
-    const leadOf = db.prepare(`
-      SELECT name, client_json FROM estimates WHERE project_id = ?
-       ORDER BY status = 'declined', updated_at DESC, id LIMIT 1
-    `);
-    const clientOf = db.prepare('SELECT business_name FROM clients WHERE id = ?');
-    const projects = new Map();
-    const projectOf = (row) => {
-      if (!projects.has(row.project_id)) {
-        const lead = leadOf.get(row.project_id);
-        const snapshot = lead ? parseDetail(lead.client_json) : {};
-        const record = row.client_id ? clientOf.get(row.client_id) : null;
-        projects.set(row.project_id, {
-          id: row.project_id,
-          upid: row.upid,
-          name: lead ? lead.name : '',
-          client: snapshot.businessName || (record && record.business_name) || '',
-        });
-      }
-      return projects.get(row.project_id);
-    };
+    const projectOf = projectBriefs(db);
     res.json({
       activity: rows.map((a) => ({
         id: a.id, at: a.at, kind: a.kind, detail: parseDetail(a.detail_json), project: projectOf(a),
@@ -718,7 +730,7 @@ function registerProjectRoutes(app, db, opts = {}) {
 
   app.get('/api/projects', (req, res) => {
     const stage = String(req.query.stage || 'active');
-    if (stage !== 'active' && stage !== 'all' && !STAGES.includes(stage)) {
+    if (stage !== 'active' && stage !== 'all' && stage !== 'open' && !STAGES.includes(stage)) {
       return res.status(400).json({ error: 'stage_invalid' });
     }
     const today = todayOf(req);
@@ -782,12 +794,17 @@ function registerProjectRoutes(app, db, opts = {}) {
 
     const searched = q ? all.filter((row) => row.text.includes(q)) : all;
     const inActive = (row) => q || !row.old;
-    const counts = { active: searched.filter(inActive).length, all: searched.length };
+    const isOpen = (row) => OPEN_STAGES.includes(row.project.stage);
+    const counts = { active: searched.filter(inActive).length, all: searched.length, open: searched.filter(isOpen).length };
     STAGES.forEach((s) => {
       counts[s] = searched.filter((row) => row.project.stage === s).length;
     });
+    const wanted = stage === 'all' ? () => true
+      : stage === 'active' ? inActive
+        : stage === 'open' ? isOpen
+          : (row) => row.project.stage === stage;
     const shown = searched
-      .filter((row) => stage === 'all' || (stage === 'active' ? inActive(row) : row.project.stage === stage))
+      .filter(wanted)
       .map((row) => row.project)
       .sort((a, b) => (b.lastActivityAt > a.lastActivityAt) - (b.lastActivityAt < a.lastActivityAt) ||
         (b.id > a.id) - (b.id < a.id));
@@ -1078,7 +1095,7 @@ function registerProjectRoutes(app, db, opts = {}) {
 }
 
 module.exports = {
-  registerProjectRoutes, summarize, readFolder, logActivity, todayOf, localToday, isYmd,
+  registerProjectRoutes, summarize, readFolder, logActivity, todayOf, localToday, isYmd, projectBriefs,
   // The client's signature (signing.js) accepts through the same pieces.
   acceptEstimate, depositPctFor, invoiceNumbers, cannotInvoice, stageNow,
   // The estimate save that changes a sent quote sends the change (C2, C3).
