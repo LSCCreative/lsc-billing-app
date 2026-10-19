@@ -138,12 +138,15 @@ const LSCData = (() => {
         LSCCalc.annualBusinessCost(overheadItems || [], depreciationAssets || []),
         g.desiredNetIncome,
         LSCData.taxYearInUse(),
-        { superPct: g.superPct, badDebtPct: g.badDebtPct }
+        // Business profit: the column predates the rename (calc.js decision 4).
+        { superPct: g.superPct, badDebtPct: g.badDebtPct, profitPct: g.targetProfitMarginPct }
       );
     },
     incomeFloor: () => {
       const r = LSCData.revenueTarget();
-      return LSCCalc.incomeFloorPerHour(r && r.total, LSCCalc.annualBillableHours(goals || {}));
+      /* breakEven, never total: total carries business profit, which every
+         auto price adds back per hour (calc.js incomeFloorPerHour). */
+      return LSCCalc.incomeFloorPerHour(r && r.breakEven, LSCCalc.annualBillableHours(goals || {}));
     },
     /* What stops the income floor — and so every auto price — in the order
        the arithmetic needs it, each with the Finance & Price tab that sets it

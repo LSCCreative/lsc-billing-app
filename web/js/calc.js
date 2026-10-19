@@ -36,7 +36,8 @@
  * Added 2026-09-15 for the Finance area (Project build archive/tracks/overhead-finance/). Four pure
  * functions turn the real recurring cost of running the business into one
  * number — Overhead Rate/hr — which becomes the reference `rate` on every
- * labour row of the card, plus an advisory per-job floor (Minimum Job Price).
+ * labour row of the card. (The advisory per-job floor, Minimum Job Price, was
+ * built on it until 2026-10-20; it is built on the income floor now — 1a.)
  *
  * None of this changes what a client is billed. `mu` drives `labourTotal`
  * above; `rate` is a reference figure `computeTotals` never reads. That is
@@ -45,16 +46,13 @@
  *
  * Three decisions, none of them derivable from the arithmetic:
  *
- *   1. NO WAGE TERM. The original concept had a Base Cost Rate of Wage +
- *      Overhead. The wage half is gone: `mu` already prices labour, and the
- *      business owner is trusted to set it high enough to pay themselves.
- *      Nothing here checks that — Minimum Job Price verifies overhead and
- *      profit-margin recovery only, and Desired Net Income is an annual
- *      planning input to targetAnnualRevenue, never compared against any
- *      per-job or per-row figure. Confirmed with the user on 2026-09-15 after
- *      an accounting review that put the gap explicitly in front of them. Do
- *      not add a wage term back without asking again — it was declined
- *      knowingly, not overlooked.
+ *   1. NO WAGE TERM. SUPERSEDED, in two steps (1a below). The original
+ *      concept had a Base Cost Rate of Wage + Overhead, and on 2026-09-15 the
+ *      user declined the wage half: `mu` priced labour and the owner was
+ *      trusted to set it high enough to pay themselves, so Minimum Job Price
+ *      checked overhead and markup only. The rate card has been measured
+ *      against a floor that carries pay since 2026-09-28, and the Minimum Job
+ *      Price since 2026-10-20.
  *
  *   2. CAPACITY IS FOUR REAL FIELDS, NOT AN ASSUMED 48-WEEK YEAR.
  *      SUPERSEDED 2026-09-27 (Project build archive/tracks/price-calculator/). This used to read
@@ -79,6 +77,14 @@
  *      counts working days. Decided with the user on 2026-09-15, replaced with
  *      their agreement on 2026-09-27.
  *
+ *      AND A SHARE OF THE HOURS WORKED IS BILLED (pricing-floor P1,
+ *      2026-10-20). The 1,776 hours above were hours WORKED, and priced as if
+ *      every one were sold. Capacity now has a fifth field, utilisationPct
+ *      (the screen's "Share you can bill"), and the year is days × hours
+ *      worked × that share: 1,776 × 65% = 1,154.4 on the reference defaults.
+ *      That raised the income floor ~54% (from $93.43 to $143.75), knowingly:
+ *      the markup had been quietly standing in for the missing utilisation.
+ *
  *   3. TAX IS LEVIED ON PROFIT, THROUGH THE ATO BRACKETS. SUPERSEDED
  *      2026-09-28 (money-math audit). This used to solve
  *      (overhead + desired net) / (1 − flat rate), which taxed deductible
@@ -90,17 +96,40 @@
  *      profit — its income less the overhead its hours carry — at the user's
  *      set-aside rate, which Profit Goals suggests from the same brackets.
  *
- *   1a. THE WAGE DECISION, REVISITED 2026-09-28. Decision 1 stands for
- *      minimumJobPrice and hourlyFloor, which remain COST floors. But the user
- *      chose, after the audit, to measure the rate card against an INCOME
- *      floor — Target Annual Revenue ÷ annual billable hours — which carries
- *      the owner's pay. See incomeFloorPerHour.
+ *   1a. ONE FLOOR, THE INCOME FLOOR (2026-09-28, completed 2026-10-20). After
+ *      the 2026-09-28 audit the user chose to measure the rate card against
+ *      an INCOME floor — the break-even revenue target ÷ annual billable hours
+ *      — which carries the owner's pay, tax, super and bad debt (see
+ *      incomeFloorPerHour). A COST floor (hourlyFloor: overhead × markup, no
+ *      pay) stayed beside it and under the Minimum Job Price, which read
+ *      $168.90 for a day the income floor put at $747. pricing-floor (P5, P6)
+ *      deleted the cost floor everywhere: the Minimum Job Price is break-even,
+ *      direct costs + hours × income floor (minimumJobPrice). The overhead
+ *      rate survives as a reference figure, because the per-job tax set-aside
+ *      subtracts hours × it.
  *
- *   4. THE "MARGIN" IS A MARKUP. goals.target_profit_margin_pct has always
- *      been applied as cost × (1 + pct/100), which is a markup: 25% on cost is
- *      a 20% margin on price. Since 2026-09-28 the screens call it a markup;
- *      the column keeps its old name (renaming it is a table rebuild for no
- *      arithmetic change). Parameters here say markupPct.
+ *   4. THE MARKUP IS BUSINESS PROFIT (pricing-floor P3, 2026-10-20).
+ *      goals.target_profit_margin_pct was a markup on the cost floor (25% on
+ *      cost is a 20% margin on price), then sat on top of an income floor that
+ *      already paid the owner, while nothing in the annual target accounted
+ *      for it — so a full card never matched the Dashboard's target. It is now
+ *      BUSINESS PROFIT, before tax: money for slow years, upgrades and growth,
+ *      on top of the owner's pay. The annual target shows it as its own line
+ *      (revenueTarget: breakEven + businessProfit = total, profit = breakEven
+ *      × pct), and every auto price is income floor × (1 + pct), so a full
+ *      card at capacity bills the total, to whole-dollar rounding. The floor
+ *      divides breakEven, never total, or profit would be charged twice. The
+ *      column and the API key (targetProfitMarginPct) keep their old names;
+ *      parameters here still say markupPct.
+ *
+ *   5. THE CARD FEE IS IN EVERY AUTO PRICE (pricing-floor P7). Card
+ *      surcharges are banned from 1 October 2026, so the processor's fee is
+ *      recovered inside every auto price, for every client, however they pay:
+ *      floor × (1 + profit) × (1 + card fee), rounded up once (suggestedPrice).
+ *      Own-time travel takes the fee but not profit; the car and every
+ *      pass-through take neither; typed prices never move. It is income-side,
+ *      never part of a floor: the Minimum Job Price and the rate-card badges
+ *      leave it out.
  *
  * HOURS AND QUANTITY ARE NOT THE SAME THING (hoursPerUnit)
  * Added 2026-09-27 for the price calculator (Project build archive/tracks/price-calculator/). The
@@ -114,11 +143,11 @@
  * hours one unit of it consumes.
  *
  * This matters because `totalHours` is not a display figure. `minimumJobPrice`
- * allocates overhead across it, so a two-day shoot left on the old arithmetic
- * would carry 2 hours of overhead instead of ~20 and the advisory floor would
- * come back low by hundreds of dollars — silently, with no error and no zero to
- * notice. That is why this landed in the same change as the day-unit rows rather
- * than after them.
+ * prices it at the income floor, so a two-day shoot left on the old arithmetic
+ * would carry 2 hours instead of ~20 and the advisory floor would come back
+ * low by thousands of dollars — silently, with no error and no zero to notice.
+ * That is why this landed in the same change as the day-unit rows rather than
+ * after them.
  *
  * `hoursPerUnit` DEFAULTS TO 1, AND ANYTHING UNUSABLE FALLS BACK TO 1
  * (hoursPerUnitOf below). The default is the whole safety argument: every row
@@ -126,17 +155,18 @@
  * `hoursPerUnit`, and must total identically after this change. The fallback
  * direction is deliberate too — a missing, zero, negative or non-numeric value
  * reads as "one hour per unit", never as zero. Zero would drop the job's hours
- * out of the overhead allocation entirely, which is the expensive direction to
+ * out of the Minimum Job Price entirely, which is the expensive direction to
  * be wrong in: the floor would read as a computed answer while quietly pricing
  * a shoot as though it took no time at all.
  *
  * UNITS — the one trap in here. `taxSetAsideRate` is a FRACTION (0.35 is 35%,
- * as the rate card stores it). `markupPct` is a PERCENT (25 is 25%, as
+ * as the rate card stores it). `markupPct` is a PERCENT (10 is 10%, as
  * goals.target_profit_margin_pct stores it), and so are every other goals
- * percentage (superPct, badDebtPct) and every figure in a tax year (bracket
- * ratePct, medicareLevyPct). The parameter names carry the difference and
- * these functions do not guess: a markup passed as 0.25 is read as a quarter
- * of one percent, not as a quarter.
+ * percentage (superPct, badDebtPct, utilisationPct), the card's cardFeePct
+ * (1.65 is 1.65%) and every figure in a tax year (bracket ratePct,
+ * medicareLevyPct). The parameter names carry the difference and these
+ * functions do not guess: a profit passed as 0.1 is read as a tenth of one
+ * percent, not as a tenth.
  *
  * SAVED LINES CARRY THEIR OWN PRICES (2026-09-28). A labour or travel line
  * saved on an estimate stores the price it was quoted at — mu, and for labour
@@ -151,7 +181,8 @@
  * carries three prices — `prices: { hour, half, full }` — instead of one `mu`,
  * and a card-level `serviceDay: { fullHours, halfHours }` (8 / 4) says how many
  * billable hours a day on a job is. That is deliberately NOT Capacity's
- * billable hours per day, which is a yearly planning average. Five decisions:
+ * hours worked per day, which (with its share you can bill) is a yearly
+ * planning figure. Five decisions:
  *
  *   1. AUTO IS DERIVED ON READ, NEVER STORED. A price the user has not typed is
  *      `null` on the card, and unitDef computes it each time (decision 5 says
@@ -164,14 +195,16 @@
  *      goals change moves the card, never a saved quote.
  *
  *   2. `mu: null` MEANS "NO PRICE YET", NEVER $0. An auto unit with no income
- *      floor (tax scale unsaved, no capacity) or no markup cannot be priced.
+ *      floor (tax scale unsaved, no capacity) or no profit cannot be priced.
  *      Reading that as 0 would put a free line on a quote and badge nothing,
  *      because $0 is below every floor only once there is a floor. Callers
  *      disable the unit or show "—". A typed 0, by contrast, is a real price.
  *
  *   3. UP TO THE WHOLE DOLLAR, AND NEVER BELOW THE TARGET. An auto HOURLY price
  *      is the smallest whole dollar whose GST-exclusive part reaches floor ×
- *      (1 + markup) EXACTLY. Up, because rounding down would sell the hour
+ *      (1 + profit) × (1 + card fee) EXACTLY, rounded once (decisions 4 and 5
+ *      above; the card fee since pricing-floor P7). Up, because rounding down
+ *      would sell the hour
  *      under the figure it was derived from; whole dollars, because that is
  *      how the card is priced by hand. Exactly, not cent-rounded, because an
  *      auto day is the hourly × its hours (decision 5): an hourly price 0.1¢
@@ -208,10 +241,12 @@
  * ticked "Your time" (ownTime) is the owner's own hours, so it is priced like
  * a service's hour, with one difference:
  *
- *   - AT EXACTLY THE INCOME FLOOR, NO MARKUP. Travel hours cover running
- *     costs and pay but carry no profit. An own-time row whose `mu` is null is
- *     auto: suggestedPrice(floor, its hours, 0) — the floor rounded up to the
- *     whole dollar, GST-aware, as decision 3 above. A number is typed and wins.
+ *   - AT THE INCOME FLOOR, NO PROFIT. Travel hours cover running costs and
+ *     pay but carry no profit. An own-time row whose `mu` is null is auto:
+ *     suggestedPrice(floor, its hours, 0, settings, cardFeePct) — the floor
+ *     plus the card fee (decision 5 above: the fee is in every auto price),
+ *     rounded up to the whole dollar, GST-aware, as decision 3 above. A number
+ *     is typed and wins.
  *   - EVERYTHING ELSE AS FOR SERVICES: `mu: null` is no price yet, never $0
  *     (decision 2); the server never resolves it (decision 4), so lineDef
  *     prices a bare line on an auto row at nothing; a line added to an
@@ -278,7 +313,7 @@
  *   - BILLED: days × cost, in the client price, like any hire line.
  *   - INCOME: in incomeExGst, so tax is set aside on it.
  *   - NO HOURS: gear is not the owner's time, so totalHours (and with it the
- *     overhead share and Minimum Job Price's overhead term) doesn't move.
+ *     overhead share and Minimum Job Price's hours term) doesn't move.
  *   - NOT A COST: out of passThroughCost and directJobCost, so it doesn't
  *     raise Minimum Job Price as if the business had paid someone for it. The
  *     asset is recovered by this line instead of by the hourly rate
@@ -478,7 +513,7 @@ function computeTotals(activeRows, pricing, settings, options) {
   //
   // Hours are counted separately from quantity, because a day-unit row's
   // quantity is in days: totalHours is Σ qty × hoursPerUnit, and it feeds the
-  // overhead allocation in minimumJobPrice rather than the client's price.
+  // Minimum Job Price's hours term rather than the client's price.
   let labourTotal = 0;
   let totalHours = 0;
   /* What surcharges added to production lines. Income like the rest of
@@ -743,11 +778,19 @@ const WEEKS_IN_YEAR = 52;
 /**
  * How many hours the year can actually be billed for.
  *
- *   ((workingDaysPerWeek × 52) − leaveDays − sickDays) × billableHoursPerDay
+ *   ((workingDaysPerWeek × 52) − leaveDays − sickDays)
+ *     × billableHoursPerDay × utilisationPct ÷ 100
  *
  * This is the divisor behind every overhead-derived rate on the card, and it
  * replaced an assumed 48-week year — see decision 2 in the header for why, and
  * for the ~8% rise that came with it.
+ *
+ * billableHoursPerDay IS HOURS WORKED, NOT HOURS BILLED (pricing-floor P1,
+ * 2026-10-20). The column keeps its name; the screen says "Hours worked per
+ * day". utilisationPct, a PERCENT, is the share of those hours a client pays
+ * for — admin, quoting, gear and quiet days are the rest. Without it the year
+ * was priced as if every hour worked were sold, and the income floor came out
+ * ~35% low (decision 2 in the header).
  *
  * LEAVE AND SICK DAYS ARE COUNTED IN WORKING DAYS, NOT CALENDAR DAYS. Four
  * weeks off is 20, not 28. Nothing here can tell the difference, so the entry
@@ -766,7 +809,8 @@ const WEEKS_IN_YEAR = 52;
  * goals payload is passed straight in — its four fields have these names.
  *
  * @param {object} capacity — { billableHoursPerDay, workingDaysPerWeek,
- *   leaveDaysPerYear, sickDaysPerYear }, all four required. The /api/goals
+ *   leaveDaysPerYear, sickDaysPerYear }, all four required, and
+ *   utilisationPct (1–100; absent or null reads as 100). The /api/goals
  *   payload qualifies as it is.
  * @returns {number|null} null when any field is missing or out of range, and
  *   when leave + sick consume the whole working year. A zero or negative
@@ -777,6 +821,17 @@ const WEEKS_IN_YEAR = 52;
  */
 function annualBillableHours(capacity) {
   const c = capacity || {};
+
+  /* Absent (a goals payload from before v18) or null is 100%: every hour
+     worked is billed, which is exactly what the year was before utilisation
+     existed, so an old payload prices as it always did. Anything present must
+     be a usable percent; a blank or out-of-range one is a broken capacity, not
+     a full one. */
+  let utilisation = 100;
+  if (c.utilisationPct !== undefined && c.utilisationPct !== null) {
+    utilisation = numOrNull(c.utilisationPct);
+    if (utilisation === null || utilisation < 1 || utilisation > 100) return null;
+  }
 
   const hoursPerDay = numOrNull(c.billableHoursPerDay);
   if (hoursPerDay === null || hoursPerDay <= 0 || hoursPerDay > 24) return null;
@@ -795,7 +850,7 @@ function annualBillableHours(capacity) {
      hours, which divides into an infinite rate. Both are the same empty state. */
   if (leave + sick >= workingDaysPerYear) return null;
 
-  return round2((workingDaysPerYear - leave - sick) * hoursPerDay);
+  return round2((workingDaysPerYear - leave - sick) * hoursPerDay * (utilisation / 100));
 }
 
 /**
@@ -838,46 +893,43 @@ function overheadRatePerHour(annualTotal, annualBillableHrs) {
 }
 
 /**
- * The advisory floor for one job: what it has to clear to cover its direct
- * costs, its share of overhead, and the target markup on that overhead.
+ * The Minimum Job Price: what one job has to clear to break even — its direct
+ * costs, plus its hours at the income floor.
  *
- *   directJobCost + estimatedHours × overheadRate × (1 + markupPct/100)
+ *   directJobCost + estimatedHours × incomeFloorPerHour
  *
- * THE MARKUP IS ON THE HOURS ONLY (2026-09-28 audit). It used to multiply the
- * direct costs too, so a job with $10,000 of crew billed at cost demanded
- * $2,500 of markup on money the Dashboard says is passed through — an $11,200
- * job read as under-priced against a $12,651 floor. Pass-throughs are billed
- * at cost and carry no markup; direct cost here is directJobCost from
- * computeTotals (pass-throughs plus what resold travel cost), not expenseTotal,
- * which includes travel's own markup.
+ * BREAK-EVEN, NO PROFIT, NO CARD FEE (pricing-floor P5, 2026-10-20). It was a
+ * COST floor until then — hours × overhead rate × (1 + markup), no pay — which
+ * read $168.90 for an 8-hour day the income floor put at $747. Now it is the
+ * one minimum: the income floor carries running costs, the owner's pay and its
+ * tax, super and bad debt (incomeFloorPerHour), so a job at this price pays its
+ * way and the owner, and leaves nothing over. Business profit and the card fee
+ * are on top of it in every auto price, never in it.
  *
- * Advisory only. computeTotals never reads this, and the estimate editor's
- * toggle must never move clientPriceExGst or totalIncGst in either position.
+ * PASS-THROUGHS AT COST (2026-09-28 audit, still true). Direct cost here is
+ * directJobCost from computeTotals (pass-throughs plus what resold travel
+ * cost), not expenseTotal, which includes travel's own markup; nothing
+ * multiplies it.
+ *
+ * Advisory only. computeTotals never reads this, and the estimate editor must
+ * never move clientPriceExGst or totalIncGst because of it.
  *
  * @param {number} directJobCosts — the job's own out-of-pocket costs, i.e.
  *   directJobCost from computeTotals.
  * @param {number} estimatedHours — totalHours from computeTotals, which is
  *   Σ qty × hoursPerUnit and not a sum of quantities. This function is the
  *   reason that distinction exists: it is the only place the job's hours turn
- *   into money, so a day row counted as one hour under-allocates overhead here
+ *   into money, so a day row counted as one hour under-prices the minimum here
  *   and nowhere else. See the header.
- * @param {number} overheadRate — from overheadRatePerHour().
- * @param {number} markupPct — a PERCENT (25 is 25%), unlike taxSetAsideRate,
- *   which is a fraction. See UNITS in the header.
- * @returns {number|null} null when there is no overhead rate to allocate from,
- *   so the editor shows its set-up prompt rather than a floor that silently
- *   leaves overhead out and reads as if it were the real minimum.
+ * @param {number} floorPerHour — incomeFloorPerHour(), GST-exclusive.
+ * @returns {number|null} null when there is no income floor, so the editor
+ *   shows its set-up prompt rather than a minimum that silently leaves the
+ *   hours out and reads as if it were the real one.
  */
-function minimumJobPrice(directJobCosts, estimatedHours, overheadRate, markupPct) {
-  const rate = numOrNull(overheadRate);
-  if (rate === null || rate <= 0) return null;
-
-  /* A 0% markup is a real answer — "just break even on this one" — so it is
-     allowed through where a missing one is not. */
-  const markup = numOrNull(markupPct);
-  if (markup === null || markup < 0) return null;
-
-  return round2(nonNeg(directJobCosts) + nonNeg(estimatedHours) * rate * (1 + markup / 100));
+function minimumJobPrice(directJobCosts, estimatedHours, floorPerHour) {
+  const floor = numOrNull(floorPerHour);
+  if (floor === null || floor <= 0) return null;
+  return round2(nonNeg(directJobCosts) + nonNeg(estimatedHours) * floor);
 }
 
 /**
@@ -1341,7 +1393,9 @@ function taxRatesAt(taxableIncome, taxYear) {
  *                                                        // so not taxed here
  *   needed         = businessCost + grossPay + super
  *   badDebt        = needed × badDebtPct ÷ (1 − badDebtPct)
- *   total          = needed + badDebt                    // = needed ÷ (1 − badDebtPct)
+ *   breakEven      = needed + badDebt                    // = needed ÷ (1 − badDebtPct)
+ *   businessProfit = breakEven × profitPct               // see BREAK-EVEN below
+ *   total          = breakEven + businessProfit
  *
  * Business cost is deductible, so it is added AFTER tax, untaxed: the old flat
  * formula grossed it up and asked for ~$14k a year too much on the reference
@@ -1352,10 +1406,26 @@ function taxRatesAt(taxableIncome, taxYear) {
  * @param {number} businessCost — annualBusinessCost().
  * @param {number} desiredNetIncome — after tax, per year.
  * @param {object} taxYear — see normaliseTaxYear.
- * @param {object} [opts] — { superPct, badDebtPct }, PERCENTS; unset is 0.
+ * BREAK-EVEN, THEN BUSINESS PROFIT (pricing-floor P3, 2026-10-20). What the
+ * lines above sum to is `breakEven`: the year paid for, owner included, with
+ * nothing left over. On top of it:
+ *
+ *   businessProfit = breakEven × profitPct ÷ 100        // before tax
+ *   total          = breakEven + businessProfit
+ *
+ * Profit is what goals.target_profit_margin_pct now means (it was a markup on
+ * a cost floor; see decision 4 in the header). It is not grossed up for bad
+ * debt: the allowance is a cost of reaching break-even, and profit is a share
+ * of that. THE INCOME FLOOR DIVIDES breakEven, NEVER total — every auto price
+ * then adds the profit back per hour (suggestedPrice), and a floor built on
+ * total would charge it twice.
+ *
+ * @param {object} [opts] — { superPct, badDebtPct, profitPct }, PERCENTS; unset
+ *   is 0, so a caller that passes no profit gets total === breakEven.
  * @returns {object|null} { businessCost, grossPay, incomeTax, superContribution,
- *   badDebtAllowance, total }, or null when there is no business cost yet, no
- *   income target, no usable tax year, or a bad-debt rate of 100% or more.
+ *   badDebtAllowance, breakEven, businessProfit, total }, or null when there is
+ *   no business cost yet, no income target, no usable tax year, or a bad-debt
+ *   rate of 100% or more.
  */
 function revenueTarget(businessCost, desiredNetIncome, taxYear, opts) {
   const cost = numOrNull(businessCost);
@@ -1369,28 +1439,32 @@ function revenueTarget(businessCost, desiredNetIncome, taxYear, opts) {
   const o = opts || {};
   const superPct = nonNeg(o.superPct);
   const badDebtPct = nonNeg(o.badDebtPct);
+  const profitPct = nonNeg(o.profitPct);
   if (badDebtPct >= 100) return null;
 
-  /* Every part rounded, and the total built from the rounded parts, so the
+  /* Every part rounded, and each total built from the rounded parts, so the
      breakdown the Dashboard prints adds up to its total to the cent (the same
      rule as computeTotals' GST split). */
   const superContribution = round2(gross * (superPct / 100));
   const needed = round2(round2(cost) + gross + superContribution);
-  const total = round2(needed / (1 - badDebtPct / 100));
+  const breakEven = round2(needed / (1 - badDebtPct / 100));
+  const businessProfit = round2(breakEven * (profitPct / 100));
 
   return {
     businessCost: round2(cost),
     grossPay: gross,
     incomeTax: round2(gross - net),
     superContribution,
-    badDebtAllowance: round2(total - needed),
-    total,
+    badDebtAllowance: round2(breakEven - needed),
+    breakEven,
+    businessProfit,
+    total: round2(breakEven + businessProfit),
   };
 }
 
 /**
- * The annual planning figure: revenueTarget's total. A planning target and,
- * since 2026-09-28, the numerator of the income floor.
+ * The annual planning figure: revenueTarget's total, business profit included.
+ * Not the income floor's numerator: that is revenueTarget's breakEven.
  * @returns {number|null}
  */
 function targetAnnualRevenue(businessCost, desiredNetIncome, taxYear, opts) {
@@ -1400,53 +1474,33 @@ function targetAnnualRevenue(businessCost, desiredNetIncome, taxYear, opts) {
 
 /**
  * The INCOME floor per billable hour: what every hour sold has to average for
- * the year to reach Target Annual Revenue — running costs, the owner's pay and
- * its tax, super and the bad-debt allowance. Chosen by the user on 2026-09-28
- * as the floor the rate card is measured against, beside the cost floor
- * (hourlyFloor), which carries running costs and markup only.
+ * the year to break even — running costs, the owner's pay and its tax, super
+ * and the bad-debt allowance. Chosen by the user on 2026-09-28 as the floor the
+ * rate card is measured against; since 2026-10-20 (pricing-floor) the only
+ * floor: the cost floor (hourlyFloor, overhead × markup, no pay) is gone, and
+ * the Minimum Job Price is built on this (minimumJobPrice).
  *
+ * PASS revenueTarget's breakEven, NEVER ITS total. The total carries business
+ * profit, which every auto price adds per hour on top of this floor
+ * (suggestedPrice); a floor built on the total would charge it twice and badge
+ * honest prices as below the floor.
+ *
+ * @param {number} breakEven — revenueTarget().breakEven.
+ * @param {number} annualBillableHrs — annualBillableHours(), utilisation in.
  * @returns {number|null} null without a revenue target or a capacity.
  */
-function incomeFloorPerHour(annualRevenueTarget, annualBillableHrs) {
-  const target = numOrNull(annualRevenueTarget);
+function incomeFloorPerHour(breakEven, annualBillableHrs) {
+  const target = numOrNull(breakEven);
   const hours = numOrNull(annualBillableHrs);
   if (target === null || target <= 0 || hours === null || hours <= 0) return null;
   return round2(target / hours);
 }
 
-/* ── Floors, and the rate card measured against them ──────────────────────────
-   Added 2026-09-27 for the Finance & Price Dashboard. The Rate Card will show
-   the same per-row comparison, so it lives here rather than in either screen:
-   two screens computing "is this row below its floor?" separately is how they
-   come to disagree about a row. */
-
-/**
- * The COST floor for an hour of work: its share of the business's running
- * cost, plus the target markup. The rate card is measured against the income
- * floor (incomeFloorPerHour) since 2026-09-28; this one stays on the Dashboard
- * beside it, and is what the estimate editor's Minimum Job Price is built on.
- *
- *   overheadRatePerHour × (1 + markupPct ÷ 100)
- *
- * Deliberately the same arithmetic minimumJobPrice() applies to a job's hours
- * — minimumJobPrice(0, h, rate, margin) is exactly h × this — so the Dashboard's
- * floors and the estimate editor's Minimum Job Price cannot disagree about what
- * an hour is worth. A test pins that equivalence.
- *
- * @param {number} overheadRate — from overheadRatePerHour().
- * @param {number} markupPct — a PERCENT (25 is 25%). See UNITS above.
- * @returns {number|null} null when there is no overhead rate, or no markup set.
- *   A 0% markup is a real answer (break even) and passes through; a missing one
- *   does not, because a floor that silently left it out would read as the real
- *   minimum.
- */
-function hourlyFloor(overheadRate, markupPct) {
-  const rate = numOrNull(overheadRate);
-  if (rate === null || rate <= 0) return null;
-  const markup = numOrNull(markupPct);
-  if (markup === null || markup < 0) return null;
-  return round2(rate * (1 + markup / 100));
-}
+/* ── The rate card measured against the floor ─────────────────────────────────
+   Added 2026-09-27 for the Finance & Price Dashboard. The Rate Card shows the
+   same per-row comparison, so it lives here rather than in either screen: two
+   screens computing "is this row below its floor?" separately is how they come
+   to disagree about a row. */
 
 /**
  * A rate-card price with any GST taken out.
@@ -1574,38 +1628,52 @@ function unitHours(pricing, unit) {
 }
 
 /**
- * The auto price for a unit of work: the income floor for its hours plus the
- * target markup, as the smallest whole dollar that covers it.
+ * The auto price for a unit of work: the income floor for its hours plus
+ * business profit and the card fee, as the smallest whole dollar that covers
+ * it.
  *
- *   target = floorPerHour × hours × (1 + markupPct ÷ 100)       (exact)
+ *   target = floorPerHour × hours × (1 + markupPct ÷ 100)
+ *                                 × (1 + cardFeePct ÷ 100)     (exact)
  *   price  = the least whole dollar p whose GST-exclusive part,
  *            p ÷ (1 + gst.rate) on a GST-inclusive card, reaches target
  *
  * which is ceil(target) on a GST-exclusive card and about ceil(target × (1 +
- * gst.rate)) on a GST-inclusive one. Against the EXACT target, not a
- * cent-rounded one — see decision 3 under SERVICE UNITS: an auto day is this
- * price × its hours, and a fraction of a cent short per hour becomes a whole
- * cent short per day. The only slack is SUGGEST_NOISE, for float error such as
- * 4.48 × 10 × 1.25 = 56.00000000000001, which is $56, not $57.
+ * gst.rate)) on a GST-inclusive one. Rounded ONCE, at the end: rounding after
+ * the profit and again after the fee would add up to $2 an hour for nothing.
+ * Against the EXACT target, not a cent-rounded one — see decision 3 under
+ * SERVICE UNITS: an auto day is this price × its hours, and a fraction of a
+ * cent short per hour becomes a whole cent short per day. The only slack is
+ * SUGGEST_NOISE, for float error such as 4.48 × 10 × 1.25 = 56.00000000000001,
+ * which is $56, not $57.
+ *
+ * THE CARD FEE IS IN EVERY PRICE, FOR EVERY CLIENT (pricing-floor P7). Card
+ * surcharges are banned from 1 October 2026, so the fee is recovered the only
+ * lawful way: inside the price, whatever the client pays with. It is income-
+ * side, like profit, and never part of a floor.
  *
  * @param {number|null} floorPerHour — incomeFloorPerHour(), GST-exclusive.
  * @param {number} hours — unitHours() for the unit.
- * @param {number|null} markupPct — a PERCENT (25 is 25%). See UNITS above.
+ * @param {number|null} markupPct — business profit, a PERCENT (10 is 10%;
+ *   named for the column it was). See UNITS above.
  * @param {object} settings — { gst: { registered, rate, pricesIncludeGst } }.
+ * @param {number|null} [cardFeePct] — a PERCENT (1.65 is 1.65%); absent, null
+ *   or blank is 0, since no card fee is a real and common answer.
  * @returns {number|null} whole dollars; null when there is no floor, no usable
- *   hours, or no markup set. A 0% markup is a real answer (the floor, rounded
- *   up); a missing or negative one is not, because a price that silently left
- *   it out would read as the real one.
+ *   hours, no profit set, or a negative card fee. A 0% profit is a real answer
+ *   (the floor, rounded up); a missing or negative one is not, because a price
+ *   that silently left it out would read as the real one.
  */
-function suggestedPrice(floorPerHour, hours, markupPct, settings) {
+function suggestedPrice(floorPerHour, hours, markupPct, settings, cardFeePct) {
   const floor = numOrNull(floorPerHour);
   if (floor === null || floor <= 0) return null;
   const h = numOrNull(hours);
   if (h === null || h <= 0) return null;
   const markup = numOrNull(markupPct);
   if (markup === null || markup < 0) return null;
+  const fee = numOrNull(cardFeePct);
+  if (fee !== null && fee < 0) return null;
 
-  const target = floor * h * (1 + markup / 100) - SUGGEST_NOISE;
+  const target = floor * h * (1 + markup / 100) * (1 + (fee || 0) / 100) - SUGGEST_NOISE;
   const gstCfg = (settings && settings.gst) || {};
   if (gstCfg.registered !== true || gstCfg.pricesIncludeGst !== true) return Math.ceil(target);
 
@@ -1638,9 +1706,10 @@ const SUGGEST_NOISE = 1e-8;
  * @param {object} row — a labour row carrying `prices`.
  * @param {string} unit — 'hour' | 'half' | 'full'.
  * @param {object} pricing — the rate card, for serviceDay.
- * @param {object} [ctx] — { floorPerHour, markupPct, settings }; the browser
- *   builds it with LSCData.priceContext(). Without it an auto hour is null,
- *   and so is an auto day on a service whose hourly price is auto.
+ * @param {object} [ctx] — { floorPerHour, markupPct, cardFeePct, settings };
+ *   the browser builds it with LSCData.priceContext(). Without it an auto hour
+ *   is null, and so is an auto day on a service whose hourly price is auto. A
+ *   typed price never takes the card fee: typed prices are final.
  * @returns {object|null} null for no row or a unit off the list.
  */
 function unitDef(row, unit, pricing, ctx) {
@@ -1653,7 +1722,9 @@ function unitDef(row, unit, pricing, ctx) {
   if (auto) {
     const c = ctx || {};
     const hourTyped = typed('hour');
-    const hourly = hourTyped !== null ? hourTyped : suggestedPrice(c.floorPerHour, 1, c.markupPct, c.settings);
+    const hourly = hourTyped !== null
+      ? hourTyped
+      : suggestedPrice(c.floorPerHour, 1, c.markupPct, c.settings, c.cardFeePct);
     mu = hourly === null ? null : unit === 'hour' ? hourly : round2(hourly * hours);
   }
   const def = { id: row.id, name: row.name, mu, auto };
@@ -1682,15 +1753,19 @@ function unitDef(row, unit, pricing, ctx) {
  * their own function: travelFloorComparison.
  *
  * An auto unit is priced from THIS function's floorPerHour and settings; only
- * ctx.markupPct is read from ctx. So an auto price and the floor it is set
- * against can never come from two different floors, and by construction (see
- * suggestedPrice) an auto unit is never below its floor. Without ctx, or with
- * no markup, every auto unit has no price.
+ * ctx.markupPct and ctx.cardFeePct are read from ctx. So an auto price and the
+ * floor it is set against can never come from two different floors, and by
+ * construction (see suggestedPrice) an auto unit is never below its floor.
+ * Without ctx, or with no profit, every auto unit has no price.
+ *
+ * THE FLOOR IS THE BARE INCOME FLOOR: no profit, no card fee (pricing-floor).
+ * A typed price between the floor and floor × (1 + profit) is not badged.
  *
  * @param {object} pricing — a rate card whose labour rows carry `prices`.
  * @param {object} settings — { gst: { registered, rate, pricesIncludeGst } }.
  * @param {number|null} floorPerHour — incomeFloorPerHour(), GST-exclusive.
- * @param {object} [ctx] — { markupPct }; LSCData.priceContext() in the browser.
+ * @param {object} [ctx] — { markupPct, cardFeePct }; LSCData.priceContext()
+ *   in the browser.
  * @returns {Array<object>} one entry per labour service, in rate-card order:
  *   { sectionId, sectionLabel, rowIndex, name, units: { hour, half, full } },
  *   each unit { mu, muExGst, auto, hoursPerUnit, floor, gap, belowFloor }.
@@ -1700,7 +1775,12 @@ function unitDef(row, unit, pricing, ctx) {
 function serviceFloorComparison(pricing, settings, floorPerHour, ctx) {
   const perHour = numOrNull(floorPerHour);
   const hasFloor = perHour !== null && perHour > 0;
-  const priceCtx = { floorPerHour: perHour, markupPct: ctx ? ctx.markupPct : null, settings };
+  const priceCtx = {
+    floorPerHour: perHour,
+    markupPct: ctx ? ctx.markupPct : null,
+    cardFeePct: ctx ? ctx.cardFeePct : null,
+    settings,
+  };
   const sections = (pricing && pricing.labourSections) || [];
   const out = [];
 
@@ -1736,19 +1816,21 @@ function serviceFloorComparison(pricing, settings, floorPerHour, ctx) {
  * result is for a service. See YOUR TIME ON THE ROAD in the header.
  *
  * An own-time row (ownTime, not directCost) with no typed `mu` is auto:
- * suggestedPrice(ctx.floorPerHour, its hours, 0, ctx.settings) — the income
- * floor with no markup. Without ctx, or with no floor yet, that is null: no
- * price, never $0. Any other row keeps its typed `mu`, and a blank one reads
- * as 0, as it always has (see YOUR TIME ON THE ROAD in the header).
+ * suggestedPrice(ctx.floorPerHour, its hours, 0, ctx.settings, ctx.cardFeePct)
+ * — the income floor with no profit, plus the card fee (pricing-floor P7: the
+ * fee is in every auto price). Without ctx, or with no floor yet, that is
+ * null: no price, never $0. Any other row keeps its typed `mu`, and a blank
+ * one reads as 0, as it always has (see YOUR TIME ON THE ROAD in the header).
+ * The car and every pass-through take neither profit nor the card fee.
  *
  * @param {object} row — a rate-card travel row.
  * A `perKm` row (task 6b) is always derived: Overhead's per-km figure,
  * ctx.vehicleCostPerKm, plus GST on a GST-inclusive card; null without one.
  * See THE CAR IS BILLED PER KM in the header.
  *
- * @param {object} [ctx] — { floorPerHour, settings, vehicleCostPerKm };
- *   LSCData.priceContext() in the browser. Its markupPct is deliberately not
- *   read.
+ * @param {object} [ctx] — { floorPerHour, cardFeePct, settings,
+ *   vehicleCostPerKm }; LSCData.priceContext() in the browser. Its markupPct is
+ *   deliberately not read.
  * @returns {object|null} a copy of the row with `mu` and `auto`; null for no row.
  */
 function travelRowDef(row, ctx) {
@@ -1771,7 +1853,7 @@ function travelRowDef(row, ctx) {
   let mu = typed;
   if (auto) {
     const c = ctx || {};
-    mu = suggestedPrice(c.floorPerHour, hoursPerUnitOf(row), 0, c.settings);
+    mu = suggestedPrice(c.floorPerHour, hoursPerUnitOf(row), 0, c.settings, c.cardFeePct);
   } else if (mu === null) {
     mu = 0;
   }
@@ -1788,12 +1870,14 @@ function travelRowDef(row, ctx) {
  *
  * The floor is floorPerHour × the row's hours, measured against its price
  * ex-GST (priceExGst), exactly at the floor not being below it. An auto price
- * is resolved from this function's own floor and settings, so it can never be
- * badged below the floor it was derived from.
+ * is resolved from this function's own floor and settings (and the card fee
+ * from ctx), so it can never be badged below the floor it was derived from.
  *
  * @param {object} pricing — the rate card.
  * @param {object} settings — { gst: { registered, rate, pricesIncludeGst } }.
  * @param {number|null} floorPerHour — incomeFloorPerHour(), GST-exclusive.
+ * @param {object} [ctx] — { cardFeePct }; LSCData.priceContext() in the
+ *   browser. Only the card fee is read.
  * @returns {Array<object>} { sectionId: 'travel', sectionLabel: 'Travel',
  *   rowIndex (its index in travelRows), name, travel: true, units: { hour } },
  *   the unit as serviceFloorComparison's.
@@ -1857,10 +1941,10 @@ function tripRows(pricing, ctx) {
   return { km: km ? travelRowDef(km, ctx) : null, hours: hours ? travelRowDef(hours, ctx) : null };
 }
 
-function travelFloorComparison(pricing, settings, floorPerHour) {
+function travelFloorComparison(pricing, settings, floorPerHour, priceCtx) {
   const perHour = numOrNull(floorPerHour);
   const hasFloor = perHour !== null && perHour > 0;
-  const ctx = { floorPerHour: perHour, settings };
+  const ctx = { floorPerHour: perHour, cardFeePct: priceCtx ? priceCtx.cardFeePct : null, settings };
   const out = [];
   ((pricing && pricing.travelRows) || []).forEach((row, rowIndex) => {
     if (!row || row.ownTime !== true || row.directCost || row.perKm) return;
@@ -3066,12 +3150,15 @@ function jobsNeededPerYear(annualRevenueTarget, averageJob) {
  * answer (negative unsoldHours), not an error: it's the thing the readout
  * exists to show.
  *
- * A DAY IS CAPACITY'S DAY. Shoot days and edit days are each
- * billableHoursPerDay long — a yearly planning average — not the card's
- * Service Day, which is what a day sold on a job is and which the Dashboard's
- * headline floors use (SERVICE UNITS in the header). An edit day is not sold
- * at all; it is capacity the shoot uses up. A month is
- * annual billable hours ÷ 12, an average, as the targets panel labels it.
+ * A DAY IS AN HOURS-WORKED DAY. Shoot days and edit days are each
+ * billableHoursPerDay long — Capacity's hours WORKED per day since
+ * pricing-floor P1 — not the card's Service Day, which is what a day sold on a
+ * job is and which the Dashboard's headline floors use (SERVICE UNITS in the
+ * header). A shoot or edit day is a whole day of work, all of it billable, so
+ * it is not scaled by utilisation; the month it is measured against is. An
+ * edit day is not sold at all; it is capacity the shoot uses up. A month is
+ * annual billable hours ÷ 12 — utilised, so admin and quiet hours are already
+ * out of it — an average, as the targets panel labels it.
  *
  * @param {object} capacity — the goals payload (the four Capacity fields).
  * @param {number} shootDaysPerMonth — 0 or more.
@@ -3154,7 +3241,6 @@ if (typeof module === 'object' && module.exports) {
     minimumJobPrice,
     labourHoursBreakdown,
     targetAnnualRevenue,
-    hourlyFloor,
     priceExGst,
     serviceFloorComparison,
     travelRowDef,
@@ -3225,7 +3311,6 @@ if (typeof module === 'object' && module.exports) {
     minimumJobPrice,
     labourHoursBreakdown,
     targetAnnualRevenue,
-    hourlyFloor,
     priceExGst,
     serviceFloorComparison,
     travelRowDef,

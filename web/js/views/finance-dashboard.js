@@ -107,7 +107,6 @@ const FinanceDashboardView = (() => {
     annualOverheadTotal,
     replacementReserveTotal,
     annualBillableHours,
-    hourlyFloor,
     serviceFloorComparison,
     travelFloorComparison,
     unitHours,
@@ -169,7 +168,9 @@ const FinanceDashboardView = (() => {
     const hours = annualBillableHours(goals);
     const rate = LSCData.overheadRate();
     const margin = goals.targetProfitMarginPct; // a MARKUP, whatever the column is called
-    const costFloor = hourlyFloor(rate, margin);
+    /* The cost floor is gone from calc.js (pricing-floor P6); PF7 removes its
+       row and sentence from this screen. */
+    const costFloor = null;
     const revenue = LSCData.revenueTarget();
     const perHour = LSCData.incomeFloor();
 
@@ -459,7 +460,9 @@ const FinanceDashboardView = (() => {
           (f.revenue.badDebtAllowance > 0
             ? line(link('goals', 'Bad-debt allowance'), fmt(f.revenue.badDebtAllowance))
             : '') +
-          line('Income floor, ÷ ' + (f.hours === null ? '—' : hrs(f.hours)) + ' hrs',
+          // PF7 redesigns this panel (break-even, then profit, then the total).
+          (f.revenue.businessProfit > 0 ? line(link('goals', 'Business profit'), fmt(f.revenue.businessProfit)) : '') +
+          line('Income floor, break-even ÷ ' + (f.hours === null ? '—' : hrs(f.hours)) + ' hrs',
             f.perHour === null ? null : fmt(f.perHour) + '/hr', { total: true }) +
           line('Per month, on average', fmt(t / 12)) +
           '<p class="dash-panel-note">Tax is worked out on your pay only — running costs are deductible — with your ' +

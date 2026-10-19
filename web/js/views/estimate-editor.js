@@ -3898,12 +3898,7 @@ const EstimateEditor = (() => {
 
     /* directJobCost, not expenseTotal: pass-throughs at cost plus what resold
        travel cost — carrying no markup (calc.js, minimumJobPrice). */
-    const floor = LSCCalc.minimumJobPrice(
-      totals.directJobCost,
-      totals.totalHours,
-      overheadRate,
-      profitMarginPct
-    );
+    const floor = LSCCalc.minimumJobPrice(totals.directJobCost, totals.totalHours, incomeFloor);
     paintIncome(totals);
     setBreakdown(totals, floor, working);
 
@@ -3922,9 +3917,9 @@ const EstimateEditor = (() => {
     setText('s-min-price', fmt(floor));
     setText(
       's-min-note',
-      'to cover ' + fmt(overheadRate) + '/hr of overhead across ' + totals.totalHours +
-        (totals.totalHours === 1 ? ' hour' : ' hours') + (working ? ' (' + working + ')' : '') +
-        ', marked up ' + profitMarginPct + '%'
+      totals.totalHours + (totals.totalHours === 1 ? ' hour' : ' hours') +
+        (working ? ' (' + working + ')' : '') + ' at your ' + fmt(incomeFloor) +
+        '/hr income floor, plus direct costs'
     );
     line.classList.remove('mjp-unset');
   }

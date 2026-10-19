@@ -8,9 +8,11 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 
 - `server/src/calc.js` and `web/js/calc.js` are byte-identical; so are `documents.js` and
   `call-sheet.js` (server/src and web/js). The drift tests fail otherwise.
-- The rate card is judged against an **income floor** = Target Annual Revenue ÷ annual billable
-  hours (carries the owner's pay). The cost floor (overhead × (1 + markup)) drives the editor's
-  Minimum Job Price. `mu` is never auto-written, except auto prices from service-rate-tiers, which
+- One floor, the **income floor** = `revenueTarget().breakEven` ÷ annual billable hours (carries the
+  owner's pay). Pass `breakEven`, never `total` (total adds business profit, which auto prices add
+  per hour). The cost floor (`hourlyFloor`) is deleted; Minimum Job Price is break-even: direct
+  cost + hours × income floor (pricing-floor PF1). Auto price = floor × (1 + profit) × (1 + card
+  fee), rounded up once; badges compare against the bare floor. `mu` is never auto-written, except auto prices from service-rate-tiers, which
   move the card knowingly. Saved estimate lines keep their own price snapshot; "Update to current
   rates" is explicit.
 - "Target Profit Margin" is labelled **Target Markup** (it always was a markup; the DB column keeps
@@ -77,6 +79,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   into each item's price rounded up to the dollar, never shown to the client (reasons are in the
   owner-only Cost Breakdown), are income (taxed, no extra hours, no change to floors or Minimum Job
   Price). Estimates snapshot multipliers, stacking mode and each day's status.
+- **No card surcharges, ever** (eftpos, Mastercard, Visa, Amex, PayPal no-surcharge rules from
+  2026-10-01). Card fees are recovered through prices that every client pays, never added only to
+  card-paid invoices, whatever it is called. "Non-taxable" on a tax invoice means only GST-free or
+  input-taxed: on-charged crew and purchases are GST-taxable pass-throughs (out of income, not out of GST).
 - Invoice totals live in `calc.js` (`depositAmount`, `extrasTotals`, `finalInvoiceTotals`,
   `singleInvoiceTotals`). `accepted` counts as won. Extras charge GST as the job did.
 

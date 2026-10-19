@@ -24,7 +24,6 @@ const {
   fyLabel,
   fyBounds,
   fyDisplay,
-  hourlyFloor,
   priceExGst,
   serviceFloorComparison,
   lineDef,
@@ -422,8 +421,8 @@ test('an unusable hoursPerUnit falls back to 1, never to 0', () => {
   assert.equal(t.totalHours, 8); // four rows × qty 2 × the fallback of 1
 });
 
-test('a zeroed hoursPerUnit would silently remove the job from the overhead floor', () => {
-  const rate = 25; // the $25/hr cost basis from the overhead fixture below
+test('a zeroed hoursPerUnit would silently remove the job from the Minimum Job Price', () => {
+  const rate = 25; // a $25/hr income floor
   const card = {
     taxSetAsideRate: 0.35,
     travelRows: [],
@@ -435,9 +434,9 @@ test('a zeroed hoursPerUnit would silently remove the job from the overhead floo
   };
   const t = computeTotals({ prod: [{ name: 'Shoot', qty: 2 }] }, card, settingsWith({ registered: false }));
 
-  // 2 hours of overhead recovered, not none. Had the fallback been 0, the floor
-  // would equal the direct costs plus margin and read as a real answer.
-  assert.equal(minimumJobPrice(0, t.totalHours, rate, 0), 50);
+  // 2 hours priced, not none. Had the fallback been 0, the minimum would equal
+  // the direct costs alone and read as a real answer.
+  assert.equal(minimumJobPrice(0, t.totalHours, rate), 50);
 });
 
 test('hoursPerUnit is fractional-safe: a half day is 4 hours, not half an hour', () => {
@@ -778,58 +777,48 @@ test('the legacy weekly figure alone gives no capacity, and never outvotes the f
   );
 });
 
-test('minimum job price covers direct costs, overhead allocation and markup', () => {
-  // The JOB fixture above, priced against the cost basis: its direct costs
-  // ($1520 — pass-throughs plus what the resold travel cost) at cost, plus its
-  // 14 hours' share of overhead (14 × $25 = $350) marked up 25%.
-  // 1520 + 350 × 1.25 = 1957.50.
+test('minimum job price is break-even: direct costs plus the hours at the income floor', () => {
+  // The JOB fixture above, at a $100/hr income floor: its direct costs ($1520
+  // — pass-throughs plus what the resold travel cost) at cost, plus its 14
+  // hours at the floor. 1520 + 14 × 100 = 2920. No profit and no card fee in
+  // it (pricing-floor P5): both are on top, in the auto prices.
   const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
-  assert.equal(minimumJobPrice(t.directJobCost, t.totalHours, 25, 25), 1957.5);
+  assert.equal(minimumJobPrice(t.directJobCost, t.totalHours, 100), 2920);
 });
 
-test('pass-through costs carry no markup in the minimum job price', () => {
+test('pass-through costs are carried at cost in the minimum job price', () => {
   // The audit's case: $10,000 of crew billed at cost plus 8 hours at $150.
-  // The markup used to apply to the crew too, and this well-priced job read as
-  // under its floor ($12,651.20 against $11,200).
+  // A markup used to apply to the crew too, and this well-priced job read as
+  // under its floor ($12,651.20 against $11,200). At a $120/hr floor it is
+  // 10,000 + 8 × 120 = 10,960, and it clears it.
   const card = { labourSections: [{ id: 'a', rows: [{ name: 'x', mu: 150 }] }], travelRows: [], taxSetAsideRate: 0.35 };
   const t = computeTotals({ a: [{ name: 'x', qty: 8 }], crew: [{ days: 1, cost: 10000 }] }, card, DEFAULT_SETTINGS);
-  const floor = minimumJobPrice(t.directJobCost, t.totalHours, 15.12, 25);
-  assert.equal(floor, 10151.2);
+  const floor = minimumJobPrice(t.directJobCost, t.totalHours, 120);
+  assert.equal(floor, 10960);
   assert.ok(t.clientPriceExGst > floor);
 });
 
-test('a 0% target markup is a real answer: break even on the job', () => {
-  assert.equal(minimumJobPrice(1560, 14, 25, 0), 1910);
-});
-
-test('the markup is a percent, not a fraction', () => {
-  // The units trap: taxSetAsideRate is a fraction (0.35 = 35%) while markupPct
-  // is a percent (25 = 25%). Passing 0.25 here must mean a quarter of one
-  // percent, not a quarter.
-  assert.equal(minimumJobPrice(1560, 14, 25, 0.25), 1910.88);
-});
-
-test('no cost basis yet means no minimum job price, not a floor missing overhead', () => {
-  // A number computed with the overhead term silently dropped would read as the
+test('no income floor yet means no minimum job price, not one missing the hours', () => {
+  // A number computed with the hours term silently dropped would read as the
   // real minimum while being too low by exactly the part that matters here.
-  for (const rate of [null, undefined, 0, -25, 'NaN']) {
-    assert.equal(minimumJobPrice(1560, 14, rate, 25), null);
+  for (const floor of [null, undefined, '', 0, -25, 'NaN']) {
+    assert.equal(minimumJobPrice(1560, 14, floor), null, String(floor));
   }
-  assert.equal(minimumJobPrice(1560, 14, 25, null), null);
-  assert.equal(minimumJobPrice(1560, 14, 25, -10), null);
+  // No hours is a real answer: the direct costs alone.
+  assert.equal(minimumJobPrice(1560, 0, 100), 1560);
 });
 
 test('the minimum job price never moves what the client is billed', () => {
-  // Advisory only. The editor's toggle shows and hides this line; nothing in
+  // Advisory only. The editor shows and hides this line; nothing in
   // computeTotals reads it, so the quoted price cannot follow it.
   const t = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
-  const floor = minimumJobPrice(t.directJobCost, t.totalHours, 25, 25);
+  const floor = minimumJobPrice(t.directJobCost, t.totalHours, 100);
   const again = computeTotals(JOB, JOB_PRICING, DEFAULT_SETTINGS);
 
-  // This job quotes $3560 against a $1957.50 floor — it clears it. The point is
-  // that the two numbers are independent: computing the floor left every
+  // This job quotes $3560 against a $2920 minimum — it clears it. The point is
+  // that the two numbers are independent: computing the minimum left every
   // client-facing figure byte-for-byte where it was.
-  assert.equal(floor, 1957.5);
+  assert.equal(floor, 2920);
   assert.equal(again.clientPriceExGst, 3560);
   assert.deepEqual(again, t);
 });
@@ -1729,25 +1718,21 @@ test('the FY boundary does not move with the host timezone', () => {
 /**
  * FLOORS AND THE RATE-CARD COMPARISON — the Dashboard's arithmetic.
  *
- * $25/hr of overhead at a 25% margin is a $31.25 hourly floor throughout.
+ * One floor since pricing-floor P6: the income floor. The cost floor
+ * (hourlyFloor, overhead × markup, no pay) is gone from both copies.
  */
-test('the hourly floor is the overhead rate plus the margin, as a percent', () => {
-  assert.equal(hourlyFloor(25, 25), 31.25);
-  // 0% is break-even, a real answer; a missing margin or rate is not.
-  assert.equal(hourlyFloor(25, 0), 25);
-  assert.equal(hourlyFloor(25, null), null);
-  assert.equal(hourlyFloor(25, undefined), null);
-  assert.equal(hourlyFloor(null, 25), null);
-  assert.equal(hourlyFloor(0, 25), null);
-  // A margin of 0.25 is a quarter of one percent, not a quarter.
-  assert.equal(hourlyFloor(25, 0.25), 25.06);
+test('the cost floor is gone, in both copies of the money model', () => {
+  assert.equal(require('../src/calc').hourlyFloor, undefined);
+  const web = readFileSync(join(__dirname, '..', '..', 'web', 'js', 'calc.js'), 'utf8');
+  assert.ok(!/function hourlyFloor/.test(web));
 });
 
-test('the hourly floor and Minimum Job Price agree about what an hour is worth', () => {
-  // Ten hours with no direct costs: the editor's floor must be exactly ten of
-  // the Dashboard's hourly floors, or the two screens tell different stories.
-  assert.equal(minimumJobPrice(0, 10, 25, 25), round2(10 * hourlyFloor(25, 25)));
-  assert.equal(minimumJobPrice(0, 7.5, 13.51, 30), round2(7.5 * 13.51 * 1.3));
+test('Minimum Job Price and the Dashboard floor tiles agree about what an hour is worth', () => {
+  // Ten hours with no direct costs: the editor's minimum must be exactly ten
+  // of the Dashboard's hourly income floors (a tile is floor × hours), or the
+  // two screens tell different stories.
+  assert.equal(minimumJobPrice(0, 10, 143.75), round2(10 * 143.75));
+  assert.equal(minimumJobPrice(0, 7.5, 93.43), round2(7.5 * 93.43));
 });
 
 test('a GST-inclusive rate card is compared ex-GST', () => {
@@ -1926,8 +1911,9 @@ test('on a GST-inclusive card, $1,100 of crew typed in is $1,000 of direct cost'
   assert.equal(t.expenseTotal, 1100);
   assert.equal(t.totalIncGst, 2200);
   assert.equal(t.clientPriceExGst, 2000);
-  // Minimum Job Price's direct-cost term is the ex-GST figure too.
-  assert.equal(minimumJobPrice(t.directJobCost, t.totalHours, 11.5, 25), 1143.75);
+  // Minimum Job Price's direct-cost term is the ex-GST figure too: it is the
+  // income-floor figure above, since the two are one line now (P5).
+  assert.equal(minimumJobPrice(t.directJobCost, t.totalHours, 64.27), incomeFloorNeed(t, 64.27));
 });
 
 test('the same job unregistered, GST-exclusive or GST-free keeps its costs as entered', () => {
@@ -2219,9 +2205,9 @@ test('120 km at $0.90 is $108 at cost: a direct cost, no income, no hours, no ta
     [after.incomeExGst, after.totalHours, after.taxSetAside, after.estTakeHome, after.overheadShare],
     [before.incomeExGst, before.totalHours, before.taxSetAside, before.estTakeHome, before.overheadShare]
   );
-  // Minimum Job Price carries it at cost, with no markup on it.
-  assert.equal(round2(minimumJobPrice(after.directJobCost, after.totalHours, 11.5, 25) -
-    minimumJobPrice(before.directJobCost, before.totalHours, 11.5, 25)), 108);
+  // Minimum Job Price carries it at cost, with nothing on it.
+  assert.equal(round2(minimumJobPrice(after.directJobCost, after.totalHours, 11.5) -
+    minimumJobPrice(before.directJobCost, before.totalHours, 11.5)), 108);
 });
 
 test('on a GST-inclusive card the km line bills the figure plus GST and costs exactly the figure', () => {
@@ -3467,8 +3453,8 @@ const FX6 = { ownKit: true, assetId: 7, assetName: 'FX6 body', item: 'FX6 body',
 // K-D6's worked example as the brief writes it: 8 hrs at $110 plus a $300 kit line.
 const KIT_JOB = { prod: [{ name: 'Video Capture', qty: 8, mu: 110 }], equip: [FX6] };
 const unflagged = (rows) => ({ ...rows, equip: rows.equip.map(({ ownKit, ...line }) => line) });
-// An overhead rate and markup that make the job's overhead term $115: 8 × 12.5 × 1.15.
-const KIT_MJP = (t) => minimumJobPrice(t.directJobCost, t.totalHours, 12.5, 15);
+// An income floor that makes the job's hours term $115: 8 × 14.375.
+const KIT_MJP = (t) => minimumJobPrice(t.directJobCost, t.totalHours, 14.375);
 
 test('own kit: K-D6\'s worked example — client price 1,180, income 1,180, tax 354.00, Minimum Job Price 115.00', () => {
   const t = computeTotals(KIT_JOB, KIT_CARD, KIT_UNREG);
@@ -3627,4 +3613,275 @@ test('equipLineName: kit is "Kit Hire - <asset>" from its snapshot; a vendor lin
   assert.equal(equipLineName({ vendor: 'Grip Co', item: '  ' }), 'Grip Co');
   assert.equal(equipLineName({ days: 1, cost: 50 }), '');
   assert.equal(equipLineName(null), '');
+});
+
+/* ── PRICING FLOOR (pricing-floor PF1, 2026-10-20; decisions P1–P7) ──────────
+   Utilisation in capacity, one break-even Minimum Job Price, the markup as
+   business profit in the annual target, and the card fee in every auto price.
+   The reference figures are the brief's, on its defaults: $30k business cost,
+   $90k net, 12% super, 2% bad debt, the FY2026-27 scale above, 8 hrs worked a
+   day × 222 days × 65%. */
+
+const PF_CAPACITY = { ...REFERENCE_CAPACITY, utilisationPct: 65 };
+const PF_OPTS = { superPct: 12, badDebtPct: 2, profitPct: 10 };
+const PF_CARD = {
+  serviceDay: { fullHours: 8, halfHours: 4 },
+  labourSections: [{
+    id: 'prod',
+    label: 'Production',
+    rows: [
+      { id: 'vc', name: 'Video Capture', rate: 0, prices: { hour: null, half: null, full: null } },
+      { id: 'ed', name: 'Editing (typed)', rate: 0, prices: { hour: 140, half: null, full: 1000 } },
+    ],
+  }],
+  travelRows: [
+    { id: 'tl', name: 'Transport & Logistics Hrs', rate: 0, mu: null, ownTime: true },
+    { id: 'km', name: 'Vehicle — per km', rate: 0, mu: null, perKm: true, unit: 'km' },
+    { id: 'fl', name: 'Flights', rate: 0, mu: 400, directCost: true },
+    { id: 'tp', name: 'Tolls & Parking', rate: 0, mu: 50 },
+  ],
+  taxSetAsideRate: 0.3,
+};
+const pfCtx = (extra) => ({ floorPerHour: 143.75, markupPct: 10, settings: SU_NO_GST, vehicleCostPerKm: 0.9, ...extra });
+
+test('pricing floor: the reference figures, end to end', () => {
+  const hours = annualBillableHours(PF_CAPACITY);
+  assert.equal(hours, 1154.4); // 222 × 8 × 65%
+
+  const r = revenueTarget(30000, 90000, TAX_YEAR, PF_OPTS);
+  assert.equal(r.breakEven, 165939.97);
+  assert.equal(r.businessProfit, 16594); // 10% of break-even, not grossed for bad debt
+  assert.equal(r.total, 182533.97);
+  // The printed parts add up: cost + pay + super + bad debt = break-even, and
+  // break-even + profit = total, each to the cent.
+  assert.equal(round2(r.businessCost + r.grossPay + r.superContribution + r.badDebtAllowance), r.breakEven);
+  assert.equal(round2(r.breakEven + r.businessProfit), r.total);
+
+  const floor = incomeFloorPerHour(r.breakEven, hours);
+  assert.equal(floor, 143.75);
+  assert.equal(overheadRatePerHour(30000, hours), 25.99);
+
+  // Auto hourly and full day: floor × 1.1, rounded up once; the day is 8 × it.
+  assert.equal(suggestedPrice(floor, 1, 10, SU_NO_GST), 159);
+  assert.equal(suggestedPrice(floor, 1, 10, SU_NO_GST, 1.65), 161); // 143.75 × 1.1 × 1.0165 = 160.73
+  const vc = PF_CARD.labourSections[0].rows[0];
+  assert.equal(unitDef(vc, 'hour', PF_CARD, pfCtx()).mu, 159);
+  assert.equal(unitDef(vc, 'full', PF_CARD, pfCtx()).mu, 1272);
+  assert.equal(unitDef(vc, 'hour', PF_CARD, pfCtx({ cardFeePct: 1.65 })).mu, 161);
+  assert.equal(unitDef(vc, 'full', PF_CARD, pfCtx({ cardFeePct: 1.65 })).mu, 1288);
+
+  // Minimum Job Price for 8 hours and no costs: break-even, no profit, no fee.
+  assert.equal(minimumJobPrice(0, 8, floor), 1150);
+
+  // A full card at capacity bills the target, to whole-dollar rounding of the
+  // hourly price: never under it, and over by less than $1 an hour.
+  const fullCard = round2(hours * 159);
+  assert.equal(fullCard, 183549.6);
+  assert.ok(fullCard >= r.total && fullCard - r.total < hours);
+});
+
+test('pricing floor: the floor divides break-even, never the total with profit', () => {
+  const r = revenueTarget(30000, 90000, TAX_YEAR, PF_OPTS);
+  const hours = annualBillableHours(PF_CAPACITY);
+  assert.equal(incomeFloorPerHour(r.breakEven, hours), 143.75);
+  // The mistake this guards against: profit in the floor, then again on top.
+  assert.equal(incomeFloorPerHour(r.total, hours), 158.12);
+  // No profit asked for: total is break-even, exactly as before v18.
+  const plain = revenueTarget(30000, 90000, TAX_YEAR, { superPct: 12, badDebtPct: 2 });
+  assert.equal(plain.businessProfit, 0);
+  assert.equal(plain.total, plain.breakEven);
+  assert.equal(plain.breakEven, r.breakEven);
+  assert.equal(targetAnnualRevenue(30000, 90000, TAX_YEAR, PF_OPTS), r.total);
+});
+
+test('pricing floor: the browser feeds break-even, with profit, into the floor (web/js/data.js)', () => {
+  const vm = require('node:vm');
+  const webDir = join(__dirname, '..', '..', 'web', 'js');
+  const ctx = vm.createContext({ console });
+  vm.runInContext(readFileSync(join(webDir, 'calc.js'), 'utf8'), ctx, { filename: 'calc.js' });
+  vm.runInContext(readFileSync(join(webDir, 'data.js'), 'utf8'), ctx, { filename: 'data.js' });
+  const LSCData = vm.runInContext('LSCData', ctx);
+  const LSCCalcWeb = vm.runInContext('LSCCalc', ctx);
+  LSCData.setOverheadItems([{ cost: 30000, frequency: 'annual' }]);
+  LSCData.setDepreciationAssets([]);
+  LSCData.setTaxYear({ ...TAX_YEAR, fy: LSCCalcWeb.currentFinancialYear() });
+  LSCData.setGoals({ ...PF_CAPACITY, desiredNetIncome: 90000, superPct: 12, badDebtPct: 2, targetProfitMarginPct: 10 });
+
+  const r = LSCData.revenueTarget();
+  assert.equal(r.businessProfit, 16594); // the goals' profit reaches the target
+  assert.equal(r.total, 182533.97);
+  assert.equal(LSCData.incomeFloor(), 143.75); // ÷ break-even, not ÷ total
+  assert.equal(LSCData.overheadRate(), 25.99);
+});
+
+test('pricing floor: utilisation is a percent of hours worked; absent or null is 100%', () => {
+  // A pre-v18 goals payload has no utilisation and prices exactly as before.
+  assert.equal(annualBillableHours(REFERENCE_CAPACITY), 1776);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, utilisationPct: null }), 1776);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, utilisationPct: 100 }), 1776);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, utilisationPct: '65' }), 1154.4);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, utilisationPct: 1 }), 17.76);
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, utilisationPct: 55.5 }), 985.68);
+  // Present but unusable is a broken capacity, never a full one: a blank or
+  // out-of-range share reads as "not set up", not as every hour billed.
+  for (const bad of ['', 'abc', 0, 0.5, -10, 100.01, 150, NaN, Infinity]) {
+    assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, utilisationPct: bad }), null, String(bad));
+  }
+  // A percent, not a fraction: 0.65 is under 1% and refused, not read as 65%.
+  assert.equal(annualBillableHours({ ...REFERENCE_CAPACITY, utilisationPct: 0.65 }), null);
+});
+
+test('pricing floor: before v18, the floor and the auto prices are exactly what they were', () => {
+  // The brief's "before" column, from a pre-v18 payload (no utilisation) with
+  // the stored 25% markup and no card fee.
+  const r = revenueTarget(30000, 90000, TAX_YEAR, { superPct: 12, badDebtPct: 2 });
+  const hours = annualBillableHours(REFERENCE_CAPACITY);
+  const floor = incomeFloorPerHour(r.breakEven, hours);
+  assert.equal(floor, 93.43);
+  assert.equal(overheadRatePerHour(30000, hours), 16.89);
+  assert.equal(suggestedPrice(floor, 1, 25, SU_NO_GST), 117);
+  assert.equal(suggestedPrice(floor, 8, 25, SU_NO_GST), 935); // a day rounded on its own
+});
+
+/* suggestedPrice as it stood before the card fee (main 141c3e4), frozen, so the
+   sweep below compares against the real old answer rather than a restatement. */
+function suggestedPriceBeforeFee(floorPerHour, hours, markupPct, settings) {
+  const floor = numOrNullForTest(floorPerHour);
+  if (floor === null || floor <= 0) return null;
+  const h = numOrNullForTest(hours);
+  if (h === null || h <= 0) return null;
+  const markup = numOrNullForTest(markupPct);
+  if (markup === null || markup < 0) return null;
+  const target = floor * h * (1 + markup / 100) - 1e-8;
+  const gstCfg = (settings && settings.gst) || {};
+  if (gstCfg.registered !== true || gstCfg.pricesIncludeGst !== true) return Math.ceil(target);
+  const rate = Number(gstCfg.rate) || 0;
+  let price = Math.max(0, Math.floor(target * (1 + rate)) - 1);
+  while (price / (1 + rate) < target) price += 1;
+  return price;
+}
+function numOrNullForTest(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+test('pricing floor: no card fee prices every unit exactly as before (sweep)', () => {
+  let checked = 0;
+  for (let floor = 20; floor <= 260; floor += 3.37) {
+    const f = round2(floor);
+    for (const hours of [1, 4, 7.5, 8, 10]) {
+      for (const markup of [0, 10, 25, 33.3]) {
+        for (const settings of [SU_NO_GST, SU_GST_EXC, SU_GST_INC]) {
+          const before = suggestedPriceBeforeFee(f, hours, markup, settings);
+          for (const fee of [undefined, null, '', 0, '0']) {
+            assert.equal(suggestedPrice(f, hours, markup, settings, fee), before, `${f} ${hours} ${markup} ${fee}`);
+            checked += 1;
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 20000);
+
+  // And a whole estimate snapshotted from a card with no card fee totals the same.
+  const vc = PF_CARD.labourSections[0].rows[0];
+  const tl = PF_CARD.travelRows[0];
+  const job = (ctx) => ({
+    prod: [{ name: 'Video Capture', qty: 2, ...lineSnapshot(unitDef(vc, 'full', PF_CARD, ctx)) }],
+    travel: [{ name: tl.name, qty: 3, ...lineSnapshot(travelRowDef(tl, ctx)) }],
+  });
+  const base = computeTotals(job(pfCtx()), PF_CARD, SU_NO_GST);
+  for (const fee of [null, '', 0]) {
+    assert.deepEqual(computeTotals(job(pfCtx({ cardFeePct: fee })), PF_CARD, SU_NO_GST), base, String(fee));
+  }
+});
+
+test('pricing floor: the card fee is in every auto price, rounded once, and never a typed one', () => {
+  const [vc, ed] = PF_CARD.labourSections[0].rows;
+  const fee = pfCtx({ cardFeePct: 1.65 });
+  // Auto units take it; a typed hour or day never moves, and an auto day on a
+  // typed hour follows the typed hour, not the fee.
+  assert.equal(unitDef(vc, 'half', PF_CARD, fee).mu, 644); // 4 × 161
+  assert.equal(unitDef(ed, 'hour', PF_CARD, fee).mu, 140);
+  assert.equal(unitDef(ed, 'full', PF_CARD, fee).mu, 1000);
+  assert.equal(unitDef(ed, 'half', PF_CARD, fee).mu, 560); // 4 × typed 140
+  // Rounded once on floor × profit × fee: 1.1 × 1.0165 together, not ceil(ceil(…)).
+  assert.equal(suggestedPrice(100, 1, 10, SU_NO_GST, 1.65), 112); // 111.815 → 112
+  assert.equal(suggestedPrice(100, 1, 0, SU_NO_GST, 1.65), 102); // 101.65 → 102
+  // GST-inclusive card: the fee is inside the ex-GST part.
+  assert.equal(suggestedPrice(143.75, 1, 10, SU_GST_INC, 1.65), 177); // 160.73 × 1.1 = 176.81
+  // A string percent works; a negative fee is broken, not a discount.
+  assert.equal(suggestedPrice(143.75, 1, 10, SU_NO_GST, '1.65'), 161);
+  assert.equal(suggestedPrice(143.75, 1, 10, SU_NO_GST, -1), null);
+  assert.equal(unitDef(vc, 'hour', PF_CARD, pfCtx({ cardFeePct: -1 })).mu, null);
+});
+
+test('pricing floor: own-time travel takes the card fee but not profit; the car and pass-throughs take neither', () => {
+  const [tl, km, fl, tp] = PF_CARD.travelRows;
+  for (const extra of [{}, { cardFeePct: 1.65 }, { cardFeePct: 10 }]) {
+    const ctx = pfCtx(extra);
+    // Own time: the floor × the fee, no profit, whatever markupPct says.
+    assert.equal(travelRowDef(tl, ctx).mu, suggestedPrice(143.75, 1, 0, SU_NO_GST, extra.cardFeePct));
+    // The car is at cost, and Direct and resold rows keep their typed price.
+    assert.equal(travelRowDef(km, ctx).mu, 0.9);
+    assert.equal(travelRowDef(fl, ctx).mu, 400);
+    assert.equal(travelRowDef(tp, ctx).mu, 50);
+  }
+  assert.equal(travelRowDef(tl, pfCtx()).mu, 144); // 143.75 up
+  assert.equal(travelRowDef(tl, pfCtx({ cardFeePct: 1.65 })).mu, 147); // 146.12 up
+  assert.equal(travelRowDef(tl, pfCtx({ markupPct: 50 })).mu, 144);
+
+  // So on a job, the fee moves the own-time line and nothing passed through.
+  const job = (ctx) => ({
+    travel: [tl, km, fl, tp].map((row) => ({ name: row.name, qty: 2, ...lineSnapshot(travelRowDef(row, ctx)) })),
+    crew: [{ days: 1, cost: 1000 }],
+    equip: [{ item: 'Lens', vendor: 'Hire Co', days: 1, cost: 200 }],
+  });
+  const without = computeTotals(job(pfCtx()), PF_CARD, SU_NO_GST);
+  const withFee = computeTotals(job(pfCtx({ cardFeePct: 10 })), PF_CARD, SU_NO_GST);
+  assert.equal(round2(withFee.clientPriceExGst - without.clientPriceExGst), round2(2 * (159 - 144)));
+  assert.equal(withFee.directJobCost, without.directJobCost);
+  assert.equal(withFee.passThroughCost, without.passThroughCost);
+});
+
+test('pricing floor: rate-card badges stay against the bare income floor', () => {
+  const ctx = pfCtx({ cardFeePct: 1.65 });
+  const card = {
+    ...PF_CARD,
+    labourSections: [{ id: 'prod', label: 'Production', rows: [
+      PF_CARD.labourSections[0].rows[0],
+      // Between the floor and floor × 1.1: not badged (profit is not a floor).
+      { id: 'mid', name: 'Mid', rate: 0, prices: { hour: 150, half: null, full: null } },
+      { id: 'low', name: 'Low', rate: 0, prices: { hour: 140, half: null, full: null } },
+    ] }],
+  };
+  const [auto, mid, low] = serviceFloorComparison(card, SU_NO_GST, 143.75, ctx);
+  assert.equal(auto.units.hour.mu, 161); // priced with the fee
+  assert.equal(auto.units.hour.floor, 143.75); // compared without it
+  assert.equal(auto.units.full.floor, 1150);
+  assert.equal(auto.units.hour.belowFloor, false);
+  assert.equal(mid.units.hour.belowFloor, false);
+  assert.equal(low.units.hour.belowFloor, true);
+  assert.equal(low.units.hour.gap, 3.75);
+
+  const [own] = travelFloorComparison(card, SU_NO_GST, 143.75, ctx);
+  assert.equal(own.units.hour.mu, 147);
+  assert.equal(own.units.hour.floor, 143.75);
+  assert.equal(own.units.hour.belowFloor, false);
+  // Without a ctx the travel comparison prices with no fee, as before.
+  assert.equal(travelFloorComparison(card, SU_NO_GST, 143.75)[0].units.hour.mu, 144);
+});
+
+test('pricing floor: the post-ratio readout measures hours-worked days against utilised capacity', () => {
+  // 1,154.4 ÷ 12 = 96.2 hrs a month; a shoot or edit day is 8 hrs worked.
+  assert.deepEqual(postRatioReadout(PF_CAPACITY, 6, 1.5), {
+    monthlyHours: 96.2,
+    dayHours: 8,
+    shootHours: 48,
+    postHours: 72,
+    unsoldHours: -23.8, // over-subscribed once admin is counted
+    maxShootDays: 4.8, // 96.2 ÷ 20 = 4.81, floored
+  });
+  assert.equal(postRatioReadout(PF_CAPACITY, 2, 1).unsoldHours, 64.2);
 });
