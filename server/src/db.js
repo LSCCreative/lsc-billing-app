@@ -954,6 +954,47 @@ const MIGRATIONS = [
       );
     },
   },
+  {
+    version: 19,
+    name: 'deliverable types: a multiplier on each post service',
+    up(db) {
+      // .design/post-multipliers/ PM2 (decisions G4, G5). The card only: no
+      // table changes.
+      //
+      // Each Deliverable Type's services, bare Post-Production row names before
+      // v19, become `{ name, multiplier: 0 }` (G5: the owner re-enters every
+      // multiplier; a service added from now on starts at 1×, on screen), and
+      // the type-wide `multiplier` goes (G4). calc.js typeServices is the one
+      // reader of the shape, so it makes the new list: a name reads as 0×, an
+      // entry that is neither a name nor a named object is no service. Every
+      // other field of the card is left exactly as it was.
+      //
+      // Saved estimates are NOT touched (G9): a deliverable keeps its snapshot
+      // `multiplier` and its post lines carry no `postMultiplier`, so postPlan
+      // recommends what it did before, and a line bills its own qty as ever.
+      //
+      // Safe to run twice: a type already in the new shape reads back as itself.
+      const row = db.prepare('SELECT data_json FROM pricing WHERE id = 1').get();
+      if (!row) return; // a fresh database takes DEFAULT_PRICING, which has no types
+      const card = JSON.parse(row.data_json);
+      if (!Array.isArray(card.deliverableTypes) || !card.deliverableTypes.length) return;
+
+      const { typeServices } = require('./calc');
+      let services = 0;
+      card.deliverableTypes = card.deliverableTypes.map((t) => {
+        if (!t || typeof t !== 'object' || Array.isArray(t)) return t;
+        const { multiplier: _dropped, ...rest } = t;
+        const list = typeServices(t);
+        services += list.length;
+        return { ...rest, services: list };
+      });
+      db.prepare('UPDATE pricing SET data_json = ?, updated_at = ? WHERE id = 1').run(JSON.stringify(card), nowIso());
+      console.log(
+        `[db] v19: ${card.deliverableTypes.length} deliverable type(s), ${services} post service(s) ` +
+        'now at 0× each; the type multiplier is gone'
+      );
+    },
+  },
 ];
 
 /**

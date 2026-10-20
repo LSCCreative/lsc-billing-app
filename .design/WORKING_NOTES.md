@@ -108,6 +108,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   (`{ name, multiplier }`; an old bare name reads as 0×) and its total through `typePostRate`. `postPlan`
   recommends each post line from its own `postMultiplier`, rounded up per line, never per deliverable; a
   deliverable none of whose lines carries one plans from its old `multiplier` (G9), so old estimates don't move.
+  The card refuses a bare-name service or a type `multiplier` (v19); `postMultiplier` (≥ 0) and `follows`
+  (flag) live only on `post` lines (days.js `postLineProblem`) and stay off every client route and PDF.
 - Invoice totals live in `calc.js` (`depositAmount`, `extrasTotals`, `finalInvoiceTotals`,
   `singleInvoiceTotals`). `accepted` counts as won. Extras charge GST as the job did.
 

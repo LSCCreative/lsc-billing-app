@@ -87,21 +87,34 @@ function pricingProblem(body) {
 }
 
 /**
- * The card's Deliverable Types (production-booking B2-1, D91): a list of
- * `{ id, name, description, services: [post row name…], multiplier }`. Only
- * what the planner would otherwise have to guess at is checked: an id to tag
- * deliverables by, services as names, and a multiplier that is a real number
- * of capture hours, not below 0 (calc.js postPlan reads it). A service no
- * longer on the card is allowed; the editor skips it (the IA's B2 data model).
+ * The card's Deliverable Types (production-booking B2-1, D91; per-service
+ * multipliers since post-multipliers PM2, v19): a list of
+ * `{ id, name, description, services: [{ name, multiplier }…] }`. Only what
+ * the planner would otherwise have to guess at is checked: an id to tag
+ * deliverables by, and each service a post row's name with its multiplier, a
+ * real number of post hours per capture hour, not below 0 and to at most two
+ * decimals (what the Rate Card can type; calc.js typeServices and postPlan
+ * read it). A service no longer on the card is allowed; the editor skips it
+ * (the IA's B2 data model).
+ *
+ * The shape before v19 is refused: a service as a bare name, or a type-wide
+ * `multiplier`. A build that still writes it is refused first as
+ * pricing_shape_outdated (calc.js PRICING_SHAPE); this is the backstop.
  * @returns {boolean}
  */
+const twoDecimals = (n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+function serviceOk(s) {
+  return s && typeof s === 'object' && !Array.isArray(s) &&
+    typeof s.name === 'string' &&
+    typeof s.multiplier === 'number' && Number.isFinite(s.multiplier) && s.multiplier >= 0 && twoDecimals(s.multiplier);
+}
 function deliverableTypesOk(types) {
   if (!Array.isArray(types)) return false;
   return types.every((t) =>
     t && typeof t === 'object' && !Array.isArray(t) &&
     typeof t.id === 'string' && t.id !== '' &&
-    (t.services === undefined || (Array.isArray(t.services) && t.services.every((n) => typeof n === 'string'))) &&
-    typeof t.multiplier === 'number' && Number.isFinite(t.multiplier) && t.multiplier >= 0
+    (t.services === undefined || (Array.isArray(t.services) && t.services.every(serviceOk))) &&
+    t.multiplier === undefined
   );
 }
 

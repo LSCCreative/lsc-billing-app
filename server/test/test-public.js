@@ -1244,3 +1244,30 @@ test('invoice page: an invoice from the accepted snapshot lists the kit line the
   assert.doesNotMatch(JSON.stringify(inv), KIT_LEAK);
   assert.doesNotMatch(JSON.stringify(inv), FORBIDDEN);
 });
+
+// ── A post line's planner fields stay the owner's (post-multipliers PM2) ────
+
+const PLANNED_LEAK = /postMultiplier|follows|multiplier|typeId|dt_brand/i;
+
+test('client and invoice pages: a planned post line prints as any edit line; its multiplier and follow flag never show (PM2)', async () => {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify(INV_SETTINGS) });
+  const est = await shoot({ activeRows: {
+    deliverables: [{ id: 'dl1', name: 'Brand film', format: '16:9', duration: '2–3 min', qty: 1, typeId: 'dt_brand', multiplier: 2.5 }],
+    post: [capture(null, { name: 'Edit', mu: 900, deliverableId: 'dl1', postMultiplier: 2, follows: true }),
+      capture(null, { name: 'Grade', mu: 900, deliverableId: 'dl1', postMultiplier: 0.5, follows: false })],
+  } });
+  assert.equal(est.activeRows.post[0].postMultiplier, 2, 'saved with it');
+  const { token } = await sent(est);
+  const r = await pub(token);
+  assert.equal(r.status, 200);
+  const items = r.body.estimate.sections.flatMap((s) => s.items.map((it) => it.name));
+  assert.ok(items.includes('Edit') && items.includes('Grade'), JSON.stringify(items));
+  assert.doesNotMatch(JSON.stringify(r.body), PLANNED_LEAK);
+  const view = db.prepare('SELECT client_view_json FROM estimate_versions WHERE estimate_id = ?').get(est.id);
+  assert.doesNotMatch(view.client_view_json, PLANNED_LEAK);
+
+  const accepted = await owner(`/api/projects/${est.projectId}/accept`, { invoicing: 'single' });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+  const inv = (await pubInv(await live(accepted.body.invoices.find((i) => i.kind === 'single')))).body.invoice;
+  assert.doesNotMatch(JSON.stringify(inv), PLANNED_LEAK);
+});

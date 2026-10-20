@@ -6,7 +6,7 @@ const { readPricing, readSettings, sectionLabelsFor, readOverheadRate, negativeL
 const { loadEstimate } = require('../estimate');
 const { buildCallSheetHtml, callSheetFilename, renderPdfBuffer } = require('../pdf');
 const {
-  readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, lineDeliverableProblem, kitLineProblem,
+  readDays, readDaysByEstimate, readHolidays, parseDays, lineDayProblem, lineDeliverableProblem, postLineProblem, kitLineProblem,
   dayIdTakenElsewhere,
   lockedDay, replaceDays, applyTripLines,
 } = require('../days');
@@ -98,7 +98,7 @@ function prepareWrite(db, body, existing) {
     days = parsed.days;
   }
   const lineProblem = lineDayProblem(body.activeRows, days) || lineDeliverableProblem(body.activeRows) ||
-    kitLineProblem(body.activeRows);
+    postLineProblem(body.activeRows) || kitLineProblem(body.activeRows);
   if (lineProblem) return { status: 400, body: { error: lineProblem } };
   const taken = dayIdTakenElsewhere(db, estimateId, days);
   if (taken) return { status: 400, body: { error: 'day_id_taken', dayId: taken } };

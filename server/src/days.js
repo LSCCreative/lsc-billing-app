@@ -388,6 +388,37 @@ function lineDeliverableProblem(activeRows) {
   return null;
 }
 
+/**
+ * A post line's planner fields (post-multipliers PM2, G2, G8): `postMultiplier`,
+ * the snapshot of its service's multiplier when its type was picked, and
+ * `follows`, whether the editor still fills its hours from capture. calc.js
+ * postPlan turns the multiplier into hours the line bills until the owner
+ * types over them, so it is checked like a price: a finite number, not below
+ * 0, and `follows` a flag. Both sit only on a `post` line: anywhere else they
+ * would mean nothing, and a line that looked planned would not be. Absent or
+ * null is a line with neither, as every line saved before v19 is.
+ * @returns {string|null} an error code.
+ */
+function postLineProblem(activeRows) {
+  const rows = activeRows || {};
+  const given = (line, f) => line[f] !== undefined && line[f] !== null;
+  for (const key of Object.keys(rows)) {
+    if (!Array.isArray(rows[key])) continue;
+    for (const line of rows[key]) {
+      if (!line || typeof line !== 'object') continue;
+      const m = given(line, 'postMultiplier');
+      const f = given(line, 'follows');
+      if (!m && !f) continue;
+      if (key !== 'post') return 'line_post_multiplier_invalid';
+      if (m && !(typeof line.postMultiplier === 'number' && Number.isFinite(line.postMultiplier) && line.postMultiplier >= 0)) {
+        return 'line_post_multiplier_invalid';
+      }
+      if (f && typeof line.follows !== 'boolean') return 'line_post_multiplier_invalid';
+    }
+  }
+  return null;
+}
+
 /* An asset's id as db.js newId makes it ("da_1a2b3c4d"), kept loose. */
 const ASSET_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_ASSET_NAME = 200;
@@ -525,6 +556,7 @@ module.exports = {
   lineDayProblem,
   applyTripLines,
   lineDeliverableProblem,
+  postLineProblem,
   kitLineProblem,
   dayIdTakenElsewhere,
   lockedDay,

@@ -817,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v18', () => {
-  assert.equal(LATEST_VERSION, 18);
+test('the schema knows it is at v19', () => {
+  assert.equal(LATEST_VERSION, 19);
 });
 
 /**
@@ -1430,7 +1430,8 @@ test('v18 moves the live row to 8 h / 65% / 10% and changes nothing else in the 
   assert.ok(!('utilisation_pct' in goalsBefore), 'v17 has no utilisation column');
   assert.ok(before.estimates.length > 5 && before.estimates.every((e) => e.totals_json), 'the fixture has priced estimates');
 
-  const result = migrate(db);
+  // To v18: v19 rewrites the card's Deliverable Types (its own tests below).
+  const result = migrate(db, { to: 18 });
   assert.deepEqual([result.from, result.to, result.applied], [17, 18, 1]);
   const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
   assert.deepEqual(
@@ -1450,7 +1451,7 @@ test('v18 moves the live row to 8 h / 65% / 10% and changes nothing else in the 
 
   // Run again: the column isn't added twice and the same values are written.
   db.prepare('DELETE FROM schema_version WHERE version >= 18').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 18 }).applied, 1);
   const again = db.prepare('SELECT * FROM goals WHERE id = 1').get();
   assert.deepEqual({ ...again, updated_at: null }, { ...g, updated_at: null });
 
@@ -1479,5 +1480,103 @@ test('v18 leaves an unset profit unset, and a fresh database starts at 65% with 
   fresh.prepare(`INSERT INTO goals (id, billable_capacity_hrs_per_week, created_at, updated_at)
     VALUES (1, 0, 'x', 'x')`).run();
   assert.equal(fresh.prepare('SELECT utilisation_pct AS u FROM goals').get().u, 65, 'P2: a new install defaults to 65');
+  fresh.close();
+});
+
+/**
+ * MIGRATION v19 — a multiplier on each post service (post-multipliers PM2;
+ * G4, G5, G9). Only the card's Deliverable Types change: each bare service
+ * name becomes `{ name, multiplier: 0 }` and the type-wide multiplier goes.
+ * Every other field of the card, and every saved estimate, is byte-identical.
+ */
+const V18_CARD = {
+  pricingShape: 'card-fee',
+  serviceDay: { fullHours: 8, halfHours: 4 },
+  labourSections: [
+    { id: 'prod', label: 'Production', rows: [{ id: 'r_cap', name: 'Video Capture', rate: 100, capture: true, prices: { hour: 140, half: null, full: 1120 } }] },
+    { id: 'post', label: 'Post-Production', rows: [
+      { id: 'r_edit', name: 'Edit', rate: 45, prices: { hour: 63, half: null, full: null } },
+      { id: 'r_grade', name: 'Grade', rate: 45, prices: { hour: 63, half: null, full: null } },
+    ] },
+  ],
+  travelRows: [{ name: 'Fuel', rate: 0, mu: 0, directCost: true }],
+  taxSetAsideRate: 0.35,
+  cardFeePct: 1.7,
+  surcharges: { shortNotice: 1.5, weekend: 1.5, afterHours: 1.25 },
+  deliverableTypes: [
+    { id: 'dt_brand', name: 'Brand Story', description: 'Hero film', services: ['Edit', 'Grade', 'Gone From The Card'], multiplier: 2.5 },
+    { id: 'dt_socials', name: 'Socials', description: '', services: [], multiplier: 0.5 },
+    { id: 'dt_bare', name: 'No services key', multiplier: 1 },
+  ],
+};
+/* A deliverable saved before v19: its snapshot multiplier, post lines tagged to
+   it with no postMultiplier. */
+const V18_ROWS = {
+  prod: [{ name: 'Video Capture', qty: 10, mu: 140, capture: true }],
+  deliverables: [{ id: 'dl1', name: 'Brand film', qty: 1, typeId: 'dt_brand', multiplier: 2.5 }],
+  post: [{ name: 'Edit', qty: 20, mu: 63, deliverableId: 'dl1' }, { name: 'Grade', qty: 5, mu: 63, deliverableId: 'dl1' }],
+};
+function v18WithTypes(card = V18_CARD) {
+  const db = v12Fixture();
+  migrate(db, { to: 18 });
+  db.prepare('INSERT INTO pricing (id, data_json, updated_at) VALUES (1, ?, ?)')
+    .run(JSON.stringify(card), '2026-10-19T00:00:00.000Z');
+  db.prepare('UPDATE estimates SET active_rows_json = ? WHERE id = ?').run(JSON.stringify(V18_ROWS), 'est_unique');
+  return db;
+}
+const storedCard = (db) => JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json);
+
+test('v19 gives every post service a 0× multiplier, drops the type multiplier, and changes nothing else', () => {
+  const db = v18WithTypes();
+  const tables = everyTableBut(db, ['pricing', 'schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(before.estimates.some((e) => e.active_rows_json === JSON.stringify(V18_ROWS)), 'the fixture has a typed deliverable');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [18, 19, 1]);
+  const card = storedCard(db);
+  assert.deepEqual(card.deliverableTypes, [
+    { id: 'dt_brand', name: 'Brand Story', description: 'Hero film',
+      services: [{ name: 'Edit', multiplier: 0 }, { name: 'Grade', multiplier: 0 }, { name: 'Gone From The Card', multiplier: 0 }] },
+    { id: 'dt_socials', name: 'Socials', description: '', services: [] },
+    { id: 'dt_bare', name: 'No services key', services: [] },
+  ], 'G5: every service at 0×, a missing one kept; G4: no type multiplier');
+  const { deliverableTypes: _a, ...rest } = card;
+  const { deliverableTypes: _b, ...restBefore } = V18_CARD;
+  assert.deepEqual(rest, restBefore, 'every other field of the card as it was');
+
+  // G9: saved estimates, days, rentals and the rest are byte-identical, and the
+  // typed deliverable plans exactly as it did: 10 h × its own 2.5 = 25 h.
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+  const { postPlan } = require('../src/calc');
+  const plan = postPlan(V18_ROWS, card);
+  assert.deepEqual(plan, postPlan(V18_ROWS, V18_CARD));
+  assert.deepEqual([plan.captureHours, plan.recommended, plan.lines], [10, 25, []]);
+
+  // Run again: a type already in the new shape reads back as itself.
+  db.prepare('DELETE FROM schema_version WHERE version >= 19').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual(storedCard(db), card);
+  db.close();
+});
+
+test('v19 keeps a multiplier already on a service, and leaves a card with no types, or no card, alone', () => {
+  // Written by a build that already had the new shape: kept, not reset to 0.
+  const mixed = { ...V18_CARD, deliverableTypes: [{ id: 'dt_m', name: 'M', services: [{ name: 'Edit', multiplier: 2 }, 'Grade'], multiplier: 3 }] };
+  const db = v18WithTypes(mixed);
+  migrate(db);
+  assert.deepEqual(storedCard(db).deliverableTypes, [{ id: 'dt_m', name: 'M', services: [{ name: 'Edit', multiplier: 2 }, { name: 'Grade', multiplier: 0 }] }]);
+  db.close();
+
+  for (const card of [{ ...V18_CARD, deliverableTypes: [] }, (({ deliverableTypes: _d, ...c }) => c)(V18_CARD)]) {
+    const none = v18WithTypes(card);
+    const row = none.prepare('SELECT * FROM pricing').get();
+    migrate(none);
+    assert.deepEqual(none.prepare('SELECT * FROM pricing').get(), row, 'not rewritten, not even its updated_at');
+    none.close();
+  }
+
+  const fresh = openDatabase(tempDbPath('v19-fresh'));
+  assert.equal(fresh.prepare('SELECT COUNT(*) AS n FROM pricing').get().n, 0, 'no card is invented');
   fresh.close();
 });

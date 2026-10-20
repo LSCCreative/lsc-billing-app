@@ -67,7 +67,10 @@ const { PRICING_SHAPE, SURCHARGE_DEFAULTS } = require('./calc');
  * DELIVERABLE TYPES (2026-10-03, production-booking B2-1). An empty list, and
  * no Capture tick on any Production row (D89, D91): which services count as
  * capture, and what each kind of deliverable needs in the edit, are the
- * user's to say.
+ * user's to say. Since v19 (post-multipliers) a type is
+ * `{ id, name, description, services: [{ name, multiplier }] }`: each post
+ * service has its own post hours per capture hour, and there is no type-wide
+ * multiplier (routes/pricing.js deliverableTypesOk, calc.js typeServices).
  */
 const DEFAULT_PRICING = {
   pricingShape: PRICING_SHAPE,

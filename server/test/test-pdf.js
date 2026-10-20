@@ -821,3 +821,29 @@ test('Cost Breakdown: a kit line is "Kit Hire - <asset>", days at its rate, and 
   assert.doesNotMatch(html, KIT_INTERNAL);
   assert.doesNotMatch(html, INTERNAL_WORDS);
 });
+
+// ── A post line's planner fields stay off every document (post-multipliers PM2) ──
+
+test('client PDF, invoice and Cost Breakdown: a planned post line prints as any edit line, nothing of its plan (PM2)', () => {
+  const est = bookedEstimate({
+    rows: {
+      deliverables: [{ id: 'dv1', name: 'Brand Story', qty: 1, typeId: 'dt_brand', multiplier: 2.5 }],
+      prod: [cap()],
+      post: [
+        { name: 'A-Roll Offline Edit', qty: 16, mu: 63, hoursPerUnit: 1, deliverableId: 'dv1', postMultiplier: 2, follows: true },
+        { name: 'Colour', qty: 4, mu: 63, hoursPerUnit: 1, deliverableId: 'dv1', postMultiplier: 0.5, follows: false },
+      ],
+    },
+    days: [],
+  });
+  const leak = /postMultiplier|follows|multiplier|per capture|typeId|dt_brand/i;
+  for (const docType of ['estimate', 'invoice']) {
+    const html = buildEstimateHtml({ ...est, docType, invoiceNumber: 'INV-PM2' }, DAY_PRICING, {});
+    assert.match(html, /A-Roll Offline Edit/, docType);
+    assert.match(html, /Colour/, docType);
+    assert.doesNotMatch(html, leak, docType);
+  }
+  const cb = buildCostBreakdownHtml(est, DAY_PRICING, {});
+  assert.match(cb, /A-Roll Offline Edit/);
+  assert.doesNotMatch(cb, leak);
+});

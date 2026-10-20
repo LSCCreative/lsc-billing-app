@@ -1680,7 +1680,7 @@ test('pricing: surcharge settings are checked when a card carries them', async (
   assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
 });
 
-test('pricing: deliverable types and Capture ticks round-trip, and a malformed one is refused (B2-1)', async () => {
+test('pricing: deliverable types and Capture ticks round-trip, and a malformed one is refused (B2-1, PM2)', async () => {
   assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
   const card = (await api('/api/pricing').then((r) => r.json())).pricing;
   // A fresh card has no types and no ticks: the user sets up their own.
@@ -1688,9 +1688,13 @@ test('pricing: deliverable types and Capture ticks round-trip, and a malformed o
   assert.ok(card.labourSections.every((s) => s.rows.every((r) => r.capture === undefined)));
 
   const ticked = card.labourSections.map((s) => s.id !== 'prod' ? s : { ...s, rows: s.rows.map((r, i) => (i < 2 ? { ...r, capture: true } : r)) });
+  // v19 (PM2): each service carries its own multiplier; there is no type multiplier.
   const types = [
-    { id: 'dt_brand', name: 'Brand Story', description: 'Hero film', services: ['Video Editor — A-Roll Offline Edit', 'Video Editor — Longform Colour'], multiplier: 2 },
-    { id: 'dt_socials', name: 'Socials', description: '', services: [], multiplier: 0.5 },
+    { id: 'dt_brand', name: 'Brand Story', description: 'Hero film', services: [
+      { name: 'Video Editor — A-Roll Offline Edit', multiplier: 2 }, { name: 'Video Editor — Longform Colour', multiplier: 0.25 },
+      { name: 'Gone From The Card', multiplier: 0 },
+    ] },
+    { id: 'dt_socials', name: 'Socials', description: '', services: [] },
   ];
   const put = async (body) => {
     const res = await api('/api/pricing', { method: 'PUT', bare: true, body: JSON.stringify({ ...card, ...body }) });
@@ -1706,13 +1710,23 @@ test('pricing: deliverable types and Capture ticks round-trip, and a malformed o
   const { deliverableTypes: _dt, ...noTypes } = card;
   assert.equal((await api('/api/pricing', { method: 'PUT', bare: true, body: JSON.stringify(noTypes) })).status, 200);
 
+  const service = (multiplier, extra) => ({ deliverableTypes: [{ ...types[0], services: [{ name: 'Edit', multiplier, ...extra }] }] });
+  for (const ok of [service(0), service(1.25), service(12)]) {
+    assert.equal((await put(ok)).status, 200, JSON.stringify(ok));
+  }
   for (const bad of [
     { deliverableTypes: {} },
-    { deliverableTypes: [{ ...types[0], multiplier: -1 }] },
-    { deliverableTypes: [{ ...types[0], multiplier: '2' }] },
     { deliverableTypes: [{ ...types[0], id: '' }] },
     { deliverableTypes: [{ ...types[0], services: 'Video Editor — Socials' }] },
+    { deliverableTypes: [{ ...types[0], services: [null] }] },
     { deliverableTypes: [null] },
+    // A service's multiplier: a number, not below 0, to at most two decimals.
+    service(-1), service('2'), service(null), service(undefined), service(NaN), service(0.125), service(1.001),
+    service(1, { name: 7 }),
+    // The shape before v19: bare names, or a type-wide multiplier.
+    { deliverableTypes: [{ ...types[0], services: ['Edit', 'Grade'] }] },
+    { deliverableTypes: [{ ...types[0], multiplier: 2 }] },
+    { deliverableTypes: [{ ...types[1], multiplier: 0.5 }] },
   ]) {
     const res = await put(bad);
     assert.equal(res.status, 400, JSON.stringify(bad));
@@ -1721,9 +1735,12 @@ test('pricing: deliverable types and Capture ticks round-trip, and a malformed o
   const flag = await put({ labourSections: card.labourSections.map((s) => ({ ...s, rows: s.rows.map((r) => ({ ...r, capture: 'yes' })) })) });
   assert.equal(flag.body.error, 'labour_capture_not_a_flag');
 
-  // A build from before B2 is refused, so its Rate Card can't drop either field.
-  const old = await put({ pricingShape: 'production-days' });
-  assert.equal(old.body.error, 'pricing_shape_outdated');
+  // A build from before B2 is refused, so its Rate Card can't drop either field;
+  // nor can one from before v19 save its types back in the old shape.
+  for (const shape of ['production-days', 'card-fee']) {
+    const old = await put({ pricingShape: shape });
+    assert.equal(old.body.error, 'pricing_shape_outdated', shape);
+  }
   assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
 });
 
@@ -1885,6 +1902,63 @@ test('estimates: rentals, on-set days and deliverable tags are checked before an
   const ok = await saveEstimate({ activeRows: { deliverables: [{ name: 'Old', qty: 1 }, dv('d1')], ...tagged('post', 'd1') } });
   assert.equal(ok.status, 201);
   await dropEstimates(ok.body.estimate.id);
+});
+
+test('estimates: a post line keeps its postMultiplier and follows through save and reload; misuse is refused (PM2)', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const bad = async (activeRows) => (await saveEstimate({ activeRows })).body.error;
+  const deliverables = [{ id: 'dl_pm', name: 'Brand Story', qty: 1, typeId: 'dt_brand' }];
+  const edit = (extra) => ({ name: 'Video Editor — A-Roll Offline Edit', qty: 2, mu: 63, hoursPerUnit: 1, deliverableId: 'dl_pm', ...extra });
+
+  // A following line, a typed one (follows false), a 0× one, and one saved before v19 (neither field).
+  // A deliverable may still carry its old snapshot multiplier.
+  const rows = {
+    deliverables: [{ ...deliverables[0], multiplier: 2.5 }],
+    post: [
+      edit({ postMultiplier: 2, follows: true }),
+      edit({ postMultiplier: 0.5, follows: false, qty: 3 }),
+      edit({ postMultiplier: 0, follows: true, qty: 0 }),
+      edit({ name: 'Sound Mix' }),
+    ],
+  };
+  const e = await saveEstimate({ activeRows: rows });
+  assert.equal(e.status, 201, JSON.stringify(e.body));
+  const id = e.body.estimate.id;
+  const reread = (await api(`/api/estimates/${id}`).then((r) => r.json())).estimate;
+  assert.deepEqual(reread.activeRows.post.map((l) => [l.postMultiplier, l.follows]),
+    [[2, true], [0.5, false], [0, true], [undefined, undefined]]);
+  assert.equal(reread.activeRows.deliverables[0].multiplier, 2.5);
+  // A line bills its own qty, planned or not: the same lines without either
+  // field total exactly the same.
+  const plain = await saveEstimate({ activeRows: { ...rows, post: rows.post.map(({ postMultiplier: _m, follows: _f, ...l }) => l) } });
+  assert.deepEqual(reread.totals, plain.body.estimate.totals);
+  assert.ok(reread.totals.clientPriceExGst > 0);
+  await dropEstimates(plain.body.estimate.id);
+
+  // A re-save keeps both fields.
+  const again = await saveEstimate({ ...reread, activeRows: reread.activeRows }, id);
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.deepEqual(again.body.estimate.activeRows.post.map((l) => l.postMultiplier), [2, 0.5, 0, undefined]);
+  await dropEstimates(id);
+
+  // Null is a line with neither.
+  const nulls = await saveEstimate({ activeRows: { deliverables, post: [edit({ postMultiplier: null, follows: null })] } });
+  assert.equal(nulls.status, 201, JSON.stringify(nulls.body));
+  await dropEstimates(nulls.body.estimate.id);
+
+  // A multiplier is a number not below 0; follows is a flag.
+  for (const extra of [{ postMultiplier: -1 }, { postMultiplier: '2' }, { postMultiplier: true }, { postMultiplier: {} },
+    { follows: 'yes' }, { follows: 1 }, { postMultiplier: 1, follows: 0 }]) {
+    assert.equal(await bad({ deliverables, post: [edit(extra)] }), 'line_post_multiplier_invalid', JSON.stringify(extra));
+  }
+  // Only a post line carries either.
+  for (const key of ['prod', 'preprod', 'additional', 'travel', 'deliverables']) {
+    for (const extra of [{ postMultiplier: 1 }, { follows: false }]) {
+      const line = { name: 'A', qty: 1, mu: 10, ...extra };
+      const activeRows = key === 'deliverables' ? { deliverables: [{ ...deliverables[0], ...extra }] } : { deliverables, [key]: [line] };
+      assert.equal(await bad(activeRows), 'line_post_multiplier_invalid', key + ' ' + JSON.stringify(extra));
+    }
+  }
 });
 
 test('calendar: a rental with one date is a one-day marker, and one with no dates is on no calendar', async () => {

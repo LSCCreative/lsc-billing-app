@@ -25,7 +25,7 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   plan (sweep the existing fixtures); mutations fail (drop the qty, round per deliverable instead of per
   line, ignore the fallback). _Modifies: `calc.js` ×2, `test-calc.js`. Reuses `upToHalfHour`, `lineDef`._
 
-- [ ] **PM2. Schema v19 and the API** (money — Opus/high): migration v19 rewrites the pricing row's
+- [x] **PM2. Schema v19 and the API** (money — Opus/high): migration v19 rewrites the pricing row's
   `data_json`: every type's `services` → `[{ name, multiplier: 0 }]`, the type `multiplier` dropped
   (G4, G5); estimates are not touched. `deliverableTypesOk` checks the new shape (names as strings,
   multipliers finite ≥ 0, ≤ 2 decimals) and refuses the old one; a deliverable row may still carry its
