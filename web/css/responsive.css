@@ -1112,6 +1112,14 @@
     min-height: 44px;
     padding: 2px 8px;
   }
+  /* A day-priced post line's "5 hrs recommended" (post-multipliers PM5)
+     takes a line of its own here, so it never wraps in with a leading dot. */
+  .post-rec {
+    flex-basis: 100%;
+  }
+  .post-rec > [aria-hidden] {
+    display: none;
+  }
 
   /* The Dashboard comparison's unit cells, stacked: a price over a "Below by
      $X" badge is 43px, so two badges in a row sat 43px apart and their 44px

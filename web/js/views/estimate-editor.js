@@ -516,10 +516,16 @@ const EstimateEditor = (() => {
       ? '<select class="lab-unit-sel" aria-label="Unit for ' + esc(line.name) + '">' +
         unitOptions(section.id, cardRow, unitKey(def), true) + '</select>'
       : LSCRows.unitWord(unit.kind, 1);
+    /* A post line sold by another unit isn't filled (G3): paintPlanner writes
+       its recommended hours here, after its own, for the owner to turn into
+       days. The quantity field is described by its words, not the dot. */
+    const recId = 'post-rec-' + tr.dataset.rid;
+    const postRec = section.id === 'post' && unit.kind !== 'hour';
     const unitLine = !def
       ? ''
       : '<div class="lab-unit">per ' + unitCtl +
         (unit.kind === 'hour' ? '' : ' · ' + unit.hoursPerUnit + ' billable ' + (unit.hoursPerUnit === 1 ? 'hr' : 'hrs')) +
+        (postRec ? '<span class="post-rec" hidden><span aria-hidden="true"> · </span><span id="' + recId + '"></span></span>' : '') +
         '</div>';
 
     tr.innerHTML =
@@ -532,7 +538,8 @@ const EstimateEditor = (() => {
         : esc(line.name)) +
       unitLine + '</div>' +
       '<div class="right" data-label="' + qtyLabel + '"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
-      (line.qty || '') + '" aria-label="' + qtyLabel + ' for ' + esc(line.name) + '"></div>' +
+      (line.qty || '') + '" aria-label="' + qtyLabel + ' for ' + esc(line.name) + '"' +
+      (postRec && def ? ' aria-describedby="' + recId + '"' : '') + '></div>' +
       '<div class="right muted-td" data-label="Price">' + (def ? fmt(def.mu) : '—') + '</div>' +
       /* A Production line on a surcharged day says why its price is higher,
          under the price, owner-only (the client's copy never says it, D8). */
@@ -994,9 +1001,12 @@ const EstimateEditor = (() => {
       setText('pp-on', 'On post lines: ' + planHrs(plan.onPostLines) + ' of ' + planHrs(plan.recommended) + ' recommended');
     }
 
-    // Each tag reads its deliverable's name now, so a rename follows (D95).
+    /* Each tag reads its deliverable's name now, so a rename follows (D95).
+       A line by the day or half day says the hours postPlan recommends for
+       it, which nothing fills (G3); only while its deliverable is here. */
     const names = new Map(delivs.map((tr) => [tr.dataset.did, inputValue(tr, '.deliv-name-inp').trim()]));
-    rowsIn('post').forEach((tr) => {
+    const recs = new Map(plan.lines.map((l) => [l.index, l.recommended]));
+    rowsIn('post').forEach((tr, i) => {
       const tag = tr.querySelector('.post-tag');
       if (!tag) return;
       const did = tr.dataset.deliverableId;
@@ -1004,6 +1014,11 @@ const EstimateEditor = (() => {
       tag.hidden = gone;
       tag.textContent = gone ? '' : '· ' + (names.get(did) || 'unnamed deliverable');
       tag.classList.toggle('is-unnamed', !gone && !names.get(did));
+      const rec = tr.querySelector('.post-rec');
+      if (!rec) return;
+      const hrs = !gone && recs.has(i) ? recs.get(i) : null;
+      rec.hidden = hrs === null;
+      rec.lastElementChild.textContent = hrs === null ? '' : planHrs(hrs) + (hrs === 1 ? ' hr' : ' hrs') + ' recommended';
     });
   }
 
@@ -1154,7 +1169,7 @@ const EstimateEditor = (() => {
             'The recommendation is the sum of those lines.',
           'Filled hours are billed, and keep following capture as the shoot changes. Type over a line’s hours and ' +
             'they’re yours: it stops following, until you pick the type again. A line priced by the day starts at ' +
-            '0 for you to fill. Lines at 0 hrs don’t print.',
+            '0, with its recommended hours beside it for you to turn into days. Lines at 0 hrs don’t print.',
           'An estimate saved before multipliers were per service keeps its hours as saved, and recommends from its ' +
             'type’s one multiplier.',
         ],

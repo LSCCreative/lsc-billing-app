@@ -77,7 +77,7 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   _Follow-up: switching a following line off the hour sets it to 0 and pins it (G3), instead of
   keeping its hours as days; a typed line keeps its number as before._
 
-- [ ] **PM5. Planner figures** (frontend — Opus/high): the deliverable row's "Post hrs (rec.)" and the
+- [x] **PM5. Planner figures** (frontend — Opus/high): the deliverable row's "Post hrs (rec.)" and the
   planner cell's recommended figure read the new per-line sums (G10); "On post lines X of Y
   recommended" stays; the planner ⓘ and the Capture ⓘ on the Rate Card describe per-service multipliers
   and filled hours. A non-hourly line shows its recommended hours beside it (G3). Done when the figures
@@ -85,6 +85,11 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   (with the PM4 follow-up): the planner ⓘ and the Capture ⓘ text. Left: the non-hourly line's
   recommended hours, and checking the figures._ _Depends on: PM4.
   Modifies: `estimate-editor.js` (`paintPlanner`, `postPlanMarkup`), `pricing.js` (`captureInfo`)._
+  _Built: a post line by another unit carries a `.post-rec` on its unit line ("· 5 hrs recommended"),
+  painted by `paintPlanner` from `plan.lines` while its deliverable is on the estimate; its qty field
+  is `aria-describedby` the words (not the dot). Below 768 it takes its own line, no dot. Hourly lines
+  show nothing (G2). Checked on scratch: 1 h → 2 / 0.5 / 0.5 (3), qty 2 → 4 / 1 / 1 (6), 10 h →
+  20 / 5 / 3 (28) in the lines, the row and the planner cell; at 1280 / 800 / 375._
 
 ## Interactions & States
 
