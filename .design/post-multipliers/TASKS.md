@@ -156,8 +156,12 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   (server total = editor total; ex-GST drops by qty × price without them), typed and pinned lines
   never move, and neither a new nor a v18 estimate moves or re-saves on open. The rule is in
   `WORKING_NOTES.md` ("priced, not suggested")._
-- [ ] **PM10. Design review**: run `/design-review` against the brief; screenshots in
+- [x] **PM10. Design review**: run `/design-review` against the brief; screenshots in
   `.design/post-multipliers/screenshots/`.
+  _Done: `DESIGN_REVIEW.md` (this folder). No must or should fixes. Four could-improves, left as
+  they are: two "×" per service row at ≥768 (the brief's wording, so ask first), a missing service's
+  name truncating hard on phones, error and focus edges close in hue (app-wide tokens), and uneven
+  phone deliverable fields (predates the track). 18 screenshots, local only (git-ignored)._
 - [ ] **PM11. Deploy** (ask first): after pricing-floor PF11; fetch and diff `origin/main`, NAS before
   Pages (`DEPLOYMENT.md`). Then the user re-enters each type's multipliers on the live Rate Card (they
   start at 0×, G5).
