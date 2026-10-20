@@ -987,6 +987,11 @@
   font-family: var(--font-figures);
   color: var(--text);
 }
+/* "1 missing" (PM6): services this type lists that left the card. The
+   word carries it; the warning colour only draws the eye. */
+.dtype-sum-miss {
+  color: var(--color-status-warning-text);
+}
 /* panel.js's chevron: right while closed, down while open. */
 .dtype-chev {
   grid-area: chev;

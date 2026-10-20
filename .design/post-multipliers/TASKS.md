@@ -93,7 +93,7 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
 
 ## Interactions & States
 
-- [ ] **PM6. Block states and focus** (frontend — Opus/high): Covers: a save problem (blank/duplicate
+- [x] **PM6. Block states and focus** (frontend — Opus/high): Covers: a save problem (blank/duplicate
   name, multiplier not a number ≥ 0 or > 2 decimals) opens the type it's in and focuses the field
   (`typeProblems` names each service's field); a service no longer on the card is struck through with a
   "missing" word in its row, and the summary shows "N missing"; renaming a post row in the table above
@@ -102,6 +102,15 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   deliverable type"); "+ Add service" disabled with its reason when nothing is left; empty block text;
   Reset Defaults' warning still names the types. Every change is announced via `#pricing-floor-live`.
   _Depends on: PM3. Modifies: `pricing.js`, `pricing.css`._
+  _Built: the summary's "N missing" (warning colour, in words, also in its accessible name; the total
+  still counts them, G6). Each multiplier problem names its service and type ("The “Edit” multiplier
+  on “Brand Story” …"), since only one type opens. Remove type also asks for a named type with no
+  services (a name is retyping, not one click back) and says how many services go. Removing a service
+  falls back to the type's summary when "+ Add service" is disabled. A disabled "+ Add service" has
+  its reason in its accessible name. Reset names the saved card's types plus any unsaved new ones.
+  Announced: add type, remove type/service (with the new totals), a post row's rename on its types
+  (debounced), a post row's delete that leaves types "missing". Open/close is not announced:
+  `aria-expanded` on the summary already says it. Checked on scratch (no save) at 1024 and 375._
 
 ## Responsive & Polish
 

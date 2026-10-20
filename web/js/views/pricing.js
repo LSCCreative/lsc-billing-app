@@ -1087,14 +1087,22 @@ const PricingView = (() => {
   }
 
   /* A post row renamed as it's typed: every type's service that is that row
-     takes the new name and keeps its multiplier, so the two save together. */
+     takes the new name and keeps its multiplier, so the two save together.
+     Returns how many types followed, for the announcement. */
   function followRename(row) {
     const name = svcName(row);
+    let followed = 0;
     card.deliverableTypes.forEach((t) => {
+      let hit = false;
       (chipRows[t.id] || []).forEach((id, j) => {
-        if (id === row.id) t.services[j].name = name;
+        if (id === row.id) {
+          t.services[j].name = name;
+          hit = true;
+        }
       });
+      if (hit) followed++;
     });
+    return followed;
   }
 
   /* How many types list any of these names: for the delete confirms. */
@@ -1116,9 +1124,18 @@ const PricingView = (() => {
   };
   const rateText = (t) => String(LSCCalc.typePostRate(t));
   const rateUnit = (t, word) => ' post ' + word + (LSCCalc.typePostRate(t) === 1 ? '' : 's');
+  /* How many of a type's services are no longer on the card (PM6). The
+     total above still counts them (G6); the flag says why an estimate will
+     fill less. */
+  const missingCount = (t, names) => t.services.filter((s) => names.indexOf(s.name) === -1).length;
   /* The summary button's name, read in full (PM8 wording). */
-  const summaryName = (t) =>
-    typeNameOf(t) + ', ' + countText(t).toLowerCase() + ', ' + rateText(t) + rateUnit(t, 'hour') + ' per capture hour';
+  const summaryName = (t) => {
+    const missing = missingCount(t, postRows().map(svcName));
+    return typeNameOf(t) + ', ' + countText(t).toLowerCase() + (missing ? ', ' + missing + ' missing' : '') +
+      ', ' + rateText(t) + rateUnit(t, 'hour') + ' per capture hour';
+  };
+  /* The type a sentence names: its name in quotes, or "an untitled type". */
+  const typeRef = (t) => (t.name.trim() ? '“' + t.name.trim() + '”' : 'an untitled type');
 
   /* The one type whose panel is open (G7), by id; null when every type is
      closed. View state only, not the card. */
@@ -1155,7 +1172,7 @@ const PricingView = (() => {
   }
 
   function servicesMarkup(t, ti) {
-    if (!t.services.length) return '<p class="dtype-none">None yet</p>';
+    if (!t.services.length) return '<p class="dtype-none">No post services yet.</p>';
     const names = postRows().map(svcName);
     return (
       '<ul class="dtype-svc-list" aria-label="Post services for ' + esc(typeNameOf(t)) + '">' +
@@ -1164,7 +1181,10 @@ const PricingView = (() => {
   }
 
   /* "+ Add service": the post rows this type doesn't list yet. Disabled, and
-     saying why, when there's nothing left to add. */
+     saying why, when there's nothing left to add: the reason is its only
+     option, and is in its name too (data-why), since a screen reader names a
+     select by its label rather than its value. */
+  const addName = (of, why) => 'Add a post service to ' + of + (why ? ', unavailable: ' + why.toLowerCase() : '');
   function addServiceMarkup(t, ti) {
     const rows = postRows();
     const listed = t.services.map((s) => s.name);
@@ -1174,7 +1194,8 @@ const PricingView = (() => {
       : !left.length ? 'Every post service is listed' : '';
     return (
       '<select class="dtype-add" id="dtype-add-' + ti + '" data-dtype-add data-ti="' + ti + '"' +
-      ' aria-label="Add a post service to ' + esc(typeNameOf(t)) + '"' + (none ? ' disabled' : '') + '>' +
+      ' aria-label="' + esc(addName(typeNameOf(t), none)) + '"' +
+      (none ? ' disabled data-why="' + esc(none) + '"' : '') + '>' +
       '<option value="">' + (none || '+ Add service') + '</option>' +
       left.map((n) => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('') +
       '</select>'
@@ -1187,6 +1208,7 @@ const PricingView = (() => {
   function typeRowMarkup(t, ti) {
     const open = t.id === openType;
     const blank = !t.name.trim();
+    const missing = missingCount(t, postRows().map(svcName));
     return (
       '<li class="dtype-row' + (open ? ' is-open' : '') + '">' +
       '<button type="button" class="dtype-sum" id="dtype-sum-' + ti + '" data-dtype-toggle="' + ti + '"' +
@@ -1194,6 +1216,9 @@ const PricingView = (() => {
       '<span class="dtype-sum-name' + (blank ? ' is-blank' : '') + '" id="dtype-sum-name-' + ti + '">' +
       esc(typeNameOf(t)) + '</span>' +
       '<span class="dtype-sum-meta"><span class="dtype-sum-count">' + countText(t) + '</span>' +
+      (missing
+        ? '<span class="dtype-sum-dot" aria-hidden="true">·</span><span class="dtype-sum-miss">' + missing + ' missing</span>'
+        : '') +
       '<span class="dtype-sum-dot" aria-hidden="true">·</span>' +
       '<span><span class="dtype-sum-rate">' + rateText(t) + '</span><span class="dtype-sum-unit">' +
       rateUnit(t, 'hr') + '</span> per capture hr</span></span>' +
@@ -1302,7 +1327,8 @@ const PricingView = (() => {
     btn.querySelector('.dtype-sum-unit').textContent = rateUnit(t, 'hr');
     const panel = $('dtype-panel-' + ti);
     set(panel.querySelector('.dtype-svc-list'), 'Post services for ' + of);
-    set(panel.querySelector('.dtype-add'), 'Add a post service to ' + of);
+    const add = panel.querySelector('.dtype-add');
+    set(add, addName(of, add && add.dataset.why));
     set(panel.querySelector('.dtype-del'), 'Remove the ' + of + ' type');
     t.services.forEach((s, j) => {
       const shown = s.name || 'untitled service';
@@ -1320,13 +1346,16 @@ const PricingView = (() => {
       if (!key) add('A deliverable type is missing a name.', $('dtype-name-' + ti));
       else if (seen[key]) add('Two deliverable types are both called “' + name + '”.', $('dtype-name-' + ti));
       seen[key] = 1;
+      /* Each sentence names its service and type: only one type opens (G7),
+         so the save bar is how a problem in another type is found. */
       t.services.forEach((s, j) => {
         const m = s.multiplier;
         const field = $('dtype-mult-' + ti + '-' + j);
+        const which = 'The “' + (s.name || 'untitled service') + '” multiplier on ' + typeRef(t);
         if (typeof m !== 'number' || m < 0) {
-          add('A post service’s multiplier is its post hours for each capture hour: a number, 0 or more.', field);
+          add(which + ' must be a number, 0 or more (post hours per capture hour).', field);
         } else if (Math.abs(m * 100 - Math.round(m * 100)) > 1e-6) {
-          add('A post service’s multiplier can have at most two decimal places.', field);
+          add(which + ' can have at most two decimal places.', field);
         }
       });
     });
@@ -1398,6 +1427,7 @@ const PricingView = (() => {
       chipRows[t.id] = [];
       openType = t.id; // a new type opens straight away (G7)
       paintTypes('#dtype-name-' + (types.length - 1));
+      LSCUtil.announce($('pricing-floor-live'), 'Added a deliverable type, open. Name it, then add its post services.');
       return true;
     }
 
@@ -1405,15 +1435,21 @@ const PricingView = (() => {
       const ti = parseInt(btn.dataset.dtypeDel, 10);
       const t = types[ti];
       if (!t) return true;
-      // Nothing to lose on a type that's still blank.
-      if ((t.name.trim() || t.services.length) &&
-        !window.confirm('Remove the “' + typeNameOf(t) + '” deliverable type?\n\nEstimates already saved keep it.')) return true;
+      /* Asks when there's something to retype: its services, or a name. A
+         blank type goes without a word. */
+      const n = t.services.length;
+      if ((t.name.trim() || n) && !window.confirm(
+        'Remove the ' + typeRef(t) + ' deliverable type' +
+          (n ? ' and its ' + n + ' post service' + (n === 1 ? '' : 's') : '') + '?\n\n' +
+          'Estimates already saved keep it.'
+      )) return true;
       types.splice(ti, 1);
       delete chipRows[t.id];
       if (openType === t.id) openType = null;
-      // The next type's summary, else the one before, else the add button.
-      paintTypes(['#dtype-sum-' + ti, '#dtype-sum-' + (ti - 1), '#dtype-add-type']);
-      LSCUtil.announce($('pricing-floor-live'), 'Removed the ' + typeNameOf(t) + ' type.');
+      // The next type's summary (now at its index), else the add button after the list.
+      paintTypes(['#dtype-sum-' + ti, '#dtype-add-type']);
+      LSCUtil.announce($('pricing-floor-live'), 'Removed the ' + typeNameOf(t) + ' type. ' +
+        (types.length ? types.length + ' type' + (types.length === 1 ? '' : 's') + ' left.' : 'No types left.'));
       return true;
     }
 
@@ -1423,10 +1459,13 @@ const PricingView = (() => {
     if (!t || j < 0 || j >= t.services.length) return true;
     const gone = t.services.splice(j, 1)[0];
     (chipRows[t.id] || []).splice(j, 1);
-    // The service that took its place, else the one before, else "+ Add".
+    /* The service that took its place, else the one before, else "+ Add";
+       when that is disabled too (the last left was missing), the type's own
+       summary, so focus never drops to the page. */
     const x = (k) => '[data-ti="' + ti + '"][data-dtype-unchip="' + k + '"]';
-    paintTypes([x(j), x(j - 1), '#dtype-add-' + ti]);
-    LSCUtil.announce($('pricing-floor-live'), 'Removed ' + (gone.name || 'untitled service') + ' from ' + typeNameOf(t) + '.');
+    paintTypes([x(j), x(j - 1), '#dtype-add-' + ti, '#dtype-sum-' + ti]);
+    LSCUtil.announce($('pricing-floor-live'), 'Removed ' + (gone.name || 'untitled service') + ' from ' + typeNameOf(t) +
+      '. ' + countText(t) + ', ' + rateText(t) + rateUnit(t, 'hour') + ' per capture hour.');
     return true;
   }
 
@@ -1991,8 +2030,13 @@ const PricingView = (() => {
             /* A post service: the types that list it follow the new name,
                and every "+ Add service" offers it (see CAPTURE AND DELIVERABLE TYPES above). */
             if (card.labourSections[si].id === POST_ID) {
-              followRename(target);
+              const followed = followRename(target);
               paintTypes();
+              // Debounced by announce, so it speaks once typing pauses.
+              if (followed && svcName(target)) {
+                LSCUtil.announce($('pricing-floor-live'), 'Renamed to ' + svcName(target) + ' on ' +
+                  (followed === 1 ? '1 deliverable type, multiplier kept.' : followed + ' deliverable types, multipliers kept.'));
+              }
             }
           } else refreshTravelRow(parseInt(input.dataset.ri, 10)); // its "↺ use" names it
         }
@@ -2237,10 +2281,15 @@ const PricingView = (() => {
         const ri = parseInt(btn.dataset.delRow, 10);
         const row = sec.rows[ri];
         if (!row) return;
+        const listing = sec.id === POST_ID ? typesListing([svcName(row)]) : 0;
         if (!window.confirm('Delete “' + row.name + '”?' + usedNote(countUsingRow(sec.id, row.name)) +
-          (sec.id === POST_ID ? typesNote(typesListing([svcName(row)])) : ''))) return;
+          typesNote(listing))) return;
         sec.rows.splice(ri, 1);
         render();
+        if (listing) {
+          LSCUtil.announce($('pricing-floor-live'), 'Deleted ' + (svcName(row) || 'the service') + '. ' +
+            (listing === 1 ? '1 deliverable type shows' : listing + ' deliverable types show') + ' it as missing.');
+        }
       });
     });
 
@@ -2416,14 +2465,23 @@ const PricingView = (() => {
   async function reset() {
     if (saving) return;
     /* The default card has no Deliverable Types (B2-1), so a reset deletes
-       them: said here, where it can still be cancelled. */
-    const types = card.deliverableTypes.length ||
-      ((LSCData.pricing() || {}).deliverableTypes || []).length;
+       them: said here, where it can still be cancelled, and by name (PM6):
+       the saved card's types (what the reset deletes), then any the working
+       copy has added since, each name once. */
+    const named = [];
+    ((LSCData.pricing() || {}).deliverableTypes || []).concat(card.deliverableTypes).forEach((t) => {
+      const n = typeNameOf({ name: String((t && t.name) || '') });
+      if (named.indexOf(n) === -1) named.push(n);
+    });
+    const typeList = named.length > 1 ? named.slice(0, -1).join(', ') + ' and ' + named[named.length - 1] : named[0];
     // The default card has no card fee either: every auto price drops by it.
     const fee = card.cardFeePct || (LSCData.pricing() || {}).cardFeePct;
     const confirmed = window.confirm(
       'Reset every category, service and rate back to the built-in defaults?' +
-        (types ? ' Your deliverable types are deleted too.' : '') +
+        (named.length
+          ? ' Your deliverable type' + (named.length === 1 ? '' : 's') + ' (' + typeList + ') ' +
+            (named.length === 1 ? 'is' : 'are') + ' deleted too, multipliers and all.'
+          : '') +
         (fee ? ' Card fees go back to none, which lowers every auto price.' : '') + '\n\n' +
         'This replaces the saved rate card immediately. Estimates already saved keep ' +
         'the figures they were quoted at.'
