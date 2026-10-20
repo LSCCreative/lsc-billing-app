@@ -104,6 +104,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   2026-10-01). Card fees are recovered through prices that every client pays, never added only to
   card-paid invoices, whatever it is called. "Non-taxable" on a tax invoice means only GST-free or
   input-taxed: on-charged crew and purchases are GST-taxable pass-throughs (out of income, not out of GST).
+- Deliverable Types (post-multipliers, v19): read a type's services only through `calc.js typeServices`
+  (`{ name, multiplier }`; an old bare name reads as 0×) and its total through `typePostRate`. `postPlan`
+  recommends each post line from its own `postMultiplier`, rounded up per line, never per deliverable; a
+  deliverable none of whose lines carries one plans from its old `multiplier` (G9), so old estimates don't move.
 - Invoice totals live in `calc.js` (`depositAmount`, `extrasTotals`, `finalInvoiceTotals`,
   `singleInvoiceTotals`). `accepted` counts as won. Extras charge GST as the job did.
 

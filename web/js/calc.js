@@ -1613,8 +1613,13 @@ const SERVICE_UNITS = ['hour', 'half', 'full'];
 
    'card-fee' since pricing-floor PF3 (v18): a 'deliverable-types' build's Rate
    Card would drop `cardFeePct`, and every auto price would quietly lose the
-   card fee (P7). */
-const PRICING_SHAPE = 'card-fee';
+   card fee (P7).
+
+   'post-multipliers' since post-multipliers PM1 (v19): a 'card-fee' build's
+   Rate Card would save every Deliverable Type back in the old shape, its
+   services as bare names beside one type multiplier, dropping each service's
+   own multiplier (typeServices). */
+const PRICING_SHAPE = 'post-multipliers';
 
 /**
  * Is a rate card in a shape this build can't write? True when it doesn't carry
@@ -2884,26 +2889,119 @@ function surchargeSummary(breakdown) {
   return { rows, shortNotice, total: cents / 100 };
 }
 
-/* ── The post-production planner (production-booking B2-1) ──────────────────
-   Suggests, never prices (the brief's B2 principle 2): nothing here reaches
-   computeTotals, a stored line or a client document. The owner types the post
-   hours; these figures are the guide beside them (D89–D96). */
+/* ── The post-production planner (production-booking B2-1; per-service
+   multipliers since post-multipliers PM1, v19) ──────────────────────────────
+   A Deliverable Type names its Post-Production services, each with its own
+   multiplier: post hours for every hour of capture (an edit at 2×, a grade at
+   0.5×), because a type's services don't scale alike. Picking a type on an
+   estimate lays its services out as post lines, each carrying a snapshot of
+   its multiplier (`postMultiplier`, G8: a later Rate Card change never moves
+   a started estimate), and postPlan recommends each such line's hours:
+   capture hours × the line's multiplier × its deliverable's qty, rounded up
+   to the half hour LINE BY LINE (G1). A deliverable's share is the sum of its
+   lines, so the rows add up to what the lines say.
 
-/* A share is rounded UP to the half hour. Float error such as 10 × 0.15 =
-   1.5000000000000002 is 1.5, not 2. */
+   Nothing here reaches computeTotals, a stored line or a client document by
+   itself; a line bills its own qty, as every line does. But these figures are
+   no longer only a guide: this replaces the B2 principle "suggest, don't
+   price" (D89–D96) for post lines a type laid out. The editor writes a
+   following line's recommendation into its qty, and that qty is billed until
+   the owner types over it (G2). Lines left at 0 never print (the 9a rule).
+
+   SAVED ESTIMATES NEVER MOVE (G9). A post line saved before v19 has no
+   `postMultiplier`, so a deliverable none of whose lines carries one
+   recommends exactly what it did before: its own snapshot `multiplier` (the
+   type's single multiplier before v19) × capture × qty, rounded up once for
+   the whole deliverable. Those lines get no per-line figure, so the editor
+   never fills them. */
+
+/* A recommendation is rounded UP to the half hour. Float error such as
+   10 × 0.15 = 1.5000000000000002 is 1.5, not 2. */
 const PLAN_NOISE = 1e-9;
 const upToHalfHour = (h) => Math.max(0, Math.ceil(h * 2 - PLAN_NOISE) / 2);
 
 /**
- * Production Capture Hours, each deliverable's share of the edit, and how much
- * of it the Post-Production lines already hold.
+ * A Deliverable Type's post services, as `{ name, multiplier }`: the
+ * Post-Production row each names, and the post hours it needs for every
+ * capture hour (a number, never below 0).
+ *
+ * The one reader of the shape. Before v19 a type held its services as bare
+ * names beside one type-wide `multiplier`; a name read here is a service at
+ * 0× (G5: the v19 migration starts every existing service at 0 and the owner
+ * re-enters them), and the old type multiplier is ignored (G4). An entry that
+ * is neither a name nor an object with one is no service.
+ *
+ * @param {object} type — a Deliverable Type from the rate card.
+ * @returns {Array<{name: string, multiplier: number}>}
+ */
+function typeServices(type) {
+  const list = type && Array.isArray(type.services) ? type.services : [];
+  const out = [];
+  list.forEach((s) => {
+    if (typeof s === 'string') out.push({ name: s, multiplier: 0 });
+    else if (s && typeof s === 'object' && typeof s.name === 'string') out.push({ name: s.name, multiplier: nonNeg(s.multiplier) });
+  });
+  return out;
+}
+
+/**
+ * A type's post hours per capture hour: the sum of its services' multipliers
+ * (G6), the figure its Rate Card summary shows. Multipliers have at most two
+ * decimals, so the sum is held to the cent and float error never shows
+ * (0.1 + 0.2 is 0.3).
+ *
+ * @param {object} type — a Deliverable Type from the rate card.
+ * @returns {number}
+ */
+function typePostRate(type) {
+  return round2(typeServices(type).reduce((sum, s) => sum + s.multiplier, 0));
+}
+
+/**
+ * One post line's recommended hours (G1): capture hours × its service's
+ * multiplier × its deliverable's qty, rounded up to the half hour. Rounded
+ * per line, never per deliverable: capture 1 h with an edit at 2× and a grade
+ * and a sound mix at 0.2× each is 2 + 0.5 + 0.5 = 3 hours of lines, where
+ * 2.4 rounded once would be 2.5. Anything that isn't a usable number, or is
+ * below 0, counts as 0.
+ *
+ * @param {number} captureHours
+ * @param {number} multiplier — post hours per capture hour.
+ * @param {number} qty — the deliverable's quantity.
+ * @returns {number} — a multiple of 0.5.
+ */
+function postLineHours(captureHours, multiplier, qty) {
+  return upToHalfHour(nonNeg(captureHours) * nonNeg(multiplier) * nonNeg(qty));
+}
+
+/* Does a post line carry its own snapshot multiplier (v19)? Exactly a finite
+   number; a line saved before v19 has none. */
+const hasPostMultiplier = (line) =>
+  typeof line.postMultiplier === 'number' && Number.isFinite(line.postMultiplier);
+
+/**
+ * Production Capture Hours, each post line's and each deliverable's
+ * recommended hours, and how much the Post-Production lines already hold.
  *
  *   captureHours = Σ hours of every `prod` line whose capture flag is set,
  *                  on a day, a Date TBC day or no day (they're all in `prod`)
- *   share        = captureHours × the deliverable's multiplier × its qty,
- *                  rounded up to the nearest 0.5
+ *   lines        = one entry per `post` line that carries a `postMultiplier`:
+ *                  its index in `activeRows.post` and its recommendation,
+ *                  postLineHours(captureHours, postMultiplier, its
+ *                  deliverable's qty); 0 when its deliverable is untyped or
+ *                  not on the estimate
+ *   share        = Σ its tagged lines' recommendations when any of them
+ *                  carries a `postMultiplier` (v19); otherwise, as before
+ *                  v19, captureHours × the deliverable's own `multiplier` ×
+ *                  its qty, rounded up once to the nearest 0.5
  *   recommended  = Σ shares, so the rows add up to it
  *   onPostLines  = Σ hours of every `post` line, tagged or not
+ *
+ * A line's recommendation is in hours whatever unit it is sold in: the editor
+ * fills only the hourly ones and shows it beside the rest (G3). A tagged line
+ * without a `postMultiplier` beside ones with it adds nothing to the share and
+ * has no entry (the editor lays a type's lines out together, so it doesn't
+ * happen; this is what it would mean).
  *
  * A line's hours are the hours it bills — qty × the hours per unit of the
  * definition computeTotals prices it from (lineDef) — so a Full Day counts
@@ -2914,13 +3012,15 @@ const upToHalfHour = (h) => Math.max(0, Math.ceil(h * 2 - PLAN_NOISE) / 2);
  * The capture flag is the line's own `capture`, snapshotted when it was added.
  * A line saved before B2 has none and falls back to the live card's `prod` row
  * with its id, then its name, as lineDef does. A deliverable is untyped until
- * it has a `typeId`; an untyped one recommends 0 whatever else it carries.
+ * it has a `typeId`; an untyped one recommends 0 whatever else it carries, and
+ * so do its lines.
  *
  * @param {object} activeRows — the estimate's rows: `prod`, `post`, `deliverables`.
  * @param {object} pricing — the rate card.
  * @returns {{ captureHours: number, shares: Array<{deliverableId: string|null, hours: number}>,
- *   recommended: number, onPostLines: number }} — one share per deliverable, in
- *   order; `deliverableId` is null on one saved before B2.
+ *   lines: Array<{index: number, recommended: number}>, recommended: number,
+ *   onPostLines: number }} — one share per deliverable, in order (`deliverableId`
+ *   is null on one saved before B2); `lines` in post-line order.
  */
 function postPlan(activeRows, pricing) {
   const rows = activeRows || {};
@@ -2947,16 +3047,39 @@ function postPlan(activeRows, pricing) {
   });
   const captureHours = round2(capture);
 
-  const shares = lines('deliverables').map((d) => ({
-    deliverableId: d.id ? String(d.id) : null,
-    hours: d.typeId ? upToHalfHour(captureHours * nonNeg(d.multiplier) * nonNeg(d.qty)) : 0,
-  }));
+  const delivs = lines('deliverables');
+  const byId = new Map();
+  delivs.forEach((d) => {
+    if (d.id && !byId.has(String(d.id))) byId.set(String(d.id), d);
+  });
+
+  // Each v19 post line, by its own multiplier; the sums by deliverable (G10).
+  const planLines = [];
+  const fromLines = new Map();
+  (Array.isArray(rows.post) ? rows.post : []).forEach((line, index) => {
+    if (!line || typeof line !== 'object' || !hasPostMultiplier(line)) return;
+    const did = line.deliverableId ? String(line.deliverableId) : null;
+    const d = did ? byId.get(did) : undefined;
+    const recommended = d && d.typeId ? postLineHours(captureHours, line.postMultiplier, d.qty) : 0;
+    planLines.push({ index, recommended });
+    if (d) fromLines.set(did, (fromLines.get(did) || 0) + recommended);
+  });
+
+  const shares = delivs.map((d) => {
+    const id = d.id ? String(d.id) : null;
+    let hours = 0;
+    if (d.typeId) {
+      // Saved before v19 (no line of its own carries a multiplier): the deliverable's one multiplier (G9).
+      hours = id !== null && fromLines.has(id) ? fromLines.get(id) : postLineHours(captureHours, d.multiplier, d.qty);
+    }
+    return { deliverableId: id, hours };
+  });
   const recommended = shares.reduce((sum, s) => sum + s.hours, 0);
 
   const postDefs = sectionRows('post');
   const onPostLines = round2(lines('post').reduce((sum, line) => sum + lineHours(postDefs, line), 0));
 
-  return { captureHours, shares, recommended, onPostLines };
+  return { captureHours, shares, lines: planLines, recommended, onPostLines };
 }
 
 /* ── Invoices (production-booking task 14) ───────────────────────────────────
@@ -3327,6 +3450,9 @@ if (typeof module === 'object' && module.exports) {
     costBreakdown,
     surchargeSummary,
     bookedHoursOf,
+    typeServices,
+    typePostRate,
+    postLineHours,
     postPlan,
     depositAmount,
     extrasTotals,
@@ -3398,6 +3524,9 @@ if (typeof module === 'object' && module.exports) {
     costBreakdown,
     surchargeSummary,
     bookedHoursOf,
+    typeServices,
+    typePostRate,
+    postLineHours,
     postPlan,
     depositAmount,
     extrasTotals,

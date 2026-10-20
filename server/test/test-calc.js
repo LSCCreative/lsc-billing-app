@@ -2137,7 +2137,9 @@ test('travelFloorComparison: no floor yet is "can\'t tell", not fine and not bel
 });
 
 test('a card without this build\'s shape marker is outdated', () => {
-  assert.equal(PRICING_SHAPE, 'card-fee');
+  assert.equal(PRICING_SHAPE, 'post-multipliers');
+  // PF3's build, whose Rate Card would save types as bare names and drop each service's multiplier (post-multipliers PM1).
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'card-fee' }), true);
   // B2-1's build, whose Rate Card would drop the card fee (pricing-floor PF3).
   assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'deliverable-types' }), true);
   // Task 2's build, whose Rate Card would drop deliverable types and Capture ticks (B2-1).
@@ -3000,6 +3002,7 @@ test('postPlan worked example: 10 capture hours, Brand Story ×2 is 20 and Socia
   assert.deepEqual(postPlan(WORKED, PLAN_CARD), {
     captureHours: 10, // the full day's 8 + the drone's 2; Photo Capture isn't ticked
     shares: [{ deliverableId: 'brand', hours: 20 }, { deliverableId: 'socials', hours: 15 }],
+    lines: [], // no post line carries a multiplier of its own (saved before v19)
     recommended: 35,
     onPostLines: 0,
   });
@@ -3023,7 +3026,7 @@ test('postPlan: each share rounds UP to the half hour, and float error is not a 
 test('postPlan edge cases: no capture lines, an untyped deliverable and qty 0 all recommend 0', () => {
   // No capture lines: 0 / 0.
   assert.deepEqual(postPlan({ prod: [photo()], deliverables: [deliverable('brand', 2, 1)] }, PLAN_CARD),
-    { captureHours: 0, shares: [{ deliverableId: 'brand', hours: 0 }], recommended: 0, onPostLines: 0 });
+    { captureHours: 0, shares: [{ deliverableId: 'brand', hours: 0 }], lines: [], recommended: 0, onPostLines: 0 });
   // Untyped: no typeId, whatever multiplier it carries. Saved before B2: no id either.
   const untyped = postPlan({ prod: WORKED.prod, deliverables: [deliverable('u', 2, 1, { typeId: undefined }), { name: 'Old', qty: 1 }] }, PLAN_CARD);
   assert.deepEqual(untyped.shares, [{ deliverableId: 'u', hours: 0 }, { deliverableId: null, hours: 0 }]);
@@ -3032,8 +3035,8 @@ test('postPlan edge cases: no capture lines, an untyped deliverable and qty 0 al
   const odd = postPlan({ prod: WORKED.prod, deliverables: [deliverable('z', 2, 0), deliverable('n', 2, -1), deliverable('m', -2, 1), deliverable('s', 'x', 1)] }, PLAN_CARD);
   assert.deepEqual(odd.shares.map((s) => s.hours), [0, 0, 0, 0]);
   // Nothing at all.
-  assert.deepEqual(postPlan(undefined, undefined), { captureHours: 0, shares: [], recommended: 0, onPostLines: 0 });
-  assert.deepEqual(postPlan({ prod: 'x', deliverables: [null] }, PLAN_CARD), { captureHours: 0, shares: [], recommended: 0, onPostLines: 0 });
+  assert.deepEqual(postPlan(undefined, undefined), { captureHours: 0, shares: [], lines: [], recommended: 0, onPostLines: 0 });
+  assert.deepEqual(postPlan({ prod: 'x', deliverables: [null] }, PLAN_CARD), { captureHours: 0, shares: [], lines: [], recommended: 0, onPostLines: 0 });
 });
 
 test('postPlan: a Full Day counts the Service Day it bills, so a 7-hour card gives 7', () => {
@@ -3102,6 +3105,196 @@ test('the B2 fields price nothing: an estimate without them totals exactly as on
     equip: [{ vendor: 'Lensworks', days: 2, cost: 150 }],
   };
   assert.deepEqual(computeTotals(withB2, PLAN_CARD, UNREG), computeTotals(before, PLAN_CARD, UNREG));
+});
+
+/* ── Per-service post multipliers (post-multipliers PM1) ──────────────────
+   A type's services each carry a multiplier; a post line a type laid out
+   snapshots its service's (`postMultiplier`) and is recommended capture ×
+   multiplier × its deliverable's qty, rounded up per line. The brief's
+   reference check: capture 10 h, a Brand Story (qty 1) with Edit 2×, Grade
+   0.5×, Sound 0.3× → 20 / 5 / 3, so 28; capture 1 h → 2 / 0.5 / 0.5, so 3;
+   qty 2 at 1 h → 4 / 1 / 1. */
+const { typeServices, typePostRate, postLineHours } = require('../src/calc');
+
+// A post line as the editor lays it out from a v19 type: 0 hrs, tagged, its service's multiplier snapshotted.
+const svcLine = (name, postMultiplier, deliverableId, extra) =>
+  ({ name, qty: 0, mu: 63, hoursPerUnit: 1, deliverableId, postMultiplier, follows: true, ...extra });
+const brandLines = (did) => [svcLine('Edit', 2, did), svcLine('Grade', 0.5, did), svcLine('Sound', 0.3, did)];
+// A deliverable typed on v19: there is no type multiplier left to snapshot (G4).
+const typed = (id, qty, extra) => ({ id, name: id, format: '', duration: '', qty, typeId: 't_' + id, typeName: id, ...extra });
+const ONE_HOUR = [drone({ qty: 1 })];
+
+test('typeServices: services become { name, multiplier }; a name from before v19 is a service at 0×', () => {
+  assert.deepEqual(typeServices({ services: [{ name: 'Edit', multiplier: 2 }, { name: 'Grade', multiplier: 0.5 }] }),
+    [{ name: 'Edit', multiplier: 2 }, { name: 'Grade', multiplier: 0.5 }]);
+  // The old shape (G5): names at 0×, and the type's one multiplier isn't shared out among them (G4).
+  assert.deepEqual(typeServices({ services: ['Edit', 'Grade'], multiplier: 2 }),
+    [{ name: 'Edit', multiplier: 0 }, { name: 'Grade', multiplier: 0 }]);
+  // A multiplier that isn't a usable number, or is below 0, is 0; an entry with no name is no service.
+  assert.deepEqual(typeServices({ services: [{ name: 'A', multiplier: -1 }, { name: 'B', multiplier: 'x' }, { name: 'C' },
+    { name: 'D', multiplier: Infinity }, { multiplier: 2 }, { name: 3, multiplier: 1 }, null, 7] }),
+  [{ name: 'A', multiplier: 0 }, { name: 'B', multiplier: 0 }, { name: 'C', multiplier: 0 }, { name: 'D', multiplier: 0 }]);
+  assert.deepEqual(typeServices({ services: 'Edit' }), []);
+  assert.deepEqual(typeServices({}), []);
+  assert.deepEqual(typeServices(null), []);
+});
+
+test('typePostRate: the sum of a type\'s multipliers, held to the cent', () => {
+  const brand = { services: [{ name: 'Edit', multiplier: 2 }, { name: 'Grade', multiplier: 0.5 }, { name: 'Sound', multiplier: 0.3 }, { name: 'Titles', multiplier: 0.7 }] };
+  assert.equal(typePostRate(brand), 3.5);
+  // 0.1 + 0.2 is 0.30000000000000004 in floating point; the summary says 0.3.
+  assert.equal(typePostRate({ services: [{ name: 'A', multiplier: 0.1 }, { name: 'B', multiplier: 0.2 }] }), 0.3);
+  assert.equal(typePostRate({ services: ['Edit', 'Grade'], multiplier: 2 }), 0);
+  assert.equal(typePostRate({ services: [] }), 0);
+  assert.equal(typePostRate(undefined), 0);
+});
+
+test('postLineHours: capture × multiplier × qty, rounded up to the half hour', () => {
+  assert.deepEqual([postLineHours(10, 2, 1), postLineHours(10, 0.5, 1), postLineHours(10, 0.3, 1)], [20, 5, 3]);
+  // 0.3 of an hour is half an hour, never 0.
+  assert.deepEqual([postLineHours(1, 2, 1), postLineHours(1, 0.5, 1), postLineHours(1, 0.3, 1)], [2, 0.5, 0.5]);
+  assert.deepEqual([postLineHours(1, 2, 2), postLineHours(1, 0.5, 2), postLineHours(1, 0.3, 2)], [4, 1, 1]);
+  // 10 × 0.15 is 1.5000000000000002 in floating point: 1.5, not 2. 10 × 0.3 is 3.0000000000000004: 3.
+  assert.equal(postLineHours(10, 0.15, 1), 1.5);
+  assert.equal(postLineHours(10, 0.3, 1), 3);
+  // Nothing usable, or below 0, is 0 hours.
+  assert.deepEqual([postLineHours(0, 2, 1), postLineHours(10, 0, 1), postLineHours(10, 2, 0), postLineHours(-10, 2, 1),
+    postLineHours(10, -2, 1), postLineHours(10, 2, -1), postLineHours('x', 2, 1), postLineHours(10, null, 1)], [0, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+test('postPlan reference: capture 10 h, a Brand Story with Edit 2×, Grade 0.5× and Sound 0.3× is 20 / 5 / 3, so 28', () => {
+  assert.deepEqual(postPlan({ prod: WORKED.prod, post: brandLines('brand'), deliverables: [typed('brand', 1)] }, PLAN_CARD), {
+    captureHours: 10,
+    shares: [{ deliverableId: 'brand', hours: 28 }],
+    lines: [{ index: 0, recommended: 20 }, { index: 1, recommended: 5 }, { index: 2, recommended: 3 }],
+    recommended: 28,
+    onPostLines: 0, // laid out at 0: the plan says what they should hold, the editor fills them (PM4)
+  });
+});
+
+test('postPlan reference: capture 1 h is 2 / 0.5 / 0.5 (0.3 rounds up), so 3; qty 2 makes it 4 / 1 / 1', () => {
+  const at1 = postPlan({ prod: ONE_HOUR, post: brandLines('brand'), deliverables: [typed('brand', 1)] }, PLAN_CARD);
+  assert.equal(at1.captureHours, 1);
+  assert.deepEqual(at1.lines.map((l) => l.recommended), [2, 0.5, 0.5]);
+  assert.deepEqual([at1.shares[0].hours, at1.recommended], [3, 3]);
+
+  const qty2 = postPlan({ prod: ONE_HOUR, post: brandLines('brand'), deliverables: [typed('brand', 2)] }, PLAN_CARD);
+  assert.deepEqual(qty2.lines.map((l) => l.recommended), [4, 1, 1]);
+  assert.deepEqual([qty2.shares[0].hours, qty2.recommended], [6, 6]);
+});
+
+test('postPlan rounds each line, not the deliverable: 1 h at 2× + 0.2× + 0.2× is 2 + 0.5 + 0.5 = 3, not 2.4 → 2.5', () => {
+  const post = [svcLine('Edit', 2, 'brand'), svcLine('Grade', 0.2, 'brand'), svcLine('Sound', 0.2, 'brand')];
+  const plan = postPlan({ prod: ONE_HOUR, post, deliverables: [typed('brand', 1)] }, PLAN_CARD);
+  assert.deepEqual(plan.lines.map((l) => l.recommended), [2, 0.5, 0.5]);
+  assert.equal(plan.shares[0].hours, 3);
+  assert.equal(plan.recommended, 3);
+});
+
+test('postPlan: each line follows its own deliverable\'s qty; a share is its own lines; recommended adds the shares', () => {
+  const post = [
+    svcLine('Edit', 2, 'brand'),
+    { name: 'Project Setup', qty: 1, mu: 49, hoursPerUnit: 1 }, // the owner's own line: no entry, in no share
+    svcLine('Edit', 0.5, 'socials'),
+    svcLine('Grade', 0.3, 'brand'),
+  ];
+  const plan = postPlan({ prod: WORKED.prod, post, deliverables: [typed('brand', 1), typed('socials', 3)] }, PLAN_CARD);
+  assert.deepEqual(plan.lines, [{ index: 0, recommended: 20 }, { index: 2, recommended: 15 }, { index: 3, recommended: 3 }]);
+  assert.deepEqual(plan.shares, [{ deliverableId: 'brand', hours: 23 }, { deliverableId: 'socials', hours: 15 }]);
+  assert.equal(plan.recommended, 38);
+  assert.equal(plan.onPostLines, 1);
+  // `index` is the line's place in activeRows.post as given, gaps and all.
+  const gappy = postPlan({ prod: WORKED.prod, post: [null, 'x', svcLine('Edit', 2, 'brand')], deliverables: [typed('brand', 1)] }, PLAN_CARD);
+  assert.deepEqual(gappy.lines, [{ index: 2, recommended: 20 }]);
+});
+
+test('postPlan: a recommendation is in hours whatever the line is sold in, and 0× services hold their deliverable at 0', () => {
+  // A post service laid out by the day (G3) still says how many hours it needs; the editor shows it beside the line.
+  const daily = svcLine('Grade', 0.5, 'brand', { mu: 400, dayUnit: 'full', hoursPerUnit: 8, follows: false });
+  const plan = postPlan({ prod: WORKED.prod, post: [svcLine('Edit', 2, 'brand'), daily], deliverables: [typed('brand', 1)] }, PLAN_CARD);
+  assert.deepEqual(plan.lines.map((l) => l.recommended), [20, 5]);
+  assert.equal(plan.shares[0].hours, 25);
+  // Every service at 0× (just migrated, G5): the lines recommend 0, and the deliverable doesn't fall back to an old multiplier it still carries.
+  const zero = postPlan({ prod: WORKED.prod, post: [svcLine('Edit', 0, 'brand'), svcLine('Grade', 0, 'brand')],
+    deliverables: [typed('brand', 1, { multiplier: 2 })] }, PLAN_CARD);
+  assert.deepEqual(zero.lines, [{ index: 0, recommended: 0 }, { index: 1, recommended: 0 }]);
+  assert.deepEqual([zero.shares[0].hours, zero.recommended], [0, 0]);
+  // With its lines carrying multipliers, a deliverable's own multiplier is ignored altogether.
+  const both = postPlan({ prod: WORKED.prod, post: brandLines('brand'), deliverables: [typed('brand', 1, { multiplier: 5 })] }, PLAN_CARD);
+  assert.equal(both.shares[0].hours, 28);
+});
+
+test('postPlan: a line with no typed deliverable recommends 0, and so does a v19 deliverable with no lines left', () => {
+  const plan = postPlan({
+    prod: WORKED.prod,
+    post: [svcLine('Edit', 2, undefined), svcLine('Edit', 2, 'gone'), svcLine('Edit', 2, 'untyped'), svcLine('Edit', 2, 'brand')],
+    deliverables: [typed('untyped', 1, { typeId: undefined }), typed('brand', 0), typed('bare', 1)],
+  }, PLAN_CARD);
+  // Untagged, tagged to a deliverable not on the estimate, tagged to an untyped one, and on qty 0: all 0.
+  assert.deepEqual(plan.lines.map((l) => l.recommended), [0, 0, 0, 0]);
+  // 'bare' had its lines removed: no line and no multiplier of its own, so 0.
+  assert.deepEqual(plan.shares.map((s) => s.hours), [0, 0, 0]);
+  assert.equal(plan.recommended, 0);
+});
+
+test('postPlan: an estimate saved before v19 plans exactly as it did, whatever post lines it has (G9)', () => {
+  // The B2-1 formula, written out: one multiplier per deliverable, rounded up once.
+  const before = (captureHours, d) => (d.typeId
+    ? Math.max(0, Math.ceil(captureHours * Math.max(0, Number(d.multiplier) || 0) * Math.max(0, Number(d.qty) || 0) * 2 - 1e-9) / 2)
+    : 0);
+  const prods = [[], ONE_HOUR, WORKED.prod, [drone({ qty: 3 })], [vcDay(), vcDay({ dayId: 'd_tbc' })], [drone({ qty: 1.5 }), photo({ capture: true })]];
+  const multipliers = [0, 0.1, 0.25, 0.26, 0.33, 0.5, 1, 1.5, 2, 2.75, 3.1];
+  const qtys = [0, 1, 2, 3, 5];
+  let checked = 0;
+  for (const prod of prods) {
+    for (const m of multipliers) {
+      for (const qty of qtys) {
+        const deliverables = [deliverable('a', m, qty), deliverable('b', 0.5, 3), deliverable('u', m, qty, { typeId: undefined }), { name: 'Old', qty: 1 }];
+        // Post lines as B2 saved them: tagged with hours typed, tagged at 0, and the owner's own.
+        const post = [edit({ qty: 6, deliverableId: 'a' }), edit({ qty: 0, deliverableId: 'b' }), edit({ qty: 1 })];
+        const plan = postPlan({ prod, post, deliverables }, PLAN_CARD);
+        const expected = deliverables.map((d) => before(plan.captureHours, d));
+        assert.deepEqual(plan.shares.map((s) => s.hours), expected, JSON.stringify({ m, qty }));
+        assert.deepEqual(plan.shares.map((s) => s.deliverableId), ['a', 'b', 'u', null]);
+        assert.equal(plan.recommended, expected.reduce((x, y) => x + y, 0));
+        assert.deepEqual(plan.lines, []);
+        assert.equal(plan.onPostLines, 7);
+        checked += 1;
+      }
+    }
+  }
+  assert.equal(checked, prods.length * multipliers.length * qtys.length);
+
+  // The API's B2 estimate (test-api.js B2_ROWS) as saved: Brand Story ×2 and Socials ×0.5 × 3 over 10 capture hours.
+  const b2 = postPlan({
+    prod: WORKED.prod,
+    deliverables: [deliverable('dv_brand', 2, 1), deliverable('dv_soc', 0.5, 3)],
+    post: [edit({ qty: 6, deliverableId: 'dv_brand' }), edit({ qty: 4, deliverableId: 'dv_soc' }), edit({ qty: 1 })],
+  }, PLAN_CARD);
+  assert.deepEqual([b2.shares.map((s) => s.hours), b2.recommended, b2.lines], [[20, 15], 35, []]);
+});
+
+test('postPlan: an old deliverable and a v19 one on the same estimate each plan their own way', () => {
+  const plan = postPlan({
+    prod: WORKED.prod,
+    post: [edit({ qty: 6, deliverableId: 'socials' }), ...brandLines('brand')],
+    deliverables: [typed('brand', 1), deliverable('socials', 0.5, 3)],
+  }, PLAN_CARD);
+  assert.deepEqual(plan.shares, [{ deliverableId: 'brand', hours: 28 }, { deliverableId: 'socials', hours: 15 }]);
+  assert.deepEqual(plan.lines, [{ index: 1, recommended: 20 }, { index: 2, recommended: 5 }, { index: 3, recommended: 3 }]);
+  assert.equal(plan.recommended, 43);
+});
+
+test('the v19 line fields price nothing: a post line bills its qty, with or without postMultiplier and follows', () => {
+  const filled = {
+    prod: WORKED.prod,
+    deliverables: [typed('brand', 1)],
+    post: [svcLine('Edit', 2, 'brand', { qty: 20 }), svcLine('Grade', 0.5, 'brand', { qty: 5, follows: false })],
+  };
+  const strip = ({ postMultiplier: _m, follows: _f, ...rest }) => rest;
+  const totals = computeTotals(filled, PLAN_CARD, UNREG);
+  assert.deepEqual(totals, computeTotals({ ...filled, post: filled.post.map(strip) }, PLAN_CARD, UNREG));
+  assert.equal(totals.totalHours - computeTotals({ prod: WORKED.prod }, PLAN_CARD, UNREG).totalHours, 25);
 });
 
 /* D3, pinned for B2: travel, crew and equipment may now sit on a day (D74),
