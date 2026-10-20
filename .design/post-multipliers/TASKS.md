@@ -56,7 +56,7 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   below 768 the "× capture hr" unit is hidden so service names keep their room (left for PM7 to
   confirm)._
 
-- [ ] **PM4. Post lines that fill and follow** (money + frontend — Opus/high): in
+- [x] **PM4. Post lines that fill and follow** (money + frontend — Opus/high): in
   `estimate-editor.js`. `layOutPost` snapshots each service's multiplier onto its line
   (`postMultiplier`, G8) and marks hourly lines `follows` (G3: a line laid out on another unit is 0,
   not following). Every `recalc` sets each following line's qty from `postPlan`'s per-line
@@ -68,6 +68,9 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   changing qty to 2 doubles them, typing 3 on Grade keeps it at 3 when capture changes, save + reopen
   keeps all of that, and an old estimate opens with identical totals. _Depends on: PM1, PM2. Modifies:
   `estimate-editor.js`. Reuses `unitSnap`, `markOwn`, `buildLabourRow`._
+  _Built: `fillFollowing` runs first in every `recalc`; the deliverable's qty now recalcs (it prices).
+  Switching a following line's unit pins it too (hours aren't days); its qty is kept as for any unit
+  switch. A v19 pick snapshots the deliverable's own `multiplier` as 0 (its lines plan it)._
 
 - [ ] **PM5. Planner figures** (frontend — Opus/high): the deliverable row's "Post hrs (rec.)" and the
   planner cell's recommended figure read the new per-line sums (G10); "On post lines X of Y

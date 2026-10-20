@@ -414,6 +414,8 @@ const EstimateEditor = (() => {
     if (tr.dataset.capture) line.capture = tr.dataset.capture === 'true';
     // A tag whose deliverable has gone is dropped (the server refuses one: line_deliverable_unknown).
     if (tr.dataset.deliverableId && deliverableRow(tr.dataset.deliverableId)) line.deliverableId = tr.dataset.deliverableId;
+    if (tr.dataset.postMultiplier !== undefined) line.postMultiplier = Number(tr.dataset.postMultiplier);
+    if (tr.dataset.follows) line.follows = tr.dataset.follows === 'true';
     return line;
   }
 
@@ -423,10 +425,21 @@ const EstimateEditor = (() => {
      when it was added from the menu, so the line keeps the tick it was added
      with (a line saved before B2 has none and follows the card: calc.js
      postPlan); and a post line's `deliverableId`, the deliverable it was laid
-     out for. Neither prices anything. */
+     out for. Neither prices anything.
+
+     Since v19 (post-multipliers PM4) a post line laid out by a type also
+     carries `postMultiplier`, its service's multiplier snapshotted when the
+     type was picked (G8), and `follows`, whether recalc still fills its hours
+     from capture (fillFollowing). A line saved before v19 has neither and
+     never follows (G9). */
   function planMarks(tr, section, line) {
     if (section.id === 'prod' && typeof line.capture === 'boolean') tr.dataset.capture = String(line.capture);
-    if (section.id === 'post' && line.deliverableId) tr.dataset.deliverableId = String(line.deliverableId);
+    if (section.id !== 'post') return;
+    if (line.deliverableId) tr.dataset.deliverableId = String(line.deliverableId);
+    if (typeof line.postMultiplier === 'number' && Number.isFinite(line.postMultiplier) && line.postMultiplier >= 0) {
+      tr.dataset.postMultiplier = String(line.postMultiplier);
+    }
+    if (typeof line.follows === 'boolean') tr.dataset.follows = String(line.follows);
   }
 
   const deliverableRow = (did) =>
@@ -516,6 +529,13 @@ const EstimateEditor = (() => {
       '<div class="del-cell"><button type="button" class="del-btn" title="Remove ' +
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button></div>';
 
+    /* Typing a following post line's hours makes them the owner's, for good
+       (G2). Before bindRow, so the recalc it starts sees the line pinned. */
+    if (section.id === 'post') {
+      tr.querySelector('.qty-inp').addEventListener('input', () => {
+        if (tr.dataset.follows === 'true') tr.dataset.follows = 'false';
+      });
+    }
     bindRow(tr, ['.qty-inp', '.custom-bill-inp']);
     if (section.id === 'prod' && !section.archived) addLineControls(tr, 'prod');
     const unitSel = tr.querySelector('.lab-unit-sel');
@@ -806,6 +826,9 @@ const EstimateEditor = (() => {
         setType(value && savedGone && value === saved.typeId ? saved : null);
         return paintPlanner();
       }
+      /* A v19 type has no type-wide multiplier: the row's is 0, and its lines'
+         own (postMultiplier) plan it. Only a deliverable none of whose lines
+         carries one plans from its row's (G9). */
       setType({ typeId: t.id, typeName: String(t.name || ''), multiplier: Number(t.multiplier) || 0 });
       // The type's name fills a blank Name; a name already typed is the owner's.
       const name = tr.querySelector('.deliv-name-inp');
@@ -813,16 +836,18 @@ const EstimateEditor = (() => {
       layOutPost(tr, t);
     });
 
-    // Names and quantities price nothing, but the planner and the post lines' tags read them.
+    /* A name prices nothing, but the planner and the post lines' tags read
+       it. The quantity does price: its following post lines fill from it
+       (PM4), so it recalculates. */
     tr.querySelector('.deliv-name-inp').addEventListener('input', () => paintPlanner());
     const qty = tr.querySelector('.deliv-qty-inp');
-    qty.addEventListener('input', () => paintPlanner());
+    qty.addEventListener('input', () => recalc());
     /* The saved quantity is never below 1 (collect's `|| 1`), so a cleared or
        0 field shows the 1 it will be saved, and planned, as. */
     qty.addEventListener('change', () => {
       if (!(num(qty.value) > 0)) {
         qty.value = '1';
-        paintPlanner();
+        recalc();
       }
     });
     tr.querySelector('.del-btn').addEventListener('click', () => {
@@ -832,14 +857,20 @@ const EstimateEditor = (() => {
     return tr;
   }
 
-  // ── The post-production planner (B2-10, D89–D96) ──────────────────────────
-  /* Suggest, don't price (the brief's B2 principle 2). A typed deliverable
-     lays its type's post services out in Post-Production at 0 hrs, each
-     tagged with the deliverable (`deliverableId`); the planner cell heading
-     that section shows Production Capture Hours and the hours recommended,
-     and each deliverable its share, all from calc.js postPlan — the editor
-     works none of it out. The owner's typed hours are the price; lines left
-     at 0 never print (the 9a rule). */
+  // ── The post-production planner (B2-10, D89–D96; post-multipliers PM4) ────
+  /* The quote builds itself, the owner has the last word (post-multipliers,
+     replacing B2's "suggest, don't price" for lines a type lays out). A typed
+     deliverable lays its type's post services out in Post-Production, each
+     tagged with the deliverable (`deliverableId`) and carrying its service's
+     multiplier (`postMultiplier`, snapshotted, G8). A line priced by the hour
+     `follows`: every recalc fills its hours from calc.js postPlan (capture ×
+     multiplier × the deliverable's qty, up to the half hour, G1), and they are
+     billed. Typing over them, or switching the line's unit, pins it for good
+     (G2); re-picking the type lays fresh following lines. A line on another
+     unit is laid out at 0 and never follows (G3). The planner cell heading
+     the section shows Production Capture Hours and the hours recommended, and
+     each deliverable its share, all from postPlan — the editor works none of
+     it out. Lines at 0 never print (the 9a rule). */
 
   const postSectionLive = () => sections.find((s) => s.id === 'post' && !s.archived) || null;
   const taggedRows = (did) => rowsIn('post').filter((tr) => tr.dataset.deliverableId === did);
@@ -882,16 +913,20 @@ const EstimateEditor = (() => {
     body.appendChild(empty);
   }
 
-  /* The type's post services, onto Post-Production at 0 hrs, tagged. Each is
-     priced as Add Service would price it (unitSnap), by the hour — or, when
-     the hour has no price yet, the first unit that has one. A service no
-     longer on the card, or with no price at all, is skipped and named. */
+  /* The type's post services, onto Post-Production, tagged, each with its
+     multiplier (calc.js typeServices). Each is priced as Add Service would
+     price it (unitSnap), by the hour — or, when the hour has no price yet, the
+     first unit that has one. An hourly line follows and the recalc below fills
+     its hours; any other is laid out at 0 (G3). A service no longer on the
+     card, or with no price at all, is skipped and named. */
   function layOutPost(tr, type) {
     const section = postSectionLive();
-    const names = (Array.isArray(type.services) ? type.services : []).map((s) => String(s || '').trim()).filter(Boolean);
+    const services = LSCCalc.typeServices(type)
+      .map((s) => ({ name: s.name.trim(), multiplier: s.multiplier }))
+      .filter((s) => s.name);
     const skipped = [];
     let added = 0;
-    names.forEach((svc) => {
+    services.forEach(({ name: svc, multiplier }) => {
       const row = section && section.rows.find((r) => String(r.name || '').trim() === svc);
       const units = row && row.prices ? ['hour'].concat(LSCCalc.SERVICE_UNITS.filter((u) => u !== 'hour')) : ['hour'];
       const picked = row ? units.map((u) => unitSnap('post', row, u)).find((p) => p.snap) : null;
@@ -899,8 +934,10 @@ const EstimateEditor = (() => {
         skipped.push(svc);
         return;
       }
-      const line = buildLabourRow(section, null,
-        Object.assign({ name: row.name, qty: 0, deliverableId: tr.dataset.did }, picked.snap));
+      const line = buildLabourRow(section, null, Object.assign(
+        { name: row.name, qty: 0, deliverableId: tr.dataset.did, postMultiplier: multiplier },
+        picked.snap,
+        { follows: unitKey(picked.snap) === 'hour' }));
       markOwn(line, picked);
       const body = $('tbody-post');
       const empty = body.querySelector('.empty-row');
@@ -910,7 +947,7 @@ const EstimateEditor = (() => {
     });
     recalc();
     const name = deliverableLabel(tr);
-    if (added) LSCUtil.announce($('editor-live'), 'Added ' + lineCount(added) + ' for ' + name + ' to Post-Production, at 0 hrs.');
+    if (added) LSCUtil.announce($('editor-live'), 'Added ' + lineCount(added) + ' for ' + name + ' to Post-Production, hours filled from capture.');
     if (skipped.length) {
       Toast.error(
         (section ? 'Not on the Rate Card’s Post-Production any more, so not added: ' : 'There’s no Post-Production on the Rate Card, so not added: ') +
@@ -3572,11 +3609,40 @@ const EstimateEditor = (() => {
     return holidaysLoading;
   }
 
+  /* Every following post line's hours, from postPlan's per-line
+     recommendation (PM4, G1), written into its field and into `active` before
+     anything is priced. Capture and qty don't read post lines, so writing
+     them can't change the plan: one pass, no input events, focus untouched.
+     A following line no longer by the hour (its unit was switched) stops
+     following, for good: hours aren't days (G3). */
+  function fillFollowing(active, pricing) {
+    const plan = LSCCalc.postPlan(active, pricing);
+    const trs = rowsIn('post');
+    plan.lines.forEach(({ index, recommended }) => {
+      const tr = trs[index];
+      const line = (active.post || [])[index];
+      if (!tr || !line || tr.dataset.follows !== 'true') return;
+      if (unitKey(snapOf(tr) || {}) !== 'hour') {
+        tr.dataset.follows = 'false';
+        line.follows = false;
+        return;
+      }
+      const inp = tr.querySelector('.qty-inp');
+      /* Never under the owner's cursor: a field they're in (its 0 cleared on
+         focus) is priced as it shows, and filled at the next recalc. "0"
+         rather than blank: a following line says what it bills. */
+      if (!inp || document.activeElement === inp) return;
+      if (inp.value !== String(recommended)) inp.value = String(recommended);
+      line.qty = recommended;
+    });
+  }
+
   function recalc() {
     const pricing = LSCData.pricing();
 
     // Read first: the Production rows' prices depend on their days.
     const active = collect();
+    fillFollowing(active, pricing);
     const days = booking ? booking.payloadDays() : [];
     if (days.some((d) => d.date) && !holidays) loadHolidays();
     const surcharges = surchargesNow(days, pricing);
@@ -4102,6 +4168,8 @@ const EstimateEditor = (() => {
     // A new price, not a new line: it keeps its Capture tick and its deliverable (planMarks).
     if (tr.dataset.capture) line.capture = tr.dataset.capture === 'true';
     if (tr.dataset.deliverableId) line.deliverableId = tr.dataset.deliverableId;
+    if (tr.dataset.postMultiplier !== undefined) line.postMultiplier = Number(tr.dataset.postMultiplier);
+    if (tr.dataset.follows) line.follows = tr.dataset.follows === 'true';
     // A line its trip writes stays linked (trip-planner task 4).
     if (tr.dataset.fromTrip) line.fromTrip = tr.dataset.fromTrip;
     const fresh = section ? buildLabourRow(section, null, line) : buildTravelRow(null, line);

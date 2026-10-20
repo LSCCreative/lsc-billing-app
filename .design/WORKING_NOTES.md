@@ -110,6 +110,11 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   deliverable none of whose lines carries one plans from its old `multiplier` (G9), so old estimates don't move.
   The card refuses a bare-name service or a type `multiplier` (v19); `postMultiplier` (≥ 0) and `follows`
   (flag) live only on `post` lines (days.js `postLineProblem`) and stay off every client route and PDF.
+  Post lines a type lays out are **priced, not suggested** (replaces B2's "suggest, don't price"): an
+  hourly one `follows` and the editor's `fillFollowing` writes its qty from `postPlan().lines` on every
+  recalc, billed as filled. A typed qty or a unit switch sets `follows: false` for good; only re-picking
+  the type brings following lines back. `postPlan().lines[].index` is the index in `activeRows.post`,
+  which is `rowsIn('post')` order: keep collect() reading them in that order.
 - Invoice totals live in `calc.js` (`depositAmount`, `extrasTotals`, `finalInvoiceTotals`,
   `singleInvoiceTotals`). `accepted` counts as won. Extras charge GST as the job did.
 
