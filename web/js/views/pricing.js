@@ -1161,7 +1161,8 @@ const PricingView = (() => {
         '<span class="dtype-svc-mult">' +
         '<input type="number" class="dtype-inp dtype-mult-inp" id="dtype-mult-' + ti + '-' + j + '"' +
         ' min="0" step="0.25" inputmode="decimal" value="' + esc(String(s.multiplier)) + '"' +
-        ' aria-label="' + esc(shown) + ' multiplier for ' + esc(of) + '" aria-describedby="dtype-mult-unit"' +
+        ' aria-label="' + esc(shown) + (missing ? ' (missing)' : '') + ' multiplier for ' + esc(of) + '"' +
+        ' aria-describedby="dtype-mult-unit"' +
         ' data-dtype="multiplier" data-ti="' + ti + '" data-sj="' + j + '">' +
         '<span class="dtype-mult-unit" aria-hidden="true">× capture hr</span></span>' +
         '<button type="button" class="dtype-svc-x" data-dtype-unchip="' + j + '" data-ti="' + ti + '"' +
@@ -1329,9 +1330,12 @@ const PricingView = (() => {
     set(panel.querySelector('.dtype-del'), 'Remove the ' + of + ' type');
     t.services.forEach((s, j) => {
       const shown = s.name || 'untitled service';
-      set($('dtype-mult-' + ti + '-' + j), shown + ' multiplier for ' + of);
+      const field = $('dtype-mult-' + ti + '-' + j);
+      // "(missing)" in words on both of its controls (PM8): Tab meets the field first.
+      const miss = field && field.closest('.dtype-svc-missing') ? ' (missing)' : '';
+      set(field, shown + miss + ' multiplier for ' + of);
       const x = panel.querySelector('[data-dtype-unchip="' + j + '"]');
-      if (x) set(x, 'Remove ' + shown + (x.closest('.dtype-svc-missing') ? ' (missing)' : '') + ' from ' + of);
+      if (x) set(x, 'Remove ' + shown + miss + ' from ' + of);
     });
   }
 

@@ -126,11 +126,18 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   horizontal scroll, the panel goes two-column at 1100, phone inputs 16px, nothing under 44 px
   below 768. `responsive.css` needed nothing (the block opts out of its 660px table floor)._
 
-- [ ] **PM8. Accessibility pass** (frontend — Opus/high): the summary's accessible name reads in full
+- [x] **PM8. Accessibility pass** (frontend — Opus/high): the summary's accessible name reads in full
   ("Brand Story, 4 post services, 3.5 post hours per capture hour"); its panel is `role="region"`
   labelled by the type; each multiplier field is labelled with service and type and described by its
   unit; keyboard only: Tab, Enter/Space open/close, nothing traps; focus never drops to the page;
   missing is said in words; contrast holds on `--color-bg-inset`. _Depends on: PM6, PM7._
+  _Built (most of it ahead in PM3/PM6): a missing service's multiplier field now says "(missing)"
+  in its name too (Tab meets it before its ×), kept when the type is renamed. Audited headless at
+  1280 and 375 (no save): the tree reads as specified; Enter and Space toggle with focus kept on the
+  summary; Tab runs summary → Name → Description → each field and × → "+ Add service" → Remove type
+  → next summary, nothing traps; every removal lands on the next control and is announced (after
+  the announcer's 1 s wait); text on the inset surface ≥ 7.4:1, missing words ≥ 7.4:1, input
+  borders 3.03:1, focus ring 6.15:1._
 
 ## Review
 
