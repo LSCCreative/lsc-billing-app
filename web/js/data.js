@@ -170,7 +170,7 @@ const LSCData = (() => {
       return out;
     },
     /* The one screen an auto price with no figure sends you to: the first
-       floor blocker, else Profit Goals, which holds Target Markup (the other
+       floor blocker, else Profit Goals, which holds Business profit (the other
        thing an auto price needs) and the rest of the floor's inputs. */
     autoPriceBlocker: () => LSCData.floorBlockers()[0] || { tab: 'goals', screen: 'Profit Goals', what: 'your Profit Goals' },
     /* What an auto price on the rate card is worked out from (calc.js unitDef,

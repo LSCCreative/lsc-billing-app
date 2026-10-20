@@ -5,14 +5,24 @@
  *
  * WHY THIS SCREEN EXISTS
  * The Overhead screen answers "what does the year cost." This one answers "how
- * much is meant to be left over": Target Markup is what minimumJobPrice() and
- * the cost floor add on top of cost — and, since service rate tiers, on top of
- * the income floor for every auto price on the Rate Card — and Desired Net Income — with super, a
- * bad-debt allowance and the user's own tax scale — sets Target Annual
- * Revenue, which the income floor divides across billable hours.
+ * much is meant to be left over": Desired Net Income — with super, a bad-debt
+ * allowance and the user's own tax scale — sets the BREAK-EVEN target, which
+ * the income floor divides across billable hours, and Business profit is what
+ * every auto price on the Rate Card adds on top of that floor.
+ *
+ * BUSINESS PROFIT (pricing-floor PF6, 2026-10-20)
+ * "Target Markup" is relabelled "Business profit (%) — before tax" (P3): money
+ * kept in the business on top of the owner's pay. The column and the API key
+ * keep their old names (target_profit_margin_pct / targetProfitMarginPct). It
+ * is NOT in the income floor or the Minimum Job Price (both break-even, P5);
+ * it is in every auto price (calc.js suggestedPrice) and in the target as its
+ * own line: Target Annual Revenue reads break-even parts, a Break-even
+ * subtotal, Business profit (break-even × %), then the total. The parts come
+ * straight from revenueTarget(), which builds every total from rounded parts,
+ * so the ledger adds up to the cent; don't re-round or re-add them here.
  *
  * THE 2026-09-28 AUDIT CHANGED THIS SCREEN (HANDOVER "What landed — audit")
- *   - "Target Profit Margin" is labelled Target Markup: it has always been
+ *   - "Target Profit Margin" is labelled Target Markup (Business profit since PF6): it has always been
  *     applied as cost × (1 + pct), which is a markup. The stored column and
  *     every figure are unchanged.
  *   - Super (%) and Bad debt allowance (%) are new, both optional (blank is 0).
@@ -44,7 +54,7 @@
  * written by anything; the floor only warns.
  *
  * TWO UNITS IN ONE FORM — THE TRAP IN THIS FILE
- * Target Profit Margin is a PERCENT (25 means 25%, and goals.
+ * Business profit is a PERCENT (10 means 10%, and goals.
  * target_profit_margin_pct stores it that way). The tax reserve is a FRACTION
  * on the wire (0.35), shown as a percent in its field, exactly as the Pricing
  * screen does it. So the margin is sent through untouched and the tax is
@@ -208,15 +218,15 @@ const GoalsView = (() => {
       found.push({ msg: 'Desired Net Income must be a number of dollars, 0 or more.', field: $('goals-net') });
     }
 
-    /* No upper bound, deliberately: minimumJobPrice() accepts any margin from 0
-       up, and a 150% margin is a real pricing decision in some businesses. The
+    /* No upper bound, deliberately: suggestedPrice() accepts any profit from 0
+       up, and a high one is a real pricing decision in some businesses. The
        view should not be stricter than the function it feeds. The unit is the
-       thing worth saying out loud here, because 0.25 typed for 25% is a valid
-       number that silently prices a quarter of one percent. */
+       thing worth saying out loud here, because 0.1 typed for 10% is a valid
+       number that silently prices a tenth of one percent. */
     const margin = parseFloat(form.margin);
     if (!Number.isFinite(margin) || margin < 0) {
       found.push({
-        msg: 'Target Markup must be a number, 0 or more — it’s a percent, so 25 means 25%.',
+        msg: 'Business profit must be a number, 0 or more — it’s a percent, so 10 means 10%.',
         field: $('goals-margin'),
       });
     }
@@ -259,6 +269,9 @@ const GoalsView = (() => {
     return revenueTarget(LSCData.businessCost(), form.net, formTaxYear(), {
       superPct: form.superPct,
       badDebtPct: form.badDebtPct,
+      // Business profit, a PERCENT as typed. Blank or half-typed reads as 0%
+      // (calc.js nonNeg); the save refuses it, so 0 is never stored by accident.
+      profitPct: form.margin,
     });
   }
 
@@ -288,20 +301,42 @@ const GoalsView = (() => {
     return 'Fill in the fields above and this fills in.';
   }
 
+  /* The working, one line per part: what break-even is made of, the
+     Break-even subtotal, Business profit, then the total the figure above
+     shows. Super and bad debt only appear when set, as on the Dashboard; the
+     profit line always does, even at 0%, so the shape break-even + profit =
+     total stays readable while the field is being typed. Every value is a
+     revenueTarget() part as returned (see "BUSINESS PROFIT" above). */
+  function partsMarkup(r) {
+    if (r === null) return '';
+    const line = (label, value, cls) =>
+      '<div class="dash-line' + (cls ? ' ' + cls : '') + '">' +
+      '<span class="dash-line-label">' + label + '</span>' +
+      '<span class="dash-line-value">' + fmt(value) + '</span></div>';
+    const pct = parseFloat(form.margin);
+    const profitLabel = Number.isFinite(pct) && pct >= 0
+      ? 'Business profit, ' + esc(hrs(pct)) + '% of break-even'
+      : 'Business profit (set a percent below)';
+    return (
+      line('Running costs', r.businessCost) +
+      line('Your pay before tax', r.grossPay) +
+      line('of which income tax and Medicare', r.incomeTax, 'goals-part-of') +
+      (r.superContribution > 0 ? line('Super', r.superContribution) : '') +
+      (r.badDebtAllowance > 0 ? line('Bad-debt allowance', r.badDebtAllowance) : '') +
+      line('Break-even', r.breakEven, 'goals-part-sub') +
+      line(profitLabel, r.businessProfit) +
+      line('Target annual revenue', r.total, 'dash-line-total')
+    );
+  }
+
   function outcomeNote(r) {
     if (r === null) return missingReason();
-    const parts = [
-      'running costs ' + fmt(r.businessCost),
-      'pay before tax ' + fmt(r.grossPay) + ' (' + fmt(r.incomeTax) + ' of it income tax and Medicare)',
-    ];
-    if (r.superContribution > 0) parts.push('super ' + fmt(r.superContribution));
-    if (r.badDebtAllowance > 0) parts.push('a bad-debt allowance of ' + fmt(r.badDebtAllowance));
     return (
-      esc(parts.join(' + ').replace(/^./, (c) => c.toUpperCase())) + '. ' +
       'Tax is worked out on your pay only — running costs are deductible — using the ' +
       esc(fyDisplay(taxFy)) + ' scale below' + (tySaved === null ? ', which isn’t saved yet' : '') + '. ' +
-      'This is what the business needs to invoice in a year, and ÷ your billable hours it is the income floor ' +
-      'your rate card is measured against.'
+      'Break-even ÷ your billable hours is the income floor your rate card is measured against, and a job’s ' +
+      'Minimum Job Price. Business profit goes on top of every auto price, so a full year at those prices ' +
+      'reaches the total.'
     );
   }
 
@@ -314,6 +349,7 @@ const GoalsView = (() => {
     const r = computeTarget();
     valueEl.textContent = r === null ? '—' : fmt(r.total);
     valueEl.classList.toggle('is-empty', r === null);
+    $('goals-tar-parts').innerHTML = partsMarkup(r);
     $('goals-tar-note').innerHTML = outcomeNote(r);
     refreshSuggestion(r);
   }
@@ -451,6 +487,7 @@ const GoalsView = (() => {
       '<div class="sum-label">Target annual revenue</div>' +
       '<div class="goals-outcome-value' + (value === null ? ' is-empty' : '') + '" id="goals-tar-value">' +
       (value === null ? '—' : fmt(value)) + '</div>' +
+      '<div class="goals-parts" id="goals-tar-parts">' + partsMarkup(r) + '</div>' +
       '<p class="goals-outcome-note" id="goals-tar-note">' + outcomeNote(r) + '</p>' +
       '</div>' +
       // Spoken once typing pauses — see LSCUtil.announce().
@@ -466,9 +503,9 @@ const GoalsView = (() => {
       ) +
       fieldMarkup(
         'goals-margin',
-        'Target Markup (%)',
+        'Business profit (%) — before tax',
         form.margin,
-        'Added on top of cost. It sets every auto price on your Rate Card (your income floor plus this markup) as well as a job’s minimum price and the cost floor, so raising it raises them all. A markup, not a margin: 25% on cost is a 20% share of the price. Enter 25 for 25%, not 0.25.',
+        'What the business keeps on top of your pay, for slow years, gear upgrades and growth. Added to every auto price on your Rate Card (income floor + this), not to the income floor or a job’s Minimum Job Price, which stay at break-even. Enter 10 for 10%, not 0.1.',
         'min="0" step="1"'
       ) +
       hoursMarkup() +
@@ -509,7 +546,7 @@ const GoalsView = (() => {
       taxYearMarkup() +
 
       '<div class="pricing-save-bar" id="goals-save-bar">' +
-      '<p>Saving moves the floors on your Dashboard and Rate Card, and every new estimate’s minimum job price. Estimates already saved keep the figures they were quoted at.</p>' +
+      '<p>Saving moves your income floor and the auto prices on your Rate Card, and every new estimate’s Minimum Job Price. Estimates already saved keep the figures they were quoted at.</p>' +
       '<div style="display:flex;align-items:center;gap:12px">' +
       '<span class="saved-msg" id="goals-saved-msg">✓ Goals saved</span>' +
       '<button type="button" class="btn btn-accent" id="goals-save" data-write>' +
@@ -675,8 +712,8 @@ const GoalsView = (() => {
       $(id).addEventListener('input', function () {
         form[fields[id]] = this.value;
         refreshOutcome();
-        // The margin field doesn't move this figure, so it announces nothing
-        // new — announce() skips text that hasn't changed.
+        // The tax reserve field doesn't move this figure, so it announces
+        // nothing new — announce() skips text that hasn't changed.
         const r = computeTarget();
         LSCUtil.announce(
           $('goals-tar-live'),

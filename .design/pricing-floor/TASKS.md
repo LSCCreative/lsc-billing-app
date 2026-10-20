@@ -96,12 +96,20 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   58 h × $143.75 + $2,610; shares $1,507.32 + $5,949.49 + $713.94 + $166.75 = $8,337.50; clears at
   $17,860 vs $17,847.50; tick off/on leaves the total alone; 1280 / 800 / 375 checked._
 
-- [ ] **PF6. Profit Goals: Business profit** (frontend — Opus/high, **Frontend task**): "Target Markup"
+- [x] **PF6. Profit Goals: Business profit** (frontend — Opus/high, **Frontend task**): "Target Markup"
   becomes **"Business profit (%) — before tax"**, with a hint saying what it's for (slow years,
   upgrades, growth; on top of your pay). Target Annual Revenue shows break-even parts, then a "Business
   profit" line, then the total. The read-only capacity figure shows the utilisation step. Done when: the
   breakdown adds up to the total to the cent, saving the profit moves auto prices on the Rate Card without a
   reload, and 375px is checked. _Modifies: `views/goals.js`. Depends on: PF1, PF2._
+  _Done 2026-10-20 (committed, not deployed): the field is "Business profit (%) — before tax" (hint: on top of
+  your pay, for slow years, upgrades and growth; in every auto price, not the floor or the Minimum Job
+  Price). Target Annual Revenue now passes `profitPct` and shows a ledger under the figure, Dashboard
+  `.dash-line`s in `--font-figures`: running costs, pay (tax indented), super, bad debt, a ruled
+  Break-even subtotal, "Business profit, N% of break-even", then the total; the profit line shows even
+  at 0%. Scratch: $165,939.97 + $16,594.00 = $182,533.97 to the cent; 12% saved moved the Rate Card's
+  auto hourly $161 → $164 with no reload (badges unchanged), restored to 10%; a blank profit refused
+  naming the field; 1280 / 800 / 375 checked._
 
 - [ ] **PF7. Finance Dashboard** (frontend — Opus/high, **Frontend task**): remove the "Cost floor"
   row and sentence. Per hour shows Overhead rate (labelled "running costs only, a reference") and the

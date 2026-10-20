@@ -229,3 +229,38 @@
 #goals-ty-error.show {
   display: block;
 }
+
+/* ── Target Annual Revenue's working (pricing-floor PF6) ────────────────────
+   The Dashboard's ledger lines (.dash-line, finance-dashboard.css) so the two
+   screens read the target the same way, with figures in --font-figures: the
+   lines add up, and Metro Sans has no tabular digits to align them. Two
+   additions: the tax line is a part of the pay above it, so it is indented
+   and muted; Break-even is a subtotal, ruled like a total but not bold, so
+   the eye lands on the last line as the answer. */
+.goals-parts {
+  margin: 4px 0 14px;
+}
+.goals-parts:empty {
+  display: none;
+}
+.goals-parts .dash-line-value {
+  font-family: var(--font-figures);
+  font-size: 12px;
+}
+.goals-part-of .dash-line-label {
+  padding-left: 14px;
+}
+.goals-part-of .dash-line-value {
+  color: var(--muted);
+}
+.goals-part-sub {
+  border-top: 1px solid var(--border);
+}
+.goals-part-sub .dash-line-label {
+  color: var(--text);
+}
+/* .dash-line-total's 2px top margin opens a gap under the profit line's
+   hairline, which reads as a double rule at this width. */
+.goals-parts .dash-line-total {
+  margin-top: 0;
+}

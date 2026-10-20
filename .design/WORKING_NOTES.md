@@ -16,8 +16,9 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   fee), rounded up once; badges compare against the bare floor. `mu` is never auto-written, except auto prices from service-rate-tiers, which
   move the card knowingly. Saved estimate lines keep their own price snapshot; "Update to current
   rates" is explicit.
-- "Target Profit Margin" is labelled **Target Markup** (it always was a markup; the DB column keeps
-  the old name). `profitMarginPct` is a percent (25 = 25%); tax rates are fractions.
+- The markup is labelled **Business profit (%) — before tax** (pricing-floor PF6; was "Target Markup",
+  before that "Target Profit Margin"); the DB column and the API key `targetProfitMarginPct` keep the old
+  name. `profitMarginPct` is a percent (25 = 25%); tax rates are fractions.
 - Income tax uses the ATO resident brackets + Medicare, stored per FY in `tax_years`, user-entered
   (placeholders flagged). Tax is levied on pay, not revenue. Thresholds and effective lives stay
   user-entered; never hardcode them.
