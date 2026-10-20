@@ -53,8 +53,7 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   `.billing-block`, `.bb-head`, `.del-btn`, `.btn-ghost.btn-sm`, the disclosure pattern of panel.js._
   _Built ahead of PM6–PM8: a save problem already opens its type (`openProblemType`); the summary's
   accessible name reads in full; the panel is `role="region"`; the three breakpoints are in, and
-  below 768 the "× capture hr" unit is hidden so service names keep their room (left for PM7 to
-  confirm)._
+  below 768 the "× capture hr" unit is hidden so service names keep their room (confirmed in PM7)._
 
 - [x] **PM4. Post lines that fill and follow** (money + frontend — Opus/high): in
   `estimate-editor.js`. `layOutPost` snapshots each service's multiplier onto its line
@@ -114,11 +113,18 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
 
 ## Responsive & Polish
 
-- [ ] **PM7. Breakpoints** (frontend — Opus/high): Breakpoints: ≥1100 one-line summary (name left,
+- [x] **PM7. Breakpoints** (frontend — Opus/high): Breakpoints: ≥1100 one-line summary (name left,
   mono meta right, chevron) and a two-column open panel (fields left, service list right); 768–1099 the
   panel stacks; <768 the summary wraps to two lines, service rows stay one line with the name
   truncating, inputs at `--font-size-md`, tap targets ≥ 44 px, no horizontal scroll. _Depends on: PM3.
   Modifies: `pricing.css`, `responsive.css`._
+  _Built (most of it ahead in PM3): the summary's figures carry their own "·" in front, and the
+  meta clips one dot's width at its left edge, so a part that wraps to a new line (a 320 phone, or
+  "N missing" at 375) starts clean and no line ends on a dot. The phone's hidden "× capture hr" is
+  confirmed (the list label and each field's description say it). Measured at 1280 / 1100 / 1099 /
+  1024 / 800 / 768 / 767 / 375 / 320, also with a long type name and a missing service: no
+  horizontal scroll, the panel goes two-column at 1100, phone inputs 16px, nothing under 44 px
+  below 768. `responsive.css` needed nothing (the block opts out of its 660px table floor)._
 
 - [ ] **PM8. Accessibility pass** (frontend — Opus/high): the summary's accessible name reads in full
   ("Brand Story, 4 post services, 3.5 post hours per capture hour"); its panel is `role="region"`

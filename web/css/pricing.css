@@ -971,16 +971,29 @@
   font-style: italic;
   color: var(--muted);
 }
+/* Each part brings its own "·" in front; the meta reaches one dot's width
+   left of its column and clips that strip, so whichever part starts a line
+   (the first, or one a narrow phone wraps down) shows no dot, and no line
+   ever ends on one (PM7). */
 .dtype-sum-meta {
   grid-area: meta;
   display: flex;
   flex-wrap: wrap;
-  column-gap: 6px;
   min-width: 0;
+  margin-left: -16px;
+  clip-path: inset(0 0 0 16px);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
-.dtype-sum-dot {
+.dtype-sum-part {
+  white-space: nowrap;
+}
+.dtype-sum-part::before {
+  content: '·';
+  content: '·' / '';
+  display: inline-block;
+  width: 16px;
+  text-align: center;
   color: var(--muted);
 }
 .dtype-sum-rate {

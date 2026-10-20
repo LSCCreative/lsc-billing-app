@@ -1215,12 +1215,9 @@ const PricingView = (() => {
       ' aria-expanded="' + open + '" aria-controls="dtype-panel-' + ti + '" aria-label="' + esc(summaryName(t)) + '">' +
       '<span class="dtype-sum-name' + (blank ? ' is-blank' : '') + '" id="dtype-sum-name-' + ti + '">' +
       esc(typeNameOf(t)) + '</span>' +
-      '<span class="dtype-sum-meta"><span class="dtype-sum-count">' + countText(t) + '</span>' +
-      (missing
-        ? '<span class="dtype-sum-dot" aria-hidden="true">·</span><span class="dtype-sum-miss">' + missing + ' missing</span>'
-        : '') +
-      '<span class="dtype-sum-dot" aria-hidden="true">·</span>' +
-      '<span><span class="dtype-sum-rate">' + rateText(t) + '</span><span class="dtype-sum-unit">' +
+      '<span class="dtype-sum-meta"><span class="dtype-sum-part">' + countText(t) + '</span>' +
+      (missing ? '<span class="dtype-sum-part dtype-sum-miss">' + missing + ' missing</span>' : '') +
+      '<span class="dtype-sum-part"><span class="dtype-sum-rate">' + rateText(t) + '</span><span class="dtype-sum-unit">' +
       rateUnit(t, 'hr') + '</span> per capture hr</span></span>' +
       '<span class="panel-chev dtype-chev" aria-hidden="true"></span></button>' +
       '<div class="dtype-panel" id="dtype-panel-' + ti + '" role="region" aria-labelledby="dtype-sum-name-' + ti + '"' +
