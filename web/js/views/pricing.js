@@ -997,8 +997,8 @@ const PricingView = (() => {
       paragraphs: [
         'The billable hours inside one day of a service on a job — a shoot day, an edit day. A full-day line on ' +
           'an estimate carries this many hours into Minimum Job Price.',
-        'Not Capacity’s billable hours per day: that one averages your whole year, admin and quiet days included, ' +
-          'to set your hourly floor. A day on a job is usually longer.',
+        'Not Capacity’s hours worked per day: that one is a normal working day, admin included, and with the share ' +
+          'you can bill it sets your hourly floor. A day on a job is often longer.',
         'Auto half- and full-day prices are the hourly price × these hours. Prices you’ve typed don’t move.',
       ],
     });

@@ -165,7 +165,13 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   $2,298.40), so the default card's typed rates leave it under by $486.75: for the user's PF11 review of
   typed rows below the floor. WORKING_NOTES money lines rewritten._
 
-- [ ] **PF10. Design review**: run /design-review against the brief for PF4–PF8 at 1280 / 800 / 375.
+- [x] **PF10. Design review**: run /design-review against the brief for PF4–PF8 at 1280 / 800 / 375.
+  _Done 2026-10-20 (not deployed): `DESIGN_REVIEW.md`, 24 local screenshots. No must-fix. Fixed: Capacity's
+  save bar and its save confirm (now quote the income floor, $143.75 → $155.72 at 60%, not the overhead
+  rate), the Service Day ⓘ ("hours worked per day", not "billable … admin and quiet days included"), and
+  the editor's "Show minimum" tick moved directly above its line. Open for the user: rename the Rate
+  Card's "Mark-Up ($)" column (it is the price, and "markup" is now Business profit); casing of the three
+  settings labels; take-home in green beside an "under by" verdict. 765/765 tests._
 
 - [ ] **PF11. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v18 on a copy of
   the live backup (PF2's deferred check: goals before/after, every other table unchanged, `foreign_key_check`), fetch and diff `origin/main`, then NAS before Pages (`DEPLOYMENT.md`). After deploy,

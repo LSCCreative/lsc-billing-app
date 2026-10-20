@@ -2963,7 +2963,6 @@ const EstimateEditor = (() => {
     return (
       // D98: "On set, by day" → surcharge box → totals.
       surchargeBoxMarkup() +
-      minimumToggleMarkup() +
       '<div class="summary-bar">' +
       '<div class="sum-item"><div class="sum-label">Total hours</div><div class="sum-value" id="s-hours">0</div></div>' +
       '<div class="sum-item"><div class="sum-label">Labour subtotal</div><div class="sum-value" id="s-labour">$0.00</div></div>' +
@@ -2996,7 +2995,10 @@ const EstimateEditor = (() => {
       '<div class="sum-value" id="s-takehome" style="color:var(--ok)">$0.00</div></div>' +
       '</div>' +
       /* Under the bars, not inside them: a sixth .sum-item would read as one
-         more headline figure, and this one is explicitly not that. */
+         more headline figure, and this one is explicitly not that. The tick
+         sits directly above the one line it shows or hides (pricing-floor
+         PF10; it sat above the totals while it governed two floors). */
+      minimumToggleMarkup() +
       minimumLineMarkup()
     );
   }

@@ -56,7 +56,7 @@
 
 const CapacityView = (() => {
   const { esc, fmt } = LSCUtil;
-  const { annualBillableHours, overheadRatePerHour } = LSCCalc;
+  const { annualBillableHours, incomeFloorPerHour } = LSCCalc;
 
   /* What a goals row that has never been written shows. The figures migration
      v5 seeded (and v18 the share) and routes/goals.js falls back to — so a
@@ -123,10 +123,11 @@ const CapacityView = (() => {
     };
   }
 
-  /* The overhead cost per hour a given number of annual hours produces — the
-     same business cost LSCData.overheadRate() divides, over the hours being
-     asked about, so the confirm quotes the figure the Rate Card will show. */
-  const rateFor = (hours) => overheadRatePerHour(LSCData.businessCost(), hours);
+  /* The income floor a given number of annual hours produces — the same
+     break-even LSCData.incomeFloor() divides, over the hours being asked about,
+     so the confirm quotes the figure every auto price follows (pricing-floor
+     PF10; it quoted the overhead rate, which no price follows since PF1). */
+  const floorFor = (hours) => incomeFloorPerHour((LSCData.revenueTarget() || {}).breakEven, hours);
 
   // ── Validation ────────────────────────────────────────────────────────────
 
@@ -301,8 +302,8 @@ const CapacityView = (() => {
       '<div id="capacity-error" role="alert"></div>' +
 
       '<div class="pricing-save-bar" id="capacity-save-bar">' +
-      '<p>Saving changes every labour rate on your card from here on — your overhead is divided across these hours. ' +
-      'Estimates already saved keep the figures they were quoted at.</p>' +
+      '<p>Saving moves your income floor, and every auto price on your Rate Card with it: break-even is divided across ' +
+      'these hours. Prices you’ve typed, and estimates already saved, keep their figures.</p>' +
       '<div style="display:flex;align-items:center;gap:12px">' +
       '<span class="saved-msg" id="capacity-saved-msg">✓ Capacity saved</span>' +
       '<button type="button" class="btn btn-accent" id="capacity-save" data-write>' +
@@ -357,8 +358,8 @@ const CapacityView = (() => {
     const beforeHours = annualBillableHours(LSCData.goals());
     if (beforeHours === null || beforeHours === afterHours) return null;
 
-    const before = rateFor(beforeHours);
-    const after = rateFor(afterHours);
+    const before = floorFor(beforeHours);
+    const after = floorFor(afterHours);
     const direction = afterHours < beforeHours ? 'rises' : 'falls';
     /* The after figure with its two parts, because a change to the share alone
        moves the hours as much as a week's leave and nothing else on the form
@@ -369,9 +370,9 @@ const CapacityView = (() => {
       ' (' + hrs(worked) + ' hrs worked × ' + hrs(capacity.utilisationPct) + '% you can bill).\n\n';
     text +=
       before !== null && after !== null
-        ? 'Your overhead cost per hour ' + direction + ' from ' + fmt(before) + ' to ' + fmt(after) +
-          ', and every overhead-derived rate on your card moves with it — the Rate Card and the Minimum Job Price on new estimates.'
-        : 'Every overhead-derived rate on your card moves with this, once overhead is set up.';
+        ? 'Your income floor ' + direction + ' from ' + fmt(before) + ' to ' + fmt(after) + ' an hour, and every ' +
+          'auto price on your Rate Card and the Minimum Job Price on new estimates move with it. Prices you’ve typed don’t move.'
+        : 'Your income floor and every auto price on your Rate Card move with this, once Overhead and Profit Goals are set up.';
     text += '\n\nEstimates already saved keep the figures they were quoted at.\n\nSave these hours?';
     return text;
   }
