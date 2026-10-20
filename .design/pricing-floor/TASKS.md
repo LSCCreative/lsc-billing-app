@@ -64,13 +64,19 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
 
 ## Core UI
 
-- [ ] **PF4. Capacity: hours worked × share you can bill** (frontend — Opus/high, **Frontend task**):
+- [x] **PF4. Capacity: hours worked × share you can bill** (frontend — Opus/high, **Frontend task**):
   "Billable hours per day" becomes "Hours worked per day"; a new "Share you can bill (%)" field beside
   it, with a hint ("most solo businesses bill 55–70%"). The working under the annual figure gains the
   utilisation step (…= 1,776 hrs worked × 65% = 1,154 billable hrs). Validation, the before/after change
   sentence and the save toast follow. The "Days sold on a job" note drops "admin and quiet days included".
   Done when: save round-trips, a blank or out-of-range share is refused with the field named, and 375px is
   checked. _Reuses: the Capacity form, `derivation()`. Depends on: PF2._
+  _Done 2026-10-20 (committed, not deployed): the share sits on its own row under a rule, after leave and
+  sick (not beside hours: five fields in pairs leave a gap, and it applies to the whole year, the
+  order the working reads in). `derivation()` ends "…= 1,776 hrs worked × 65% = 1,154.4 billable hrs";
+  the confirm adds "(1,776 hrs worked × 60% you can bill)". Profit Goals now passes `utilisationPct` to
+  `derivation()`, so PF6's capacity-figure item is done. Scratch: blank and 150 refused naming the
+  field, 60% saved and read back from the API, restored to 65%; 800 and 375 checked._
 
 - [ ] **PF5. Estimate editor: one Minimum Job Price** (frontend — Opus/high, **Frontend task**; money
   display): the Summary shows one advisory line, **Minimum Job Price** = break-even (P5), with "this quote

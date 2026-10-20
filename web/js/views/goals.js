@@ -365,6 +365,10 @@ const GoalsView = (() => {
             workingDaysPerWeek: Number(goals.workingDaysPerWeek),
             leaveDaysPerYear: Number(goals.leaveDaysPerYear),
             sickDaysPerYear: Number(goals.sickDaysPerYear),
+            // NaN for a pre-v18 payload: derivation() then stops at hours worked.
+            utilisationPct: goals.utilisationPct === null || goals.utilisationPct === undefined
+              ? NaN
+              : Number(goals.utilisationPct),
           });
     return (
       '<div class="field goals-derived">' +

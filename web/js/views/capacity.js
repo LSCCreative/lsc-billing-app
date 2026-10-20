@@ -7,9 +7,18 @@
  * overheadRatePerHour() is annual cost ÷ these hours, and the Rate Card's rate
  * column, the estimate editor's Minimum Job Price and (later) every Dashboard
  * floor all read it. They used to come from one "hours per week" figure times
- * an assumed 48-week year. They now come from four things the user actually
+ * an assumed 48-week year. They now come from five things the user actually
  * knows — see calc.js's header, decision 2, for why the 48 died and the ~8% it
  * added to every rate, knowingly.
+ *
+ * HOURS WORKED × THE SHARE YOU CAN BILL (pricing-floor P1, schema v18)
+ * The day is the hours actually worked, admin and email included, and a
+ * separate share says how much of that a client pays for. Until v18 one
+ * "billable hours per day" field had to carry both, and in practice it was
+ * typed as the whole working day, so every hour worked was priced as billed
+ * and the income floor came out ~35% low. The share is its own field, last,
+ * because it applies to the year the four above it add up to, and the working
+ * under the annual figure reads in the same order.
  *
  * LEAVE AND SICK DAYS ARE WORKING DAYS
  * Four weeks off is 20 working days, not 28 calendar days, and the difference
@@ -35,10 +44,12 @@
  * exactly as pricing.js computes its rate column today, so the number in the
  * dialog is the number the Rate Card will show.
  *
- * ONLY THE FOUR FIELDS GO ON THE WIRE
+ * ONLY THE FIVE FIELDS GO ON THE WIRE
  * PUT /api/goals resolves every field the caller doesn't send to what is
  * already stored (routes/goals.js — resolveGoalField / resolveCapacityField),
- * so this screen sends its four and nothing else. It must NOT echo the income
+ * so this screen sends its five and nothing else. The four time fields are
+ * what confirm the defaults (CAPACITY_KEYS); the share is deliberately not one
+ * of them, so a tab from before v18 still confirms. It must NOT echo the income
  * and margin back from the cache: the Goals screen owns those, and a stale
  * echo is how two writers of one row overwrite each other.
  */
@@ -47,24 +58,25 @@ const CapacityView = (() => {
   const { esc, fmt } = LSCUtil;
   const { annualBillableHours, overheadRatePerHour } = LSCCalc;
 
-  /* What a goals row that has never been written shows. The same four figures
-     migration v5 seeded and routes/goals.js falls back to — so a first-ever
-     visit and a migrated row start from the same place, and both carry the
-     "defaults" flag until saved. */
-  const REFERENCE = { hoursPerDay: '8', daysPerWeek: '5', leave: '30', sick: '8' };
+  /* What a goals row that has never been written shows. The figures migration
+     v5 seeded (and v18 the share) and routes/goals.js falls back to — so a
+     first-ever visit and a migrated row start from the same place, and both
+     carry the "defaults" flag until saved. */
+  const REFERENCE = { hoursPerDay: '8', daysPerWeek: '5', leave: '30', sick: '8', share: '65' };
 
   const FIELDS = {
     'cap-hours': 'hoursPerDay',
     'cap-days': 'daysPerWeek',
     'cap-leave': 'leave',
     'cap-sick': 'sick',
+    'cap-share': 'share',
   };
 
   let root = null;
   let handlers = null;
   let saving = false;
-  let form = null; // the four fields exactly as typed
-  let saved = null; // the same four, as the server last confirmed them
+  let form = null; // the five fields exactly as typed
+  let saved = null; // the same five, as the server last confirmed them
   let confirmed = false; // has this screen ever been saved? see the header
 
   const $ = (id) => root.querySelector('#' + id);
@@ -94,6 +106,7 @@ const CapacityView = (() => {
       daysPerWeek: toField(goals.workingDaysPerWeek, REFERENCE.daysPerWeek),
       leave: toField(goals.leaveDaysPerYear, REFERENCE.leave),
       sick: toField(goals.sickDaysPerYear, REFERENCE.sick),
+      share: toField(goals.utilisationPct, REFERENCE.share),
     };
   }
 
@@ -106,6 +119,7 @@ const CapacityView = (() => {
       workingDaysPerWeek: parseFloat(f.daysPerWeek),
       leaveDaysPerYear: parseFloat(f.leave),
       sickDaysPerYear: parseFloat(f.sick),
+      utilisationPct: parseFloat(f.share),
     };
   }
 
@@ -126,7 +140,7 @@ const CapacityView = (() => {
     const found = [];
 
     if (!Number.isFinite(c.billableHoursPerDay) || c.billableHoursPerDay <= 0 || c.billableHoursPerDay > 24) {
-      found.push({ msg: 'Billable hours per day must be more than 0 and no more than 24.', field: $('cap-hours') });
+      found.push({ msg: 'Hours worked per day must be more than 0 and no more than 24.', field: $('cap-hours') });
     }
     if (!Number.isFinite(c.workingDaysPerWeek) || c.workingDaysPerWeek < 1 || c.workingDaysPerWeek > 7) {
       found.push({ msg: 'Working days per week must be between 1 and 7.', field: $('cap-days') });
@@ -137,8 +151,11 @@ const CapacityView = (() => {
     if (!Number.isFinite(c.sickDaysPerYear) || c.sickDaysPerYear < 0) {
       found.push({ msg: 'Sick and miscellaneous days must be a number of working days, 0 or more.', field: $('cap-sick') });
     }
+    if (!Number.isFinite(c.utilisationPct) || c.utilisationPct < 1 || c.utilisationPct > 100) {
+      found.push({ msg: 'Share you can bill must be a percentage from 1 to 100.', field: $('cap-share') });
+    }
 
-    /* Only once the three it depends on are individually valid, so it never
+    /* Only once the fields it depends on are individually valid, so it never
        stacks a second sentence onto a field that is already wrong. Same '>='
        as calc.js and the route: exactly equal leaves zero hours to bill. */
     if (!found.length) {
@@ -159,26 +176,34 @@ const CapacityView = (() => {
   // ── Annual billable hours ─────────────────────────────────────────────────
 
   /* The working, spelled out under the figure, because this is the number the
-     whole rate card divides by and "1,776" alone asks to be taken on trust. */
+     whole rate card divides by and "1,154.4" alone asks to be taken on trust.
+     Its last figure is annualBillableHours() itself, not this sum redone, so
+     the sentence can never end on a number the figure above it doesn't show.
+     A capacity with no share (a pre-v18 payload) is every hour billed, as
+     calc.js reads it, and the sentence stops at the hours worked. */
   function derivation(c) {
     const workingDays = c.workingDaysPerWeek * 52;
-    const billableDays = workingDays - c.leaveDaysPerYear - c.sickDaysPerYear;
-    return (
+    const daysWorked = workingDays - c.leaveDaysPerYear - c.sickDaysPerYear;
+    const worked = daysWorked * c.billableHoursPerDay;
+    const head =
       hrs(c.workingDaysPerWeek) + ' days × 52 weeks = ' + hrs(workingDays) + ' working days, less ' +
       hrs(c.leaveDaysPerYear) + ' leave and ' + hrs(c.sickDaysPerYear) + ' sick = ' +
-      hrs(billableDays) + ' billable days × ' + hrs(c.billableHoursPerDay) + ' hrs.'
-    );
+      hrs(daysWorked) + ' days worked × ' + hrs(c.billableHoursPerDay) + ' hrs = ' + hrs(worked) + ' hrs worked';
+    if (!Number.isFinite(c.utilisationPct)) return head + '.';
+    return head + ' × ' + hrs(c.utilisationPct) + '% = ' + hrs(annualBillableHours(c)) + ' billable hrs.';
   }
 
   function missingReason(c) {
     const valid = (n) => Number.isFinite(n);
-    if (![c.billableHoursPerDay, c.workingDaysPerWeek, c.leaveDaysPerYear, c.sickDaysPerYear].every(valid)) {
-      return 'Fill in all four fields below and this works itself out.';
+    const fields = [c.billableHoursPerDay, c.workingDaysPerWeek, c.leaveDaysPerYear, c.sickDaysPerYear, c.utilisationPct];
+    if (!fields.every(valid)) {
+      return 'Fill in all five fields below and this works itself out.';
     }
     if (c.leaveDaysPerYear + c.sickDaysPerYear >= c.workingDaysPerWeek * 52) {
       return 'Leave and sick days use up the whole working year, so there are no hours left to bill.';
     }
-    return 'Hours per day must be more than 0 and up to 24, and working days per week between 1 and 7.';
+    return 'Hours worked per day must be more than 0 and up to 24, working days per week between 1 and 7, ' +
+      'and the share you can bill from 1 to 100%.';
   }
 
   /* Value and working replaced in place, never the form — a re-render on every
@@ -195,9 +220,9 @@ const CapacityView = (() => {
 
   // ── Markup ────────────────────────────────────────────────────────────────
 
-  function fieldMarkup(id, label, hint, attrs) {
+  function fieldMarkup(id, label, hint, attrs, extraClass) {
     return (
-      '<div class="field">' +
+      '<div class="field' + (extraClass ? ' ' + extraClass : '') + '">' +
       '<label for="' + id + '">' + label + '</label>' +
       '<input type="number" id="' + id + '" ' + attrs + ' aria-describedby="' + id + '-hint" value="' +
       esc(form[FIELDS[id]]) + '">' +
@@ -211,7 +236,7 @@ const CapacityView = (() => {
     return (
       '<div class="cap-defaults" id="cap-defaults" role="note">' +
       '<div class="sum-label">Defaults — confirm these are yours</div>' +
-      '<p>These four figures are the reference defaults, filled in when capacity moved to this screen: ' +
+      '<p>These figures are the reference defaults, filled in when capacity moved to this screen: ' +
       'the single weekly figure it replaced couldn’t say how much leave or sick time it assumed. ' +
       'They are already pricing your rate card. Change any that aren’t yours, then save to confirm them.</p>' +
       '</div>'
@@ -240,8 +265,8 @@ const CapacityView = (() => {
       '<div class="form-grid cap-grid">' +
       fieldMarkup(
         'cap-hours',
-        'Billable hours per day',
-        'Hours in a working day you can actually bill — not the hours you’re at your desk. Admin, quoting and email don’t count.',
+        'Hours worked per day',
+        'A normal working day, start to finish — admin, quoting and email included. The share you can bill, below, takes out the part no client pays for.',
         'min="0" max="24" step="0.5"'
       ) +
       fieldMarkup(
@@ -262,6 +287,15 @@ const CapacityView = (() => {
         'Sick days, plus working days that won’t be billed at all — gear days, training, the odd dead week. Working days, not calendar days.',
         'min="0" step="1"'
       ) +
+      /* Last and on its own row: it applies to the whole year the four above
+         add up to, which is also where the working under the figure puts it. */
+      fieldMarkup(
+        'cap-share',
+        'Share you can bill (%)',
+        'Of the hours you work, the part a client pays for. The rest is admin, quoting, email, marketing and quiet patches. Most solo businesses bill 55–70%.',
+        'min="1" max="100" step="1" inputmode="decimal"',
+        'full cap-share'
+      ) +
       '</div>' +
 
       '<div id="capacity-error" role="alert"></div>' +
@@ -277,14 +311,13 @@ const CapacityView = (() => {
 
       /* Last: a pointer, not a figure. Since service rate tiers (2026-09-28) the
          hours in a day sold on a job are the Rate Card's own Service Day, which
-         is deliberately NOT this screen's billable hours per day — that one is a
-         yearly average, and a shoot day runs longer. Repeating a day length
+         is deliberately NOT this screen's hours worked per day — that one is a
+         normal working day, and a shoot day runs longer. Repeating a day length
          here would put two numbers for "a day" on two screens. */
       '<div class="cap-fullday">' +
       '<div class="sum-label">Days sold on a job</div>' +
       '<p class="goals-hint">A full or half day on an estimate takes its hours from the Rate Card’s Service Day ' +
-      'setting, not from here. Billable hours per day above is a yearly average — admin and quiet days included — ' +
-      'and only sets your hourly floor.</p>' +
+      'setting, not from here. Hours worked per day and the share you can bill above only set your hourly floor.</p>' +
       '</div>'
     );
   }
@@ -320,15 +353,20 @@ const CapacityView = (() => {
   /* The before/after question, or null when there is nothing to ask. Before is
      what the card prices against right now — the cached goals, not the form's
      starting values, which for a never-written row are only placeholders. */
-  function moveWarning(afterHours) {
+  function moveWarning(capacity, afterHours) {
     const beforeHours = annualBillableHours(LSCData.goals());
     if (beforeHours === null || beforeHours === afterHours) return null;
 
     const before = rateFor(beforeHours);
     const after = rateFor(afterHours);
     const direction = afterHours < beforeHours ? 'rises' : 'falls';
+    /* The after figure with its two parts, because a change to the share alone
+       moves the hours as much as a week's leave and nothing else on the form
+       says so. Hours worked is the share at 100%, through calc.js. */
+    const worked = annualBillableHours(Object.assign({}, capacity, { utilisationPct: 100 }));
     let text =
-      'Annual billable hours go from ' + hrs(beforeHours) + ' to ' + hrs(afterHours) + '.\n\n';
+      'Annual billable hours go from ' + hrs(beforeHours) + ' to ' + hrs(afterHours) +
+      ' (' + hrs(worked) + ' hrs worked × ' + hrs(capacity.utilisationPct) + '% you can bill).\n\n';
     text +=
       before !== null && after !== null
         ? 'Your overhead cost per hour ' + direction + ' from ' + fmt(before) + ' to ' + fmt(after) +
@@ -350,7 +388,7 @@ const CapacityView = (() => {
 
     const capacity = capacityOf(form);
     const afterHours = annualBillableHours(capacity);
-    const warning = moveWarning(afterHours);
+    const warning = moveWarning(capacity, afterHours);
     if (warning && !window.confirm(warning)) return;
 
     setSaving(true);
@@ -358,8 +396,8 @@ const CapacityView = (() => {
 
     let reply;
     try {
-      // The four fields only — see the header. Sending all four is also what
-      // tells the server this capacity has now been confirmed.
+      // The five fields only — see the header. Sending the four time fields is
+      // also what tells the server this capacity has now been confirmed.
       reply = await LSCApi.put('/api/goals', capacity);
     } catch (err) {
       setSaving(false);

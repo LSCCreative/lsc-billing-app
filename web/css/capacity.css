@@ -65,3 +65,21 @@
 #capacity-error.show {
   display: block;
 }
+
+/* Share you can bill: the step applied to the year the four fields above add
+   up to, so it sits on its own row under a rule rather than in a pair. Its
+   input keeps one column's width; a two-digit percentage across the whole row
+   reads as a different kind of field. One column below 768 (responsive.css)
+   gives it the full width like every other field. */
+.cap-share {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+@media (min-width: 768px) {
+  .cap-share input {
+    max-width: calc(50% - 7px);
+  }
+  .cap-share .goals-hint {
+    max-width: 78ch;
+  }
+}
