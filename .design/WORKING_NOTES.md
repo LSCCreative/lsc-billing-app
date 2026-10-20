@@ -87,6 +87,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - `cardFeePct` (rate card) is a PERCENT (1.65), unlike `taxSetAsideRate` (a FRACTION, 0.35). The Rate
   Card rebuilds the card field by field on save: a new card field must go through `workingCopy` and
   `payload` and bump `PRICING_SHAPE`, or an older build's save drops it.
+  The Rate Card's `priceCtx` is read once at mount: a card field that changes auto prices (the card
+  fee) must be copied onto it as typed and after save/reset (`takeFee`), or the rows lag the field.
 - **No card surcharges, ever** (eftpos, Mastercard, Visa, Amex, PayPal no-surcharge rules from
   2026-10-01). Card fees are recovered through prices that every client pays, never added only to
   card-paid invoices, whatever it is called. "Non-taxable" on a tax invoice means only GST-free or

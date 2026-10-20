@@ -127,12 +127,21 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   at 1.65%, $165,939.97 + $16,594.00 = $182,533.97, no "cost floor" or "markup" on screen; 1280 / 375
   checked._
 
-- [ ] **PF8. Rate Card: card fee field** (frontend — Opus/high, **Frontend task**): a "Card fees (%)"
+- [x] **PF8. Rate Card: card fee field** (frontend — Opus/high, **Frontend task**): a "Card fees (%)"
   field near the tax reserve, with an info button: the fee is in every price for every client; card
   surcharges are banned from 1 October 2026; Stripe standard is 1.65% + 30c. The "rate actually paid"
   readout and its "Use this" button wait for the `card-payments` track (leave a placeholder comment, no
   UI). Badges stay against the bare income floor. Done when: it saves, auto prices update live, typed
   prices don't move, and 375px is checked. _Modifies: `views/pricing.js`. Depends on: PF3._
+  _Done 2026-10-20 (not deployed): its own `.tax-setting` block under the tax rate, "Card fees
+  (%)" (0–10, step 0.01, blank = none) with an ⓘ (ban from 1 Oct 2026, the price formula, Stripe 1.65% +
+  30c, badges on the bare floor). Typing reprices every auto row in place (a valid figure goes onto
+  `priceCtx`; a bad one keeps the last good one until the save names the field); the own-time travel
+  comparison now gets `priceCtx`. Reset's confirm says the fee goes back to none. The three blocks' hint
+  copy is now `.pricing-setting-hint`, not an inline style. Scratch: auto hourly $159 / $161 / $163 at
+  blank / 1.65 / 3%, own-time travel $147 → $149 at 3%, floor badge stays $143.75, 23 typed prices
+  unmoved; 12 refused naming the field; 2 and blank (null) saved and read back; restored to 1.65;
+  1280 and 375 checked (popover included)._
 
 ## Review and ship
 

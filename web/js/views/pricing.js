@@ -25,6 +25,16 @@
  * into 35% — 0 is falsy. It is validated here instead, and a blank or
  * out-of-range value blocks the save rather than being guessed at.
  *
+ * CARD FEES (pricing-floor PF8)
+ * The block under the tax rate edits the card's `cardFeePct`, a PERCENT (1.65)
+ * where the tax rate is a fraction. Blank is no fee (null); 0 to 10, else the
+ * save is refused naming the field. It is in every auto price for every client
+ * (calc.js suggestedPrice), never a card-only surcharge (P7). As it is typed,
+ * every auto row updates in place, as the Service Day's do: a valid figure is
+ * copied onto priceCtx, which resolve() prices from; a bad one leaves the last
+ * good figure there until the save names it. Typed prices don't move, and the
+ * badges stay against the bare income floor (perHourFloor never takes it).
+ *
  * THE COMPUTED RATE COLUMN
  * Every labour row's Rate ($/hr) is now the one Overhead Rate/hr — Annual
  * Business Cost / Annual Billable Hours — read from Overhead and Capacity via
@@ -184,6 +194,7 @@ const PricingView = (() => {
   let handlers = null;
   let card = null; // the working copy
   let taxRaw = ''; // the percent field exactly as typed
+  let feeRaw = ''; // the card fee field exactly as typed; null when it isn't a number
   let usage = null; // saved estimates, for delete warnings. null = unknown
   let saving = false;
   let baseline = ''; // the card as last saved, for the unsaved-edit check
@@ -208,8 +219,8 @@ const PricingView = (() => {
       labourSections: pricing.labourSections || [],
       travelRows: pricing.travelRows || [],
       surcharges: LSCCalc.surchargeSettings(pricing),
-      /* Card fees, a PERCENT (pricing-floor P7). No field for it yet (PF8);
-         carried as served so a save here doesn't drop it. */
+      /* Card fees, a PERCENT (pricing-floor P7): see CARD FEES above. Kept
+         at the last valid figure typed; feeRaw holds the field as typed. */
       cardFeePct: typeof pricing.cardFeePct === 'number' ? pricing.cardFeePct : null,
       // See CAPTURE AND DELIVERABLE TYPES above. Every field present, so the
       // block never has to ask whether one is.
@@ -234,7 +245,26 @@ const PricingView = (() => {
      payload(): that trims and coerces, so a category renamed only by a trailing
      space would compare equal to the saved card and leaving would discard it
      without asking. */
-  const snapshot = () => JSON.stringify({ card, taxRaw });
+  const snapshot = () => JSON.stringify({ card, taxRaw, feeRaw });
+
+  /* The card fee field's text, as the server holds it: null is blank. */
+  const feeText = (pct) => (typeof pct === 'number' ? String(pct) : '');
+
+  /* The card fee as typed, if it is one the server takes: null for blank (no
+     fee), a number 0–10, or undefined for anything else (routes/pricing.js). */
+  function feeOf(raw) {
+    if (raw === null) return undefined;
+    if (raw.trim() === '') return null;
+    const v = Number(raw);
+    return Number.isFinite(v) && v >= 0 && v <= 10 ? v : undefined;
+  }
+
+  /* After a card arrives (mount, save, reset): the field's text and the fee
+     auto prices are worked out with, both from the card. */
+  function takeFee() {
+    feeRaw = feeText(card.cardFeePct);
+    priceCtx.cardFeePct = card.cardFeePct;
+  }
 
   /* Is this screen still in the page?
      A save is async and nothing stops the user navigating while it is in
@@ -371,7 +401,7 @@ const PricingView = (() => {
   /* An own-time row's state, in unitState's terms, from the same comparison
      the Dashboard runs (calc.js travelFloorComparison) on a one-row card. */
   function travelState(row) {
-    const [c] = LSCCalc.travelFloorComparison({ travelRows: [row] }, priceCtx.settings, perHourFloor);
+    const [c] = LSCCalc.travelFloorComparison({ travelRows: [row] }, priceCtx.settings, perHourFloor, priceCtx);
     const u = c.units.hour;
     if (u.auto && u.mu === null) return { kind: 'unpriced' };
     return {
@@ -692,6 +722,9 @@ const PricingView = (() => {
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
       add('The tax set-aside rate must be a number between 0 and 100.', $('tax-inp'));
     }
+    if (feeOf(feeRaw) === undefined) {
+      add('Card fees must be a number between 0 and 10, or blank for none.', $('fee-inp'));
+    }
 
     const seenSection = {};
     card.labourSections.forEach((sec, si) => {
@@ -967,6 +1000,24 @@ const PricingView = (() => {
         'Not Capacity’s billable hours per day: that one averages your whole year, admin and quiet days included, ' +
           'to set your hourly floor. A day on a job is usually longer.',
         'Auto half- and full-day prices are the hourly price × these hours. Prices you’ve typed don’t move.',
+      ],
+    });
+  }
+
+  /* What the card fee does to a price, and why it isn't a surcharge. */
+  function cardFeeInfo() {
+    return LSCInfo.markup({
+      id: 'card-fee',
+      label: 'How card fees reach your prices',
+      title: 'Card fees',
+      paragraphs: [
+        'Card surcharges are banned from 1 October 2026: the fee can’t be added only to invoices paid by card. ' +
+          'It is recovered through your prices instead, so every client pays it, however they pay.',
+        'An auto price is your income floor × (1 + business profit) × (1 + this fee), rounded up once. ' +
+          'Own-time travel takes the fee but not your profit; the car’s per km and anything billed at cost take neither.',
+        'Stripe’s standard rate for Australian cards is 1.65% + 30c a payment. Enter the percentage; the 30c isn’t in it.',
+        'The floor badges still measure against your bare income floor, so the fee never hides a price that’s too low. ' +
+          'Estimates already saved keep the figures they were quoted at.',
       ],
     });
   }
@@ -1643,15 +1694,26 @@ const PricingView = (() => {
       '<div class="page-sub">Add, rename, re-price or remove anything the estimator offers</div></div></div>' +
       '<div class="tax-setting"><div>' +
       '<div class="sum-label" style="margin-bottom:4px">Tax Set-Aside Rate (%)</div>' +
-      '<div style="color:var(--muted);font-size:11px">Set aside from each job’s profit — labour, your-time travel ' +
+      '<div class="pricing-setting-hint">Set aside from each job’s profit — labour, your-time travel ' +
       'and the markup on resold travel, less the overhead its hours carry — before GST. Pass-through costs are exempt.</div></div>' +
       '<input type="number" id="tax-inp" min="0" max="100" step="0.5" value="' + esc(taxRaw) +
       '" aria-label="Tax set-aside rate, percent"></div>' +
+      /* Card fees — see CARD FEES above. Beside the tax rate: both are a
+         percentage the business loses off what a client pays. */
+      '<div class="tax-setting"><div>' +
+      '<div class="sum-label pricing-day-title">Card fees (%)' + cardFeeInfo() + '</div>' +
+      '<div class="pricing-setting-hint" id="fee-hint">Built into every auto price, for every client however they pay. ' +
+      'Prices you’ve typed don’t move. Blank is no fee.</div></div>' +
+      /* The "rate actually paid" readout and its "Use this" button go here once
+         card-payments can read what Stripe charged (pricing-floor PF8): no UI
+         for them until then. */
+      '<input type="number" id="fee-inp" min="0" max="10" step="0.01" placeholder="0" value="' + esc(feeRaw) +
+      '" aria-label="Card fees, percent" aria-describedby="fee-hint"></div>' +
       /* The Service Day — see SERVICE UNITS above. Same block as the tax rate:
          copy left, fields right. */
       '<div class="tax-setting pricing-day-setting"><div>' +
       '<div class="sum-label pricing-day-title">Service Day (billable hrs)' + serviceDayInfo() + '</div>' +
-      '<div style="color:var(--muted);font-size:11px">The hours in a half and a full day of a service on a job. ' +
+      '<div class="pricing-setting-hint">The hours in a half and a full day of a service on a job. ' +
       'An auto day price is the service’s hourly price × these hours.</div>' +
       /* Why a save was refused, beside the fields it names — the save bar's
          copy of it is a page away (design review D1). Not role="alert":
@@ -1935,6 +1997,21 @@ const PricingView = (() => {
       taxRaw = this.value;
     });
 
+    /* Card fees — see CARD FEES above. A number input reads '' for text it
+       can't parse ("1e"), which isn't blank: held as null so the save names it. */
+    $('fee-inp').addEventListener('input', function () {
+      feeRaw = this.validity.badInput ? null : this.value;
+      const fee = feeOf(feeRaw);
+      if (fee === undefined || fee === card.cardFeePct) return;
+      card.cardFeePct = fee;
+      priceCtx.cardFeePct = fee;
+      refreshAllRows();
+      LSCUtil.announce(
+        $('pricing-floor-live'),
+        fee ? 'Auto prices updated for a ' + fee + '% card fee.' : 'Auto prices updated with no card fee.'
+      );
+    });
+
     /* The Surcharges block (see SURCHARGES above). A figure that isn't one
        is held as '', as the Service Day's are, so the save can name the field;
        a time input reads '' until all of it is filled in. Every edit updates
@@ -2179,6 +2256,7 @@ const PricingView = (() => {
       card = workingCopy(reply.pricing);
       linkChips();
       taxRaw = toPercent(reply.pricing.taxSetAsideRate);
+      takeFee();
       stoppedFollowing = {};
       baseline = snapshot();
       Toast.ok('Rates saved.');
@@ -2219,6 +2297,7 @@ const PricingView = (() => {
     travel_price_missing: 'a travel item has no price. Type one, or tick Your time to follow your floor.',
     travel_per_km_flags: 'the vehicle per km row can’t also be Direct or Your time. Reload the page and try again.',
     tax_set_aside_rate_not_a_fraction: 'the tax set-aside rate must be between 0 and 100.',
+    card_fee_out_of_range: 'card fees must be a number between 0 and 10.',
     surcharges_invalid: 'the surcharge settings are malformed. Reload the page and try again.',
     surcharge_multiplier_out_of_range: 'a surcharge multiplier must be between ×1 and ×10.',
     surcharge_hint_days_out_of_range: 'short notice’s suggestion must be a whole number of days, 0 to 365.',
@@ -2235,9 +2314,12 @@ const PricingView = (() => {
        them: said here, where it can still be cancelled. */
     const types = card.deliverableTypes.length ||
       ((LSCData.pricing() || {}).deliverableTypes || []).length;
+    // The default card has no card fee either: every auto price drops by it.
+    const fee = card.cardFeePct || (LSCData.pricing() || {}).cardFeePct;
     const confirmed = window.confirm(
       'Reset every category, service and rate back to the built-in defaults?' +
-        (types ? ' Your deliverable types are deleted too.' : '') + '\n\n' +
+        (types ? ' Your deliverable types are deleted too.' : '') +
+        (fee ? ' Card fees go back to none, which lowers every auto price.' : '') + '\n\n' +
         'This replaces the saved rate card immediately. Estimates already saved keep ' +
         'the figures they were quoted at.'
     );
@@ -2270,6 +2352,7 @@ const PricingView = (() => {
       showDefault = 'hour';
       stoppedFollowing = {};
       taxRaw = toPercent(reply.pricing.taxSetAsideRate);
+      takeFee();
       baseline = snapshot();
       render();
     } catch (err) {
@@ -2289,6 +2372,9 @@ const PricingView = (() => {
 
   function render() {
     const scrollY = window.scrollY;
+    /* Text the fee field couldn't parse can't be written back into it: show
+       the figure prices are using instead. */
+    if (feeRaw === null) feeRaw = feeText(card.cardFeePct);
     root.innerHTML = markup();
     bindFieldEdits();
     bindStructure();
@@ -2345,6 +2431,7 @@ const PricingView = (() => {
        Dashboard all use one computation. See data.js. */
     computedRate = LSCData.overheadRate();
     priceCtx = LSCData.priceContext();
+    takeFee();
     perHourFloor = priceCtx.floorPerHour;
     blocker = LSCData.autoPriceBlocker();
     baseline = snapshot();

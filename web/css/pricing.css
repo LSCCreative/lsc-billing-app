@@ -228,6 +228,12 @@
   gap: 6px;
   margin-bottom: 4px;
 }
+/* The line of copy under each settings block's title (tax rate, card fees,
+   Service Day). */
+.pricing-setting-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
 .pricing-day-ctl {
   display: flex;
   align-items: center;
