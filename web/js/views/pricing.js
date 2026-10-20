@@ -1045,7 +1045,8 @@ const PricingView = (() => {
       paragraphs: [
         'Counts toward Production Capture Hours, which plan post-production.',
         'On an estimate, the hours of every ticked service add up to its capture hours, across all its days. ' +
-          'Each deliverable with a type then recommends post hours: capture hours × the type’s multiplier × its quantity.',
+          'Each post line a deliverable’s type adds then fills its hours from them: capture hours × that ' +
+          'service’s multiplier × the deliverable’s quantity.',
         'A line keeps the tick it was added with, so a change here only reaches lines added from now on.',
       ],
     });

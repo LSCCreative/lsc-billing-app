@@ -375,7 +375,12 @@ const EstimateEditor = (() => {
   /* Switching a line's unit: a fresh snapshot from the card at the new unit
      (or last time's, per unitSnap), the typed quantity and custom bill kept,
      totals recalculated, and the new price announced. A unit that can't be
-     priced is disabled and can't be picked; if one ever is, the line stays put. */
+     priced is disabled and can't be picked; if one ever is, the line stays put.
+
+     A following post line (PM4) is the exception: its quantity was filled in
+     hours, not typed, and is meaningless as days (20 hrs would become 20 half
+     days). Off the hour it goes to 0 and stops following, as a type lays out
+     a post service on another unit (G3); the owner types its days. */
   function switchUnit(tr, unit) {
     const snap = snapOf(tr) || {};
     const sectionId = tr.dataset.section;
@@ -385,6 +390,12 @@ const EstimateEditor = (() => {
       const sel = tr.querySelector('.lab-unit-sel');
       if (sel) sel.value = unitKey(snap);
       return;
+    }
+    const unfollowed = tr.dataset.follows === 'true' && unit !== 'hour';
+    if (unfollowed) {
+      tr.dataset.follows = 'false';
+      const qty = tr.querySelector('.qty-inp');
+      if (qty) qty.value = '0';
     }
     const fresh = reprice(tr, picked.snap);
     markOwn(fresh, picked);
@@ -396,7 +407,8 @@ const EstimateEditor = (() => {
       $('editor-live'),
       tr.dataset.name + ': now per ' + UNIT_NAMES[unit].toLowerCase() + ', ' + money(picked.snap.mu) +
         (unit === 'hour' ? '' : ', ' + hours + ' billable ' + (hours === 1 ? 'hr' : 'hrs')) +
-        (picked.snap !== picked.own ? ', as on the last project' : '') + '.'
+        (picked.snap !== picked.own ? ', as on the last project' : '') +
+        (unfollowed ? '. Its hours no longer fill from capture: it is at 0 until you enter its days' : '') + '.'
     );
   }
 
@@ -1137,10 +1149,14 @@ const EstimateEditor = (() => {
         paragraphs: [
           'Production Capture Hours add up the hours of every Production line ticked <strong>Capture</strong> on ' +
             'the Rate Card, on every day. A line keeps the tick it was added with.',
-          'Each deliverable with a type recommends capture hours × its type’s multiplier × its quantity, rounded ' +
-            'up to the half hour. The recommendation is their sum.',
-          'A guide, never a price: the hours you type on the post lines are what’s billed, and lines left at 0 hrs ' +
-            'don’t print.',
+          'Each post service on a deliverable’s type has its own multiplier. Its line priced by the hour fills ' +
+            'itself: capture hours × that multiplier × the deliverable’s quantity, rounded up to the half hour. ' +
+            'The recommendation is the sum of those lines.',
+          'Filled hours are billed, and keep following capture as the shoot changes. Type over a line’s hours and ' +
+            'they’re yours: it stops following, until you pick the type again. A line priced by the day starts at ' +
+            '0 for you to fill. Lines at 0 hrs don’t print.',
+          'An estimate saved before multipliers were per service keeps its hours as saved, and recommends from its ' +
+            'type’s one multiplier.',
         ],
       }) +
       '</dt><dd id="pp-rec">0</dd></div></dl>' +

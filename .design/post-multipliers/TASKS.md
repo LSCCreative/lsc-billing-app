@@ -74,12 +74,16 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   _Review fix: nothing fills while the form is being restored; on open a following line whose saved
   hours differ from the plan keeps them and is pinned (an estimate never moves on open); a following
   line with no deliverable is pinned, not zeroed._
+  _Follow-up: switching a following line off the hour sets it to 0 and pins it (G3), instead of
+  keeping its hours as days; a typed line keeps its number as before._
 
 - [ ] **PM5. Planner figures** (frontend — Opus/high): the deliverable row's "Post hrs (rec.)" and the
   planner cell's recommended figure read the new per-line sums (G10); "On post lines X of Y
   recommended" stays; the planner ⓘ and the Capture ⓘ on the Rate Card describe per-service multipliers
   and filled hours. A non-hourly line shows its recommended hours beside it (G3). Done when the figures
-  match the reference check on scratch and the ⓘ text says what the editor now does. _Depends on: PM4.
+  match the reference check on scratch and the ⓘ text says what the editor now does. _Done ahead
+  (with the PM4 follow-up): the planner ⓘ and the Capture ⓘ text. Left: the non-hourly line's
+  recommended hours, and checking the figures._ _Depends on: PM4.
   Modifies: `estimate-editor.js` (`paintPlanner`, `postPlanMarkup`), `pricing.js` (`captureInfo`)._
 
 ## Interactions & States
