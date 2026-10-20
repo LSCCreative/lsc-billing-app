@@ -133,7 +133,7 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   readout and its "Use this" button wait for the `card-payments` track (leave a placeholder comment, no
   UI). Badges stay against the bare income floor. Done when: it saves, auto prices update live, typed
   prices don't move, and 375px is checked. _Modifies: `views/pricing.js`. Depends on: PF3._
-  _Done 2026-10-20 (not deployed): its own `.tax-setting` block under the tax rate, "Card fees
+  _Done 2026-10-20 (committed, not deployed): its own `.tax-setting` block under the tax rate, "Card fees
   (%)" (0–10, step 0.01, blank = none) with an ⓘ (ban from 1 Oct 2026, the price formula, Stripe 1.65% +
   30c, badges on the bare floor). Typing reprices every auto row in place (a valid figure goes onto
   `priceCtx`; a bad one keeps the last good one until the save names the field); the own-time travel
