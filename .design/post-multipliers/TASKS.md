@@ -141,12 +141,25 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
 
 ## Review
 
-- [ ] **PM9. Money review** (money — Opus/high): v18 → v19 on a copy of a backup leaves every saved
+- [x] **PM9. Money review** (money — Opus/high): v18 → v19 on a copy of a backup leaves every saved
   estimate, invoice and document identical; a new estimate's post lines bill exactly the filled hours;
   a pinned line never moves; no new field reaches a public route or PDF. Record any standing rule in
   `WORKING_NOTES.md` (the "suggest, don't price" change for type-laid post lines).
+  _Done on a v18 dataset built with the live code (`5f12eeb` + `.design/seed-review.js`, every project
+  and invoice state, plus two estimates on old-shape types with tagged post lines, one sent, accepted
+  and invoiced), not yet on a live backup. `migration-check.js` (this folder): every table but the
+  card byte-identical after v19, the card's other fields identical; `computeTotals` and `postPlan`
+  identical under both builds for 31 priced copies (estimates, versions, invoice snapshots); every
+  owner and public read route identical, 52 PDFs identical as text; `postMultiplier` / `follows`
+  never on a public page or PDF. Mutations caught (v19 touching estimates; the fallback dropping
+  qty). In the editor (headless, own API + web copy): following lines bill exactly their plan
+  (server total = editor total; ex-GST drops by qty × price without them), typed and pinned lines
+  never move, and neither a new nor a v18 estimate moves or re-saves on open. The rule is in
+  `WORKING_NOTES.md` ("priced, not suggested")._
 - [ ] **PM10. Design review**: run `/design-review` against the brief; screenshots in
   `.design/post-multipliers/screenshots/`.
 - [ ] **PM11. Deploy** (ask first): after pricing-floor PF11; fetch and diff `origin/main`, NAS before
   Pages (`DEPLOYMENT.md`). Then the user re-enters each type's multipliers on the live Rate Card (they
   start at 0×, G5).
+  Before the NAS step, run `migration-check.js` on a copy of the fresh live backup (usage in its
+  header; re-seed the login in the copy); "NO DIFFERENCES" is the go.
