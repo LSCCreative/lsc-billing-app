@@ -13,6 +13,7 @@ const {
   annualOverheadTotal,
   overheadRatePerHour,
   minimumJobPrice,
+  minimumJobPriceParts,
   labourHoursBreakdown,
   targetAnnualRevenue,
   hoursPerUnitOf,
@@ -3918,4 +3919,45 @@ test('pricing floor: the post-ratio readout measures hours-worked days against u
     maxShootDays: 4.8, // 96.2 ÷ 20 = 4.81, floored
   });
   assert.equal(postRatioReadout(PF_CAPACITY, 2, 1).unsoldHours, 64.2);
+});
+
+test('pricing floor PF5: the Minimum Job Price taken apart adds up to it, to the cent', () => {
+  const r = revenueTarget(30000, 90000, TAX_YEAR, PF_OPTS);
+  const floor = incomeFloorPerHour(r.breakEven, annualBillableHours(PF_CAPACITY));
+  const cents = (p) => Math.round((p.direct + p.businessCost + p.pay + p.superContribution + p.badDebt) * 100);
+
+  // The reference: 8 hours, no costs, $1,150, split as the break-even year is.
+  const ref = minimumJobPriceParts(0, 8, floor, r);
+  assert.equal(ref.total, 1150);
+  assert.equal(ref.direct, 0);
+  assert.equal(ref.hours, 1150);
+  assert.equal(cents(ref), 115000);
+  // 1150 × each part ÷ $165,939.97: running costs, pay before tax, super, bad debt.
+  assert.deepEqual([ref.businessCost, ref.pay, ref.superContribution, ref.badDebt], [207.91, 820.62, 98.47, 23]);
+
+  // A five-figure job: the direct costs stand as they are, the hours are split.
+  const big = minimumJobPriceParts(4820.4, 37.5, floor, r);
+  assert.equal(big.total, minimumJobPrice(4820.4, 37.5, floor));
+  assert.ok(big.total > 10000);
+  assert.equal(big.direct, 4820.4);
+  assert.equal(big.total, 10211.03);
+  assert.deepEqual([big.businessCost, big.pay, big.superContribution, big.badDebt], [974.56, 3846.66, 461.6, 107.81]);
+  assert.equal(cents(big), Math.round(big.total * 100));
+
+  // A sweep: always exact, and every share within a cent of its true share.
+  for (let h = 0; h <= 60; h += 0.5) {
+    for (const direct of [0, 0.01, 99.99, 1234.565, 18000]) {
+      const p = minimumJobPriceParts(direct, h, floor, r);
+      assert.equal(cents(p), Math.round(p.total * 100), h + ' h, $' + direct);
+      const parts = [p.businessCost, p.pay, p.superContribution, p.badDebt];
+      const weights = [r.businessCost, r.grossPay, r.superContribution, r.badDebtAllowance];
+      parts.forEach((part, i) => {
+        assert.ok(Math.abs(part - (p.hours * weights[i]) / r.breakEven) < 0.01, h + ' h part ' + i);
+      });
+    }
+  }
+
+  // Nothing to take apart without a floor or a year.
+  assert.equal(minimumJobPriceParts(100, 8, null, r), null);
+  assert.equal(minimumJobPriceParts(100, 8, floor, null), null);
 });

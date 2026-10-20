@@ -11,7 +11,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - One floor, the **income floor** = `revenueTarget().breakEven` ÷ annual billable hours (carries the
   owner's pay). Pass `breakEven`, never `total` (total adds business profit, which auto prices add
   per hour). The cost floor (`hourlyFloor`) is deleted; Minimum Job Price is break-even: direct
-  cost + hours × income floor (pricing-floor PF1). Auto price = floor × (1 + profit) × (1 + card
+  cost + hours × income floor (pricing-floor PF1). The editor's ⓘ takes it apart through
+  `minimumJobPriceParts` (whole cents, largest remainder): don't round the shares in the view. Auto price = floor × (1 + profit) × (1 + card
   fee), rounded up once; badges compare against the bare floor. `mu` is never auto-written, except auto prices from service-rate-tiers, which
   move the card knowingly. Saved estimate lines keep their own price snapshot; "Update to current
   rates" is explicit.

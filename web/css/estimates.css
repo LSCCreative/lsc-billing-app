@@ -180,11 +180,10 @@
    job here is to be legible and obviously secondary: no accent fill, no card,
    no green or red. --accent is spoken for by "Total (inc GST)" one row up —
    the figure a client actually pays — and lending it to an advisory number
-   would put the two in competition. There is deliberately no pass/fail
-   indicator either: that needs a green/up and a red/down this palette does not
-   have, and inventing the pair is the second scoped palette exception the brief
-   reserves for the donut alone (HANDOVER.md decision 42). The comparison is the
-   reader's, against Client Price (ex GST) directly above. */
+   would put the two in competition. Since pricing-floor PF5 it says whether
+   the quote clears it, but still without a green/red pair this palette does
+   not have (HANDOVER.md decision 42): "under by $X" is --accent-text, the
+   Rate Card's "below floor" voice, and "clears it" is plain text. */
 
 .mjp-toggle-row {
   display: flex;
@@ -260,7 +259,18 @@
   color: var(--text);
 }
 
+.mjp-line-verdict {
+  font-size: 12px;
+  color: var(--text);
+}
+.mjp-line-verdict.is-under {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* Its own row under the figure: the working, not part of the verdict. */
 .mjp-line-note {
+  flex-basis: 100%;
   font-size: 11px;
   line-height: 1.5;
   color: var(--muted);
@@ -324,9 +334,9 @@
 }
 
 /* Each row is a money line with its working underneath, so the dialog reads as
-   three statements rather than a table needing a header to explain its columns.
-   The rule above the total is the only border inside the box: it is the one
-   place the reader is being asked to see a sum. */
+   statements rather than a table needing a header to explain its columns.
+   The rule above the total is the only full-width border inside the box: it is
+   the one place the reader is being asked to see a sum. */
 .cb-rows {
   display: flex;
   flex-direction: column;
@@ -351,6 +361,25 @@
   font-size: 15px;
   color: var(--text);
   white-space: nowrap;
+}
+
+/* "Your hours" and its four shares (PF5): the shares sit indented on a
+   hairline, a step down in size, so the group reads as one figure taken
+   apart and the column still adds straight down to the total: the group's
+   own figure is the shares' sum, so it is muted, not counted twice. */
+.cb-group-head .cb-row-value {
+  color: var(--muted);
+}
+.cb-group-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+.cb-group-rows .cb-row-value {
+  font-size: 14px;
 }
 
 .cb-row-note {
@@ -550,12 +579,6 @@
 }
 .rates-bar .btn {
   margin-left: auto;
-}
-
-/* The job's income floor, directly under the Minimum Job Price as its second
-   line: the two borders meet as one, rather than a second box 24px lower. */
-.mjp-line:not([hidden]) + .mjp-income {
-  margin-top: -25px;
 }
 
 /* ── Deliverables (production-booking B2-3, D86) ────────────────────────────
@@ -909,8 +932,7 @@
 
 /* Summary: the surcharges, the overhead tick, the bars, the floor. Its last
    figure sits on the panel's padding, not a margin of its own. */
-.ed-panel-body > :last-child,
-.ed-panel-body > .mjp-line:has(+ .mjp-income[hidden]) {
+.ed-panel-body > :last-child {
   margin-bottom: 0;
 }
 

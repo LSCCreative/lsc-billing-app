@@ -16,13 +16,15 @@
  *
  * THE MINIMUM JOB PRICE IS ADVISORY AND MUST STAY THAT WAY
  * The floor under the summary bar is a second opinion, never a price. It is
- * computed by LSCCalc.minimumJobPrice() from the current Overhead Rate/hr and
- * Target Markup, it is not persisted with the estimate, and neither it
- * nor its toggle is allowed to move clientPriceExGst or totalIncGst by a cent
+ * break-even (pricing-floor P5): LSCCalc.minimumJobPrice() from the job's
+ * direct costs and its hours at the income floor, no business profit, no card
+ * fee. It is not persisted with the estimate, and neither it nor its "Show
+ * minimum" tick is allowed to move clientPriceExGst or totalIncGst by a cent
  * in either position. Everything it needs is read off the totals computeTotals
- * already returned — it never recomputes a headline figure of its own. The (?)
- * beside it opens the cost breakdown dialog, which shows the three lines that
- * make up that figure and likewise computes nothing of its own.
+ * already returned — it never recomputes a headline figure of its own. It says
+ * whether this quote clears it or is under by $X, and never blocks a save or a
+ * send. The (?) beside it opens the breakdown dialog: the hours split by where
+ * the break-even year goes, plus direct costs (LSCCalc.minimumJobPriceParts).
  *
  * EACH LINE CARRIES ITS OWN PRICE (2026-09-28 audit)
  * A line added from the rate card stores a snapshot of that row's price
@@ -156,8 +158,8 @@ const EstimateEditor = (() => {
      which re-mounts it on the way back. They are deliberately outside
      payload(), so they are never saved and never make the form look dirty. */
   let overheadRate = null;
-  let profitMarginPct = null; // a MARKUP percent — the stored column predates the rename
-  let incomeFloor = null; // LSCData.incomeFloor(), for the job's income line
+  let incomeFloor = null; // LSCData.incomeFloor(): the Minimum Job Price's hourly figure
+  let breakEvenYear = null; // LSCData.revenueTarget(): the year that floor divides, for the (?)
   /* LSCData.priceContext(), for resolving a service's auto prices at a unit.
      Resolved at mount for the same reason as the three above. (Its GST
      settings are changed on the Settings screen, which replaces this one, so
@@ -2851,13 +2853,13 @@ const EstimateEditor = (() => {
      <span>, exactly as .doc-gst-free and settings' .set-check do it. The brief
      asks for "an inline switch"; building a new sliding-pill control for it
      would be the one place in the app that has one. */
-  function overheadToggleMarkup() {
+  function minimumToggleMarkup() {
     return (
       '<div class="mjp-toggle-row">' +
-      '<label class="mjp-toggle" for="f-include-overhead">' +
-      '<input type="checkbox" id="f-include-overhead" checked ' +
+      '<label class="mjp-toggle" for="f-show-minimum">' +
+      '<input type="checkbox" id="f-show-minimum" checked ' +
       'aria-describedby="mjp-toggle-hint">' +
-      '<span>Include overhead and markup in the calculation</span></label>' +
+      '<span>Show minimum</span></label>' +
       '<span class="mjp-toggle-hint" id="mjp-toggle-hint">Advisory only — it never changes what ' +
       'the client is billed.</span></div>'
     );
@@ -2888,9 +2890,9 @@ const EstimateEditor = (() => {
       'aria-haspopup="dialog" aria-label="How the Minimum Job Price is calculated">' +
       '<span aria-hidden="true">?</span></button>' +
       '</span>' +
+      '<span class="mjp-line-verdict" id="s-min-verdict"></span>' +
       '<span class="mjp-line-note" id="s-min-note"></span>' +
-      '</div>' +
-      '<div class="mjp-line mjp-income" id="mjp-income" hidden></div>'
+      '</div>'
     );
   }
 
@@ -2915,8 +2917,8 @@ const EstimateEditor = (() => {
           '<span id="sur-info-rules"></span>',
           'Each production line on a day is multiplied, then rounded up to the whole dollar. After hours counts ' +
             'only the share of a day’s booked hours outside office hours.',
-          'A surcharge is income for the same work: it adds no hours, so the Minimum Job Price and the Income ' +
-            'floor don’t move. The client sees only each line’s price, never the word “surcharge”.',
+          'A surcharge is income for the same work: it adds no hours, so the Minimum Job Price doesn’t ' +
+            'move. The client sees only each line’s price, never the word “surcharge”.',
           'These settings are kept from when this estimate was first priced. <strong>Update to current ' +
             'rates</strong> takes today’s Rate Card and public holidays.',
         ],
@@ -2961,7 +2963,7 @@ const EstimateEditor = (() => {
     return (
       // D98: "On set, by day" → surcharge box → totals.
       surchargeBoxMarkup() +
-      overheadToggleMarkup() +
+      minimumToggleMarkup() +
       '<div class="summary-bar">' +
       '<div class="sum-item"><div class="sum-label">Total hours</div><div class="sum-value" id="s-hours">0</div></div>' +
       '<div class="sum-item"><div class="sum-label">Labour subtotal</div><div class="sum-value" id="s-labour">$0.00</div></div>' +
@@ -3872,34 +3874,33 @@ const EstimateEditor = (() => {
     if (hint.textContent !== text) hint.textContent = text;
   }
 
-  const includeOverheadNow = () => {
-    const box = $('f-include-overhead');
+  const showMinimumNow = () => {
+    const box = $('f-show-minimum');
     // Defaults ON, per the brief — including for the instant before bind() runs.
     return box ? box.checked : true;
   };
 
-  /* The advisory floor. Everything here is display: the arithmetic is
-     minimumJobPrice()'s, and the inputs are the totals computeTotals just
-     returned. directJobCosts is expenseTotal and estimatedHours is totalHours,
-     which is what calc.js's own docblock for this function specifies.
-     `working` is hoursWorking()'s sentence, or '' for an hourly-only job. */
+  /* The advisory floor: break-even (pricing-floor P5). Everything here is
+     display: the arithmetic is minimumJobPrice()'s, and the inputs are the
+     totals computeTotals just returned. directJobCost (pass-throughs at cost
+     plus what resold travel cost) and totalHours, which is what calc.js's own
+     docblock for that function specifies. `working` is hoursWorking()'s
+     sentence, or '' for an hourly-only job.
+
+     One line since PF5: it replaced both the old cost-floor minimum and the
+     separate "Income floor" line under it, which by then showed the same
+     figure. The verdict is measured against Client price ex GST, the figure
+     the minimum is ex GST against too. Advice only: never a block on save or
+     send. */
   function paintMinimum(totals, working) {
     const line = $('mjp-line');
     if (!line) return; // left mid-edit, or a screen that has no summary bar
 
-    const on = includeOverheadNow();
+    const on = showMinimumNow();
     line.hidden = !on;
-    if (!on) {
-      // The income line is the same kind of advisory figure, under the same switch.
-      const income = $('mjp-income');
-      if (income) income.hidden = true;
-      return;
-    }
+    if (!on) return;
 
-    /* directJobCost, not expenseTotal: pass-throughs at cost plus what resold
-       travel cost — carrying no markup (calc.js, minimumJobPrice). */
     const floor = LSCCalc.minimumJobPrice(totals.directJobCost, totals.totalHours, incomeFloor);
-    paintIncome(totals);
     setBreakdown(totals, floor, working);
 
     /* null is "cannot be computed", and it has to survive the trip to the
@@ -3909,12 +3910,19 @@ const EstimateEditor = (() => {
        moment to send somebody to another screen. */
     if (floor === null) {
       setText('s-min-price', '—');
+      setVerdict('', false);
       setText('s-min-note', 'Set up Overhead & Goals to see this.');
       line.classList.add('mjp-unset');
       return;
     }
 
     setText('s-min-price', fmt(floor));
+    /* A blank estimate has nothing to clear: no verdict until the minimum is
+       more than nothing. */
+    const short = LSCCalc.round2(floor - totals.clientPriceExGst);
+    if (!(floor > 0)) setVerdict('', false);
+    else if (short > 0) setVerdict('This quote is under by ' + fmt(short), true);
+    else setVerdict('This quote clears it', false);
     setText(
       's-min-note',
       totals.totalHours + (totals.totalHours === 1 ? ' hour' : ' hours') +
@@ -3924,25 +3932,14 @@ const EstimateEditor = (() => {
     line.classList.remove('mjp-unset');
   }
 
-  /* The job's INCOME floor: its direct costs plus its hours at the income floor
-     — what the job has to bill for its hours to pay their share of your
-     income target (Dashboard, "income floor"). A second advisory line; like
-     the minimum it never moves a billed figure. */
-  function paintIncome(totals) {
-    const el = $('mjp-income');
+  /* Under is said in --accent-text, as the Rate Card says "below floor": a
+     thing to look at, not an error. Clears is said plainly. */
+  function setVerdict(text, under) {
+    const el = $('s-min-verdict');
     if (!el) return;
-    if (incomeFloor === null || !(totals.totalHours > 0)) {
-      el.hidden = true;
-      return;
-    }
-    const need = LSCCalc.round2(totals.directJobCost + totals.totalHours * incomeFloor);
-    const short = LSCCalc.round2(need - totals.clientPriceExGst);
-    el.hidden = false;
-    el.innerHTML =
-      '<span class="mjp-line-label">Income floor</span>' +
-      '<span class="mjp-line-value">' + fmt(need) + '</span>' +
-      '<span class="mjp-line-note">its hours at your ' + fmt(incomeFloor) + '/hr income floor, plus direct costs' +
-      (short > 0 ? ' — this quote is ' + fmt(short) + ' under it' : ' — this quote clears it') + '</span>';
+    setText('s-min-verdict', text);
+    el.hidden = !text;
+    el.classList.toggle('is-under', under);
   }
 
   // ── The cost breakdown modal ──────────────────────────────────────────────
@@ -3954,82 +3951,86 @@ const EstimateEditor = (() => {
      the (?) is attached to — the one thing a "here is how that was worked out"
      panel cannot afford to do.
 
-     WHY THE MARGIN LINE IS A REMAINDER RATHER THAN ITS OWN MULTIPLICATION
-     The modal's whole claim is that its three rows add up to the figure under
-     them, so the arithmetic a reader can do on it has to come out. Direct Job
-     Costs arrives already rounded by computeTotals, but the overhead allocation
-     is hours x rate and lands on sub-cent values routinely (7.5 x $25.33 =
-     $189.975). Rounding all three independently then makes the printed column
-     miss the printed total by a cent often enough to notice.
-
-     So the two inputs are shown rounded and the margin is what is left of the
-     floor after them. It is never more than a cent from margin% of the two
-     lines above, and the column is always exactly right — the same trade the
-     donut's largest-remainder percentages make (HANDOVER.md decision 51) to
-     keep its legend summing to 100.0. Both prefer the visible sum. */
+     WHAT IT SPLITS (pricing-floor PF5)
+     The income floor is the break-even year ÷ billable hours, so each hour of
+     the job carries that year's parts in proportion: running costs, pay before
+     tax, super and the bad-debt allowance. calc.js's minimumJobPriceParts does
+     the split in whole cents by largest remainder, so the four shares add up to
+     the hours' figure and, with direct costs, to the line exactly: the column a
+     reader can add up has to come out. It replaced direct / overhead / markup,
+     the cost floor's parts. */
   function setBreakdown(totals, floor, working) {
     const help = $('mjp-help');
+    const parts = floor === null
+      ? null
+      : LSCCalc.minimumJobPriceParts(totals.directJobCost, totals.totalHours, incomeFloor, breakEvenYear);
 
-    if (floor === null) {
+    // The same figure as the line, or no (?) at all: never a dialog that disagrees.
+    if (!parts || parts.total !== floor) {
       breakdown = null;
       if (help) help.hidden = true;
       return;
     }
 
-    const direct = LSCCalc.round2(totals.directJobCost);
-    const alloc = LSCCalc.round2(totals.totalHours * overheadRate);
-    breakdown = {
-      direct,
-      alloc,
-      profit: LSCCalc.round2(floor - direct - alloc),
-      floor,
-      hours: totals.totalHours,
+    breakdown = Object.assign({}, parts, {
+      hoursCount: totals.totalHours,
       working: working || '',
-      rate: overheadRate,
-      margin: profitMarginPct,
-    };
+      rate: incomeFloor,
+      year: breakEvenYear,
+    });
     if (help) help.hidden = false;
   }
 
   const $b = (id) => breakdownOverlay.querySelector('#' + id);
 
-  function breakdownRow(label, value, note) {
+  function breakdownRow(label, value, note, cls) {
     return (
-      '<div class="cb-row"><div class="cb-row-head">' +
+      '<div class="cb-row' + (cls ? ' ' + cls : '') + '"><div class="cb-row-head">' +
       '<span class="cb-row-label">' + label + '</span>' +
       '<span class="cb-row-value">' + fmt(value) + '</span></div>' +
-      '<p class="cb-row-note">' + note + '</p></div>'
+      (note ? '<p class="cb-row-note">' + note + '</p>' : '') + '</div>'
     );
   }
 
+  /* The hours first, as a group with its four shares indented under it, then
+     the direct costs, then the sum. Each share's note gives its yearly figure
+     "of" the break-even year, which is the proportion the split used, in
+     dollars a reader recognises from Profit Goals rather than a percentage
+     that would need rounding of its own. */
   function breakdownMarkup() {
     const b = breakdown;
-    const hours = b.hours + (b.hours === 1 ? ' hour' : ' hours') + (b.working ? ' (' + esc(b.working) + ')' : '');
-    const margin = esc(b.margin);
+    const y = b.year;
+    const hours = b.hoursCount + (b.hoursCount === 1 ? ' hour' : ' hours') + (b.working ? ' (' + esc(b.working) + ')' : '');
+    const ofYear = (amount) => fmt(amount) + ' of your ' + fmt(y.breakEven) + ' year';
     return (
       '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="cb-title">' +
       '<h2 class="modal-title" id="cb-title">How this is calculated</h2>' +
       '<div class="cb-rows">' +
+      '<div class="cb-group">' +
+      breakdownRow('Your hours', b.hours, hours + ' × ' + fmt(b.rate) + '/hr income floor, shared out as your ' +
+        'break-even year is.', 'cb-group-head') +
+      '<div class="cb-group-rows">' +
+      breakdownRow('Running costs', b.businessCost, 'Overhead and the gear replacement reserve: ' +
+        ofYear(y.businessCost) + '.') +
+      breakdownRow('Your pay and its income tax', b.pay, 'Pay before tax: ' + ofYear(y.grossPay) +
+        ', ' + fmt(y.incomeTax) + ' of it income tax.') +
+      breakdownRow('Super', b.superContribution, 'Super on your pay: ' + ofYear(y.superContribution) + '.') +
+      breakdownRow('Bad-debt allowance', b.badDebt, 'For invoices that never get paid: ' +
+        ofYear(y.badDebtAllowance) + '.') +
+      '</div></div>' +
       breakdownRow(
         'Direct job costs',
         b.direct,
-        'What the job costs you out of pocket — crew, equipment and travel at cost. Passed through, so ' +
-          'no markup goes on it. Labour is not here: it is what the floor is testing, not an input to it.'
+        'What the job costs you out of pocket: crew, hired gear and travel at cost, ex GST. Passed ' +
+          'through, so nothing is added to it.'
       ) +
-      breakdownRow(
-        'Overhead allocation',
-        b.alloc,
-        hours + ' × ' + fmt(b.rate) + '/hr — this job’s share of what the business costs to run.'
-      ) +
-      breakdownRow('Markup', b.profit, margin + '% on the overhead allocation.') +
       '</div>' +
       '<div class="cb-total"><span class="cb-total-label">Minimum Job Price</span>' +
-      '<span class="cb-total-value">' + fmt(b.floor) + '</span></div>' +
-      /* The one place in the app that names the Overhead Rate as a figure of its
-         own, per the IA doc's naming table — everywhere else it is just "Rate". */
-      '<p class="cb-note">The Overhead Rate of ' + fmt(b.rate) + '/hr and the ' + margin +
-      '% markup come from your Overhead and Goals settings. Advisory only — nothing here ' +
-      'changes what the client is billed.</p>' +
+      '<span class="cb-total-value">' + fmt(b.total) + '</span></div>' +
+      '<p class="cb-note">Break-even: the job pays its costs and its share of your year, and leaves ' +
+      'nothing over. Business profit and the card fee are on top of it in your auto prices. The income ' +
+      'floor comes from your Capacity, Overhead and Profit Goals. Advisory only — nothing here changes ' +
+      'what the client is billed.</p>' +
       '<div class="modal-actions">' +
       '<button type="button" class="btn" id="cb-close">Close</button></div></div>'
     );
@@ -5063,7 +5064,7 @@ const EstimateEditor = (() => {
        so running the full pass is the cheap way to be certain of it: if this
        ever did move a headline figure, it would show up here rather than in a
        shortcut that skipped the comparison. */
-    $('f-include-overhead').addEventListener('change', recalc);
+    $('f-show-minimum').addEventListener('change', recalc);
 
     $('mjp-help').addEventListener('click', (event) => openBreakdown(event.currentTarget));
 
@@ -5135,14 +5136,14 @@ const EstimateEditor = (() => {
         : null;
 
     const pricing = LSCData.pricing();
-    /* Resolved once, before the first recalc(). Both stay null when Finance has
-       not been set up, and minimumJobPrice() turns either null into a null
-       floor, which paintMinimum() renders as the set-up prompt. */
+    /* Resolved once, before the first recalc(). They stay null when Finance has
+       not been set up, and minimumJobPrice() turns a null income floor into a
+       null minimum, which paintMinimum() renders as the set-up prompt. */
     /* The same LSCData.overheadRate() the Rate Card's rate column and the
        Dashboard read, so the floor here and the rate there cannot disagree. */
     overheadRate = LSCData.overheadRate();
-    profitMarginPct = LSCData.goals().targetProfitMarginPct;
     incomeFloor = LSCData.incomeFloor();
+    breakEvenYear = LSCData.revenueTarget();
     priceCtx = LSCData.priceContext();
     lastProject = undefined;
     lastProjectFor = null;

@@ -933,6 +933,61 @@ function minimumJobPrice(directJobCosts, estimatedHours, floorPerHour) {
 }
 
 /**
+ * The Minimum Job Price taken apart, for the estimate editor's ⓘ: its direct
+ * costs, then its hours at the income floor split by where the break-even year
+ * goes (pricing-floor PF5). The income floor is breakEven ÷ hours, so each
+ * part of an hour is that part's share of breakEven: running costs, pay before
+ * tax (its income tax is inside it), super and the bad-debt allowance.
+ *
+ * ADDS UP TO THE CENT. The hours' share is what is left of minimumJobPrice()
+ * after the rounded direct costs, and it is split in whole cents by largest
+ * remainder (ties to the earlier part), the same trade the Overhead donut's
+ * legend makes: rounding four shares on their own would miss the printed
+ * total by a cent often enough to notice. Display only; nothing prices off it.
+ *
+ * @param {number} directJobCosts — as minimumJobPrice takes it.
+ * @param {number} estimatedHours — as minimumJobPrice takes it.
+ * @param {number} floorPerHour — incomeFloorPerHour(), from `target`.
+ * @param {object} target — revenueTarget(), the year the floor divides.
+ * @returns {object|null} { direct, businessCost, pay, superContribution,
+ *   badDebt, hours, total }, `hours` being the four shares' sum and `total`
+ *   minimumJobPrice()'s figure; null when either is missing.
+ */
+function minimumJobPriceParts(directJobCosts, estimatedHours, floorPerHour, target) {
+  const total = minimumJobPrice(directJobCosts, estimatedHours, floorPerHour);
+  if (total === null || !target) return null;
+  const weights = [target.businessCost, target.grossPay, target.superContribution, target.badDebtAllowance]
+    .map(nonNeg);
+  const sum = weights.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return null;
+
+  const direct = round2(nonNeg(directJobCosts));
+  const hoursCents = Math.max(0, Math.round(total * 100) - Math.round(direct * 100));
+  const exact = weights.map((w) => (hoursCents * w) / sum);
+  const cents = exact.map(Math.floor);
+  let spare = hoursCents - cents.reduce((a, b) => a + b, 0);
+  exact
+    .map((value, index) => ({ index, fraction: value - cents[index] }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index)
+    .forEach((entry) => {
+      if (spare > 0) {
+        cents[entry.index] += 1;
+        spare -= 1;
+      }
+    });
+
+  return {
+    direct,
+    businessCost: cents[0] / 100,
+    pay: cents[1] / 100,
+    superContribution: cents[2] / 100,
+    badDebt: cents[3] / 100,
+    hours: hoursCents / 100,
+    total,
+  };
+}
+
+/**
  * Where a job's totalHours came from, for the sentence that explains the floor.
  *
  * The estimate editor's Minimum Job Price note says "across N hours", and once
@@ -3243,6 +3298,7 @@ if (typeof module === 'object' && module.exports) {
     annualBillableHours,
     overheadRatePerHour,
     minimumJobPrice,
+    minimumJobPriceParts,
     labourHoursBreakdown,
     targetAnnualRevenue,
     priceExGst,
@@ -3313,6 +3369,7 @@ if (typeof module === 'object' && module.exports) {
     annualBillableHours,
     overheadRatePerHour,
     minimumJobPrice,
+    minimumJobPriceParts,
     labourHoursBreakdown,
     targetAnnualRevenue,
     priceExGst,

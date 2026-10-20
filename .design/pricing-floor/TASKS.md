@@ -78,7 +78,7 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   `derivation()`, so PF6's capacity-figure item is done. Scratch: blank and 150 refused naming the
   field, 60% saved and read back from the API, restored to 65%; 800 and 375 checked._
 
-- [ ] **PF5. Estimate editor: one Minimum Job Price** (frontend — Opus/high, **Frontend task**; money
+- [x] **PF5. Estimate editor: one Minimum Job Price** (frontend — Opus/high, **Frontend task**; money
   display): the Summary shows one advisory line, **Minimum Job Price** = break-even (P5), with "this quote
   clears it" or "under by $X" (no block on save or send). The separate "Income floor" line goes. The ⓘ
   modal splits hours × income floor into business cost / pay and tax / super / bad debt (each its share of
@@ -87,6 +87,14 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   direct costs", with the hours working as today. Done when: figures match PF1 on a five-figure job, the
   modal sums to the line, and 1280 / 800 / 375 are checked. _Modifies: `paintMinimum`, `paintIncome`
   (removed), `setBreakdown` in `estimate-editor.js`. Depends on: PF1._
+  _Done 2026-10-20 (committed, not deployed): the split is `calc.js minimumJobPriceParts` (both copies;
+  whole cents by largest remainder), 1 test, 4 mutations killed. The verdict sits after the figure
+  ("This quote is under by $X" in --accent-text, the Rate Card's below-floor voice; "clears it" plain;
+  none on a $0 minimum), the note on its own row. The modal: "Your hours" (muted, the shares' sum) with
+  running costs / pay and its income tax / super / bad debt indented under it, each "of your $X year",
+  then direct costs. Tick id `f-show-minimum`. Scratch, five-figure job: $10,947.50 under by $719.50 =
+  58 h × $143.75 + $2,610; shares $1,507.32 + $5,949.49 + $713.94 + $166.75 = $8,337.50; clears at
+  $17,860 vs $17,847.50; tick off/on leaves the total alone; 1280 / 800 / 375 checked._
 
 - [ ] **PF6. Profit Goals: Business profit** (frontend — Opus/high, **Frontend task**): "Target Markup"
   becomes **"Business profit (%) — before tax"**, with a hint saying what it's for (slow years,
