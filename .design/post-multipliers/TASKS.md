@@ -162,8 +162,9 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   they are: two "×" per service row at ≥768 (the brief's wording, so ask first), a missing service's
   name truncating hard on phones, error and focus edges close in hue (app-wide tokens), and uneven
   phone deliverable fields (predates the track). 18 screenshots, local only (git-ignored)._
-- [ ] **PM11. Deploy** (ask first): after pricing-floor PF11; fetch and diff `origin/main`, NAS before
+- [x] **PM11. Deploy** (ask first): after pricing-floor PF11; fetch and diff `origin/main`, NAS before
   Pages (`DEPLOYMENT.md`). Then the user re-enters each type's multipliers on the live Rate Card (they
   start at 0×, G5).
   Before the NAS step, run `migration-check.js` on a copy of the fresh live backup (usage in its
   header; re-seed the login in the copy); "NO DIFFERENCES" is the go.
+  _Done 2026-10-21: `migration-check.js` on a copy of a fresh live backup (`pre-v19-20261021-0416.db` on the NAS): NO DIFFERENCES. NAS rebuilt (`migrated to v19`, healthy, route 401), then `main` pushed (`341d2f5`, Pages run succeeded, live `?v=` matches). Left for the user: re-enter each type's multipliers on the live Rate Card (all 0×)._
