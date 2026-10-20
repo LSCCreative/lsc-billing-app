@@ -8,28 +8,37 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 
 - `server/src/calc.js` and `web/js/calc.js` are byte-identical; so are `documents.js` and
   `call-sheet.js` (server/src and web/js). The drift tests fail otherwise.
-- One floor, the **income floor** = `revenueTarget().breakEven` ÷ annual billable hours (carries the
-  owner's pay). Pass `breakEven`, never `total` (total adds business profit, which auto prices add
-  per hour). The cost floor (`hourlyFloor`) is deleted; Minimum Job Price is break-even: direct
-  cost + hours × income floor (pricing-floor PF1). The editor's ⓘ takes it apart through
-  `minimumJobPriceParts` (whole cents, largest remainder): don't round the shares in the view. Auto price = floor × (1 + profit) × (1 + card
-  fee), rounded up once; badges compare against the bare floor. `mu` is never auto-written, except auto prices from service-rate-tiers, which
-  move the card knowingly. Saved estimate lines keep their own price snapshot; "Update to current
-  rates" is explicit.
-- The markup is labelled **Business profit (%) — before tax** (pricing-floor PF6; was "Target Markup",
-  before that "Target Profit Margin"); the DB column and the API key `targetProfitMarginPct` keep the old
-  name. `profitMarginPct` is a percent (25 = 25%); tax rates are fractions.
+- One floor, the **income floor** = `revenueTarget().breakEven` ÷ annual billable hours (running
+  costs + gross pay + super + bad debt; $143.75 on the defaults). Pass `breakEven`, never `total`
+  (total adds business profit, which auto prices add per hour). The cost floor (`hourlyFloor`) is
+  deleted. The **Minimum Job Price** is break-even, advisory, owner-only: direct cost + hours × income
+  floor, no profit, no card fee ("under by $X", never blocks). The editor's ⓘ takes it apart through
+  `minimumJobPriceParts` (whole cents, largest remainder): don't round the shares in the view.
+- **Auto price** = floor × (1 + business profit) × (1 + card fee), rounded up once ($159 hourly, $161
+  at 1.65%); badges compare against the bare floor. A typed price is never auto-written or moved; an
+  auto one (null) follows Capacity, Overhead, Profit Goals and the card fee, so changing any of them
+  moves every auto price on the card, knowingly. Saved estimate lines keep their own price snapshot;
+  "Update to current rates" is explicit.
+- Re-saving an estimate re-derives its owner-only `overheadShare`, `taxSetAside` and `estTakeHome`
+  from today's overhead rate (`prepareWrite` → `readOverheadRate`); client figures, PDFs and the Cost
+  Breakdown don't move (PF9 check: a pre-v18 draft re-saved on v18 moved only those three). Not a bug.
+- The markup is **Business profit (%) — before tax** (pricing-floor PF6; was "Target Markup", before
+  that "Target Profit Margin"): profit = break-even × %, on top of pay, its own line in the target.
+  The DB column and the API key `targetProfitMarginPct` keep the old name. `profitMarginPct` is a
+  percent (25 = 25%); tax rates are fractions.
 - Income tax uses the ATO resident brackets + Medicare, stored per FY in `tax_years`, user-entered
   (placeholders flagged). Tax is levied on pay, not revenue. Thresholds and effective lives stay
   user-entered; never hardcode them.
-- Capacity is four real fields; annual billable hours are derived (1,776 on the defaults, not 1,920,
-  knowingly). One capacity pool, no shoot-day cap. `goals.billable_capacity_hrs_per_week` is legacy,
-  display-only: don't delete it or compute from it.
-- Day and half-day are separate rate rows with independent typed prices. An **auto** day is the
-  hourly price × the day's hours (an auto half day is half an auto full day). Service-day hours (8/4)
-  are not Capacity's billable hours per day: don't link them. An auto hourly is rounded up against
-  the exact floor × markup (on a GST-inclusive card it is a search, not `ceil(raw × 1.1)`): don't
-  simplify. An auto day under the floor is badged, not wrong.
+- Capacity is five real fields: working days, leave, sick, **hours worked per day** and **share you
+  can bill** (`utilisationPct`, 1–100). Annual billable hours = (days − leave − sick) × hours worked ×
+  share: 222 × 8 × 65% = 1,154.4 on the defaults (it was 1,776, every working hour billed). One
+  capacity pool, no shoot-day cap. `goals.billable_capacity_hrs_per_week` is legacy, display-only:
+  don't delete it or compute from it.
+- A service's hour, half and full prices are independent: a typed day doesn't follow the hourly. An
+  **auto** day is the hourly price × the day's hours (an auto half day is half an auto full day).
+  Service-day hours (8/4) are not Capacity's hours worked per day: don't link them. An auto hourly is
+  rounded up against the exact floor × profit × card fee (on a GST-inclusive card it is a search, not
+  `ceil(raw × 1.1)`): don't simplify. An auto day under the floor is badged, not wrong.
 - Depreciation gives two numbers from one table: the ATO figure for the accountant, and a straight-
   line replacement reserve over the user's own cycle for the rate. Schedules are computed on read;
   a lodged FY is frozen by an append-only `depreciation_locks` row. Every export (single-FY and
@@ -74,7 +83,7 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   `computeTotals`, it has gone wrong.
 - `PUT /api/pricing` refuses the old row shape (`pricing_shape_outdated`); this is all that stops a
   stale tab writing the old card back. Bump `PRICING_SHAPE` when the card shape changes.
-- Travel: own-time travel ("Your time") is priced at the income floor, auto, no markup, and can be
+- Travel: own-time travel ("Your time") is priced at the income floor × card fee, auto, no profit, and can be
   typed over (badge under the floor). The car is a separate at-cost per-km line from Overhead's
   vehicle cost per km, billed as a pass-through. Pass-throughs are never discounted or marked up.
 - Surcharges (short notice, weekend/holiday, after hours) apply to Production items only, are folded

@@ -145,12 +145,25 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
 
 ## Review and ship
 
-- [ ] **PF9. Money review** (money — Opus/high): an end-to-end pass on scratch with the reference
+- [x] **PF9. Money review** (money — Opus/high): an end-to-end pass on scratch with the reference
   figures and one five-figure job (labour, a kit line, crew, travel, a weekend day): stored totals,
   Cost Breakdown, PDF and invoice unchanged for estimates saved before v18; new estimates snapshot the
   new auto prices. Rewrite the WORKING_NOTES money-model lines this changes (income floor, `mu`
   auto-writes, markup → business profit, Minimum Job Price, capacity "1,776 knowingly"). _Depends on:
   PF1–PF8._
+  _Done 2026-10-20 (no code change): a scratchpad harness ran the live v17 build (`141c3e4`) on a
+  throwaway DB with the reference setup and 25% markup, saved a $13,464.44 job (labour typed and auto,
+  a weekend day, kit, crew, vendor hire, own-time travel, per km, meals) plus a draft, sent and accepted
+  it (deposit paid, final sent), then booted HEAD on a copy (v17 → v18: goals 8 h / 65% / 10%). Every
+  estimate, project and invoice JSON and all 8 documents (estimate PDF, Cost Breakdown, both invoices'
+  PDF and Cost Breakdown) were identical. Reference: v17 $93.43 / $16.89 / $117 / $936; v18 $143.75 /
+  $25.99 / $161 / $1,288 / own-time $147 at 1.65%. Re-saving the old draft moved only `overheadShare`
+  $1,368.09 → $2,105.19, `taxSetAside` $3,000.87 → $2,742.88, `estTakeHome` (today's overhead rate; noted
+  in WORKING_NOTES, not a bug). A new job on v18 snapshotted $1,288 / $161 / $147 with typed lines
+  unmoved; totals $13,455.40 + $1,345.54 = $14,800.94 checked by hand, deposit/balance $7,400.47 each;
+  no internal figure on any of its 6 documents. Its Minimum Job Price is $13,942.15 (81 h × $143.75 +
+  $2,298.40), so the default card's typed rates leave it under by $486.75: for the user's PF11 review of
+  typed rows below the floor. WORKING_NOTES money lines rewritten._
 
 - [ ] **PF10. Design review**: run /design-review against the brief for PF4–PF8 at 1280 / 800 / 375.
 
