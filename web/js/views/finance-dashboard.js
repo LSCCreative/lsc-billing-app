@@ -21,11 +21,12 @@
  * ORDER IS THE IA DOC'S HIERARCHY, NOT A STYLING CHOICE
  *   1. the three floors, largest type on the page;
  *   2. the rate card measured against them;
- *   3. the cost-to-rate chain, costs left and capacity right, like the
+ *   3. the cost-to-rate chain, costs left and per hour right, like the
  *      reference spreadsheet — business cost ALWAYS split Operating +
  *      Replacement reserve, because that split is the only place a camera
  *      entered both as an expense and as an asset becomes visible;
- *   4. target annual revenue, with per-month and per-week averages;
+ *   4. target annual revenue: break-even + business profit = total, with a
+ *      per-month average;
  *   5. jobs needed per year, beside the average job it was divided by;
  *   6. the post-ratio readout — a what-if, below the fold;
  *   7. the GST mirror — last, because it changes rarely and is currently off.
@@ -87,16 +88,27 @@
  * floor carries its days under with it. Such a cell shows the badge, not the
  * tag — being below is what needs seeing.
  *
- * THE FLOORS ARE INCOME FLOORS (2026-09-28, the user's call after the audit)
+ * ONE FLOOR, THE INCOME FLOOR (2026-09-28; the only one since pricing-floor PF7)
  * The headline floors, and every row in the comparison, are measured against
- * the INCOME floor: Target Annual Revenue ÷ annual billable hours — running
- * costs plus the owner's pay, its tax, super and bad debt, spread across the
- * hours the year can sell. The old floor (overhead per hour × (1 + markup))
- * is still shown, as the cost floor, in the capacity panel and the floors
- * note: it is what the estimate editor's Minimum Job Price is built on.
+ * the INCOME floor: the BREAK-EVEN target ÷ annual billable hours (utilised) —
+ * running costs plus the owner's pay, its tax, super and bad debt, spread
+ * across the hours the year can sell. The cost floor (overhead × markup, no
+ * pay) is gone everywhere (pricing-floor P6): nothing here names it.
+ *
+ * The chain's right panel is PER HOUR: the income floor, then business profit
+ * and the card fee, then the auto hourly price they make (calc.js
+ * suggestedPrice, the Rate Card's own function, shown ex-GST like everything
+ * here). Under it, set apart and muted, the overhead rate — running costs
+ * only, no pay. It is a reference, not a price: each job's tax reserve takes
+ * hours × overhead rate off its income before setting tax aside (P6).
+ *
+ * The target panel reads as Profit Goals' does: break-even's parts, a
+ * Break-even subtotal, Business profit, then the total, straight from
+ * revenueTarget() (whole cents, totals built from rounded parts — never re-add
+ * them here). Jobs needed divides the total, profit included.
  *
  * NULL IS AN EM DASH AND A REASON, NEVER $0.00
- * No capacity, no cost or no margin makes the floors null. They render as an
+ * No capacity, no cost or no income target makes the floors null. They render as an
  * em dash with a sentence naming what is missing, linked to where to fix it.
  * A $0.00 floor would read as "anything you charge is fine".
  */
@@ -114,6 +126,8 @@ const FinanceDashboardView = (() => {
     jobsNeededPerYear,
     postRatioReadout,
     round2,
+    suggestedPrice,
+    priceExGst,
   } = LSCCalc;
 
   let root = null;
@@ -167,12 +181,15 @@ const FinanceDashboardView = (() => {
     const businessCost = LSCData.businessCost();
     const hours = annualBillableHours(goals);
     const rate = LSCData.overheadRate();
-    const margin = goals.targetProfitMarginPct; // a MARKUP, whatever the column is called
-    /* The cost floor is gone from calc.js (pricing-floor P6); PF7 removes its
-       row and sentence from this screen. */
-    const costFloor = null;
+    const margin = goals.targetProfitMarginPct; // business profit, a PERCENT (the column predates the name)
     const revenue = LSCData.revenueTarget();
     const perHour = LSCData.incomeFloor();
+    const ctx = LSCData.priceContext();
+    /* The auto hourly price, exactly as the Rate Card prices one, then ex-GST
+       like every figure on this page (a GST-inclusive card's price has GST in
+       it). null without a floor or a usable profit. */
+    const autoHourRaw = suggestedPrice(perHour, 1, margin, ctx.settings, ctx.cardFeePct);
+    const autoHour = autoHourRaw === null ? null : priceExGst(autoHourRaw, ctx.settings);
 
     // The card's service day — not Capacity's hours per day (see the header).
     const fullHours = unitHours(pricing, 'full');
@@ -186,7 +203,8 @@ const FinanceDashboardView = (() => {
       hours,
       rate,
       margin,
-      costFloor,
+      cardFeePct: ctx.cardFeePct,
+      autoHour,
       revenue,
       perHour,
       taxYear: LSCData.taxYearInUse(),
@@ -196,8 +214,8 @@ const FinanceDashboardView = (() => {
       fullDay: perHour === null ? null : round2(perHour * fullHours),
       /* The services, then the own-time travel rows (task 6a): the owner's
          hours on the road, by the hour, against the same floor. */
-      rows: serviceFloorComparison(pricing, LSCData.settings(), perHour, LSCData.priceContext())
-        .concat(travelFloorComparison(pricing, LSCData.settings(), perHour)),
+      rows: serviceFloorComparison(pricing, LSCData.settings(), perHour, ctx)
+        .concat(travelFloorComparison(pricing, LSCData.settings(), perHour, ctx)),
       target: revenue ? revenue.total : null,
     };
   }
@@ -242,11 +260,8 @@ const FinanceDashboardView = (() => {
         : '<p class="dash-note">What each has to sell for, on average across the year, to cover the business’s ' +
           'running costs and pay you ' + fmt(num(f.goals.desiredNetIncome)) + ' after tax' +
           (num(f.goals.superPct) > 0 ? ', plus super' : '') + '. Ex-GST. Crew, hire, travel, flights and ' +
-          'accommodation are added to a job at cost on top, so they aren’t part of any floor.' +
-          (f.costFloor === null
-            ? ''
-            : ' The cost floor — running costs and your markup, no pay — is ' + fmt(f.costFloor) + ' an hour.') +
-          '</p>') +
+          'accommodation are added to a job at cost on top, so they aren’t part of any floor. Your auto prices add ' +
+          'business profit and card fees on top of these.</p>') +
       '</section>'
     );
   }
@@ -295,8 +310,8 @@ const FinanceDashboardView = (() => {
   const serviceBelow = (r) => UNIT_COLS.some(([unit]) => r.units[unit] && r.units[unit].belowFloor);
 
   /* Brief decision 7 and the "rate falls below its floor" state: the floor is
-     measured against the marked-up price because that is what recovers
-     overhead, pass-throughs are excluded, and a below-floor row is a warning
+     measured against the client's price (the card's `mu`) because that is what
+     pays for the business, pass-throughs are excluded, and a below-floor row is a warning
      the user acts on at the Rate Card — this explains, it doesn't fix. */
   function compareInfo() {
     return LSCInfo.markup({
@@ -307,13 +322,14 @@ const FinanceDashboardView = (() => {
         'Each service’s floor is your income floor — target annual revenue ÷ billable hours, so running costs ' +
           'and your pay — times the hours one unit of it takes: one for an hour, and your Service Day’s hours for ' +
           'a half or full day.',
-        'It’s measured against <strong>what the client is charged</strong>: the Mark-Up price, ex-GST. Not your ' +
-          'internal rate — the marked-up price is what actually recovers overhead.',
+        'It’s measured against <strong>what the client is charged</strong>, ex-GST. Not your internal rate — the ' +
+          'client’s price is what has to pay for the business and you.',
         'A price marked <strong>auto</strong> follows your numbers. An auto hourly price is your floor plus your ' +
-          'Target Markup, so it can’t fall below it. An auto half or full day is the service’s hourly price × your ' +
-          'Service Day hours, so it’s below only when you’ve typed an hourly price that is.',
+          'business profit and card fees, so it can’t fall below it. An auto half or full day is the service’s ' +
+          'hourly price × your Service Day hours, so it’s below only when you’ve typed an hourly price that is.',
         'Travel you’ve ticked as <strong>Your time</strong> is compared too, by the hour: it’s your hours on the ' +
-          'road, so its floor is your income floor, and its auto price is exactly that, with no markup.',
+          'road, so its floor is your income floor, and its auto price is that plus card fees, with no business ' +
+          'profit.',
         'Crew, hire, flights, accommodation and other travel aren’t compared. They’re passed through at cost on ' +
           'top of the labour, so they recover no overhead either way.',
         'Below floor means that price, sold all year, wouldn’t cover the business’s costs and your pay at your ' +
@@ -394,18 +410,28 @@ const FinanceDashboardView = (() => {
 
   // ── 3. The chain ──────────────────────────────────────────────────────────
 
+  /* opts: total (the line the others add up to), sub (a ruled subtotal),
+     of (a part of the line above: indented, muted), ref (a reference figure
+     set apart from the working above it). */
   function line(label, value, opts) {
     const o = opts || {};
+    const cls = ['total', 'sub', 'of', 'ref'].filter((k) => o[k]).map((k) => ' dash-line-' + k).join('');
     return (
-      '<div class="dash-line' + (o.total ? ' dash-line-total' : '') + '">' +
+      '<div class="dash-line' + cls + '">' +
       '<span class="dash-line-label">' + label + '</span>' +
       '<span class="dash-line-value' + (value === null ? ' is-empty' : '') + '">' +
       (value === null ? '—' : value) + '</span></div>'
     );
   }
 
+  /* A percent as a line value: "10%", or null (an em dash) when unset. */
+  const pctOrNull = (v) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n >= 0 ? esc(hrs(n)) + '%' : null;
+  };
+
   function chainMarkup(f) {
-    const marginOk = Number.isFinite(parseFloat(f.margin)) && parseFloat(f.margin) >= 0;
+    const fee = parseFloat(f.cardFeePct);
     return (
       '<section class="dash-section" aria-labelledby="dash-chain-h">' +
       '<h2 class="dash-h" id="dash-chain-h">How the floor is built</h2>' +
@@ -421,13 +447,18 @@ const FinanceDashboardView = (() => {
       '</div>' +
 
       '<div class="dash-panel">' +
-      '<h3 class="dash-panel-h">' + link('capacity', 'Capacity') + '</h3>' +
+      '<h3 class="dash-panel-h">Per hour</h3>' +
       line(link('capacity', 'Annual billable hours'), f.hours === null ? null : hrs(f.hours)) +
-      line('Overhead cost per hour', f.rate === null ? null : fmt(f.rate)) +
-      line(link('goals', 'Target markup'), marginOk ? esc(String(f.margin)) + '%' : null) +
-      line('Cost floor', f.costFloor === null ? null : fmt(f.costFloor), { total: true }) +
-      '<p class="dash-panel-note">Business cost ÷ billable hours is what an hour costs to open the doors for; ' +
-      'the markup goes on top. No pay in it — that is the income floor, below.</p>' +
+      line('Income floor, break-even ÷ hours', f.perHour === null ? null : fmt(f.perHour), { sub: true }) +
+      line('+ ' + link('goals', 'Business profit'), pctOrNull(f.margin)) +
+      // Blank is no card fee, a real answer (calc.js suggestedPrice).
+      line('+ ' + link('pricing', 'Card fees'), Number.isFinite(fee) && fee > 0 ? esc(hrs(fee)) + '%' : 'none') +
+      line('Auto hourly price', f.autoHour === null ? null : fmt(f.autoHour), { total: true }) +
+      line('Overhead rate — running costs only, a reference', f.rate === null ? null : fmt(f.rate), { ref: true }) +
+      '<p class="dash-panel-note">The income floor is the least an hour can sell for and still pay the business ' +
+      'and you. Business profit and card fees go on top of every auto price, rounded up to the dollar; a price ' +
+      'you’ve typed stays as typed. The overhead rate has no pay in it: it isn’t a price, it’s what each job’s ' +
+      'tax reserve takes off its income before setting tax aside.</p>' +
       '</div>' +
 
       '</div></section>'
@@ -455,16 +486,18 @@ const FinanceDashboardView = (() => {
         ? '<p class="dash-panel-note">' + targetReason(f) + '</p>'
         : line(link('overhead', 'Annual business cost'), fmt(f.revenue.businessCost)) +
           line(link('goals', 'Your pay before tax'), fmt(f.revenue.grossPay)) +
-          line('— of which income tax and Medicare', fmt(f.revenue.incomeTax)) +
+          line('of which income tax and Medicare', fmt(f.revenue.incomeTax), { of: true }) +
           (f.revenue.superContribution > 0 ? line(link('goals', 'Super'), fmt(f.revenue.superContribution)) : '') +
           (f.revenue.badDebtAllowance > 0
             ? line(link('goals', 'Bad-debt allowance'), fmt(f.revenue.badDebtAllowance))
             : '') +
-          // PF7 redesigns this panel (break-even, then profit, then the total).
-          (f.revenue.businessProfit > 0 ? line(link('goals', 'Business profit'), fmt(f.revenue.businessProfit)) : '') +
-          line('Income floor, break-even ÷ ' + (f.hours === null ? '—' : hrs(f.hours)) + ' hrs',
-            f.perHour === null ? null : fmt(f.perHour) + '/hr', { total: true }) +
-          line('Per month, on average', fmt(t / 12)) +
+          line('Break-even', fmt(f.revenue.breakEven), { sub: true }) +
+          /* Always shown, even at 0%, so the panel reads break-even + profit =
+             total whatever the setting (as on Profit Goals). */
+          line(link('goals', 'Business profit') + (pctOrNull(f.margin) ? ', ' + pctOrNull(f.margin) : ''),
+            fmt(f.revenue.businessProfit)) +
+          line('Target annual revenue', fmt(t), { total: true }) +
+          line('Per month, on average', fmt(t / 12), { ref: true }) +
           '<p class="dash-panel-note">Tax is worked out on your pay only — running costs are deductible — with your ' +
           esc(LSCCalc.fyDisplay(f.taxYear.fy) || '') + ' scale. Averages — real months won’t be even.</p>') +
       '</div>' +
@@ -576,7 +609,9 @@ const FinanceDashboardView = (() => {
     const dayHours = parseFloat(LSCData.goals().billableHoursPerDay);
     /* "are each 8 hrs, your Capacity day." — or, with capacity unset, just
        the name: the old fallback put "your Capacity day" in both slots. */
-    const dayText = Number.isFinite(dayHours) && dayHours > 0 ? hrs(dayHours) + ' hrs, your Capacity day' : 'one Capacity day';
+    const dayText = Number.isFinite(dayHours) && dayHours > 0
+      ? hrs(dayHours) + ' hrs, the working day set on Capacity'
+      : 'one working day, as set on Capacity';
     return (
       '<section class="dash-section" aria-labelledby="dash-post-h">' +
       '<div class="dash-panel dash-post">' +

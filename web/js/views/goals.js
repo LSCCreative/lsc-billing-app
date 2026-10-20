@@ -320,10 +320,10 @@ const GoalsView = (() => {
     return (
       line('Running costs', r.businessCost) +
       line('Your pay before tax', r.grossPay) +
-      line('of which income tax and Medicare', r.incomeTax, 'goals-part-of') +
+      line('of which income tax and Medicare', r.incomeTax, 'dash-line-of') +
       (r.superContribution > 0 ? line('Super', r.superContribution) : '') +
       (r.badDebtAllowance > 0 ? line('Bad-debt allowance', r.badDebtAllowance) : '') +
-      line('Break-even', r.breakEven, 'goals-part-sub') +
+      line('Break-even', r.breakEven, 'dash-line-sub') +
       line(profitLabel, r.businessProfit) +
       line('Target annual revenue', r.total, 'dash-line-total')
     );

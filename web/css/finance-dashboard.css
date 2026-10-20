@@ -186,19 +186,45 @@
 }
 .dash-line-value {
   color: var(--text);
-  font-variant-numeric: tabular-nums;
+  /* Metro Sans has no tabular digits; the lines add up, so they align. */
+  font-family: var(--font-figures);
+  font-size: 12px;
   white-space: nowrap;
 }
 /* The result line of each panel: the number the lines above add up to. */
 .dash-line-total {
   border-bottom: none;
   border-top: 1px solid var(--border);
-  margin-top: 2px;
 }
 .dash-line-total .dash-line-label,
 .dash-line-total .dash-line-value {
   color: var(--text);
   font-weight: 600;
+}
+/* pricing-floor PF6/PF7, shared with Profit Goals' target ledger. A part of
+   the line above (income tax inside pay): indented and muted. */
+.dash-line-of .dash-line-label {
+  padding-left: 14px;
+}
+.dash-line-of .dash-line-value {
+  color: var(--muted);
+}
+/* A subtotal (Break-even, the income floor): ruled like a total but not bold,
+   so the eye lands on the last line as the answer. */
+.dash-line-sub {
+  border-top: 1px solid var(--border);
+}
+.dash-line-sub .dash-line-label {
+  color: var(--text);
+}
+/* A reference figure under the answer (the overhead rate, the monthly
+   average): set apart and muted, so it doesn't read as part of the sum. */
+.dash-line-ref {
+  border-bottom: none;
+  margin-top: 6px;
+}
+.dash-line-ref .dash-line-value {
+  color: var(--muted);
 }
 .dash-panel-note {
   margin: 12px 0 0;

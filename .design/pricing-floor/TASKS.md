@@ -111,12 +111,21 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   auto hourly $161 → $164 with no reload (badges unchanged), restored to 10%; a blank profit refused
   naming the field; 1280 / 800 / 375 checked._
 
-- [ ] **PF7. Finance Dashboard** (frontend — Opus/high, **Frontend task**): remove the "Cost floor"
+- [x] **PF7. Finance Dashboard** (frontend — Opus/high, **Frontend task**): remove the "Cost floor"
   row and sentence. Per hour shows Overhead rate (labelled "running costs only, a reference") and the
   Income floor (the floor), plus the auto price with profit and card fee. Target shows break-even +
   profit = total. Floors comparison and post-ratio readout follow PF1. Jobs needed divides `total`.
   Done when: nothing on the screen still mentions a cost floor or markup, and 1280 / 375 are checked.
   _Modifies: `views/finance-dashboard.js`. Depends on: PF1._
+  _Done 2026-10-20 (committed, not deployed): the chain's right panel is "Per hour": billable hours, Income
+  floor (ruled subtotal), + Business profit %, + Card fees % ("none" when blank), Auto hourly price
+  (`suggestedPrice` then `priceExGst`), and under it, muted, "Overhead rate — running costs only, a
+  reference". Target: parts, Break-even, "Business profit, N%", total, per-month average (income floor
+  moved to Per hour). `travelFloorComparison` now gets `priceContext()`; the info copy says business profit
+  and card fees. The ledger modifiers `.dash-line-of/-sub/-ref` now live in finance-dashboard.css (Profit
+  Goals uses them) and every `.dash-line-value` is in `--font-figures`. Scratch: $143.75 / $25.99 / $161
+  at 1.65%, $165,939.97 + $16,594.00 = $182,533.97, no "cost floor" or "markup" on screen; 1280 / 375
+  checked._
 
 - [ ] **PF8. Rate Card: card fee field** (frontend — Opus/high, **Frontend task**): a "Card fees (%)"
   field near the tax reserve, with an info button: the fee is in every price for every client; card
