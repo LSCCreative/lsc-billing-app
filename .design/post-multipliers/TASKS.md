@@ -38,7 +38,7 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
 
 ## Core UI
 
-- [ ] **PM3. The Rate Card block: summaries that open** (frontend — Opus/high): rebuild
+- [x] **PM3. The Rate Card block: summaries that open** (frontend — Opus/high): rebuild
   `typesBodyMarkup` / `typeRowMarkup` in `pricing.js` in the app's own system (dark warm surfaces,
   terracotta focus, mono figures; extend `.dtype-*`, no new look). Each type is a summary `<button
   aria-expanded aria-controls>`: name · "N post services" · "X post hrs per capture hr" · chevron, with
@@ -51,6 +51,10 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   summaries with the right totals, one opens with its list, a save round-trips the multipliers.
   _Depends on: PM2. Modifies: `pricing.js` (types block), `pricing.css` (dtype rules). Reuses:
   `.billing-block`, `.bb-head`, `.del-btn`, `.btn-ghost.btn-sm`, the disclosure pattern of panel.js._
+  _Built ahead of PM6–PM8: a save problem already opens its type (`openProblemType`); the summary's
+  accessible name reads in full; the panel is `role="region"`; the three breakpoints are in, and
+  below 768 the "× capture hr" unit is hidden so service names keep their room (left for PM7 to
+  confirm)._
 
 - [ ] **PM4. Post lines that fill and follow** (money + frontend — Opus/high): in
   `estimate-editor.js`. `layOutPost` snapshots each service's multiplier onto its line

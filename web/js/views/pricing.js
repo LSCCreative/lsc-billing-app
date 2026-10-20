@@ -173,11 +173,16 @@
  *     under the category's name instead, and every tick is described by it.
  *   - DELIVERABLE TYPES is a block after the tables and before Surcharges
  *     (D99). A type names its Post-Production services by row name, as lines
- *     do. A name no longer on the card shows struck through as "missing" and
- *     doesn't block a save (the editor skips it). While this screen is open a
- *     chip follows its row by id, so renaming a post service here renames it
- *     on every type that lists it, in the same save (chipRows). The block
- *     re-renders on its own (paintTypes), never the tables above it.
+ *     do, each with its own multiplier (post-multipliers PM3, v19: post hours
+ *     per capture hour; a service added here starts at 1×). Each type is a
+ *     summary that opens ("Brand Story · 4 post services · 3.5 post hrs per
+ *     capture hr"), one at a time (openType); every panel is in the page, so
+ *     opening never re-renders. A name no longer on the card shows struck
+ *     through as "missing" and doesn't block a save (the editor skips it).
+ *     While this screen is open a service follows its row by id, so renaming
+ *     a post service here renames it on every type that lists it, multiplier
+ *     kept, in the same save (chipRows). The block re-renders on its own
+ *     (paintTypes), never the tables above it.
  */
 
 const PricingView = (() => {
@@ -223,22 +228,27 @@ const PricingView = (() => {
          at the last valid figure typed; feeRaw holds the field as typed. */
       cardFeePct: typeof pricing.cardFeePct === 'number' ? pricing.cardFeePct : null,
       // See CAPTURE AND DELIVERABLE TYPES above. Every field present, so the
-      // block never has to ask whether one is.
+      // block never has to ask whether one is. Services are `{ name,
+      // multiplier }` (v19), read through calc.js typeServices; a multiplier
+      // is '' while what's typed isn't a number. No type-wide multiplier.
       deliverableTypes: (Array.isArray(pricing.deliverableTypes) ? pricing.deliverableTypes : [])
         .filter((t) => t && typeof t === 'object')
-        .map((t) => Object.assign({}, t, {
-          name: String(t.name || ''),
-          description: String(t.description || ''),
-          services: Array.isArray(t.services) ? t.services.map(String) : [],
-          multiplier: typeof t.multiplier === 'number' && Number.isFinite(t.multiplier) ? t.multiplier : '',
-        })),
+        .map((t) => {
+          const { multiplier: _gone, ...rest } = t;
+          return Object.assign(rest, {
+            name: String(t.name || ''),
+            description: String(t.description || ''),
+            services: LSCCalc.typeServices(t),
+          });
+        }),
     });
   }
 
-  /* Which Post-Production row each type's chip is, by row id, for as long as
-     the screen is open: { typeId: [rowId | null, …] }, in the order of its
+  /* Which Post-Production row each type's service is, by row id, for as long
+     as the screen is open: { typeId: [rowId | null, …] }, in the order of its
      services. Linked by name whenever a card arrives (mount, save, reset), so
-     a rename of the row while editing renames the chip (followRename). */
+     a rename of the row while editing renames the service, multiplier and all
+     (followRename). */
   let chipRows = {};
 
   /* The working copy as it stands, for the unsaved-edit check. Deliberately not
@@ -1066,29 +1076,29 @@ const PricingView = (() => {
     const next = {};
     card.deliverableTypes.forEach((t) => {
       const was = (keep && chipRows[t.id]) || [];
-      next[t.id] = t.services.map((n, j) => {
+      next[t.id] = t.services.map((s, j) => {
         if (was[j]) return was[j];
-        const row = rows.find((r) => svcName(r) === n);
+        const row = rows.find((r) => svcName(r) === s.name);
         return row ? row.id : null;
       });
     });
     chipRows = next;
   }
 
-  /* A post row renamed as it's typed: every chip that is that row takes the
-     new name, so the type and the service save together. */
+  /* A post row renamed as it's typed: every type's service that is that row
+     takes the new name and keeps its multiplier, so the two save together. */
   function followRename(row) {
     const name = svcName(row);
     card.deliverableTypes.forEach((t) => {
       (chipRows[t.id] || []).forEach((id, j) => {
-        if (id === row.id) t.services[j] = name;
+        if (id === row.id) t.services[j].name = name;
       });
     });
   }
 
   /* How many types list any of these names: for the delete confirms. */
   function typesListing(names) {
-    return card.deliverableTypes.filter((t) => t.services.some((n) => names.indexOf(n) !== -1)).length;
+    return card.deliverableTypes.filter((t) => t.services.some((s) => names.indexOf(s.name) !== -1)).length;
   }
   function typesNote(count, several) {
     if (!count) return '';
@@ -1096,30 +1106,59 @@ const PricingView = (() => {
       (several ? ' its services, and will show them as missing.' : ' it, and will show it as missing.');
   }
 
-  function chipsMarkup(t, ti) {
+  /* A type's summary figures (G6): how many post services, and the post
+     hours per capture hour they add up to (calc.js typePostRate; a multiplier
+     still being typed counts as 0 until it is a number). */
+  const countText = (t) => {
+    const n = t.services.length;
+    return n ? n + ' post service' + (n === 1 ? '' : 's') : 'No post services';
+  };
+  const rateText = (t) => String(LSCCalc.typePostRate(t));
+  const rateUnit = (t, word) => ' post ' + word + (LSCCalc.typePostRate(t) === 1 ? '' : 's');
+  /* The summary button's name, read in full (PM8 wording). */
+  const summaryName = (t) =>
+    typeNameOf(t) + ', ' + countText(t).toLowerCase() + ', ' + rateText(t) + rateUnit(t, 'hour') + ' per capture hour';
+
+  /* The one type whose panel is open (G7), by id; null when every type is
+     closed. View state only, not the card. */
+  let openType = null;
+
+  /* One post service on a type: its name, its multiplier and its ×. A service
+     no longer on the card is struck through with the word "missing", so it
+     never rests on colour alone. */
+  function serviceRowMarkup(t, ti, names) {
+    const of = typeNameOf(t);
+    return (s, j) => {
+      const missing = names.indexOf(s.name) === -1;
+      const shown = s.name || 'untitled service';
+      return (
+        '<li class="dtype-svc' + (missing ? ' dtype-svc-missing' : '') + '"' +
+        (missing ? ' title="No longer on the Rate Card’s Post-Production. An estimate skips it when this type is picked."' : '') +
+        '>' +
+        '<span class="dtype-svc-name">' +
+        (missing
+          ? '<s class="dtype-svc-text">' + esc(shown) + '</s><span class="dtype-svc-flag">missing</span>'
+          : '<span class="dtype-svc-text">' + esc(shown) + '</span>') +
+        '</span>' +
+        '<span class="dtype-svc-mult">' +
+        '<input type="number" class="dtype-inp dtype-mult-inp" id="dtype-mult-' + ti + '-' + j + '"' +
+        ' min="0" step="0.25" inputmode="decimal" value="' + esc(String(s.multiplier)) + '"' +
+        ' aria-label="' + esc(shown) + ' multiplier for ' + esc(of) + '" aria-describedby="dtype-mult-unit"' +
+        ' data-dtype="multiplier" data-ti="' + ti + '" data-sj="' + j + '">' +
+        '<span class="dtype-mult-unit" aria-hidden="true">× capture hr</span></span>' +
+        '<button type="button" class="dtype-svc-x" data-dtype-unchip="' + j + '" data-ti="' + ti + '"' +
+        ' aria-label="Remove ' + esc(shown) + (missing ? ' (missing)' : '') + ' from ' + esc(of) + '">' +
+        '<span aria-hidden="true">×</span></button></li>'
+      );
+    };
+  }
+
+  function servicesMarkup(t, ti) {
     if (!t.services.length) return '<p class="dtype-none">None yet</p>';
     const names = postRows().map(svcName);
-    const of = typeNameOf(t);
     return (
-      '<ul class="dtype-chips" aria-label="Post services for ' + esc(of) + '">' +
-      t.services.map((n, j) => {
-        const missing = names.indexOf(n) === -1;
-        const shown = n || 'untitled service';
-        return (
-          '<li class="dtype-chip' + (missing ? ' dtype-chip-missing' : '') + '"' +
-          (missing ? ' title="No longer on the Rate Card’s Post-Production. An estimate skips it when this type is picked."' : '') +
-          '>' +
-          '<span class="dtype-chip-text">' +
-          (missing
-            ? '<s class="dtype-chip-name">' + esc(shown) + '</s><span class="dtype-chip-flag">missing</span>'
-            : '<span class="dtype-chip-name">' + esc(shown) + '</span>') +
-          '</span>' +
-          '<button type="button" class="dtype-chip-x" data-dtype-unchip="' + j + '" data-ti="' + ti + '"' +
-          ' aria-label="Remove ' + esc(shown) + (missing ? ' (missing)' : '') + ' from ' + esc(of) + '">' +
-          '<span aria-hidden="true">×</span></button></li>'
-        );
-      }).join('') +
-      '</ul>'
+      '<ul class="dtype-svc-list" aria-label="Post services for ' + esc(typeNameOf(t)) + '">' +
+      t.services.map(serviceRowMarkup(t, ti, names)).join('') + '</ul>'
     );
   }
 
@@ -1127,7 +1166,8 @@ const PricingView = (() => {
      saying why, when there's nothing left to add. */
   function addServiceMarkup(t, ti) {
     const rows = postRows();
-    const left = rows.map(svcName).filter((n) => t.services.indexOf(n) === -1);
+    const listed = t.services.map((s) => s.name);
+    const left = rows.map(svcName).filter((n) => listed.indexOf(n) === -1);
     const none = !rows.length
       ? 'No Post-Production services on the card'
       : !left.length ? 'Every post service is listed' : '';
@@ -1140,42 +1180,48 @@ const PricingView = (() => {
     );
   }
 
-  /* One type. Every field has its own label: shown above it below 1100,
-     read only by screen readers from 1100 up, where .dtype-head names the
-     columns once. */
+  /* One type: a summary that opens (a disclosure button, as panel.js's), and
+     its panel under it. Every panel is in the page, hidden but one, so
+     opening and closing never re-render and focus stays on the summary. */
   function typeRowMarkup(t, ti) {
+    const open = t.id === openType;
+    const blank = !t.name.trim();
     return (
-      '<li class="dtype-row">' +
+      '<li class="dtype-row' + (open ? ' is-open' : '') + '">' +
+      '<button type="button" class="dtype-sum" id="dtype-sum-' + ti + '" data-dtype-toggle="' + ti + '"' +
+      ' aria-expanded="' + open + '" aria-controls="dtype-panel-' + ti + '" aria-label="' + esc(summaryName(t)) + '">' +
+      '<span class="dtype-sum-name' + (blank ? ' is-blank' : '') + '" id="dtype-sum-name-' + ti + '">' +
+      esc(typeNameOf(t)) + '</span>' +
+      '<span class="dtype-sum-meta"><span class="dtype-sum-count">' + countText(t) + '</span>' +
+      '<span class="dtype-sum-dot" aria-hidden="true">·</span>' +
+      '<span><span class="dtype-sum-rate">' + rateText(t) + '</span><span class="dtype-sum-unit">' +
+      rateUnit(t, 'hr') + '</span> per capture hr</span></span>' +
+      '<span class="panel-chev dtype-chev" aria-hidden="true"></span></button>' +
+      '<div class="dtype-panel" id="dtype-panel-' + ti + '" role="region" aria-labelledby="dtype-sum-name-' + ti + '"' +
+      (open ? '' : ' hidden') + '>' +
       '<div class="dtype-cell dtype-what">' +
       '<label class="dtype-lbl" for="dtype-name-' + ti + '">Name</label>' +
       '<input type="text" class="dtype-inp dtype-name" id="dtype-name-' + ti + '" value="' + esc(t.name) + '"' +
       ' placeholder="e.g. Brand Story" autocomplete="off" data-dtype="name" data-ti="' + ti + '">' +
       '<label class="dtype-lbl" for="dtype-desc-' + ti + '">Description <span class="dtype-lbl-note">for you, never printed</span></label>' +
       '<textarea class="dtype-inp dtype-desc" id="dtype-desc-' + ti + '" rows="1"' +
-      ' placeholder="What it is (for you, never printed)" data-dtype="description" data-ti="' + ti + '">' +
+      ' placeholder="What it is" data-dtype="description" data-ti="' + ti + '">' +
       esc(t.description) + '</textarea></div>' +
       '<div class="dtype-cell dtype-svcs" role="group" aria-labelledby="dtype-svcs-' + ti + '">' +
-      '<span class="dtype-lbl" id="dtype-svcs-' + ti + '">Post services</span>' +
-      chipsMarkup(t, ti) + addServiceMarkup(t, ti) + '</div>' +
-      '<div class="dtype-cell dtype-mult">' +
-      '<label class="dtype-lbl" for="dtype-mult-' + ti + '">Multiplier</label>' +
-      '<span class="dtype-mult-row"><input type="number" class="dtype-inp dtype-mult-inp" id="dtype-mult-' + ti + '"' +
-      ' min="0" step="0.25" inputmode="decimal" value="' + esc(String(t.multiplier)) + '"' +
-      ' aria-describedby="dtype-mult-u-' + ti + '" data-dtype="multiplier" data-ti="' + ti + '">' +
-      '<span class="dtype-mult-unit" id="dtype-mult-u-' + ti + '">× 1 capture hour</span></span></div>' +
-      '<div class="dtype-act"><button type="button" class="del-btn dtype-del" data-dtype-del="' + ti + '"' +
-      ' title="Remove this type" aria-label="Remove the ' + esc(typeNameOf(t)) + ' type">×</button></div>' +
-      '</li>'
+      '<span class="dtype-lbl" id="dtype-svcs-' + ti + '">Post services <span class="dtype-lbl-note">post hours per capture hour</span></span>' +
+      servicesMarkup(t, ti) + addServiceMarkup(t, ti) + '</div>' +
+      '<div class="dtype-act"><button type="button" class="btn btn-ghost btn-sm dtype-del" data-dtype-del="' + ti + '"' +
+      ' aria-label="Remove the ' + esc(typeNameOf(t)) + ' type">Remove type</button></div>' +
+      '</div></li>'
     );
   }
 
   function typesBodyMarkup() {
     const types = card.deliverableTypes;
     return (
+      '<span class="sr-only" id="dtype-mult-unit">post hours per capture hour</span>' +
       (types.length
-        ? '<div class="dtype-head" aria-hidden="true"><span>Type</span><span>Post services</span>' +
-          '<span>Multiplier</span><span></span></div>' +
-          '<ul class="dtype-list" aria-label="Deliverable types">' + types.map(typeRowMarkup).join('') + '</ul>'
+        ? '<ul class="dtype-list" aria-label="Deliverable types">' + types.map(typeRowMarkup).join('') + '</ul>'
         : '<p class="dtype-empty">Add the kinds of deliverable you make, like Brand Story or Socials, and the post ' +
           'services each needs.</p>') +
       '<div class="dtype-foot"><span class="pricing-hint">' + types.length + ' type' + (types.length === 1 ? '' : 's') +
@@ -1188,9 +1234,10 @@ const PricingView = (() => {
       '<section class="billing-block dtype-block" aria-labelledby="dtype-title">' +
       '<div class="bb-head"><div><h2 class="bb-label" id="dtype-title">Deliverable Types</h2>' +
       '<span class="bb-label-tag">Plans post-production</span></div></div>' +
-      '<p class="dtype-intro">The kinds of deliverable you make. Picking one on an estimate adds its post services to ' +
-      'Post-Production at 0 hrs, and recommends the hours they need from the services ticked Capture: ' +
-      '<strong>2 × 1 capture hour</strong> on a 10-hour shoot recommends 20. Descriptions are for you and never print.</p>' +
+      '<p class="dtype-intro">The kinds of deliverable you make. Each post service on a type has a multiplier: the ' +
+      'post hours it needs for every hour of the services ticked Capture. Picking a type on an estimate adds its ' +
+      'post services with those hours filled in: an edit at <strong>2 × capture hr</strong> on a 10-hour shoot fills ' +
+      '20. Descriptions are for you and never print.</p>' +
       '<div id="dtype-body">' + typesBodyMarkup() + '</div></section>'
     );
   }
@@ -1222,17 +1269,45 @@ const PricingView = (() => {
     });
   }
 
-  /* A type renamed as it's typed: the labels in its row that name it. */
-  function relabelType(li, t) {
+  /* Opens one type and closes the rest (G7), or closes them all (null), in
+     place: the panels are already in the page. */
+  function openOnly(id) {
+    openType = id;
+    card.deliverableTypes.forEach((t, ti) => {
+      const btn = $('dtype-sum-' + ti);
+      const panel = $('dtype-panel-' + ti);
+      if (!btn || !panel) return;
+      const open = t.id === id;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.parentNode.classList.toggle('is-open', open);
+      panel.hidden = !open;
+      if (open) panel.querySelectorAll('.dtype-desc').forEach(sizeDesc);
+    });
+  }
+
+  /* A type edited as it's typed: its summary, and the labels in its panel
+     that name it. */
+  function refreshSummary(ti) {
+    const t = card.deliverableTypes[ti];
+    const btn = $('dtype-sum-' + ti);
+    if (!t || !btn) return;
     const of = typeNameOf(t);
     const set = (el, text) => el && el.setAttribute('aria-label', text);
-    set(li.querySelector('.dtype-chips'), 'Post services for ' + of);
-    set(li.querySelector('.dtype-add'), 'Add a post service to ' + of);
-    set(li.querySelector('.dtype-del'), 'Remove the ' + of + ' type');
-    li.querySelectorAll('.dtype-chip-x').forEach((btn) => {
-      const n = t.services[parseInt(btn.dataset.dtypeUnchip, 10)];
-      const missing = btn.closest('.dtype-chip-missing');
-      set(btn, 'Remove ' + (n || 'untitled service') + (missing ? ' (missing)' : '') + ' from ' + of);
+    set(btn, summaryName(t));
+    const name = btn.querySelector('.dtype-sum-name');
+    name.textContent = of;
+    name.classList.toggle('is-blank', !t.name.trim());
+    btn.querySelector('.dtype-sum-rate').textContent = rateText(t);
+    btn.querySelector('.dtype-sum-unit').textContent = rateUnit(t, 'hr');
+    const panel = $('dtype-panel-' + ti);
+    set(panel.querySelector('.dtype-svc-list'), 'Post services for ' + of);
+    set(panel.querySelector('.dtype-add'), 'Add a post service to ' + of);
+    set(panel.querySelector('.dtype-del'), 'Remove the ' + of + ' type');
+    t.services.forEach((s, j) => {
+      const shown = s.name || 'untitled service';
+      set($('dtype-mult-' + ti + '-' + j), shown + ' multiplier for ' + of);
+      const x = panel.querySelector('[data-dtype-unchip="' + j + '"]');
+      if (x) set(x, 'Remove ' + shown + (x.closest('.dtype-svc-missing') ? ' (missing)' : '') + ' from ' + of);
     });
   }
 
@@ -1244,13 +1319,29 @@ const PricingView = (() => {
       if (!key) add('A deliverable type is missing a name.', $('dtype-name-' + ti));
       else if (seen[key]) add('Two deliverable types are both called “' + name + '”.', $('dtype-name-' + ti));
       seen[key] = 1;
-      const m = t.multiplier;
-      if (typeof m !== 'number' || m < 0) {
-        add('A multiplier is the post hours for each capture hour: a number, 0 or more.', $('dtype-mult-' + ti));
-      } else if (Math.abs(m * 100 - Math.round(m * 100)) > 1e-6) {
-        add('A multiplier can have at most two decimal places.', $('dtype-mult-' + ti));
-      }
+      t.services.forEach((s, j) => {
+        const m = s.multiplier;
+        const field = $('dtype-mult-' + ti + '-' + j);
+        if (typeof m !== 'number' || m < 0) {
+          add('A post service’s multiplier is its post hours for each capture hour: a number, 0 or more.', field);
+        } else if (Math.abs(m * 100 - Math.round(m * 100)) > 1e-6) {
+          add('A post service’s multiplier can have at most two decimal places.', field);
+        }
+      });
     });
+  }
+
+  /* A refused save opens the type of the first problem it names in the
+     block (G7), so the field it flags is on screen to fix. */
+  function openProblemType(found) {
+    let ti = -1;
+    found.some((p) => (p.fields || []).some((f) => {
+      const panel = f && f.closest && f.closest('.dtype-panel');
+      if (panel) ti = parseInt(panel.id.replace('dtype-panel-', ''), 10);
+      return !!panel;
+    }));
+    const t = card.deliverableTypes[ti];
+    if (t) openOnly(t.id);
   }
 
   /* The block's fields, delegated: it re-renders on its own. Written to the
@@ -1258,16 +1349,19 @@ const PricingView = (() => {
   function onTypeInput(event) {
     const inp = event.target.closest('[data-dtype]');
     if (!inp || !root.contains(inp)) return;
-    const t = card.deliverableTypes[parseInt(inp.dataset.ti, 10)];
+    const ti = parseInt(inp.dataset.ti, 10);
+    const t = card.deliverableTypes[ti];
     if (!t) return;
     const f = inp.dataset.dtype;
     if (f === 'multiplier') {
+      const s = t.services[parseInt(inp.dataset.sj, 10)];
+      if (!s) return;
       // '' while it isn't a number, so the save can name the field.
       const v = inp.value === '' ? NaN : Number(inp.value);
-      t.multiplier = Number.isFinite(v) ? v : '';
+      s.multiplier = Number.isFinite(v) ? v : '';
     } else t[f] = inp.value;
-    if (f === 'name') relabelType(inp.closest('.dtype-row'), t);
     if (f === 'description') sizeDesc(inp);
+    else refreshSummary(ti);
   }
 
   function onTypeChange(event) {
@@ -1277,23 +1371,31 @@ const PricingView = (() => {
     const t = card.deliverableTypes[ti];
     const row = postRows().find((r) => svcName(r) === sel.value);
     if (!t || !row) return true;
-    t.services.push(svcName(row));
+    // A service added from now on starts at 1× (G5).
+    t.services.push({ name: svcName(row), multiplier: 1 });
     (chipRows[t.id] = chipRows[t.id] || []).push(row.id);
-    // Back on "+ Add" for the next one; on the last chip once nothing's left.
-    paintTypes(['#dtype-add-' + ti, '[data-ti="' + ti + '"][data-dtype-unchip="' + (t.services.length - 1) + '"]']);
-    LSCUtil.announce($('pricing-floor-live'), 'Added ' + svcName(row) + ' to ' + typeNameOf(t) + '.');
+    // Back on "+ Add" for the next one; on the new service once nothing's left.
+    paintTypes(['#dtype-add-' + ti, '#dtype-mult-' + ti + '-' + (t.services.length - 1)]);
+    LSCUtil.announce($('pricing-floor-live'), 'Added ' + svcName(row) + ' to ' + typeNameOf(t) + ' at 1 × capture hour.');
     return true;
   }
 
   function onTypeClick(event) {
-    const btn = event.target.closest('#dtype-add-type, [data-dtype-del], [data-dtype-unchip]');
+    const btn = event.target.closest('#dtype-add-type, [data-dtype-toggle], [data-dtype-del], [data-dtype-unchip]');
     if (!btn || !root.contains(btn)) return false;
     const types = card.deliverableTypes;
 
+    if (btn.dataset.dtypeToggle !== undefined) {
+      const t = types[parseInt(btn.dataset.dtypeToggle, 10)];
+      if (t) openOnly(t.id === openType ? null : t.id);
+      return true;
+    }
+
     if (btn.id === 'dtype-add-type') {
-      const t = { id: newTypeId(), name: '', description: '', services: [], multiplier: 1 };
+      const t = { id: newTypeId(), name: '', description: '', services: [] };
       types.push(t);
       chipRows[t.id] = [];
+      openType = t.id; // a new type opens straight away (G7)
       paintTypes('#dtype-name-' + (types.length - 1));
       return true;
     }
@@ -1307,8 +1409,9 @@ const PricingView = (() => {
         !window.confirm('Remove the “' + typeNameOf(t) + '” deliverable type?\n\nEstimates already saved keep it.')) return true;
       types.splice(ti, 1);
       delete chipRows[t.id];
-      // The next type's name, else the one before, else the add button.
-      paintTypes(['#dtype-name-' + ti, '#dtype-name-' + (ti - 1), '#dtype-add-type']);
+      if (openType === t.id) openType = null;
+      // The next type's summary, else the one before, else the add button.
+      paintTypes(['#dtype-sum-' + ti, '#dtype-sum-' + (ti - 1), '#dtype-add-type']);
       LSCUtil.announce($('pricing-floor-live'), 'Removed the ' + typeNameOf(t) + ' type.');
       return true;
     }
@@ -1319,10 +1422,10 @@ const PricingView = (() => {
     if (!t || j < 0 || j >= t.services.length) return true;
     const gone = t.services.splice(j, 1)[0];
     (chipRows[t.id] || []).splice(j, 1);
-    // The chip that took its place, else the one before, else "+ Add".
-    const chip = (k) => '[data-ti="' + ti + '"][data-dtype-unchip="' + k + '"]';
-    paintTypes([chip(j), chip(j - 1), '#dtype-add-' + ti]);
-    LSCUtil.announce($('pricing-floor-live'), 'Removed ' + (gone || 'untitled service') + ' from ' + typeNameOf(t) + '.');
+    // The service that took its place, else the one before, else "+ Add".
+    const x = (k) => '[data-ti="' + ti + '"][data-dtype-unchip="' + k + '"]';
+    paintTypes([x(j), x(j - 1), '#dtype-add-' + ti]);
+    LSCUtil.announce($('pricing-floor-live'), 'Removed ' + (gone.name || 'untitled service') + ' from ' + typeNameOf(t) + '.');
     return true;
   }
 
@@ -2223,7 +2326,7 @@ const PricingView = (() => {
       deliverableTypes: card.deliverableTypes.map((t) => Object.assign({}, t, {
         name: t.name.trim(),
         description: t.description.trim(),
-        services: t.services.slice(),
+        services: t.services.map((s) => ({ name: s.name, multiplier: s.multiplier })),
       })),
       // Null is no fee (routes/pricing.js). Dropping it would take the fee out
       // of every auto price, which is why the shape marker moved (PF3).
@@ -2241,6 +2344,7 @@ const PricingView = (() => {
     if (found.length) {
       // The desktop app used alert() here. A blocking dialog hides the very
       // fields the message is describing.
+      openProblemType(found);
       showProblems(found);
       return;
     }
@@ -2305,7 +2409,7 @@ const PricingView = (() => {
     surcharge_weekdays_invalid: 'pick at least one day in your working week.',
     surcharge_mode_invalid: 'pick how surcharges combine.',
     labour_capture_not_a_flag: 'a Capture tick is malformed. Reload the page and try again.',
-    deliverable_types_invalid: 'a deliverable type’s multiplier must be 0 or more.',
+    deliverable_types_invalid: 'a post service’s multiplier must be a number, 0 or more, to two decimals.',
   };
 
   async function reset() {
