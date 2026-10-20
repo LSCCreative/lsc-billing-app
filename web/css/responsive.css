@@ -645,7 +645,7 @@
   .gt-row > div .text-inp {
     min-height: 44px;
   }
-  /* Crew and equipment rows have no mark-up: the column is an em dash under a
+  /* Crew and equipment rows have no price there: the column is an em dash under a
      heading that is also an em dash. Legible as a table column, meaningless as
      a line of its own. */
   .gt-row .mu-cell {
@@ -744,7 +744,7 @@
     display: block;
     margin-bottom: 5px;
   }
-  /* The Mark-Up cell carries the row's floor line under its input. As a
+  /* The Price cell carries the row's floor line under its input. As a
      space-between flex row that line would sit beside the input as a third
      item; wrapped, it takes its own line, right-aligned under the price it
      describes. */

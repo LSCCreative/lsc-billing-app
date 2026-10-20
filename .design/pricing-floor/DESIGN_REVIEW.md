@@ -28,7 +28,7 @@ $165,939.97 + profit $16,594.00 = $182,533.97, and every ledger and the Minimum 
 up to the cent at all three widths with no sideways scroll. The findings were all **copy the new model
 had made wrong** (Capacity and the Service Day ⓘ still talked in overhead-rate and "billable hours per
 day" terms) and one placement: the "Show minimum" tick sat two blocks above the line it controls.
-These four are fixed. One naming question is left for the user.
+These four are fixed, and the user then approved the three suggestions below (all fixed).
 
 ## Must Fix
 
@@ -55,22 +55,27 @@ None.
    summaryMarkup`). It was placed when it governed two floors. See `review-editor-mjp-mobile-375.png`.
    _Fixed: the tick now sits directly above the Minimum Job Price line; off hides only that line, the
    total is unchanged._
-5. **Open, the user's call: the Rate Card's "Mark-Up ($)" column is the price.** Its note says
+5. **The Rate Card's "Mark-Up ($)" column is the price.** Its note says
    "Mark-Up stays yours to set", and the read-only estimate's lines say "Markup" too
    (`estimate-detail.js`). Since PF6 the markup is "Business profit", so a column called Mark-Up that
    holds $161 (an auto price that already includes the 10% profit) now reads as a second, different
    markup. _Suggestion: rename the column "Price ($)" and the note "Prices stay yours to set"; the
-   field's own accessible name already says "Hourly price for …". Not changed: it renames a column the
-   user has worked with since the desktop app._
+   field's own accessible name already says "Hourly price for …"._ **Fixed (the user's yes):** "Price ($)"
+   on both Rate Card tables, "Prices stay yours to set.", and "Price" on the editor's and the read-only
+   estimate's line columns; Direct's tooltip says "with nothing added".
 
 ## Could Improve
 
 1. **Label casing on the Rate Card**: "Card fees (%)" (as PF8 specified, sentence case like PF4/PF6)
    sits under "Tax Set-Aside Rate (%)" and above "Service Day (billable hrs)". _Suggestion: pick one
-   casing for the three blocks; sentence case matches the newer screens._
+   casing for the three blocks; sentence case matches the newer screens._ **Fixed:** "Tax set-aside rate
+   (%)", "Card fees (%)", "Service day (billable hrs)", and Profit Goals' twin block "Tax reserve target
+   (%)".
 2. **Est. Take-Home is green while the quote is under break-even** (editor summary: $4,450.40 in
    `--ok` beside "This quote is under by $2,220.75"). Both are right, but green reads as "fine".
-   _Suggestion: keep take-home neutral when the Minimum Job Price verdict is "under"._
+   _Suggestion: keep take-home neutral when the Minimum Job Price verdict is "under"._ **Fixed:** green
+   (`#s-takehome.is-clear`) only while the quote clears its minimum, whether or not the line is shown;
+   plain text when under; a minimum that can't be worked out leaves it green.
 3. **Pre-existing, not from this track:** at 375 the Profit Goals tax-bracket table stacks each bracket
    into a tall card with the × on its own line, and the Finance sub-nav strip clips its outer tabs.
 

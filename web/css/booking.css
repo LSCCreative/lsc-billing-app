@@ -1228,7 +1228,7 @@
   }
 }
 /* On a card, crew and gear rows drop the shared expense grid's empty
-   Mark-Up column ("—") and give its width to the names: a hire line has two
+   Price column ("—") and give its width to the names: a hire line has two
    of them since B2-7. At 768 and up; below, the rows stack anyway. */
 @media (min-width: 768px) {
   .day-group[data-group='crew'] .expense-grid,

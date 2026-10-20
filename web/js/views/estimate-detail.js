@@ -91,7 +91,7 @@ const EstimateDetail = (() => {
      the record of what was quoted. */
   /* Every section table is four columns (labour lost its Rate column on
      2026-09-21 — see estimate-editor.js's buildLabourRow), and .est-table-4
-     gives them one shared set of column edges, so Qty, Mark-Up and Bill line
+     gives them one shared set of column edges, so Qty, Price and Bill line
      up down the page the way a printed rate card does. */
   function labourBlocks(estimate, pricing) {
     const activeRows = estimate.activeRows || {};
@@ -112,7 +112,7 @@ const EstimateDetail = (() => {
          quantity's unit — "2 full days", "3 hours" — as the editor does
          (service rate tiers, 2026-09-28: every service now sells at three
          units). The unit is the line's own, from its snapshot, like the
-         Mark-Up beside it. A line with no price left says a bare number. */
+         price beside it. A line with no price left says a bare number. */
       let subtotal = 0;
       const tags = section.id === 'post' ? deliverableNames(activeRows) : null;
       const rows = lines
@@ -136,7 +136,7 @@ const EstimateDetail = (() => {
 
   const LABOUR_HEAD =
     '<thead><tr><th>Service</th><th class="right">Qty</th>' +
-    '<th class="right">Markup</th><th class="right">Bill</th></tr></thead>';
+    '<th class="right">Price</th><th class="right">Bill</th></tr></thead>';
 
   /* A post line's deliverable tag (B2-10, D95): the deliverable's name as
      saved with this estimate, as the client PDF prints it (pdf.js
@@ -158,7 +158,7 @@ const EstimateDetail = (() => {
       (tag ? '<span class="post-tag">· ' + esc(tag) + '</span>' : '') +
       (note ? '<span class="sur-note est-sur-note">' + esc(note) + '</span>' : '') + '</td>' +
       '<td class="right muted-td" data-label="Qty">' + esc(qty) + '</td>' +
-      '<td class="right muted-td" data-label="Markup">' + (def ? fmt(def.mu) : '—') + '</td>' +
+      '<td class="right muted-td" data-label="Price">' + (def ? fmt(def.mu) : '—') + '</td>' +
       '<td class="right bill" data-label="Bill">' + (bill === null ? '—' : fmt(bill)) + '</td></tr>'
     );
   }

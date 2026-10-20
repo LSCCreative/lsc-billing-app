@@ -185,6 +185,12 @@
    not have (HANDOVER.md decision 42): "under by $X" is --accent-text, the
    Rate Card's "below floor" voice, and "clears it" is plain text. */
 
+/* Est. Take-Home: green only while the quote clears its Minimum Job Price
+   (estimate-editor.js paintMinimum, pricing-floor PF10). Plain text otherwise. */
+#s-takehome.is-clear {
+  color: var(--ok);
+}
+
 .mjp-toggle-row {
   display: flex;
   align-items: baseline;
@@ -436,8 +442,8 @@
 
 /* ── Editor and detail: labour without a Rate column (2026-09-21) ───────────
    See estimate-editor.js's buildLabourRow. app.css's six-track grid loses its
-   Rate track; Service takes the width back, so Mark-Up and Client Bill still
-   sit exactly under the expense sections' Mark-Up and Client Bill. */
+   Rate track; Service takes the width back, so Price and Client Bill still
+   sit exactly under the expense sections' Price and Client Bill. */
 .labour-grid {
   grid-template-columns: 3fr 90px 90px 110px 32px;
 }

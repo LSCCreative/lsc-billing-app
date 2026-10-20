@@ -121,7 +121,7 @@
    column that gives way when the table is tight, and a Unit column plus a
    state column would have cut most names to their first word. Under the name,
    "per [unit ▾]" (a view switch) and, for a day, its billable hours; under the
-   Mark-Up, the unit's state line. 10.5px muted, the rate card's own hint size,
+   Price, the unit's state line. 10.5px muted, the rate card's own hint size,
    so the table still reads as prices first. */
 .pricing-row-meta {
   margin-top: 4px;
@@ -157,7 +157,7 @@
   box-shadow: var(--shadow-focus);
 }
 /* The state line may carry three parts ("set by you · below floor by $12.40
-   · ↺ use $57"), more than the Mark-Up column is wide, so it wraps — but
+   · ↺ use $57"), more than the Price column is wide, so it wraps — but
    between parts, never inside one, so a figure is never split from its words. */
 .pricing-floor {
   margin-top: 4px;
@@ -307,7 +307,7 @@
 }
 
 /* ── The car's km row (task 6b) ─────────────────────────────────────────────
-   Its price is Overhead's, so the Mark-Up cell shows it as text, not a field,
+   Its price is Overhead's, so the Price cell shows it as text, not a field,
    in the field's size and weight so the column still lines up; its Rate is
    "at cost", muted, as a read-only fact. */
 .pricing-km-price {

@@ -22,6 +22,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - Re-saving an estimate re-derives its owner-only `overheadShare`, `taxSetAside` and `estTakeHome`
   from today's overhead rate (`prepareWrite` → `readOverheadRate`); client figures, PDFs and the Cost
   Breakdown don't move (PF9 check: a pre-v18 draft re-saved on v18 moved only those three). Not a bug.
+- A line's or row's `mu` is shown as **Price** (Rate Card "Price ($)", the editor's and the estimate's
+  line columns; PF10). "Markup" is only ever Business profit; don't bring the word back for a price.
 - The markup is **Business profit (%) — before tax** (pricing-floor PF6; was "Target Markup", before
   that "Target Profit Margin"): profit = break-even × %, on top of pay, its own line in the target.
   The DB column and the API key `targetProfitMarginPct` keep the old name. `profitMarginPct` is a

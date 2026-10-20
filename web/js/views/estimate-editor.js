@@ -300,7 +300,7 @@ const EstimateEditor = (() => {
 
   /* The options of a unit select. `current` is the unit a line is already in:
      its option is just the unit's name, since the line's price sits beside it
-     in the Mark-Up column and the closed select should read "per full day".
+     in the Price column and the closed select should read "per full day".
      Every other option says what the line would be priced at in that unit, or
      that it can't be yet — disabled, with the reason in its text (a <select>
      can hold nothing else). `lower`: the line's inline wording ("per half
@@ -507,7 +507,7 @@ const EstimateEditor = (() => {
       unitLine + '</div>' +
       '<div class="right" data-label="' + qtyLabel + '"><input class="num-inp qty-inp" type="number" min="0" step="0.5" value="' +
       (line.qty || '') + '" aria-label="' + qtyLabel + ' for ' + esc(line.name) + '"></div>' +
-      '<div class="right muted-td" data-label="Markup">' + (def ? fmt(def.mu) : '—') + '</div>' +
+      '<div class="right muted-td" data-label="Price">' + (def ? fmt(def.mu) : '—') + '</div>' +
       /* A Production line on a surcharged day says why its price is higher,
          under the price, owner-only (the client's copy never says it, D8). */
       '<div class="right' + (section.id === 'prod' ? ' bill-col' : '') + '" data-label="Client bill">' +
@@ -564,7 +564,7 @@ const EstimateEditor = (() => {
       (line.qty || '') + '"' + (linked ? ' readonly' : '') + ' aria-label="' + qtyName + ' for ' + esc(line.name) +
       (linked ? ', from the trip' : '') + '"></div>' +
       '<div class="right muted-td" data-label="Rate">' + rateLabel + '</div>' +
-      '<div class="right muted-td" data-label="Markup">' + muLabel + '</div>' +
+      '<div class="right muted-td" data-label="Price">' + muLabel + '</div>' +
       '<div class="right" data-label="Client bill"><span class="bill-cell">—</span></div>' +
       '<div class="del-cell">' + (linked ? '' : '<button type="button" class="del-btn" title="Remove ' +
       esc(line.name) + '" aria-label="Remove ' + esc(line.name) + '">×</button>') + '</div>';
@@ -1077,7 +1077,7 @@ const EstimateEditor = (() => {
       (section.id === 'post' && !section.archived ? postPlanMarkup() : '') +
       picker +
       '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
-      '<div class="right">Markup</div><div class="right">Client bill</div><div></div></div>' +
+      '<div class="right">Price</div><div class="right">Client bill</div><div></div></div>' +
       bodyMarkup(section.id, 'No services added. Use the selector above to add one.') +
       '</div>'
     );
@@ -1117,7 +1117,7 @@ const EstimateEditor = (() => {
 
   const labourHead =
     '<div class="gt-head labour-grid"><div>Service</div><div class="right">Qty</div>' +
-    '<div class="right">Markup</div><div class="right">Client bill</div><div></div></div>';
+    '<div class="right">Price</div><div class="right">Client bill</div><div></div></div>';
 
   const prodSection = () => sections.find((s) => s.id === 'prod' && !s.archived) || null;
 
@@ -1126,7 +1126,7 @@ const EstimateEditor = (() => {
   const DAY_GROUPS = [
     ['prod', 'Production', labourHead],
     ['travel', 'Travel', '<div class="gt-head expense-grid"><div>Service</div><div class="right">Qty / Cost</div>' +
-      '<div class="right">Rate</div><div class="right">Markup</div><div class="right">Client bill</div><div></div></div>'],
+      '<div class="right">Rate</div><div class="right">Price</div><div class="right">Client bill</div><div></div></div>'],
     ['crew', 'Crew', '<div class="gt-head expense-grid"><div>Role / Name</div><div class="right">Days</div>' +
       '<div class="right">Day rate</div><div class="right">—</div><div class="right">Total</div><div></div></div>'],
     ['equip', 'Equipment', '<div class="gt-head expense-grid"><div>Vendor · Item</div><div class="right">Days</div>' +
@@ -2992,7 +2992,7 @@ const EstimateEditor = (() => {
         paragraphs: ['Income ex GST, less the overhead its hours carry and the tax set-aside — pass-through excluded.'],
       }) +
       '</div>' +
-      '<div class="sum-value" id="s-takehome" style="color:var(--ok)">$0.00</div></div>' +
+      '<div class="sum-value" id="s-takehome">$0.00</div></div>' +
       '</div>' +
       /* Under the bars, not inside them: a sixth .sum-item would read as one
          more headline figure, and this one is explicitly not that. The tick
@@ -3898,11 +3898,19 @@ const EstimateEditor = (() => {
     const line = $('mjp-line');
     if (!line) return; // left mid-edit, or a screen that has no summary bar
 
+    const floor = LSCCalc.minimumJobPrice(totals.directJobCost, totals.totalHours, incomeFloor);
+    /* Take-home is green only while the quote clears its minimum (pricing-floor
+       PF10): beside "under by $X" a green figure reads as "this job is fine".
+       Whether or not the line is showing, since the job is the same job. A
+       minimum that can't be worked out says nothing against it. */
+    const under = floor !== null && floor > 0 && LSCCalc.round2(floor - totals.clientPriceExGst) > 0;
+    const takeHome = $('s-takehome');
+    if (takeHome) takeHome.classList.toggle('is-clear', !under);
+
     const on = showMinimumNow();
     line.hidden = !on;
     if (!on) return;
 
-    const floor = LSCCalc.minimumJobPrice(totals.directJobCost, totals.totalHours, incomeFloor);
     setBreakdown(totals, floor, working);
 
     /* null is "cannot be computed", and it has to survive the trip to the

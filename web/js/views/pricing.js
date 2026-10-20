@@ -66,7 +66,7 @@
  * screen never works a price out for itself.
  *
  *   - `per [unit ▾]` under the name is a VIEW SWITCH, not a property of the
- *     row: it picks which of the three prices the Rate and Mark-Up cells show.
+ *     row: it picks which of the three prices the Rate and Price cells show.
  *     It lives in viewUnits, outside the working copy, so it never makes the
  *     card "unsaved", and it is back to Hourly on every mount. (Until
  *     2026-09-28 it changed what the row was, and switching asked first when
@@ -124,7 +124,7 @@
  * without one (every card saved before 6b) gets an "+ Add Vehicle per km"
  * button beside "+ Add item".
  *
- * EACH ROW'S STATE LINE, UNDER ITS MARK-UP
+ * EACH ROW'S STATE LINE, UNDER ITS PRICE
  * For the unit on show: "auto · floor $X", "set by you · ↺ use $X", with
  * "below floor by $X" in place of the floor when it is, or "auto · needs
  * Profit Goals" when there is no price to show — or "needs Capacity" / "needs
@@ -419,9 +419,9 @@ const PricingView = (() => {
 
   /* Between the state line's parts. The no-break space holds each dot to the
      part before it, so a line that wraps (every set-by-you row does, in the
-     80px Mark-Up column) ends on "·" rather than starting the next one with
+     80px Price column) ends on "·" rather than starting the next one with
      it: "below floor by $26.16 ·" / "↺ use $103", not "· ↺ use $103".
-     Its own span, because at 1100px and up, where the Mark-Up column is
+     Its own span, because at 1100px and up, where the Price column is
      narrowest, pricing.css stacks the parts one to a line and hides it: a
      dot at the end of every line only reads as a stray (design review D2). */
   const STATE_SEP = '<span class="pricing-state-sep">&nbsp;· </span>';
@@ -827,7 +827,7 @@ const PricingView = (() => {
         (computedRate === null ? ' pricing-rate-none' : '') + (unit === 'hour' ? '' : ' pricing-rate-day') +
         '" value="' + rateDisplay(row) +
         '" aria-label="Internal rate for ' + esc(nameOf(row)) + ', calculated automatically"></td>' +
-        '<td style="text-align:right" data-label="Mark-Up ($)"><input type="number" min="0" step="0.01"' +
+        '<td style="text-align:right" data-label="Price ($)"><input type="number" min="0" step="0.01"' +
         ' class="pricing-price-inp' + (d.auto ? ' pricing-auto' : '') + '" value="' + (d.mu === null ? '' : esc(String(d.mu))) +
         '" placeholder="—" aria-label="' + UNIT_ADJ[unit] + ' price for ' + esc(nameOf(row)) + '" aria-describedby="pfd-' + si + '-' + ri +
         '" data-si="' + si + '" data-ri="' + ri + '" data-field="price" data-type="labour">' +
@@ -837,7 +837,7 @@ const PricingView = (() => {
         '<td style="text-align:center" data-label="Custom"><label class="pricing-tick"><input type="checkbox"' + (row.customBill ? ' checked' : '') +
         ' data-si="' + si + '" data-ri="' + ri + '" data-field="customBill" data-type="labour"' +
         ' aria-label="Allow a custom bill amount for ' + esc(nameOf(row)) + '"' +
-        ' title="Allow a custom bill amount to override hours × mark-up"></label></td>' +
+        ' title="Allow a custom bill amount to override hours × price"></label></td>' +
         (onSet
           ? '<td style="text-align:center" data-label="Capture"><label class="pricing-tick"><input type="checkbox"' + (row.capture === true ? ' checked' : '') +
             ' data-si="' + si + '" data-ri="' + ri + '" data-field="capture" data-type="labour"' +
@@ -873,7 +873,7 @@ const PricingView = (() => {
       (onSet ? '<p class="pricing-capture-note" id="pricing-capture-d">' + esc(CAPTURE_MEANS) + '</p>' : '') +
       '<table class="pricing-table"><thead><tr><th>Service</th>' +
       '<th style="text-align:right">Rate ($/hr)</th>' +
-      '<th style="text-align:right">Mark-Up ($)</th>' +
+      '<th style="text-align:right">Price ($)</th>' +
       '<th class="pricing-flag-th" title="Let this service take a custom bill amount on the estimate">Custom</th>' +
       (onSet ? '<th class="pricing-flag-th pricing-capture-th">Capture' + captureInfo() + '</th>' : '') +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
@@ -884,7 +884,7 @@ const PricingView = (() => {
     );
   }
 
-  /* A travel row's Mark-Up cell. An own-time row's is a service's hourly
+  /* A travel row's Price cell. An own-time row's is a service's hourly
      price field: empty with its auto figure shown when on auto, a state line
      under it, and that line as one sentence for the field's description. Any
      other row's is the plain client rate it always was, plus the note when Your
@@ -950,7 +950,7 @@ const PricingView = (() => {
           : '<input type="number" min="0" step="0.01" value="' + num(row.rate) +
             '" aria-label="Cost for ' + esc(row.name) + '" data-ri="' + ri + '" data-field="rate" data-type="travel">') +
         '</td>' +
-        '<td style="text-align:right" data-label="Mark-Up ($)">' + travelPriceCell(row, ri) + '</td>' +
+        '<td style="text-align:right" data-label="Price ($)">' + travelPriceCell(row, ri) + '</td>' +
         '<td style="text-align:center" data-label="Direct"><label class="pricing-tick"><input type="checkbox"' + (row.directCost ? ' checked' : '') +
         (km ? ' disabled' : '') +
         ' data-ri="' + ri + '" data-field="directCost" data-type="travel"' +
@@ -971,8 +971,8 @@ const PricingView = (() => {
       '<span class="bb-label-tag">Expenses</span></div>' +
       '<table class="pricing-table"><thead><tr><th>Item</th>' +
       '<th style="text-align:right">Rate ($)</th>' +
-      '<th style="text-align:right">Mark-Up ($)</th>' +
-      '<th class="pricing-flag-th" title="Billed straight through at cost, with no mark-up">Direct</th>' +
+      '<th style="text-align:right">Price ($)</th>' +
+      '<th class="pricing-flag-th" title="Billed straight through at cost, with nothing added">Direct</th>' +
       '<th class="pricing-flag-th" title="Your own hours, not something bought in">Your time</th>' +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<div class="pricing-sec-foot">' +
@@ -1693,7 +1693,7 @@ const PricingView = (() => {
       '<div class="page-head"><div><h1 class="page-title">Rate Card</h1>' +
       '<div class="page-sub">Add, rename, re-price or remove anything the estimator offers</div></div></div>' +
       '<div class="tax-setting"><div>' +
-      '<div class="sum-label" style="margin-bottom:4px">Tax Set-Aside Rate (%)</div>' +
+      '<div class="sum-label" style="margin-bottom:4px">Tax set-aside rate (%)</div>' +
       '<div class="pricing-setting-hint">Set aside from each job’s profit — labour, your-time travel ' +
       'and the markup on resold travel, less the overhead its hours carry — before GST. Pass-through costs are exempt.</div></div>' +
       '<input type="number" id="tax-inp" min="0" max="100" step="0.5" value="' + esc(taxRaw) +
@@ -1712,7 +1712,7 @@ const PricingView = (() => {
       /* The Service Day — see SERVICE UNITS above. Same block as the tax rate:
          copy left, fields right. */
       '<div class="tax-setting pricing-day-setting"><div>' +
-      '<div class="sum-label pricing-day-title">Service Day (billable hrs)' + serviceDayInfo() + '</div>' +
+      '<div class="sum-label pricing-day-title">Service day (billable hrs)' + serviceDayInfo() + '</div>' +
       '<div class="pricing-setting-hint">The hours in a half and a full day of a service on a job. ' +
       'An auto day price is the service’s hourly price × these hours.</div>' +
       /* Why a save was refused, beside the fields it names — the save bar's
@@ -1748,7 +1748,7 @@ const PricingView = (() => {
       '<button type="button" class="pricing-rate-note-link" data-go-tab="overhead">Overhead</button>' +
       ' / ' +
       '<button type="button" class="pricing-rate-note-link" data-go-tab="capacity">Capacity</button>' +
-      ' tabs. Mark-Up stays yours to set.</p>' +
+      ' tabs. Prices stay yours to set.</p>' +
       '<p class="sr-only" id="pricing-floor-live" aria-live="polite"></p>' +
       '<div class="pricing-show" role="group" aria-label="Show every service’s price per">' +
       '<span class="pricing-show-label" aria-hidden="true">Show</span>' +
@@ -1910,7 +1910,7 @@ const PricingView = (() => {
           // Absent rather than false, matching the shape defaults.js ships.
           if (input.checked) target[field] = true;
           else delete target[field];
-          /* Your time changes the whole Mark-Up cell, so it re-renders. Off an
+          /* Your time changes the whole Price cell, so it re-renders. Off an
              auto price, the figure on screen is kept as a typed one (task 6a,
              the user's call): a resold row can't follow the floor. */
           if (field === 'ownTime') {
@@ -1938,7 +1938,7 @@ const PricingView = (() => {
           const si = parseInt(input.dataset.si, 10);
           const ri = parseInt(input.dataset.ri, 10);
           const sentence = refreshRow(si, ri);
-          /* The sentence is the Mark-Up's description, so it is read on focus;
+          /* The sentence is the Price's description, so it is read on focus;
              this is for the change while typing, spoken once typing pauses. */
           LSCUtil.announce($('pricing-floor-live'), nameOf(target) + ', ' + UNIT_WORD[unitOf(target)] + ': ' + sentence);
         }

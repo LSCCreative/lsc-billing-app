@@ -100,7 +100,7 @@
 .dash-sum-below {
   color: var(--accent-text);
 }
-/* A button to that row's Mark-Up on the Rate Card (finance-dashboard.js,
+/* A button to that row's Price on the Rate Card (finance-dashboard.js,
    statusCell) — it used to be a <span> drawn like a link that did nothing.
    Button chrome taken off so it still reads as the gap, not as a control
    competing with the figures; the accent rule thickens on hover and focus, as

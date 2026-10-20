@@ -535,8 +535,8 @@ const GoalsView = (() => {
          in the page, so a second one in the document would have Pricing
          answering for this screen's field and keeping a dead watcher alive. */
       '<div class="tax-setting"><div>' +
-      '<div class="sum-label" style="margin-bottom:4px">Tax Reserve Target (%)</div>' +
-      '<div style="color:var(--muted);font-size:11px">The same setting as the rate card’s Tax Set-Aside Rate — ' +
+      '<div class="sum-label" style="margin-bottom:4px">Tax reserve target (%)</div>' +
+      '<div style="color:var(--muted);font-size:11px">The same setting as the Rate Card’s tax set-aside rate — ' +
       'change it here and it changes there. Set aside from each job’s profit — its income less the overhead its hours carry — before GST.</div></div>' +
       '<input type="number" id="goals-tax-inp" min="0" max="100" step="0.5" value="' + esc(form.tax) +
       '" aria-label="Tax reserve target, percent"></div>' +

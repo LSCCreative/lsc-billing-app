@@ -169,9 +169,10 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   _Done 2026-10-20 (not deployed): `DESIGN_REVIEW.md`, 24 local screenshots. No must-fix. Fixed: Capacity's
   save bar and its save confirm (now quote the income floor, $143.75 → $155.72 at 60%, not the overhead
   rate), the Service Day ⓘ ("hours worked per day", not "billable … admin and quiet days included"), and
-  the editor's "Show minimum" tick moved directly above its line. Open for the user: rename the Rate
-  Card's "Mark-Up ($)" column (it is the price, and "markup" is now Business profit); casing of the three
-  settings labels; take-home in green beside an "under by" verdict. 765/765 tests._
+  the editor's "Show minimum" tick moved directly above its line. Then, on the user's yes: "Mark-Up ($)"
+  → "Price ($)" on the Rate Card (and "Markup" → "Price" on the editor's and read-only estimate's line
+  columns), sentence-case settings titles, and Est. Take-Home green only while the quote clears its
+  Minimum Job Price. 765/765 tests; checked on scratch (under: plain, clears: green)._
 
 - [ ] **PF11. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v18 on a copy of
   the live backup (PF2's deferred check: goals before/after, every other table unchanged, `foreign_key_check`), fetch and diff `origin/main`, then NAS before Pages (`DEPLOYMENT.md`). After deploy,
