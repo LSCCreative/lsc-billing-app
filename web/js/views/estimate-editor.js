@@ -114,6 +114,7 @@ const EstimateEditor = (() => {
   let saving = false;
   let link = null; // { id, name } of the client record this estimate points at
   let baseline = ''; // the form as last saved (at mount, or by autosave), for the unsaved-edit check
+  let followReady = false; // the form is restored: see fillFollowing
   let booking = null; // the Production Booking block (views/booking-block.js)
 
   /* Autosave (trip-planner task 8; see SAVING below). `auto` is the
@@ -3613,20 +3614,35 @@ const EstimateEditor = (() => {
      recommendation (PM4, G1), written into its field and into `active` before
      anything is priced. Capture and qty don't read post lines, so writing
      them can't change the plan: one pass, no input events, focus untouched.
-     A following line no longer by the hour (its unit was switched) stops
-     following, for good: hours aren't days (G3). */
-  function fillFollowing(active, pricing) {
+     A following line stops following, for good, when it is no longer by the
+     hour (its unit was switched: hours aren't days, G3) or has no deliverable
+     to plan it.
+
+     `opening` (mount's first recalc only): a saved estimate never moves on
+     open (G9, principle 3). Its following lines were saved as filled, so they
+     match the plan; one that doesn't (a Production line saved before B2 reads
+     the card's Capture tick, which may have changed since) keeps the hours it
+     was saved with and becomes the owner's, rather than being rewritten under
+     a baseline taken after this pass, where no "unsaved" would show it.
+
+     Nothing at all before that pass (`followReady`): restoring the form
+     recalculates as rows go in, before the Production rows are on their cards
+     and the deliverables are built, when the plan reads 0 capture and no
+     deliverable for every line. */
+  function fillFollowing(active, pricing, opening) {
+    if (!opening && !followReady) return;
     const plan = LSCCalc.postPlan(active, pricing);
     const trs = rowsIn('post');
+    const pin = (tr, line) => {
+      tr.dataset.follows = 'false';
+      line.follows = false;
+    };
     plan.lines.forEach(({ index, recommended }) => {
       const tr = trs[index];
       const line = (active.post || [])[index];
       if (!tr || !line || tr.dataset.follows !== 'true') return;
-      if (unitKey(snapOf(tr) || {}) !== 'hour') {
-        tr.dataset.follows = 'false';
-        line.follows = false;
-        return;
-      }
+      if (unitKey(snapOf(tr) || {}) !== 'hour' || !line.deliverableId) return pin(tr, line);
+      if (opening && num(line.qty) !== recommended) return pin(tr, line);
       const inp = tr.querySelector('.qty-inp');
       /* Never under the owner's cursor: a field they're in (its 0 cleared on
          focus) is priced as it shows, and filled at the next recalc. "0"
@@ -3637,12 +3653,13 @@ const EstimateEditor = (() => {
     });
   }
 
-  function recalc() {
+  /* `opening`: mount's first pass (see fillFollowing). */
+  function recalc(opening) {
     const pricing = LSCData.pricing();
 
     // Read first: the Production rows' prices depend on their days.
     const active = collect();
-    fillFollowing(active, pricing);
+    fillFollowing(active, pricing, opening === true);
     const days = booking ? booking.payloadDays() : [];
     if (days.some((d) => d.date) && !holidays) loadHolidays();
     const surcharges = surchargesNow(days, pricing);
@@ -5239,6 +5256,7 @@ const EstimateEditor = (() => {
     LSCMenu.close(false);
     endDrag(false);
     dayPanels.clear();
+    followReady = false;
     // A fresh estimate: its first recalc is the baseline, announced as nothing.
     clearTimeout(surTimer);
     surAnnounced = null;
@@ -5302,7 +5320,8 @@ const EstimateEditor = (() => {
     });
     bind(pricing);
     paintLink();
-    recalc();
+    recalc(true);
+    followReady = true;
     loadHolidays(); // recalc asked already if a day has a date; the calendar wants them either way
     lookUpLastProject();
 

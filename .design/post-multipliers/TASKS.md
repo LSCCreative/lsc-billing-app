@@ -71,6 +71,9 @@ up to 0.5), recommended 3; qty 2 at 1 h → 4 / 1 / 1.
   _Built: `fillFollowing` runs first in every `recalc`; the deliverable's qty now recalcs (it prices).
   Switching a following line's unit pins it too (hours aren't days); its qty is kept as for any unit
   switch. A v19 pick snapshots the deliverable's own `multiplier` as 0 (its lines plan it)._
+  _Review fix: nothing fills while the form is being restored; on open a following line whose saved
+  hours differ from the plan keeps them and is pinned (an estimate never moves on open); a following
+  line with no deliverable is pinned, not zeroed._
 
 - [ ] **PM5. Planner figures** (frontend — Opus/high): the deliverable row's "Post hrs (rec.)" and the
   planner cell's recommended figure read the new per-line sums (G10); "On post lines X of Y

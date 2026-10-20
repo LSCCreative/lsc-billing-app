@@ -115,6 +115,9 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   recalc, billed as filled. A typed qty or a unit switch sets `follows: false` for good; only re-picking
   the type brings following lines back. `postPlan().lines[].index` is the index in `activeRows.post`,
   which is `rowsIn('post')` order: keep collect() reading them in that order.
+  The editor recalcs while `restoreRows` is still rebuilding the form (no Production rows on cards, no
+  deliverables yet), so `fillFollowing` waits for `followReady`; mount's `recalc(true)` is the opening
+  pass, which pins a following line whose saved hours don't match the plan instead of rewriting it.
 - Invoice totals live in `calc.js` (`depositAmount`, `extrasTotals`, `finalInvoiceTotals`,
   `singleInvoiceTotals`). `accepted` counts as won. Extras charge GST as the job did.
 
