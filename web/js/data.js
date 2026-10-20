@@ -174,8 +174,8 @@ const LSCData = (() => {
        thing an auto price needs) and the rest of the floor's inputs. */
     autoPriceBlocker: () => LSCData.floorBlockers()[0] || { tab: 'goals', screen: 'Profit Goals', what: 'your Profit Goals' },
     /* What an auto price on the rate card is worked out from (calc.js unitDef,
-       Project build archive/tracks/service-rate-tiers/): the income floor, Target Markup — a
-       PERCENT, stored in a column that predates the rename — and the GST
+       Project build archive/tracks/service-rate-tiers/): the income floor, Business profit — a
+       PERCENT, stored in a column that predates the rename — the card fee, and the GST
        settings, which decide whether the price carries GST inside it. One
        builder, so the Rate Card, the estimator's unit picker and the Dashboard
        can't resolve the same auto price two ways. */
@@ -186,6 +186,9 @@ const LSCData = (() => {
       // The car's running cost per km, from Overhead (task 6b): a km travel
       // row's price (calc.js travelRowDef).
       vehicleCostPerKm: (goals || {}).vehicleCostPerKm,
+      // Card fees, a PERCENT on the rate card (pricing-floor P7): in every
+      // auto price, never a pass-through or the per-km car (calc.js unitDef).
+      cardFeePct: (pricing || {}).cardFeePct,
     }),
     /* For the first-run setup checklist on the estimates empty state. */
     pricingConfigured: () => pricingSaved,

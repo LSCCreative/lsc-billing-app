@@ -147,3 +147,63 @@ test('the default card keeps Overtime in Additional work, off set, with the surc
   assert.deepEqual(reset.pricing, DEFAULT_PRICING);
   db.prepare('DELETE FROM pricing').run();
 });
+
+/**
+ * pricing-floor PF3: the card fee, a PERCENT 0–10 on the rate card (P7). The
+ * route refuses anything else; a build from before the field (shape
+ * 'deliverable-types') is refused outright, card and estimate writes alike,
+ * because its Rate Card would save the card back without the fee; and saved
+ * estimates keep their own snapshot prices whatever the fee becomes.
+ */
+test('the card fee is a percent from 0 to 10, or absent, and nothing else', () => {
+  for (const ok of [undefined, null, 0, 1.65, 3.5, 10]) {
+    assert.equal(pricingProblem({ ...DEFAULT_PRICING, cardFeePct: ok }), null, String(ok));
+  }
+  for (const bad of [-0.01, 10.01, 165, '1.65', '', true, [], {}]) {
+    assert.equal(pricingProblem({ ...DEFAULT_PRICING, cardFeePct: bad }), 'card_fee_out_of_range', JSON.stringify(bad));
+  }
+});
+
+test('the card fee round-trips; a bad one and an older build\'s card are refused; saved estimates don\'t move', async () => {
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+  const card = (await api('/api/pricing').then((r) => r.json())).pricing;
+  const put = (body, opts) => api('/api/pricing', { method: 'PUT', body: JSON.stringify(body), ...opts });
+
+  // An estimate saved before the fee, with a line priced at its snapshot.
+  const est = await api('/api/estimates', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Before the fee', activeRows: { prod: [{ name: 'Video Capture', qty: 1, dayUnit: 'full', mu: 1272, hoursPerUnit: 8 }] } }),
+  }).then((r) => r.json());
+  const totalsBefore = est.estimate.totals;
+
+  let res = await put({ ...card, cardFeePct: 1.65 });
+  assert.equal(res.status, 200);
+  assert.equal((await api('/api/pricing').then((r) => r.json())).pricing.cardFeePct, 1.65);
+
+  res = await put({ ...card, cardFeePct: 12 });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'card_fee_out_of_range');
+  assert.equal((await api('/api/pricing').then((r) => r.json())).pricing.cardFeePct, 1.65, 'a refused save changes nothing');
+
+  // The build before PF3: its card (which would carry no fee) and its estimate
+  // writes are both refused as outdated, so it can't strip the fee.
+  const { cardFeePct: _f, ...oldCard } = card;
+  res = await put({ ...oldCard, pricingShape: 'deliverable-types' }, { bare: true });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'pricing_shape_outdated');
+  res = await api('/api/estimates', {
+    method: 'POST', bare: true,
+    body: JSON.stringify({ pricingShape: 'deliverable-types', name: 'old tab', activeRows: {} }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'pricing_shape_outdated');
+  assert.equal((await api('/api/pricing').then((r) => r.json())).pricing.cardFeePct, 1.65);
+
+  // The fee moved no saved line: the estimate reads back exactly as stored.
+  const reread = (await api('/api/estimates/' + est.estimate.id).then((r) => r.json())).estimate;
+  assert.deepEqual(reread.totals, totalsBefore);
+  assert.equal(reread.activeRows.prod[0].mu, 1272);
+
+  await api('/api/estimates/' + est.estimate.id, { method: 'DELETE' });
+  assert.equal((await api('/api/pricing/reset', { method: 'POST' })).status, 200);
+});

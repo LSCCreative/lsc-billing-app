@@ -4,15 +4,16 @@ const { nowIso } = require('../db');
 const { annualBillableHours } = require('../calc');
 
 // The reference defaults migration v5 seeds onto every pre-existing goals row
-// (8 / 5 / 30 / 8 — see db.js). Used here only for a goals row that is being
-// INSERTed for the very first time by a caller that predates the Capacity
-// screen and so never sends these five fields; an UPDATE falls back to
-// whatever is already stored, never to these.
+// (8 / 5 / 30 / 8 — see db.js), and since v18 the 65% share of hours that can
+// be billed (pricing-floor P2). Used here only for a goals row that is being
+// INSERTed for the very first time by a caller that never sends these fields;
+// an UPDATE falls back to whatever is already stored, never to these.
 const CAPACITY_DEFAULTS = {
   billableHoursPerDay: 8,
   workingDaysPerWeek: 5,
   leaveDaysPerYear: 30,
   sickDaysPerYear: 8,
+  utilisationPct: 65,
 };
 
 function loadGoals(row) {
@@ -25,6 +26,7 @@ function loadGoals(row) {
       workingDaysPerWeek: null,
       leaveDaysPerYear: null,
       sickDaysPerYear: null,
+      utilisationPct: null,
       iawoThreshold: null,
       capacityConfirmedAt: null,
       superPct: null,
@@ -40,6 +42,7 @@ function loadGoals(row) {
     workingDaysPerWeek: row.working_days_per_week,
     leaveDaysPerYear: row.leave_days_per_year,
     sickDaysPerYear: row.sick_days_per_year,
+    utilisationPct: row.utilisation_pct === undefined ? null : row.utilisation_pct,
     iawoThreshold: row.iawo_threshold,
     capacityConfirmedAt: row.capacity_confirmed_at,
     superPct: row.super_pct === undefined ? null : row.super_pct,
@@ -66,6 +69,8 @@ function resolvePct(body, existing, key, column, max) {
 
 // The four fields only the Capacity screen sends together. A PUT carrying all
 // four is that screen's save, and is what confirms the v5-seeded defaults.
+// utilisationPct (v18) is deliberately not one of them: a Capacity tab loaded
+// before the NAS-first deploy still confirms, and its share is kept.
 const CAPACITY_KEYS = ['billableHoursPerDay', 'workingDaysPerWeek', 'leaveDaysPerYear', 'sickDaysPerYear'];
 
 /**
@@ -130,6 +135,12 @@ function validateCapacity(v) {
   if (!Number.isFinite(v.sickDaysPerYear) || v.sickDaysPerYear < 0) {
     return 'sick_days_per_year_invalid';
   }
+  // A PERCENT, 1–100 (v18): 0% bills no hour and divides into an infinite
+  // rate. A blank or null that IS sent reads as 0 and is refused, never
+  // silently kept: only leaving the field out keeps the stored share.
+  if (!Number.isFinite(v.utilisationPct) || v.utilisationPct < 1 || v.utilisationPct > 100) {
+    return 'utilisation_out_of_range';
+  }
   if (v.iawoThreshold !== null && (!Number.isFinite(v.iawoThreshold) || v.iawoThreshold < 0)) {
     return 'iawo_threshold_invalid';
   }
@@ -170,6 +181,11 @@ function registerGoalsRoutes(app, db) {
       sickDaysPerYear: resolveCapacityField(
         body, existing, 'sickDaysPerYear', 'sick_days_per_year', CAPACITY_DEFAULTS.sickDaysPerYear
       ),
+      // Left out (the Goals and Overhead screens, or a Capacity tab from before
+      // v18 during the NAS-first deploy): the stored share, never 65 again.
+      utilisationPct: resolveCapacityField(
+        body, existing, 'utilisationPct', 'utilisation_pct', CAPACITY_DEFAULTS.utilisationPct
+      ),
       // No numeric fallback — see migration v5: NULL means "not confirmed",
       // and a 0 default would be worse than NULL.
       iawoThreshold: body.iawoThreshold !== undefined
@@ -190,7 +206,8 @@ function registerGoalsRoutes(app, db) {
     const vehicleCostPerKm = resolvePct(body, existing, 'vehicleCostPerKm', 'vehicle_cost_per_km', Infinity);
     if (vehicleCostPerKm.error) return res.status(400).json({ error: vehicleCostPerKm.error });
 
-    // A markup can't be negative (hourlyFloor reads that as unset).
+    // Business profit (the column still says margin; it is a markup on the
+    // income floor, calc.js decision 4) can't be negative.
     if (body.targetProfitMarginPct !== undefined && body.targetProfitMarginPct !== null && Number(body.targetProfitMarginPct) < 0) {
       return res.status(400).json({ error: 'markup_negative' });
     }
@@ -212,10 +229,10 @@ function registerGoalsRoutes(app, db) {
       INSERT INTO goals (
         id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
         billable_hours_per_day, working_days_per_week, leave_days_per_year, sick_days_per_year,
-        iawo_threshold, capacity_confirmed_at, super_pct, bad_debt_pct, vehicle_cost_per_km,
-        created_at, updated_at
+        utilisation_pct, iawo_threshold, capacity_confirmed_at, super_pct, bad_debt_pct,
+        vehicle_cost_per_km, created_at, updated_at
       )
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         desired_net_income = excluded.desired_net_income,
         target_profit_margin_pct = excluded.target_profit_margin_pct,
@@ -224,6 +241,7 @@ function registerGoalsRoutes(app, db) {
         working_days_per_week = excluded.working_days_per_week,
         leave_days_per_year = excluded.leave_days_per_year,
         sick_days_per_year = excluded.sick_days_per_year,
+        utilisation_pct = excluded.utilisation_pct,
         iawo_threshold = excluded.iawo_threshold,
         capacity_confirmed_at = excluded.capacity_confirmed_at,
         super_pct = excluded.super_pct,
@@ -238,6 +256,7 @@ function registerGoalsRoutes(app, db) {
       capacity.workingDaysPerWeek,
       capacity.leaveDaysPerYear,
       capacity.sickDaysPerYear,
+      capacity.utilisationPct,
       capacity.iawoThreshold,
       capacityConfirmedAt,
       superPct.value,

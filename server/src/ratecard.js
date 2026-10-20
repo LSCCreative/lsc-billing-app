@@ -89,6 +89,10 @@ function readOverheadRate(db) {
       workingDaysPerWeek: goals.working_days_per_week,
       leaveDaysPerYear: goals.leave_days_per_year,
       sickDaysPerYear: goals.sick_days_per_year,
+      // v18: the share of hours worked that can be billed. Must reach here as
+      // it reaches the browser's annualBillableHours, or the stored tax
+      // set-aside would deduct overhead at a rate the editor never showed.
+      utilisationPct: goals.utilisation_pct,
     })
   );
 }

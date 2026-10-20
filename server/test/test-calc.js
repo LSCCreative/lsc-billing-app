@@ -2136,7 +2136,9 @@ test('travelFloorComparison: no floor yet is "can\'t tell", not fine and not bel
 });
 
 test('a card without this build\'s shape marker is outdated', () => {
-  assert.equal(PRICING_SHAPE, 'deliverable-types');
+  assert.equal(PRICING_SHAPE, 'card-fee');
+  // B2-1's build, whose Rate Card would drop the card fee (pricing-floor PF3).
+  assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'deliverable-types' }), true);
   // Task 2's build, whose Rate Card would drop deliverable types and Capture ticks (B2-1).
   assert.equal(cardShapeOutdated({ ...DEFAULT_PRICING, pricingShape: 'production-days' }), true);
   // 6a's build, which would save a km row as a resold $0 row (task 6b).
@@ -3712,6 +3714,38 @@ test('pricing floor: the browser feeds break-even, with profit, into the floor (
   assert.equal(r.total, 182533.97);
   assert.equal(LSCData.incomeFloor(), 143.75); // ÷ break-even, not ÷ total
   assert.equal(LSCData.overheadRate(), 25.99);
+});
+
+test('pricing floor PF3: the card\'s fee reaches every auto price through priceContext (web/js/data.js)', () => {
+  const vm = require('node:vm');
+  const webDir = join(__dirname, '..', '..', 'web', 'js');
+  const ctx = vm.createContext({ console });
+  vm.runInContext(readFileSync(join(webDir, 'calc.js'), 'utf8'), ctx, { filename: 'calc.js' });
+  vm.runInContext(readFileSync(join(webDir, 'data.js'), 'utf8'), ctx, { filename: 'data.js' });
+  const LSCData = vm.runInContext('LSCData', ctx);
+  const LSCCalcWeb = vm.runInContext('LSCCalc', ctx);
+  LSCData.setOverheadItems([{ cost: 30000, frequency: 'annual' }]);
+  LSCData.setDepreciationAssets([]);
+  LSCData.setTaxYear({ ...TAX_YEAR, fy: LSCCalcWeb.currentFinancialYear() });
+  LSCData.setGoals({ ...PF_CAPACITY, desiredNetIncome: 90000, superPct: 12, badDebtPct: 2, targetProfitMarginPct: 10 });
+  LSCData.setSettings(SU_NO_GST);
+  const [vc, ed] = PF_CARD.labourSections[0].rows;
+  const price = (row, unit) => {
+    const card = LSCData.pricing();
+    return LSCCalcWeb.unitDef(row, unit, card, LSCData.priceContext()).mu;
+  };
+
+  LSCData.setPricing(PF_CARD); // no fee: exactly the PF1 figures
+  assert.equal(LSCData.priceContext().cardFeePct, undefined);
+  assert.deepEqual([price(vc, 'hour'), price(vc, 'full')], [159, 1272]);
+
+  LSCData.setPricing({ ...PF_CARD, cardFeePct: 1.65 });
+  assert.equal(LSCData.priceContext().cardFeePct, 1.65);
+  assert.deepEqual([price(vc, 'hour'), price(vc, 'full')], [161, 1288]); // ceil(143.75 × 1.1 × 1.0165)
+  // A typed price is final: the fee never moves it (P7).
+  assert.deepEqual([price(ed, 'hour'), price(ed, 'full')], [140, 1000]);
+  // And the floor it is compared against stays bare.
+  assert.equal(LSCData.incomeFloor(), 143.75);
 });
 
 test('pricing floor: utilisation is a percent of hours worked; absent or null is 100%', () => {

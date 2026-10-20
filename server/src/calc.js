@@ -1554,8 +1554,12 @@ const SERVICE_UNITS = ['hour', 'half', 'full'];
 
    'deliverable-types' since production-booking B2-1 (v12): a 'production-days'
    build's Rate Card would drop `deliverableTypes` and every `prod` row's
-   `capture` tick, which postPlan reads. */
-const PRICING_SHAPE = 'deliverable-types';
+   `capture` tick, which postPlan reads.
+
+   'card-fee' since pricing-floor PF3 (v18): a 'deliverable-types' build's Rate
+   Card would drop `cardFeePct`, and every auto price would quietly lose the
+   card fee (P7). */
+const PRICING_SHAPE = 'card-fee';
 
 /**
  * Is a rate card in a shape this build can't write? True when it doesn't carry

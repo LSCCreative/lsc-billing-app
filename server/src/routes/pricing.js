@@ -43,6 +43,16 @@ function pricingProblem(body) {
     const t = Number(body.taxSetAsideRate);
     if (!Number.isFinite(t) || t < 0 || t >= 1) return 'tax_set_aside_rate_not_a_fraction';
   }
+  /* Card fees (pricing-floor P7): a PERCENT, 1.65 is 1.65%, built into every
+     auto price for every client (never a card-only surcharge). Unlike the tax
+     reserve it is not a fraction, so a 0.0165 typed by mistake is caught by the
+     screen's hint, not here; what is refused is a fee no card scheme charges
+     (over 10%), a negative one, and anything that isn't a number. Absent or
+     null is no fee. */
+  if (body.cardFeePct !== undefined && body.cardFeePct !== null) {
+    const f = body.cardFeePct;
+    if (typeof f !== 'number' || !Number.isFinite(f) || f < 0 || f > 10) return 'card_fee_out_of_range';
+  }
   for (const r of labourRows) {
     for (const unit of SERVICE_UNITS) {
       if (!(unit in r.prices)) return 'labour_prices_incomplete';

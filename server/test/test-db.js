@@ -444,8 +444,9 @@ test('v6 carries every goals value across the rebuild and starts unconfirmed', (
     VALUES (1, 80000, 25, 34.15, '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z', 7, 4, 20, 5, 20000)
   `).run();
 
-  const result = migrate(db);
-  assert.deepEqual([result.from, result.to, result.applied], [5, LATEST_VERSION, LATEST_VERSION - 5]);
+  // To v17: v18 moves capacity and profit on purpose (its own tests below).
+  const result = migrate(db, { to: 17 });
+  assert.deepEqual([result.from, result.to, result.applied], [5, 17, 12]);
 
   const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
   assert.deepEqual(
@@ -816,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v17', () => {
-  assert.equal(LATEST_VERSION, 17);
+test('the schema knows it is at v18', () => {
+  assert.equal(LATEST_VERSION, 18);
 });
 
 /**
@@ -837,15 +838,16 @@ test('v10 adds the per-km cost as unset and touches nothing else on goals', () =
   db.exec('ALTER TABLE goals DROP COLUMN vehicle_cost_per_km;');
   db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
 
-  const result = migrate(db);
-  assert.deepEqual([result.from, result.to], [9, LATEST_VERSION]);
+  // To v17: v18 moves capacity and profit on purpose (its own tests below).
+  const result = migrate(db, { to: 17 });
+  assert.deepEqual([result.from, result.to], [9, 17]);
   const after = db.prepare('SELECT * FROM goals WHERE id = 1').get();
   assert.deepEqual(after, before);
   assert.equal(after.vehicle_cost_per_km, null);
 
   // Rewound again with the column still there: v10 runs, and nothing moves.
   db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
-  assert.equal(migrate(db).applied, LATEST_VERSION - 9);
+  assert.equal(migrate(db, { to: 17 }).applied, 8);
   assert.deepEqual(db.prepare('SELECT * FROM goals WHERE id = 1').get(), before);
   db.close();
 });
@@ -1374,7 +1376,7 @@ test('v17 reads every existing asset as Overhead Floor with no day rate, and gua
   const before = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
   assert.ok(!('recovery' in before[0]) && !('day_rate' in before[0]), 'v16 has neither column');
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 17 });
   assert.deepEqual([result.from, result.to, result.applied], [16, 17, 1]);
   const after = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
   assert.deepEqual(after.map((r) => [r.recovery, r.day_rate]), [['rate', null], ['rate', null]]);
@@ -1384,7 +1386,7 @@ test('v17 reads every existing asset as Overhead Floor with no day rate, and gua
   db.prepare("UPDATE depreciation_assets SET recovery = 'kit_hire', day_rate = 150 WHERE id = 'da_old1'").run();
   const edited = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
   db.prepare('DELETE FROM schema_version WHERE version >= 17').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 17 }).applied, 1);
   assert.deepEqual(db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all(), edited);
 
   // The table refuses what the API would: an unknown recovery, a negative rate.
@@ -1395,4 +1397,87 @@ test('v17 reads every existing asset as Overhead Floor with no day rate, and gua
   db.prepare('UPDATE depreciation_assets SET day_rate = NULL WHERE id = ?').run('da_old2');
   assert.deepEqual(db.pragma('foreign_key_check'), []);
   db.close();
+});
+
+/**
+ * MIGRATION v18 — goals.utilisation_pct, and the card moves once (pricing-floor
+ * PF2; P1, P2, P4). The existing row becomes 8 h worked at 65% billable with a
+ * 10% business profit whatever it held, the legacy weekly figure follows, and
+ * nothing else in the database moves: saved estimates keep every stored total.
+ */
+function v17WithGoals(goals) {
+  const db = v12Fixture();
+  migrate(db, { to: 17 });
+  db.prepare(`
+    INSERT INTO goals (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+      billable_hours_per_day, working_days_per_week, leave_days_per_year, sick_days_per_year,
+      iawo_threshold, capacity_confirmed_at, super_pct, bad_debt_pct, vehicle_cost_per_km,
+      created_at, updated_at)
+    VALUES (1, @income, @markup, 25.62, 6, 5, 30, 8, 20000, '2026-10-01T00:00:00.000Z', 12, 2, 0.9,
+      '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')
+  `).run({ income: 90000, markup: 25, ...goals });
+  db.prepare("INSERT INTO pricing (id, data_json, updated_at) VALUES (1, '{\"labourSections\":[]}', 'x')").run();
+  return db;
+}
+const everyTableBut = (db, skip) => db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
+  .map((r) => r.name).filter((t) => !skip.includes(t)).sort();
+
+test('v18 moves the live row to 8 h / 65% / 10% and changes nothing else in the database', () => {
+  const db = v17WithGoals();
+  const tables = everyTableBut(db, ['goals', 'schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  const goalsBefore = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.ok(!('utilisation_pct' in goalsBefore), 'v17 has no utilisation column');
+  assert.ok(before.estimates.length > 5 && before.estimates.every((e) => e.totals_json), 'the fixture has priced estimates');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [17, 18, 1]);
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual(
+    [g.billable_hours_per_day, g.utilisation_pct, g.target_profit_margin_pct],
+    [8, 65, 10],
+    'P2 and P4: whatever was stored'
+  );
+  // (5 × 52 − 30 − 8) × 8 × 65% = 1,154.4 ÷ 52 = 22.2, as a save would write it.
+  assert.equal(g.billable_capacity_hrs_per_week, 22.2);
+  assert.notEqual(g.updated_at, goalsBefore.updated_at);
+  const untouched = ({ billable_hours_per_day: _h, utilisation_pct: _u, target_profit_margin_pct: _m,
+    billable_capacity_hrs_per_week: _w, updated_at: _t, ...rest }) => rest;
+  assert.deepEqual(untouched(g), untouched(goalsBefore), 'income, the rest of capacity, super, bad debt, per-km, confirmation');
+
+  // Every other table, saved estimates' stored totals among them, is as it was.
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+
+  // Run again: the column isn't added twice and the same values are written.
+  db.prepare('DELETE FROM schema_version WHERE version >= 18').run();
+  assert.equal(migrate(db).applied, 1);
+  const again = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual({ ...again, updated_at: null }, { ...g, updated_at: null });
+
+  // The table refuses what the API would.
+  for (const bad of [0, 0.9, 100.5, -1]) {
+    assert.throws(() => db.prepare('UPDATE goals SET utilisation_pct = ?').run(bad), /CHECK/, String(bad));
+  }
+  assert.throws(() => db.prepare('UPDATE goals SET utilisation_pct = NULL').run(), /NOT NULL/);
+  db.prepare('UPDATE goals SET utilisation_pct = 1').run();
+  db.prepare('UPDATE goals SET utilisation_pct = 100').run();
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+test('v18 leaves an unset profit unset, and a fresh database starts at 65% with no row', () => {
+  // Unset is the set-up prompt (v6): 10% is written over a markup, never over nothing.
+  const db = v17WithGoals({ markup: null, income: null });
+  migrate(db);
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual([g.target_profit_margin_pct, g.desired_net_income], [null, null]);
+  assert.deepEqual([g.billable_hours_per_day, g.utilisation_pct], [8, 65]);
+  db.close();
+
+  const fresh = openDatabase(tempDbPath('v18-fresh'));
+  assert.equal(fresh.prepare('SELECT COUNT(*) AS n FROM goals').get().n, 0, 'no row is invented');
+  fresh.prepare(`INSERT INTO goals (id, billable_capacity_hrs_per_week, created_at, updated_at)
+    VALUES (1, 0, 'x', 'x')`).run();
+  assert.equal(fresh.prepare('SELECT utilisation_pct AS u FROM goals').get().u, 65, 'P2: a new install defaults to 65');
+  fresh.close();
 });

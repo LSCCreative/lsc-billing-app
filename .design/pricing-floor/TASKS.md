@@ -33,7 +33,7 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   `finance-dashboard.js` (no `hourlyFloor`; a Business profit line). `travelFloorComparison` takes an
   optional 4th `ctx` for the card fee: PF3/PF8 pass `priceContext()` there too._
 
-- [ ] **PF2. Schema v18 and the goals API** (money — Opus/high): migration v18 adds
+- [x] **PF2. Schema v18 and the goals API** (money — Opus/high): migration v18 adds
   `goals.utilisation_pct REAL` (CHECK 1–100) and, on the live row, sets `billable_hours_per_day = 8`,
   `utilisation_pct = 65` and `target_profit_margin_pct = 10` (P2, P4). New installs default to 65.
   `loadGoals` returns `utilisationPct`; `PUT /api/goals` validates it (1–100, 400
@@ -44,14 +44,23 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   copy of the live backup; tests in `test-db.js` (v18 values) and `test-api.js` (validation, omission
   keeps, stored estimate totals unchanged by the migration). _Depends on: PF1. Modifies: `db.js`,
   `routes/goals.js`, `ratecard.js`._
+  _Built 2026-10-20 (committed, not deployed): 3 new tests, 6 mutations killed; the v6/v10/v17 upgrade
+  tests now stop at `{ to: 17 }`. A NULL profit stays NULL. The live-backup run moved to PF11 (the NAS
+  was unreachable off the home network); `check-v18.js`-style: copy, migrate, diff every other table.
+  Until PF4 the Capacity screen's own annual figure and change sentence ignore the share._
 
-- [ ] **PF3. Card fee on the rate card** (money — Opus/high): the card gains `cardFeePct` (a PERCENT,
+- [x] **PF3. Card fee on the rate card** (money — Opus/high): the card gains `cardFeePct` (a PERCENT,
   0–10, blank = 0). `PUT /api/pricing` validates it (400 `card_fee_out_of_range`); bump `PRICING_SHAPE`
   so an older build can't drop it on save. `LSCData.priceContext()` passes it (and `utilisationPct`
   reaches every `annualBillableHours` call in `data.js`). Saved estimate lines are untouched (snapshots).
   Done when: `test-ratecard.js` covers validation and the shape bump; an auto price on scratch moves by
   exactly the fee; a typed price doesn't. _Depends on: PF1. Modifies: `ratecard.js`, routes for pricing,
   `data.js`, `calc.js` ×2 (`PRICING_SHAPE`)._
+  _Done 2026-10-20 (committed, not deployed): `PRICING_SHAPE` 'card-fee'; `routes/pricing.js` takes null or a
+  number 0–10 (a string is refused); `priceContext().cardFeePct`; the Rate Card carries the fee through
+  `workingCopy`/`payload` with no field yet (PF8). 3 tests, 5 mutations killed. Scratch: fully auto
+  $159/$636/$1,272 → $161/$644/$1,288 at 1.65%, own-time travel $144 → $147, no typed price or day price
+  derived from a typed hourly moved, and a Save Rates from the screen kept the fee._
 
 ## Core UI
 
@@ -106,6 +115,6 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
 - [ ] **PF10. Design review**: run /design-review against the brief for PF4–PF8 at 1280 / 800 / 375.
 
 - [ ] **PF11. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v18 on a copy of
-  the live backup, fetch and diff `origin/main`, then NAS before Pages (`DEPLOYMENT.md`). After deploy,
+  the live backup (PF2's deferred check: goals before/after, every other table unchanged, `foreign_key_check`), fetch and diff `origin/main`, then NAS before Pages (`DEPLOYMENT.md`). After deploy,
   check the live Rate Card shows the new auto prices and the user reviews typed rows now badged below the
   floor. Update ROADMAP and move the folder to the archive.

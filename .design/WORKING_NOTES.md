@@ -79,6 +79,12 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   into each item's price rounded up to the dollar, never shown to the client (reasons are in the
   owner-only Cost Breakdown), are income (taxed, no extra hours, no change to floors or Minimum Job
   Price). Estimates snapshot multipliers, stacking mode and each day's status.
+- v18 (pricing-floor) rewrites the goals row to 8 h / 65% / 10% on every run, so an older upgrade
+  test that rewinds `schema_version` and runs to the latest moves its goals row: stop it at
+  `migrate(db, { to: 17 })`. `PUT /api/goals` without `utilisationPct` keeps the stored share.
+- `cardFeePct` (rate card) is a PERCENT (1.65), unlike `taxSetAsideRate` (a FRACTION, 0.35). The Rate
+  Card rebuilds the card field by field on save: a new card field must go through `workingCopy` and
+  `payload` and bump `PRICING_SHAPE`, or an older build's save drops it.
 - **No card surcharges, ever** (eftpos, Mastercard, Visa, Amex, PayPal no-surcharge rules from
   2026-10-01). Card fees are recovered through prices that every client pays, never added only to
   card-paid invoices, whatever it is called. "Non-taxable" on a tax invoice means only GST-free or

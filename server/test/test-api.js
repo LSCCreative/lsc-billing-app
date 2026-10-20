@@ -192,13 +192,15 @@ test('goals: unsaved singleton reads as nulls, then round-trips after PUT', asyn
   assert.equal(empty.goals.workingDaysPerWeek, null);
   assert.equal(empty.goals.leaveDaysPerYear, null);
   assert.equal(empty.goals.sickDaysPerYear, null);
+  assert.equal(empty.goals.utilisationPct, null);
   assert.equal(empty.goals.iawoThreshold, null);
 
   // This PUT does not send the five capacity fields — the shape
   // views/goals.js still sends today, ahead of the Capacity screen. The
-  // first-ever row falls back to the reference defaults (8/5/30/8), and
-  // billableCapacityHrsPerWeek is now SERVER-COMPUTED from them
-  // (1,776 annual hours ÷ 52 = 34.15), not the 20 this request sends —
+  // first-ever row falls back to the reference defaults (8/5/30/8, and 65%
+  // billable since v18), and billableCapacityHrsPerWeek is now SERVER-COMPUTED
+  // from them (1,776 hours worked × 65% = 1,154.4 ÷ 52 = 22.2), not the 20 this
+  // request sends —
   // it is legacy, display-only and no longer a write target. See
   // resolveCapacityField's docstring in routes/goals.js.
   const put = await api('/api/goals', {
@@ -207,11 +209,12 @@ test('goals: unsaved singleton reads as nulls, then round-trips after PUT', asyn
   }).then((r) => r.json());
   assert.equal(put.goals.desiredNetIncome, 80000);
   assert.equal(put.goals.targetProfitMarginPct, 25);
-  assert.equal(put.goals.billableCapacityHrsPerWeek, 34.15);
+  assert.equal(put.goals.billableCapacityHrsPerWeek, 22.2);
   assert.equal(put.goals.billableHoursPerDay, 8);
   assert.equal(put.goals.workingDaysPerWeek, 5);
   assert.equal(put.goals.leaveDaysPerYear, 30);
   assert.equal(put.goals.sickDaysPerYear, 8);
+  assert.equal(put.goals.utilisationPct, 65);
   assert.equal(put.goals.iawoThreshold, null);
   assert.ok(put.updatedAt);
 
@@ -229,7 +232,8 @@ test('goals: unsaved singleton reads as nulls, then round-trips after PUT', asyn
   assert.equal(put2.goals.desiredNetIncome, 90000);
   assert.equal(put2.goals.billableHoursPerDay, 8);
   assert.equal(put2.goals.workingDaysPerWeek, 5);
-  assert.equal(put2.goals.billableCapacityHrsPerWeek, 34.15);
+  assert.equal(put2.goals.utilisationPct, 65);
+  assert.equal(put2.goals.billableCapacityHrsPerWeek, 22.2);
 });
 
 test('goals: the five capacity fields are settable, validated, and recompute the legacy figure', async () => {
@@ -250,8 +254,8 @@ test('goals: the five capacity fields are settable, validated, and recompute the
   assert.equal(put.goals.leaveDaysPerYear, 20);
   assert.equal(put.goals.sickDaysPerYear, 5);
   assert.equal(put.goals.iawoThreshold, 20000);
-  // (4 × 52 − 20 − 5) × 6 = 1,098 annual hours ÷ 52 = 21.12
-  assert.equal(put.goals.billableCapacityHrsPerWeek, 21.12);
+  // (4 × 52 − 20 − 5) × 6 = 1,098 hours worked × 65% (kept) = 713.7 ÷ 52 = 13.73
+  assert.equal(put.goals.billableCapacityHrsPerWeek, 13.73);
 
   // A later PUT that omits iawoThreshold keeps it, but explicit null clears it.
   const kept = await api('/api/goals', {
@@ -347,8 +351,9 @@ test('goals: a Capacity save onto a row that does not exist leaves income and ma
   assert.equal(put.goals.targetProfitMarginPct, null);
   assert.equal(put.goals.billableHoursPerDay, 7);
   assert.ok(put.goals.capacityConfirmedAt);
-  // (5 × 52 − 20 − 5) × 7 = 1,645 annual hours ÷ 52 = 31.63
-  assert.equal(put.goals.billableCapacityHrsPerWeek, 31.63);
+  assert.equal(put.goals.utilisationPct, 65); // a new row's default (P2)
+  // (5 × 52 − 20 − 5) × 7 = 1,645 hours worked × 65% = 1,069.25 ÷ 52 = 20.56
+  assert.equal(put.goals.billableCapacityHrsPerWeek, 20.56);
 });
 
 test('pricing: a service\'s three prices and the service day round-trip, and the server prices by them', async () => {
@@ -1327,6 +1332,60 @@ test('goals: the per-km vehicle cost is saved alone, cleared with blank, and nev
   assert.equal((await put({ vehicleCostPerKm: 0 })).status, 200); // a real figure
   assert.equal((await read()).vehicleCostPerKm, 0);
   assert.equal((await put({ vehicleCostPerKm: null, superPct: before.superPct })).status, 200);
+});
+
+/**
+ * pricing-floor PF2: the share of hours worked that can be billed, a PERCENT
+ * 1–100. Leaving it out keeps the stored share (an old Pages tab during the
+ * NAS-first deploy must not reset it); sending a bad one is refused and changes
+ * nothing; and the server's own overhead rate (the stored tax set-aside) uses it.
+ */
+test('goals: utilisation is validated 1–100, kept when left out, and reaches the server\'s overhead rate', async () => {
+  const { readOverheadRate } = require('../src/ratecard');
+  const { annualBusinessCost, annualBillableHours, overheadRatePerHour } = require('../src/calc');
+  const put = (body) => api('/api/goals', { method: 'PUT', body: JSON.stringify(body) });
+  const read = () => api('/api/goals').then((r) => r.json()).then((r) => r.goals);
+  const before = await read();
+  const capacity = { billableHoursPerDay: 8, workingDaysPerWeek: 5, leaveDaysPerYear: 30, sickDaysPerYear: 8 };
+  assert.equal((await put({ ...capacity, utilisationPct: 70 })).status, 200);
+
+  for (const bad of [0, 0.5, 101, -5, '', null, 'abc']) {
+    const res = await put({ utilisationPct: bad });
+    assert.equal(res.status, 400, `utilisationPct ${JSON.stringify(bad)}`);
+    assert.equal((await res.json()).error, 'utilisation_out_of_range');
+  }
+  assert.equal((await read()).utilisationPct, 70, 'a refused save changes nothing');
+
+  // A Goals-shaped save, and a Capacity tab from before v18 (all four fields,
+  // no share): both keep 70, and the old tab still confirms capacity.
+  assert.equal((await put({ desiredNetIncome: 90000 })).status, 200);
+  assert.equal((await read()).utilisationPct, 70);
+  const oldTab = await put(capacity).then((r) => r.json());
+  assert.equal(oldTab.goals.utilisationPct, 70);
+  assert.ok(oldTab.goals.capacityConfirmedAt);
+  // The legacy weekly figure follows the share: 1,776 × 70% = 1,243.2 ÷ 52.
+  assert.equal(oldTab.goals.billableCapacityHrsPerWeek, 23.91);
+
+  // The edges and a typed string are real shares.
+  assert.equal((await put({ utilisationPct: 1 }).then((r) => r.json())).goals.utilisationPct, 1);
+  assert.equal((await put({ utilisationPct: 100 }).then((r) => r.json())).goals.utilisationPct, 100);
+  assert.equal((await put({ utilisationPct: '65' }).then((r) => r.json())).goals.utilisationPct, 65);
+
+  // readOverheadRate divides by utilised hours, as the browser does.
+  db.prepare(`INSERT INTO overhead_items (id, name, category, cost, frequency, created_at, updated_at)
+    VALUES ('ovh_pf2', 'Insurance', 'admin_legal', 30000, 'annual', 'x', 'x')`).run();
+  const cost = annualBusinessCost(
+    db.prepare('SELECT * FROM overhead_items').all(),
+    db.prepare('SELECT * FROM depreciation_assets').all()
+  );
+  const at65 = overheadRatePerHour(cost, annualBillableHours({ ...capacity, utilisationPct: 65 }));
+  assert.ok(at65 > overheadRatePerHour(cost, annualBillableHours(capacity)), 'fewer hours, a higher rate');
+  assert.equal(readOverheadRate(db), at65);
+  db.prepare("DELETE FROM overhead_items WHERE id = 'ovh_pf2'").run();
+
+  assert.equal((await put({
+    desiredNetIncome: before.desiredNetIncome, utilisationPct: before.utilisationPct,
+  })).status, 200);
 });
 
 test('pricing: a km row takes no price of its own and is never also Your time or Direct', async () => {

@@ -208,6 +208,9 @@ const PricingView = (() => {
       labourSections: pricing.labourSections || [],
       travelRows: pricing.travelRows || [],
       surcharges: LSCCalc.surchargeSettings(pricing),
+      /* Card fees, a PERCENT (pricing-floor P7). No field for it yet (PF8);
+         carried as served so a save here doesn't drop it. */
+      cardFeePct: typeof pricing.cardFeePct === 'number' ? pricing.cardFeePct : null,
       // See CAPTURE AND DELIVERABLE TYPES above. Every field present, so the
       // block never has to ask whether one is.
       deliverableTypes: (Array.isArray(pricing.deliverableTypes) ? pricing.deliverableTypes : [])
@@ -2145,6 +2148,9 @@ const PricingView = (() => {
         description: t.description.trim(),
         services: t.services.slice(),
       })),
+      // Null is no fee (routes/pricing.js). Dropping it would take the fee out
+      // of every auto price, which is why the shape marker moved (PF3).
+      cardFeePct: card.cardFeePct,
       // Without it the server refuses the card as outdated (calc.js PRICING_SHAPE).
       pricingShape: LSCCalc.PRICING_SHAPE,
     };

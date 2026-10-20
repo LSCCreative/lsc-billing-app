@@ -895,6 +895,65 @@ const MIGRATIONS = [
       addColumn('day_rate', 'day_rate REAL CHECK (day_rate IS NULL OR day_rate >= 0)');
     },
   },
+  {
+    version: 18,
+    name: 'goals: share of hours you can bill, and the card moves to 8 h / 65% / 10%',
+    up(db) {
+      // .design/pricing-floor/ PF2 (decisions P1, P2, P4). Additive: one
+      // column, no rebuild.
+      //
+      // utilisation_pct — the share of the hours worked that can be billed, a
+      // PERCENT (65 is 65%). Annual billable hours become days × hours worked ×
+      // this (calc.js annualBillableHours). NOT NULL DEFAULT 65, like the other
+      // capacity columns: a new install starts at 65 (P2).
+      //
+      // Then, on the existing row only, the card moves once and knowingly:
+      // hours worked 8 and 65% whatever was stored (the old billable-hours
+      // figure was already averaged down for admin, so keeping it would count
+      // admin twice), and the markup, now Business profit, 10% (P4). A NULL
+      // profit stays NULL: unset is the set-up prompt, never a number nobody
+      // chose (see v6). Saved estimates are untouched; their lines are
+      // snapshots and their stored totals stay as they were.
+      //
+      // Safe to run twice (the upgrade tests rewind schema_version): the column
+      // is added only if missing, and the same three values are written again.
+      const has = db.prepare('PRAGMA table_info(goals)').all().some((c) => c.name === 'utilisation_pct');
+      if (!has) {
+        db.exec(
+          'ALTER TABLE goals ADD COLUMN utilisation_pct REAL NOT NULL DEFAULT 65 ' +
+          'CHECK (utilisation_pct >= 1 AND utilisation_pct <= 100);'
+        );
+      }
+      const row = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+      if (!row) return; // a fresh database: the first save writes the defaults
+
+      const { annualBillableHours } = require('./calc');
+      const capacity = {
+        billableHoursPerDay: 8,
+        workingDaysPerWeek: row.working_days_per_week,
+        leaveDaysPerYear: row.leave_days_per_year,
+        sickDaysPerYear: row.sick_days_per_year,
+        utilisationPct: 65,
+      };
+      // The legacy weekly figure follows, as the route recomputes it on every
+      // save (routes/goals.js), so the two never disagree.
+      const annualHours = annualBillableHours(capacity);
+      const legacyHrsPerWeek = annualHours === null
+        ? row.billable_capacity_hrs_per_week
+        : Math.round((annualHours / 52) * 100) / 100;
+      const profit = row.target_profit_margin_pct === null ? null : 10;
+      db.prepare(`
+        UPDATE goals SET billable_hours_per_day = 8, utilisation_pct = 65,
+          target_profit_margin_pct = ?, billable_capacity_hrs_per_week = ?, updated_at = ?
+        WHERE id = 1
+      `).run(profit, legacyHrsPerWeek, nowIso());
+      console.log(
+        `[db] v18: capacity ${row.billable_hours_per_day} h/day at 100% → 8 h/day at 65%; ` +
+        `markup ${row.target_profit_margin_pct === null ? 'unset' : row.target_profit_margin_pct + '%'} → ` +
+        `business profit ${profit === null ? 'unset' : '10%'}`
+      );
+    },
+  },
 ];
 
 /**
