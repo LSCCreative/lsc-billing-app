@@ -14,8 +14,9 @@
        and the editor's calendar once expanded).
    `.is-compact` (the editor's calendar until Expand) halves the tile layouts'
    cells, one line a tile; under 400px it changes nothing.
-   Touch sizing follows the viewport (44px controls under 768px), because it's
-   about the device, not the space. */
+   Touch sizing follows the device, not the space: 44px controls, made smaller
+   from 768px only where there is a mouse or trackpad (any-pointer: fine), so a
+   touch tablet keeps a phone's targets (production-day-booking, Breakpoints). */
 
 :root {
   /* Status fills: --cal-confirmed, --cal-pencilled, --cal-proposed,
@@ -134,7 +135,7 @@
   }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 768px) and (any-pointer: fine) {
   .cal-btn {
     min-width: 32px;
     min-height: 30px;
@@ -510,7 +511,7 @@
   text-align: center;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 768px) and (any-pointer: fine) {
   .cal-entry {
     min-height: 0;
     padding: 6px 10px;
@@ -1060,7 +1061,7 @@ div.cal-gentry:hover {
 .cal-gnote-act:hover {
   color: var(--text);
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (not (any-pointer: fine)) {
   .cal-gnote-act {
     min-height: 44px;
   }
@@ -1134,7 +1135,7 @@ div.cal-gentry:hover {
   outline: 2px solid transparent;
   box-shadow: var(--shadow-focus);
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (not (any-pointer: fine)) {
   .cal-gpop-x {
     width: 44px;
     height: 44px;

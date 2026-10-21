@@ -233,6 +233,22 @@
 .day-tbc-set {
   margin-left: -8px;
 }
+/* A touch tablet (768 and up, no mouse or trackpad) gets a phone's 44px
+   targets on the card and in the dialog's head (Breakpoints).
+   Prefixed, because a11y.css's 24px floor for .btn-sm loads last. */
+@media (min-width: 768px) and (not (any-pointer: fine)) {
+  .booking-block .day-more,
+  .booking-block .day-menu-btn,
+  .booking-block .day-trip,
+  .booking-block .day-sync-retry,
+  .booking-block .day-tbc-set,
+  #modal-add-day .ad-tocard {
+    min-height: var(--touch-min);
+  }
+  .booking-block .day-more {
+    min-width: var(--touch-min);
+  }
+}
 
 /* ── The add-day dialog ────────────────────────────────────────────────────── */
 
@@ -340,7 +356,9 @@
   font-size: 11px;
   color: var(--muted);
 }
-@media (min-width: 768px) {
+/* Desktop sizes only with a mouse or trackpad: a touch tablet keeps the
+   sheet's 44px fields and 16px type (Breakpoints; as calendar.css). */
+@media (min-width: 768px) and (any-pointer: fine) {
   .ad-date input,
   .ad-note input {
     min-height: 0;
@@ -470,7 +488,7 @@
   flex: 1 0 100%;
   justify-content: center;
 }
-@media (min-width: 768px) {
+@media (min-width: 768px) and (any-pointer: fine) {
   .ad-time input {
     min-height: var(--control-h);
     font-size: var(--font-size-base);
@@ -481,6 +499,8 @@
   #modal-add-day .modal-actions .btn {
     min-height: var(--control-h);
   }
+}
+@media (min-width: 768px) {
   .ad-another {
     flex: 0 0 auto;
     margin-right: auto;
@@ -727,7 +747,7 @@
 .day-menu-btn {
   min-height: 44px;
 }
-@media (min-width: 768px) {
+@media (min-width: 768px) and (any-pointer: fine) {
   .day-menu-btn {
     min-height: 0;
   }
@@ -1122,12 +1142,13 @@
 /* A touch screen at 768 and up with no mouse or trackpad (a tablet) can't
    drag either (bindDrag ignores touch): no handle there, and Move to at a
    finger's size. A desktop, or a tablet with a trackpad, has a fine pointer
-   and keeps both as they are (B2-12). */
+   and keeps both as they are (B2-12). Prefixed, because a11y.css's 24px
+   floor for .line-move loads last and would otherwise win. */
 @media (min-width: 768px) and (not (any-pointer: fine)) {
   .line-handle {
     display: none;
   }
-  .line-move {
+  .booking-block .line-move {
     min-height: 44px;
     padding: 4px 12px;
   }

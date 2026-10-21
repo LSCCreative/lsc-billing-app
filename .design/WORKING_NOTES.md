@@ -183,6 +183,9 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   through `LSCUtil.readPref`); only the open service menu takes a 420px column beside them from 1296px
   (`:has(.is-menu)`). Compact's 52px is exact: `fitCell` (two lines, bookings first, bands included) and the
   one-line tile sizes in calendar.css are one budget, so change them together.
+- Touch tablets: calendar.css and booking.css shrink their 44px controls from 768 only under `(any-pointer: fine)`.
+  a11y.css loads last and sets a 24px floor on `.btn-sm`/`.line-move` from 768: a touch-tablet 44px rule
+  needs a prefix (`.booking-block …`) to win.
 - Stacked grids need `grid-template-columns: minmax(0, 1fr)`. A table that stacks on a phone needs a
   `data-label` on every cell. Prefer a class to an inline `style` where responsive rules must reach.
 - Editor equipment rows are hire or kit: read a hire row's fields through `hireRows()` and a row's cost
