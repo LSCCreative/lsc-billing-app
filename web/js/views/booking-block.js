@@ -618,6 +618,14 @@ const BookingBlock = (() => {
         ' aria-label="More for ' + esc(title) + '"><span aria-hidden="true">⋯</span></button>' +
         '</div>' +
         '<p class="day-clash" id="' + k + '-clash" hidden></p>' +
+        /* A Date TBC day (legacy, the editor's "A new Date TBC day", a cancelled
+           duplicate): its missing date is the one thing to say, with the way to
+           give it one. A date only changes in the dialog, which repaints the card. */
+        (day.date
+          ? ''
+          : '<p class="day-tbc"><span>Not on the calendar until it has a date.</span>' +
+            '<button type="button" class="btn btn-quiet btn-sm day-tbc-set" data-act="set-date"' +
+            ' aria-label="Set date for ' + esc(title) + '">Set date</button></p>') +
         '<div class="day-field day-note" hidden>' +
         '<label for="' + k + '-note">Specification note</label>' +
         '<input type="text" class="text-inp" id="' + k + '-note" data-f="overrideNote" maxlength="' + MAX_NOTE + '"' +
@@ -893,9 +901,10 @@ const BookingBlock = (() => {
     // ── Editing a card ────────────────────────────────────────────────────────
 
     const cards = $('booking-cards');
-    const moreBtn = (id) => {
+    // A card's control by its data-act ("more", "set-date"), found afresh: the cards redraw.
+    const cardAct = (id, act) => {
       const li = cardEl(id);
-      return li && li.querySelector('[data-act="more"]');
+      return li && li.querySelector('[data-act="' + act + '"]');
     };
 
     /* What a day's dialog says about a date: the card's own lock rule
@@ -920,7 +929,9 @@ const BookingBlock = (() => {
        that ⋯. From the calendar (`opts.from`, calOpener), it goes back to the
        calendar, on the day's date after a move, so dates can be worked through
        there; the dialog also offers a second day on the date clicked, and the
-       way down to the day's items (Go to its items). */
+       way down to the day's items (Go to its items). `opts.act` names the card
+       control it was opened from (default ⋯); focus goes back there, or to ⋯
+       once it is gone (Set date, after the day gets a date). */
     async function editDay(id, opts) {
       const day = byId(id);
       if (!day) return;
@@ -928,6 +939,7 @@ const BookingBlock = (() => {
       if (!alive() || !byId(id)) return;
       const n = days.indexOf(day) + 1;
       const from = opts && opts.from;
+      const act = (opts && opts.act) || 'more';
       const picked = day.date;
       openDialog(
         {
@@ -945,7 +957,7 @@ const BookingBlock = (() => {
             : null,
           toCard: from ? { label: 'Go to its items', run: () => focusItems(id) } : null,
         },
-        from || (() => moreBtn(id)),
+        from || (() => cardAct(id, act) || cardAct(id, 'more')),
         (v) => {
           if (!alive() || !byId(id)) return;
           const moved = v.date !== day.date;
@@ -963,7 +975,7 @@ const BookingBlock = (() => {
             else cal.focus();
             return;
           }
-          focusCard(id, 'more');
+          focusCard(id, act); // ⋯ when that control has gone
           if (moved && day.date) {
             ensureCovered([day.date]).then(() => {
               if (alive() && cal) cal.goTo(day.date);
@@ -1036,6 +1048,9 @@ const BookingBlock = (() => {
       const id = li.dataset.dayId;
       if (btn.dataset.act === 'trip') onTrip(id);
       else if (btn.dataset.act === 'sync-retry') onSyncRetry(id);
+      else if (btn.dataset.act === 'set-date') {
+        editDay(id, { focusDate: true, act: 'set-date' });
+      }
       else if (btn.dataset.act === 'more') {
         const day = byId(id);
         const title = titleOf(day, days.indexOf(day) + 1);

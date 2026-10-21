@@ -178,6 +178,7 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   "+ Another day" (and "Go to its items" is the way down to the card). The calendar redraws its cells on every render, so a dialog
   opened from it returns focus through `ctx.opener()` (calendar.js), never the `trigger` element; `cal.select(date)` moves without a wash.
   Bump in = bump out is refused only once the times are touched (the server takes any pair).
+  A calendar tile also carries `data-day-id`: scope card lookups to `#booking-cards`.
 - The editor's calendar is always full width above the cards, compact until Expand (`lsc-booking-cal-size`,
   through `LSCUtil.readPref`); only the open service menu takes a 420px column beside them from 1296px
   (`:has(.is-menu)`). Compact's 52px is exact: `fitCell` (two lines, bookings first, bands included) and the

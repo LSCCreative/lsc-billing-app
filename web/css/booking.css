@@ -205,8 +205,11 @@
 }
 
 /* A day Google Calendar didn't take (trip-planner task 14): the pencilled
-   colour's rule, like a clash, so it reads as a heads-up and not an error. */
-.day-sync {
+   colour's rule, like a clash, so it reads as a heads-up and not an error.
+   A Date TBC day's line is the same shape in the proposed colour: nothing is
+   wrong, it just isn't dated yet. */
+.day-sync,
+.day-tbc {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -221,9 +224,13 @@
 .day-sync[hidden] {
   display: none;
 }
+.day-tbc {
+  border-left-color: var(--cal-proposed);
+}
 /* The quiet button's own padding is 8px: pull it back so its words line up
    with the sentence when it wraps under it on a phone. */
-.day-sync-retry {
+.day-sync-retry,
+.day-tbc-set {
   margin-left: -8px;
 }
 
