@@ -51,11 +51,6 @@
   min-width: 0;
 }
 .booking-days-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
   margin-bottom: 10px;
 }
 .booking-days-label {
@@ -63,17 +58,9 @@
   letter-spacing: var(--letter-spacing-normal);
   color: var(--muted);
 }
-.booking-days-bar .btn {
-  min-height: 44px;
-}
-@media (min-width: 768px) {
-  /* The small button's own height (was 0: a 20px target, under 24). */
-  .booking-days-bar .btn {
-    min-height: var(--control-h-sm);
-  }
-}
+/* One line: the calendar is the only way to add a day. */
 .booking-empty {
-  padding: 18px 14px;
+  padding: 14px;
   border: 1px dashed var(--border);
   font-size: 12px;
   line-height: 1.5;
@@ -338,53 +325,123 @@
   }
 }
 
-.ad-adds {
+/* Bump in / Bump out (production-day-booking task 2): two equal fields side
+   by side at every width; a time input is narrow enough for 375px. */
+.ad-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+}
+.ad-time {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-3);
 }
-.ad-add {
+.ad-time label,
+.ad-status legend {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+.ad-time input {
+  min-height: var(--touch-min);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-md);
+  color-scheme: dark;
+}
+.ad-overnight {
+  margin-top: var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* Status: three radios drawn as one segmented row, each with its own mark. */
+.ad-status {
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.ad-status legend {
+  margin-bottom: var(--space-3);
+  padding: 0;
+}
+.ad-status-opts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--color-border-strong);
+}
+.ad-opt {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 14px;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-align: left;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: background-color var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default);
 }
-.ad-add:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--row-hover);
+.ad-opt + .ad-opt {
+  border-left: 1px solid var(--color-border-strong);
 }
-.ad-add:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.ad-opt input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.ad-opt:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.ad-opt:has(input:checked) {
+  background: var(--color-bg-selected);
+  color: var(--color-text-primary);
+  box-shadow: inset 0 -2px 0 var(--color-accent-mark);
+}
+.ad-opt:has(input:focus-visible) {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
 }
 /* The status's own mark: a solid square, a hatched square, a quarter square. */
 .ad-swatch {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
   background: var(--cal-confirmed);
 }
-.ad-add.is-pencilled .ad-swatch {
+.ad-opt.is-pencilled .ad-swatch {
   background: var(--cal-hatch);
 }
-.ad-add.is-proposed .ad-swatch {
-  width: 7px;
-  height: 7px;
-  margin: 0 3.5px;
+.ad-opt.is-proposed .ad-swatch {
+  width: 6px;
+  height: 6px;
+  margin: 0 3px;
   background: var(--cal-proposed);
+}
+#modal-add-day .modal-actions .btn {
+  min-height: var(--touch-min);
+}
+@media (min-width: 768px) {
+  .ad-time input {
+    min-height: var(--control-h);
+    font-size: var(--font-size-base);
+  }
+  .ad-opt {
+    min-height: var(--control-h);
+  }
+  #modal-add-day .modal-actions .btn {
+    min-height: var(--control-h);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ad-add {
+  .ad-opt {
     transition: none;
   }
 }

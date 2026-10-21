@@ -170,6 +170,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   `data-act` handler must listen on the container holding the *closed* menu. Esc closes only the menu.
 - The booking block draws day cards while closed (collect() reads the page): never put `paintCards()`
   behind `if (!open)`. Open/close goes through `LSCPanel.setOpen`.
+- The booking block adds days only from the calendar (no button of its own); `addTbc()` survives
+  only for the editor's "Add to a day ▾ → A new Date TBC day". Removing the last day focuses the calendar.
 - Stacked grids need `grid-template-columns: minmax(0, 1fr)`. A table that stacks on a phone needs a
   `data-label` on every cell. Prefer a class to an inline `style` where responsive rules must reach.
 - Editor equipment rows are hire or kit: read a hire row's fields through `hireRows()` and a row's cost

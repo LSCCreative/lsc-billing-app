@@ -23,7 +23,8 @@
  *   booking.serverLocked(date) // after a 409 date_locked: { msg, fieldId }
  *   booking.refreshIdentity()  // the UPID / name / business changed: redraw this estimate's tiles
  *   booking.showDay(id)        // open the block and scroll that day's card into view
- *   booking.addTbc()           // add a Date TBC day; returns its id
+ *   booking.addTbc()           // add a Date TBC day; returns its id (the editor's "A new Date TBC day";
+ *                              // the block itself has no button for it since production-day-booking)
  *   booking.setHolidays(list)  // GET /api/holidays' list, shaded on the calendar (task 33 DR4)
  *   booking.showTrip(el)       // the travel view takes the body (.is-trip; trip-planner task 2)
  *   booking.hideTrip()         // and gives it back
@@ -97,6 +98,9 @@ const BookingBlock = (() => {
      leaves it alone (D18), so the least committal status is the honest one.
      The card's select changes it. */
   const TBC_STATUS = 'proposed';
+  /* The add-day popup's status to start on: an estimate's dates are proposed
+     until the client agrees, so the least committal one again. */
+  const NEW_STATUS = 'proposed';
 
   /* Day ids are [A-Za-z0-9_-]{1,64} (days.js DAY_ID) and must be unique across
      every estimate (day_id_taken), hence random rather than counted. */
@@ -186,6 +190,10 @@ const BookingBlock = (() => {
    * @param {Array} a.pencilled — and pencilled
    * @param {boolean} a.unknown — the check couldn't be made (fetch failed)
    * @param {boolean} a.ownAlready — this estimate already has a day that date
+   * @param {object} a.times — { startTime, endTime } to start the fields on (the last day's)
+   *
+   * One form (production-day-booking task 2): bump in, bump out and status,
+   * then Add day. onPick gets { status, startTime, endTime, overrideNote }.
    */
   function openDialog(a, opener, onPick) {
     dlg.overlay = document.getElementById('modal-add-day');
@@ -193,6 +201,7 @@ const BookingBlock = (() => {
     closeDialog(false);
     dlg.opener = opener || null;
     dlg.onPick = onPick;
+    const times = a.times || {};
 
     const locked = a.confirmed.length > 0;
     const msgs = [];
@@ -212,9 +221,14 @@ const BookingBlock = (() => {
       msgs.push('<p class="ad-msg">This estimate already has a day on ' + esc(short(a.date)) + '.</p>');
     }
 
+    const time = (f, label) =>
+      '<div class="ad-time"><label for="ad-' + f + '">' + label + '</label>' +
+      '<input id="ad-' + f + '" type="time" class="text-inp" value="' + esc(times[f] || '') + '"' +
+      ' aria-describedby="ad-overnight"></div>';
+
     dlg.overlay.innerHTML =
-      '<div class="modal-box ad-box" role="dialog" aria-modal="true" aria-labelledby="ad-title"' +
-      (msgs.length ? ' aria-describedby="ad-msgs"' : '') + '>' +
+      '<form class="modal-box ad-box" role="dialog" aria-modal="true" aria-labelledby="ad-title"' +
+      (msgs.length ? ' aria-describedby="ad-msgs"' : '') + ' novalidate>' +
       '<p class="ad-eyebrow">Add a production day</p>' +
       '<h2 class="modal-title" id="ad-title">' + esc(C.longDate(a.date, LSCUtil.today())) + '</h2>' +
       (msgs.length ? '<div class="ad-msgs" id="ad-msgs">' + msgs.join('') + '</div>' : '') +
@@ -222,39 +236,55 @@ const BookingBlock = (() => {
         ? '<div class="field ad-note"><label for="ad-note">Specification note</label>' +
           '<input id="ad-note" type="text" maxlength="' + MAX_NOTE + '" placeholder="e.g. Subcontractor shooting"' +
           ' aria-describedby="ad-msgs ad-note-hint">' +
-          '<span class="ad-note-hint" id="ad-note-hint">Kept with the day. It unlocks the buttons below.</span></div>'
+          '<span class="ad-note-hint" id="ad-note-hint">Kept with the day. Needed before you can add it.</span></div>'
         : '') +
-      '<div class="ad-adds" role="group" aria-label="Add as">' +
+      '<div class="ad-times">' + time('startTime', 'Bump in') + time('endTime', 'Bump out') + '</div>' +
+      '<p class="ad-overnight" id="ad-overnight" hidden>Ends the next day. The shoot runs past midnight and stays on its start date.</p>' +
+      '<fieldset class="ad-status"><legend>Status</legend><div class="ad-status-opts">' +
       STATUSES.map(([s, w]) =>
-        '<button type="button" class="ad-add is-' + s + '" data-status="' + s + '"' + (locked ? ' disabled' : '') + '>' +
-        '<span class="ad-swatch" aria-hidden="true"></span>+ ' + w + ' day</button>'
+        '<label class="ad-opt is-' + s + '"><input type="radio" name="ad-status" value="' + s + '"' +
+        (s === NEW_STATUS ? ' checked' : '') + '>' +
+        '<span class="ad-swatch" aria-hidden="true"></span><span>' + w + '</span></label>'
       ).join('') +
+      '</div></fieldset>' +
+      '<div class="modal-actions">' +
+      '<button type="button" class="btn btn-ghost" id="ad-cancel">Cancel</button>' +
+      '<button type="submit" class="btn btn-primary" id="ad-submit"' + (locked ? ' disabled' : '') + '>Add day</button>' +
       '</div>' +
-      '<div class="modal-actions"><button type="button" class="btn btn-ghost" id="ad-cancel">Cancel</button></div>' +
-      '</div>';
+      '</form>';
 
     dlg.overlay.classList.add('open');
     document.addEventListener('keydown', onDialogKeydown);
     dlg.overlay.addEventListener('click', onDialogClick);
     $d('ad-cancel').addEventListener('click', () => closeDialog(true));
 
+    const form = dlg.overlay.querySelector('form');
     const note = locked ? $d('ad-note') : null;
-    const adds = Array.from(dlg.overlay.querySelectorAll('.ad-add'));
-    if (note) {
-      note.addEventListener('input', () => {
-        const empty = note.value.trim() === '';
-        adds.forEach((b) => (b.disabled = empty));
-      });
-    }
-    adds.forEach((b) =>
-      b.addEventListener('click', () => {
-        const pick = dlg.onPick;
-        const chosen = { status: b.dataset.status, overrideNote: note ? note.value.trim() : '' };
-        closeDialog(false); // focus goes to the new card instead (brief, Booking a day 5)
-        if (pick) pick(chosen);
-      })
-    );
-    (note || adds[0]).focus();
+    const start = $d('ad-startTime');
+    const end = $d('ad-endTime');
+    const submit = $d('ad-submit');
+    const overnight = () => {
+      $d('ad-overnight').hidden = !(start.value && end.value && end.value < start.value);
+    };
+    overnight();
+    start.addEventListener('input', overnight);
+    end.addEventListener('input', overnight);
+    if (note) note.addEventListener('input', () => (submit.disabled = note.value.trim() === ''));
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (submit.disabled) return;
+      const pick = dlg.onPick;
+      const chosen = {
+        status: form.elements['ad-status'].value || NEW_STATUS,
+        startTime: start.value,
+        endTime: end.value,
+        overrideNote: note ? note.value.trim() : '',
+      };
+      closeDialog(false); // focus goes to the new card instead
+      if (pick) pick(chosen);
+    });
+    (note || start).focus();
   }
 
   // ── The block ──────────────────────────────────────────────────────────────
@@ -310,11 +340,10 @@ const BookingBlock = (() => {
       'Dates are still checked when you save.</p>' +
       '</div>' +
       '<div class="booking-days-col">' +
-      '<div class="booking-days-bar"><span class="booking-days-label" id="booking-days-label">Production days</span>' +
-      '<button type="button" class="btn btn-ghost btn-sm" id="booking-add-tbc">+ Add Date TBC day</button></div>' +
+      // One door in (production-day-booking): days are added from the calendar, so no button here.
+      '<div class="booking-days-bar"><h3 class="booking-days-label" id="booking-days-label">Production days</h3></div>' +
       '<ol class="day-cards" id="booking-cards" aria-labelledby="booking-days-label"></ol>' +
-      '<p class="booking-empty" id="booking-empty">No production days yet. Choose a date on the calendar to book ' +
-      'one, or add a Date TBC day for work without a date.</p>' +
+      '<p class="booking-empty" id="booking-empty">Pick a date on the calendar.</p>' +
       // Not a day (D79): what isn't tied to a shoot day. Never re-rendered; its items are put in below.
       '<div class="day-card off-day-card" id="booking-off">' +
       '<div class="day-card-in" role="group" aria-labelledby="booking-off-t">' +
@@ -566,6 +595,16 @@ const BookingBlock = (() => {
       el.focus();
     }
 
+    // The card's "Add … items" button (the editor's .day-menu-btn), scrolled into view.
+    function focusItems(id) {
+      const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+      if (!li) return;
+      const btn = li.querySelector('.day-menu-btn');
+      if (!btn) return focusCard(id, 'startTime');
+      li.scrollIntoView({ block: 'nearest' });
+      btn.focus({ preventScroll: true });
+    }
+
     function calendarDays() {
       const who = opts.identity();
       const mine = days.filter((d) => d.date).map((d) => ({
@@ -676,16 +715,18 @@ const BookingBlock = (() => {
           pencilled: list.filter((d) => d.status === 'pencilled'),
           unknown: !isCovered(date),
           ownAlready: days.some((d) => d.date === date),
+          // A shoot's call times are usually the same each day: start on the last ones set.
+          times: days.slice().reverse().find((d) => d.startTime || d.endTime) || {},
         },
         trigger,
-        ({ status, overrideNote }) => {
+        ({ status, startTime, endTime, overrideNote }) => {
           if (!alive()) return;
-          const day = { id: newDayId(), date, status, startTime: '', endTime: '', overrideNote, trip: null };
+          const day = { id: newDayId(), date, status, startTime, endTime, overrideNote, trip: null };
           days = sortDays(days.concat(day));
           paint();
           onChange();
-          // The brief: the new card appears in date order with focus on its start time.
-          focusCard(day.id, 'startTime');
+          // The new card in date order, focus on adding its items (production-day-booking brief).
+          focusItems(day.id);
           $('booking-live').textContent = WORD[status] + ' day added, ' + C.longDate(date, LSCUtil.today()) + '.';
         }
       );
@@ -699,8 +740,6 @@ const BookingBlock = (() => {
       onChange();
       return day.id;
     }
-
-    $('booking-add-tbc').addEventListener('click', () => focusCard(addTbc(), 'date'));
 
     // ── Editing a card ────────────────────────────────────────────────────────
 
@@ -791,10 +830,10 @@ const BookingBlock = (() => {
       paint();
       onChange();
       $('booking-live').textContent = title + ' removed.';
-      // Focus to the card that took its place, or the one before, or the add button.
+      // Focus to the card that took its place, or the one before, or the calendar (where days are added).
       const next = days[i] || days[i - 1];
       if (next) focusCard(next.id, 'remove');
-      else $('booking-add-tbc').focus();
+      else if (cal) cal.focus();
     });
 
     function reveal() {
