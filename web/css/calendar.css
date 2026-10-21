@@ -9,8 +9,11 @@
    Written phone first. The calendar is its own size container, and these three
    layouts follow its width, not the viewport's:
      - under 400px: dots per date, and a tapped date lists its bookings below (D29);
-     - 400px and up: tiles, UPID only (the editor's ~420px column at >=1100);
-     - 640px and up: taller cells, tiles with the project name under the UPID (Home).
+     - 400px and up: tiles, UPID only;
+     - 640px and up: taller cells, tiles with the project name under the UPID (Home,
+       and the editor's calendar once expanded).
+   `.is-compact` (the editor's calendar until Expand) halves the tile layouts'
+   cells, one line a tile; under 400px it changes nothing.
    Touch sizing follows the viewport (44px controls under 768px), because it's
    about the device, not the space. */
 
@@ -685,6 +688,82 @@
   .cal-rbar.is-faded .cal-rbar-t {
     line-height: 14px;
   }
+}
+
+/* ── Compact (the editor's calendar until Expand) ──────────────────────────────
+   Half the wide layout's 104px: a date, then two one-line tiles or one and
+   "+N more" (calendar.js MAX_TILES_COMPACT), which is exactly 52px. A week's
+   rental lanes still add their pitch, so a bar never sits on a tile. Under
+   400px the dots layout is already the 48px touch minimum, so nothing here
+   applies and the button is hidden. */
+
+@container cal (min-width: 400px) {
+  .cal.is-compact .cal-row {
+    --rb-base: 3px;
+  }
+  .cal.is-compact .cal-body .cal-cell {
+    min-height: calc(52px + var(--lanes) * var(--rb-pitch));
+    padding-top: 3px;
+    gap: 2px;
+  }
+  .cal.is-compact .cal-num {
+    line-height: 14px;
+  }
+  .cal.is-compact .cal-tile {
+    padding: 1px 5px;
+    line-height: 12px;
+  }
+  .cal.is-compact .cal-more {
+    line-height: 12px;
+  }
+  .cal.is-compact .cal-gbands {
+    margin-bottom: 0;
+  }
+  .cal.is-compact .cal-gband {
+    height: 13px;
+    font-size: 9px;
+    line-height: 13px;
+  }
+}
+
+/* Wide enough for words: the name follows the UPID on the same line. A
+   proposed day keeps its quarter tile's one word (D63). */
+@container cal (min-width: 640px) {
+  /* Top-aligned: two weights on one baseline grow the line box past 12px. */
+  .cal.is-compact .cal-tile-upid {
+    display: inline;
+    vertical-align: top;
+  }
+  .cal.is-compact .cal-tile-name {
+    display: inline;
+    vertical-align: top;
+    margin-left: 5px;
+  }
+  .cal.is-compact .cal-tile.is-proposed .cal-tile-name {
+    display: none;
+  }
+}
+
+/* Expand / Collapse: on the month's row while the bar wraps, last once it is
+   one line. Bordered like Calendars ▾, the other tool in the bar. */
+.cal-size {
+  display: none;
+}
+@container cal (min-width: 400px) {
+  .cal-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+  }
+}
+@container cal (min-width: 640px) {
+  .cal-size {
+    order: 4;
+  }
+}
+.cal-size svg {
+  flex: none;
 }
 
 /* The selected date's gear, under its bookings. */

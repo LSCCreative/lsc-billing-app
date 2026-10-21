@@ -174,6 +174,9 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   only for the editor's "Add to a day ▾ → A new Date TBC day". Removing the last day focuses the calendar.
   A card has no fields but the specification note: date, times and status change only in the day dialog
   (`editDay`, edit mode of `openDialog`), so focus targets on a card are `[data-act="more"]`, never `[data-f="date"]`.
+- The editor's calendar is always full width above the cards (no side column), compact until Expand
+  (`localStorage` `lsc-booking-cal-size`). Compact's 52px is exact: `MAX_TILES_COMPACT` 2 and the one-line
+  tile sizes in calendar.css are one budget, so change them together.
 - Stacked grids need `grid-template-columns: minmax(0, 1fr)`. A table that stacks on a phone needs a
   `data-label` on every cell. Prefer a class to an inline `style` where responsive rules must reach.
 - Editor equipment rows are hire or kit: read a hire row's fields through `hireRows()` and a row's cost

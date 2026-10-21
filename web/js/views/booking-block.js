@@ -102,6 +102,24 @@ const BookingBlock = (() => {
      until the client agrees, so the least committal one again. */
   const NEW_STATUS = 'proposed';
 
+  /* The calendar opens compact (a picker, not a feature) until Expand is
+     pressed; the choice is this browser's, as Home's calendar size is. */
+  const CAL_SIZE_KEY = 'lsc-booking-cal-size';
+  function readCalSize() {
+    try {
+      return localStorage.getItem(CAL_SIZE_KEY) === 'full' ? 'full' : 'compact';
+    } catch (_) {
+      return 'compact';
+    }
+  }
+  function saveCalSize(v) {
+    try {
+      localStorage.setItem(CAL_SIZE_KEY, v);
+    } catch (_) {
+      // A private window or blocked storage: the choice lasts this visit only.
+    }
+  }
+
   /* Day ids are [A-Za-z0-9_-]{1,64} (days.js DAY_ID) and must be unique across
      every estimate (day_id_taken), hence random rather than counted. */
   function newDayId() {
@@ -719,6 +737,8 @@ const BookingBlock = (() => {
         emphasis: ownId,
         // Opens on this estimate's first day when it has one, else on today.
         selected: dated.length ? dated[0].date : null,
+        size: readCalSize(),
+        onSizeChange: saveCalSize,
         onRangeChange: (r) => load(r.from, r.to, { google: true }),
         onDateActivate: (date, ctx) => addOn(date, ctx.trigger),
         onTileActivate: (day, ctx) => {

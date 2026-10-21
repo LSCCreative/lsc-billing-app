@@ -16,6 +16,8 @@
  *     onDateActivate(date, { trigger }),
  *     onTileActivate(day, { trigger }),
  *     quietGear: false,             // Home: every bar outlined, lists name gear on its ends (DR5)
+ *     size: null,                   // 'compact' or 'full': draws Expand / Collapse in the bar
+ *     onSizeChange(size),           // the button was pressed: remember it
  *   });
  *   cal.setDays(days); cal.setRentals(rentals); cal.setEmphasis(id); cal.goTo('2026-10-04');
  *   cal.setHolidays(holidays);    // GET /api/holidays' list: { date, name, hidden }
@@ -43,7 +45,7 @@
  *
  * TILES OR DOTS
  * Chosen by the calendar's own width (a container query in calendar.css), not
- * the viewport: the editor's ~420px column at 1280 and a 375px phone are
+ * the viewport: a calendar in a narrow panel and a 375px phone are
  * different problems, and the viewport can't tell them apart. Both are drawn;
  * CSS shows one.
  *
@@ -90,6 +92,15 @@
  * slots() hands Calendars ▾ (gcal-menu.js) its place in the bar and the quiet
  * line under it.
  *
+ * COMPACT OR FULL (production-day-booking)
+ * The editor's calendar is a picker, so it opens short: `size: 'compact'`
+ * halves the wide layout's cells, each tile one line (UPID and name), two to
+ * a date before "+N more". Expand gives back the full board and Collapse
+ * takes it away again; the caller remembers the choice (onSizeChange). With
+ * no `size` (Home) there is no button and the board is always full. Under
+ * 400px the dots layout is already the touch minimum, so both sizes are the
+ * same there and calendar.css hides the button.
+ *
  * Dates are 'YYYY-MM-DD' strings throughout, with arithmetic done on UTC
  * epoch days so a daylight-saving change can never skip or repeat a date.
  */
@@ -108,6 +119,7 @@ const LSCCalendar = (() => {
 
   // More than this in one cell and the rest become "+N".
   const MAX_TILES = 3;
+  const MAX_TILES_COMPACT = 2;
   const MAX_DOTS = 3;
   const WEEKS = 6;
   // Rental bar lanes in one week. Past this, the last lane says "+N" per date.
@@ -438,9 +450,12 @@ const LSCCalendar = (() => {
         onRentalActivate: null,
         rentalActionable: null,
         quietGear: false,
+        size: null,
+        onSizeChange: null,
       },
       options || {}
     );
+    const sizable = o.size === 'compact' || o.size === 'full';
     const id = o.id;
     const today = isDate(o.today) ? o.today : LSCUtil.today();
 
@@ -456,10 +471,12 @@ const LSCCalendar = (() => {
       holidays: new Map(), // date → name
       google: [], // normGoogle'd events from the switched-on Google calendars (task 13)
       googleSig: '[]',
+      size: o.size === 'compact' ? 'compact' : 'full',
     };
     st.view = monthOf(st.active);
 
     root.classList.add('cal');
+    root.classList.toggle('is-compact', st.size === 'compact');
     root.innerHTML =
       '<div class="cal-bar">' +
       '<p class="cal-title" id="' + esc(id) + '-title"></p>' +
@@ -472,6 +489,7 @@ const LSCCalendar = (() => {
       '<input type="date" class="cal-goto-inp" id="' + esc(id) + '-goto"></label>' +
       // Calendars ▾ goes here (gcal-menu.js), and its quiet line under the bar.
       '<div class="cal-tools"></div>' +
+      (sizable ? '<button type="button" class="cal-btn cal-size"></button>' : '') +
       '</div>' +
       '<p class="cal-gnote" role="status" hidden></p>' +
       '<div class="cal-grid" role="grid" aria-labelledby="' + esc(id) + '-title" aria-describedby="' + esc(id) + '-keys">' +
@@ -618,7 +636,8 @@ const LSCCalendar = (() => {
       if (date === today) cls.push('is-today');
       if (date === st.target) cls.push('is-target');
       if (date === st.active) cls.push('is-selected');
-      const extra = tiles.length - MAX_TILES;
+      const max = st.size === 'compact' ? MAX_TILES_COMPACT : MAX_TILES;
+      const extra = tiles.length - max;
       return (
         '<div role="gridcell" class="' + cls.join(' ') + '" data-date="' + date + '"' +
         ' tabindex="' + (date === st.active ? '0' : '-1') + '"' +
@@ -631,7 +650,7 @@ const LSCCalendar = (() => {
           : '<span class="cal-num" aria-hidden="true">' + d + '</span>') +
         '<span class="cal-tiles" aria-hidden="true">' +
         gBandsMarkup(gBands, date) +
-        tiles.slice(0, extra > 0 ? MAX_TILES - 1 : MAX_TILES).join('') +
+        tiles.slice(0, extra > 0 ? max - 1 : max).join('') +
         (extra > 0 ? '<span class="cal-more">+' + (extra + 1) + ' more</span>' : '') +
         '</span>' +
         '<span class="cal-dots" aria-hidden="true">' +
@@ -759,6 +778,36 @@ const LSCCalendar = (() => {
     root.querySelector('.cal-prev').addEventListener('click', () => moveTo(addMonths(st.active, -1), false));
     root.querySelector('.cal-next').addEventListener('click', () => moveTo(addMonths(st.active, 1), false));
     root.querySelector('.cal-today').addEventListener('click', () => moveTo(today, false));
+
+    /* Expand / Collapse: the button names what it does next, so focus can stay
+       on it and pressing again undoes it. Home's grow and shrink arrows. */
+    const sizeBtn = root.querySelector('.cal-size');
+    function paintSize() {
+      root.classList.toggle('is-compact', st.size === 'compact');
+      if (!sizeBtn) return;
+      const grow = st.size === 'compact';
+      sizeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+        ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+        (grow
+          ? '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'
+          : '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>') +
+        '</svg><span>' + (grow ? 'Expand' : 'Collapse') + '</span>';
+      sizeBtn.setAttribute('aria-label', (grow ? 'Expand' : 'Collapse') + ' the calendar');
+    }
+    function setSize(next) {
+      next = next === 'compact' ? 'compact' : 'full';
+      if (next === st.size) return;
+      st.size = next;
+      paintSize();
+      renderGrid(0); // the "+N more" cut-off follows the size
+    }
+    if (sizeBtn) {
+      paintSize();
+      sizeBtn.addEventListener('click', () => {
+        setSize(st.size === 'compact' ? 'full' : 'compact');
+        if (typeof o.onSizeChange === 'function') o.onSizeChange(st.size);
+      });
+    }
 
     /* "change" fires once a whole date is in the field (typed or picked), never
        on a half-typed one, so the calendar doesn't lurch about mid-entry. */
@@ -922,6 +971,11 @@ const LSCCalendar = (() => {
         moveTo(date, false);
       },
       range: () => gridRange(st.view),
+      /** 'compact' or 'full' (production-day-booking); onSizeChange is only for the button. */
+      setSize,
+      get size() {
+        return st.size;
+      },
       get selected() {
         return st.active;
       },

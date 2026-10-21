@@ -948,8 +948,7 @@
    (Cancel is in ⋯ below 768px). From 1100px the rail sits beside the page as
    Settings' and Finance's do, and #main widens by it (--max-width-page), so
    the panels keep the 1000px they had wherever the window has room (from
-   1296px). Between 1100 and that they are narrower, and Production booking
-   puts its calendar above its cards (booking.css).
+   1296px). Between 1100 and that they are narrower.
 
    Two lengths here are the layout's, not tokens, and match settings.css and
    finance.css: 70px clears the 52px sticky header, and 86px is that header
