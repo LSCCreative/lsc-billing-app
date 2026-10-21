@@ -1437,7 +1437,7 @@ const EstimateEditor = (() => {
     applyMenuFilter();
     booking.setTarget(dayKey);
     if (menu.trigger) menu.trigger.setAttribute('aria-expanded', 'true');
-    // 768–1099 the column sits above the cards: bring the menu's head into view.
+    // 768–1295 the column sits above the cards: bring the menu's head into view.
     if (!menu.sheet) menu.el.scrollIntoView({ block: 'nearest' });
     menu.el.querySelector('#day-menu-h').focus({ preventScroll: !menu.sheet });
   }

@@ -63,8 +63,8 @@ const HomeView = (() => {
     open: icon('<path d="M7 17 17 7"/><path d="M7 7h10v10"/>'),
     add: icon('<path d="M12 5v14"/><path d="M5 12h14"/>'),
     next: icon('<path d="m9 18 6-6-6-6"/>'),
-    grow: icon('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'),
-    shrink: icon('<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>'),
+    grow: icon(C.SIZE_ICON.grow),
+    shrink: icon(C.SIZE_ICON.shrink),
   };
 
   let root = null;
@@ -85,32 +85,16 @@ const HomeView = (() => {
   let googleSeen = null; // the last reply's Google state, so a re-mounted view's button doesn't pop in late
 
   function readView() {
-    try {
-      return localStorage.getItem(VIEW_KEY) === 'week' ? 'week' : 'month';
-    } catch (_) {
-      return 'month';
-    }
+    return LSCUtil.readPref(VIEW_KEY, ['week'], 'month');
   }
   function saveView(v) {
-    try {
-      localStorage.setItem(VIEW_KEY, v);
-    } catch (_) {
-      // A private window or blocked storage: the choice lasts this visit only.
-    }
+    LSCUtil.savePref(VIEW_KEY, v);
   }
   function readSize() {
-    try {
-      return localStorage.getItem(SIZE_KEY) === 'full' ? 'full' : 'mini';
-    } catch (_) {
-      return 'mini';
-    }
+    return LSCUtil.readPref(SIZE_KEY, ['full'], 'mini');
   }
   function saveSize(v) {
-    try {
-      localStorage.setItem(SIZE_KEY, v);
-    } catch (_) {
-      // As saveView.
-    }
+    LSCUtil.savePref(SIZE_KEY, v);
   }
 
   function failureText(err) {

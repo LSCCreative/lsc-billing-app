@@ -744,8 +744,22 @@
   }
 }
 
-/* Expand / Collapse: on the month's row while the bar wraps, last once it is
-   one line. Bordered like Calendars ▾, the other tool in the bar. */
+/* Expand / Collapse, bordered like Calendars ▾ and grouped with it
+   (.cal-acts), pushed right. While the bar wraps, the pair goes down beside
+   Go to date together; Expand on its own instead ends the month's row (or
+   starts the next, Go to date after it). Either way nothing sits on a row
+   alone. Last in the bar once it is one line. Go to date gives up its full
+   row, as it does for Calendars ▾ alone. */
+.cal-acts {
+  display: flex;
+  gap: 10px 12px;
+  margin-left: auto;
+  order: 4;
+}
+/* In the group, Calendars ▾ then Expand: not the bar's order for tools. */
+.cal-acts > .cal-tools {
+  order: 0;
+}
 .cal-size {
   display: none;
 }
@@ -756,10 +770,24 @@
     gap: 6px;
     border: 1px solid var(--border);
   }
+  .cal-bar:has(.cal-size) .cal-goto {
+    flex: 1 1 0;
+    min-width: 160px;
+    order: 3;
+  }
+  .cal-acts:has(.cal-tools:empty) {
+    order: 1;
+  }
 }
 @container cal (min-width: 640px) {
-  .cal-size {
-    order: 4;
+  .cal-acts,
+  .cal-acts:has(.cal-tools:empty) {
+    order: 3;
+  }
+  .cal-bar:has(.cal-size) .cal-goto {
+    flex: 0 1 auto;
+    min-width: 0;
+    order: 1;
   }
 }
 .cal-size svg {

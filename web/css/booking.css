@@ -4,7 +4,8 @@
 
    Written phone first. The calendar sits above the day cards at every width,
    the panel's full width and compact until Expand (production-day-booking:
-   it was a 420px column beside them from 1296px). */
+   it was a 420px column beside them from 1296px; only the service menu still
+   is, while it is open). */
 
 /* responsive.css gives every .billing-block a 660px floor below 1100 and lets
    it scroll sideways, so the editor's money grids can't squash. This block has
@@ -25,6 +26,19 @@
 }
 .booking-body[hidden] {
   display: none;
+}
+/* The service menu swaps in for the calendar (B2-4). Where the panels have
+   their full 1000px (from 1296px, tokens.css's --max-width-page; media
+   queries can't read tokens), it stands in a 420px column beside the cards,
+   so the card it adds to stays in sight. Narrower, the cards' item rows don't
+   fit beside it, so it sits above them. A media query, not a container query:
+   containment would make this block the box for the Gear rentals ⓘ's fixed
+   popover. */
+@media (min-width: 1296px) {
+  .booking-body:has(> .booking-cal-col.is-menu) {
+    grid-template-columns: 420px minmax(0, 1fr);
+    align-items: start;
+  }
 }
 .booking-load-note {
   margin-top: 8px;

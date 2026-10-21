@@ -188,5 +188,24 @@ const LSCUtil = (() => {
     heading.focus({ preventScroll: true });
   }
 
-  return { fmt, money, perKm, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce, landFocus };
+  /* A choice this browser remembers (a view, a calendar's size): one of
+     `allowed`, else `fallback`. A private window or blocked storage reads as
+     the fallback and forgets the save, so the choice lasts this visit only. */
+  function readPref(key, allowed, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      return allowed.includes(v) ? v : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+  function savePref(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (_) {
+      // As readPref.
+    }
+  }
+
+  return { fmt, money, perKm, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce, landFocus, readPref, savePref };
 })();
