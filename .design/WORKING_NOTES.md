@@ -174,6 +174,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   only for the editor's "Add to a day ▾ → A new Date TBC day". Removing the last day focuses the calendar.
   A card has no fields but the specification note: date, times and status change only in the day dialog
   (`editDay`, edit mode of `openDialog`), so focus targets on a card are `[data-act="more"]`, never `[data-f="date"]`.
+  A calendar click on a date with one of this estimate's days edits it (`pickDate`), never adds; a second day comes from the dialog's
+  "+ Another day" (and "Go to its items" is the way down to the card). The calendar redraws its cells on every render, so a dialog
+  opened from it returns focus through `ctx.opener()` (calendar.js), never the `trigger` element; `cal.select(date)` moves without a wash.
+  Bump in = bump out is refused only once the times are touched (the server takes any pair).
 - The editor's calendar is always full width above the cards, compact until Expand (`lsc-booking-cal-size`,
   through `LSCUtil.readPref`); only the open service menu takes a 420px column beside them from 1296px
   (`:has(.is-menu)`). Compact's 52px is exact: `fitCell` (two lines, bookings first, bands included) and the

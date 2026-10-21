@@ -207,5 +207,9 @@ const LSCUtil = (() => {
     }
   }
 
-  return { fmt, money, perKm, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce, landFocus, readPref, savePref };
+  /* The visitor asked for less motion: smooth scrolls, pulses and view
+     transitions are skipped. Read each time, so a change in the OS applies at once. */
+  const reducedMotion = () => Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  return { fmt, money, perKm, esc, today, num, abnDigits, abnValid, abnFormat, showFieldErrors, clearFieldErrors, saveFile, announce, landFocus, readPref, savePref, reducedMotion };
 })();

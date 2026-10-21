@@ -13,13 +13,19 @@
  *     label: 'Production calendar', // the grid's accessible name, before the month
  *     emphasis: estimateId,         // or null: every day at full strength
  *     onRangeChange({ from, to }),  // the six weeks on show: fetch them
- *     onDateActivate(date, { trigger }),
- *     onTileActivate(day, { trigger }),
+ *     onDateActivate(date, { trigger, opener }),
+ *     onTileActivate(day, { trigger, opener }),
  *     quietGear: false,             // Home: every bar outlined, lists name gear on its ends (DR5)
  *     size: null,                   // 'compact' or 'full': draws Expand / Collapse in the bar
  *     onSizeChange(size),           // the button was pressed: remember it
  *   });
  *   cal.setDays(days); cal.setRentals(rentals); cal.setEmphasis(id); cal.goTo('2026-10-04');
+ *   cal.select('2026-10-04');     // the same move without "Go to date"'s accent wash
+ *
+ * `trigger` is the element activated. Every render replaces the cells and the
+ * list, so a dialog opened from it should send focus back through `opener()`,
+ * which returns the trigger while it is on the page, else its stand-in: the
+ * list line for the same day or rental, else the date's cell (the grid's tab stop).
  *   cal.setHolidays(holidays);    // GET /api/holidays' list: { date, name, hidden }
  *
  * A day is { id, estimateId, date, status, startTime, endTime, upid,
@@ -360,7 +366,8 @@ const LSCCalendar = (() => {
 
   /* The small read-only pop-up a Google tile or band opens (brief: title,
      time, calendar). Not modal: a click outside, Esc, Tab away or the route
-     changing closes it, and Esc puts focus back on `trigger`. One at a time,
+     changing closes it, and Esc puts focus back on `trigger` (an element, or a
+     ctxFor opener that finds it after a render). One at a time,
      for every calendar on the page. */
   const gpop = { el: null, trigger: null };
 
@@ -371,7 +378,8 @@ const LSCCalendar = (() => {
     document.removeEventListener('pointerdown', onGpopOutside, true);
     window.removeEventListener('hashchange', onGpopHash);
     el.remove();
-    if (returnFocus && gpop.trigger && gpop.trigger.isConnected) gpop.trigger.focus();
+    const back = typeof gpop.trigger === 'function' ? gpop.trigger() : gpop.trigger;
+    if (returnFocus && back && back.isConnected) back.focus();
     gpop.trigger = null;
   }
   function onGpopOutside(e) {
@@ -789,9 +797,24 @@ const LSCCalendar = (() => {
       }
     }
 
+    // What onDateActivate / onTileActivate / onRentalActivate get: the element, and a way back to it after a render.
+    function ctxFor(trigger, extra) {
+      const date = st.active;
+      const key = trigger && trigger.dataset.dayId
+        ? '.cal-entry[data-day-id="' + CSS.escape(trigger.dataset.dayId) + '"]'
+        : trigger && trigger.dataset.rentalId
+          ? '.cal-rentry[data-rental-id="' + CSS.escape(trigger.dataset.rentalId) + '"]'
+          : null;
+      const opener = () => {
+        if (trigger && trigger.isConnected) return trigger;
+        return (key && els.list && els.list.querySelector(key)) || els.body.querySelector('[data-date="' + date + '"]');
+      };
+      return Object.assign({ trigger, opener }, extra);
+    }
+
     function activateDate(date) {
       if (date !== st.active || monthOf(date) !== st.view) moveTo(date, root.querySelector('.cal-body').contains(document.activeElement));
-      if (typeof o.onDateActivate === 'function') o.onDateActivate(date, { trigger: activeCell() });
+      if (typeof o.onDateActivate === 'function') o.onDateActivate(date, ctxFor(activeCell()));
     }
 
     // ── Events: delegated once, so re-rendering never drops a listener ────────
@@ -859,14 +882,14 @@ const LSCCalendar = (() => {
       if (ev) {
         if (cell.dataset.date !== st.active) moveTo(cell.dataset.date, true);
         const at = activeCell();
-        openGooglePop(ev, at, at, today);
+        openGooglePop(ev, at, ctxFor(at).opener, today);
         return;
       }
       const tile = e.target.closest('.cal-tile');
       const day = tile && st.byId.get(tile.dataset.dayId);
       if (day) {
         if (cell.dataset.date !== st.active) moveTo(cell.dataset.date, true);
-        if (typeof o.onTileActivate === 'function') o.onTileActivate(day, { trigger: activeCell() });
+        if (typeof o.onTileActivate === 'function') o.onTileActivate(day, ctxFor(activeCell()));
         return;
       }
       activateDate(cell.dataset.date);
@@ -900,7 +923,7 @@ const LSCCalendar = (() => {
 
     function activateRental(rental, trigger) {
       const entry = o.showList ? els.list.querySelector('.cal-rentry[data-rental-id="' + CSS.escape(rental.id) + '"]') : null;
-      if (typeof o.onRentalActivate === 'function') o.onRentalActivate(rental, { trigger, entry });
+      if (typeof o.onRentalActivate === 'function') o.onRentalActivate(rental, ctxFor(trigger, { entry }));
       else if (entry) entry.focus();
     }
 
@@ -914,7 +937,7 @@ const LSCCalendar = (() => {
         }
         const btn = e.target.closest('.cal-entry');
         const day = btn && st.byId.get(btn.dataset.dayId);
-        if (day && typeof o.onTileActivate === 'function') o.onTileActivate(day, { trigger: btn });
+        if (day && typeof o.onTileActivate === 'function') o.onTileActivate(day, ctxFor(btn));
       });
     }
 
@@ -984,6 +1007,10 @@ const LSCCalendar = (() => {
         st.target = date;
         if (els.goto.value !== date) els.goto.value = date;
         moveTo(date, false);
+      },
+      /** Select a date, bringing its month into view, with no wash (a day moved there). */
+      select(date) {
+        if (isDate(date)) moveTo(date, false);
       },
       range: () => gridRange(st.view),
       get selected() {

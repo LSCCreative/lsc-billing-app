@@ -105,6 +105,7 @@ const BookingBlock = (() => {
   /* The calendar opens compact (a picker, not a feature) until Expand is
      pressed; the choice is this browser's, as Home's calendar size is. */
   const CAL_SIZE_KEY = 'lsc-booking-cal-size';
+  const PULSE_MS = 1600; // booking.css day-arrive, a card just added or saved
 
   /* Day ids are [A-Za-z0-9_-]{1,64} (days.js DAY_ID) and must be unique across
      every estimate (day_id_taken), hence random rather than counted. */
@@ -165,7 +166,7 @@ const BookingBlock = (() => {
      The same form both ways: edit adds a Date field, since a card no longer
      has one (production-day-booking task 4, quiet day cards). */
 
-  const dlg = { overlay: null, opener: null, onPick: null };
+  const dlg = { overlay: null, opener: null, onPick: null, downOnBackdrop: false };
   const $d = (id) => dlg.overlay.querySelector('#' + id);
 
   function onDialogKeydown(event) {
@@ -174,8 +175,13 @@ const BookingBlock = (() => {
     if (event.key === 'Escape') return closeDialog(true);
     LSCModal.trapTab(dlg.overlay, event);
   }
+  /* Only a press that began on the backdrop closes: selecting a field's text
+     and letting go past the box's edge clicks the overlay too. */
+  function onDialogPointerDown(event) {
+    dlg.downOnBackdrop = event.target === dlg.overlay;
+  }
   function onDialogClick(event) {
-    if (event.target === dlg.overlay) closeDialog(true);
+    if (event.target === dlg.overlay && dlg.downOnBackdrop) closeDialog(true);
   }
 
   function closeDialog(returnFocus) {
@@ -184,6 +190,7 @@ const BookingBlock = (() => {
     o.classList.remove('open');
     o.innerHTML = '';
     document.removeEventListener('keydown', onDialogKeydown);
+    o.removeEventListener('pointerdown', onDialogPointerDown);
     o.removeEventListener('click', onDialogClick);
     // The opener may be a function: a card's ⋯ is redrawn whenever the cards are.
     const back = typeof dlg.opener === 'function' ? dlg.opener() : dlg.opener;
@@ -229,7 +236,13 @@ const BookingBlock = (() => {
    * @param {object} a.info — what the starting date's other bookings mean (dialogMsgs)
    * @param {Function} [a.recheck] — edit: (values) → Promise<info> when the date or status changes
    * @param {boolean} [a.focusDate] — edit: start on the date (a fresh duplicate has none)
+   * @param {object} [a.another] — edit from the calendar: { label, run } for a second day on that
+   *   date, since a click on a date with a day now edits it (production-day-booking task 6)
+   * @param {object} [a.toCard] — edit from the calendar: { label, run } to close and go to the
+   *   day's items, the calendar's way through to its card (the date's list once did that)
    *
+   * opener is the element focus goes back to on Esc, Cancel or the backdrop, or a
+   * function that finds it then (the calendar and the cards redraw while it is open).
    * onPick gets { date, status, startTime, endTime, overrideNote }.
    */
   function openDialog(a, opener, onPick) {
@@ -244,12 +257,16 @@ const BookingBlock = (() => {
     const time = (f, label) =>
       '<div class="ad-time"><label for="ad-' + f + '">' + label + '</label>' +
       '<input id="ad-' + f + '" type="time" class="text-inp" value="' + esc(v[f] || '') + '"' +
-      ' aria-describedby="ad-overnight"></div>';
+      ' aria-describedby="ad-overnight' + (f === 'endTime' ? ' ad-time-err' : '') + '"></div>';
 
     dlg.overlay.innerHTML =
       '<form class="modal-box ad-box" role="dialog" aria-modal="true" aria-labelledby="ad-title"' +
       ' aria-describedby="ad-msgs" novalidate>' +
-      '<p class="ad-eyebrow">' + esc(a.eyebrow) + '</p>' +
+      (a.toCard
+        ? '<div class="ad-head"><p class="ad-eyebrow">' + esc(a.eyebrow) + '</p>' +
+          '<button type="button" class="btn btn-quiet btn-sm ad-tocard" id="ad-tocard">' + esc(a.toCard.label) +
+          '<span aria-hidden="true"> ↓</span></button></div>'
+        : '<p class="ad-eyebrow">' + esc(a.eyebrow) + '</p>') +
       '<h2 class="modal-title" id="ad-title">' + esc(dialogTitle(v.date)) + '</h2>' +
       (edit
         ? '<div class="field ad-date"><label for="ad-date">Date</label>' +
@@ -264,6 +281,8 @@ const BookingBlock = (() => {
       '<span class="ad-hint" id="ad-note-hint">Kept with the day. Needed to book a date confirmed elsewhere.</span></div>' +
       '<div class="ad-times">' + time('startTime', 'Bump in') + time('endTime', 'Bump out') + '</div>' +
       '<p class="ad-overnight" id="ad-overnight" hidden>Ends the next day. The shoot runs past midnight and stays on its start date.</p>' +
+      // Bump out before bump in is an overnight shoot (above); the same time twice is no shoot at all.
+      '<p class="ad-err" id="ad-time-err" hidden>Bump out can’t be the same time as bump in.</p>' +
       '<fieldset class="ad-status"><legend>Status</legend><div class="ad-status-opts">' +
       STATUSES.map(([s, w]) =>
         '<label class="ad-opt is-' + s + '"><input type="radio" name="ad-status" value="' + s + '"' +
@@ -272,15 +291,29 @@ const BookingBlock = (() => {
       ).join('') +
       '</div></fieldset>' +
       '<div class="modal-actions">' +
+      (a.another
+        ? '<button type="button" class="btn btn-quiet ad-another" id="ad-another">' + esc(a.another.label) + '</button>'
+        : '') +
       '<button type="button" class="btn btn-ghost" id="ad-cancel">Cancel</button>' +
       '<button type="submit" class="btn btn-primary" id="ad-submit">' + (edit ? 'Save day' : 'Add day') + '</button>' +
       '</div>' +
       '</form>';
 
     dlg.overlay.classList.add('open');
+    dlg.downOnBackdrop = false;
     document.addEventListener('keydown', onDialogKeydown);
+    dlg.overlay.addEventListener('pointerdown', onDialogPointerDown);
     dlg.overlay.addEventListener('click', onDialogClick);
     $d('ad-cancel').addEventListener('click', () => closeDialog(true));
+    // The add dialog takes over when it is ready (openDialog closes this one), so focus is never left on nothing.
+    if (a.another) $d('ad-another').addEventListener('click', () => a.another.run());
+    if (a.toCard) {
+      $d('ad-tocard').addEventListener('click', () => {
+        const run = a.toCard.run;
+        closeDialog(false); // focus goes to the card instead
+        run();
+      });
+    }
 
     const form = dlg.overlay.querySelector('form');
     const date = edit ? $d('ad-date') : null;
@@ -306,8 +339,18 @@ const BookingBlock = (() => {
     };
     const dateValue = () => (edit ? (C.isDate(date.value) ? date.value : null) : v.date);
     const status = () => form.elements['ad-status'].value || NEW_STATUS;
+    const timeErr = $d('ad-time-err');
+    /* The server takes any pair, and days saved before this check may hold the
+       same time twice: those re-save as they are until their times are touched. */
+    const keptTimes = () => edit && start.value === (v.startTime || '') && end.value === (v.endTime || '');
+    const sameTime = () => Boolean(start.value) && start.value === end.value && !keptTimes();
+    // The overnight line follows the times as they're typed; the same-time error clears once they differ.
     const overnight = () => {
       $d('ad-overnight').hidden = !(start.value && end.value && end.value < start.value);
+      if (!timeErr.hidden && !sameTime()) {
+        timeErr.hidden = true;
+        end.removeAttribute('aria-invalid');
+      }
     };
     applyInfo(a.info);
     overnight();
@@ -341,6 +384,12 @@ const BookingBlock = (() => {
       if (date && date.validity && date.validity.badInput) {
         date.setAttribute('aria-invalid', 'true');
         date.focus();
+        return;
+      }
+      if (sameTime()) {
+        timeErr.hidden = false;
+        end.setAttribute('aria-invalid', 'true');
+        end.focus();
         return;
       }
       const pick = dlg.onPick;
@@ -431,6 +480,13 @@ const BookingBlock = (() => {
     const $ = (id) => slot.querySelector('#' + id);
     const alive = () => slot.isConnected && Boolean($('booking-cards'));
     const byId = (id) => days.find((d) => d.id === id);
+    const cardEl = (id) => $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+
+    /* A card just added or saved pulses once (flash), so the eye finds where it
+       landed in date order. A repaint mid-way (a month's fetch after a move)
+       rebuilds the card; the new one carries on from the same point. */
+    let pulse = null; // { id, at }
+    const pulsing = (id) => Boolean(pulse) && pulse.id === id && Date.now() - pulse.at < PULSE_MS;
 
     // ── What other projects have booked ───────────────────────────────────────
 
@@ -584,7 +640,7 @@ const BookingBlock = (() => {
        keystroke in its note never re-renders the field it is typed in. */
     function updateCard(li, day) {
       const k = 'bd-' + day.id;
-      li.className = 'day-card is-' + day.status + (day.id === targetId ? ' is-target' : '');
+      li.className = 'day-card is-' + day.status + (day.id === targetId ? ' is-target' : '') + (pulsing(day.id) ? ' is-new' : '');
       const chip = li.querySelector('.status-chip');
       if (chip) chip.outerHTML = C.statusChip(day.status);
 
@@ -640,6 +696,7 @@ const BookingBlock = (() => {
       list.innerHTML = days.map((d, i) => cardMarkup(d, i + 1)).join('');
       list.querySelectorAll('[data-day-id]').forEach((li) => {
         updateCard(li, byId(li.dataset.dayId));
+        if (pulsing(li.dataset.dayId)) li.style.animationDelay = pulse.at - Date.now() + 'ms';
         const items = itemsFor(li.dataset.dayId);
         if (items) li.querySelector('.day-items-slot').appendChild(items);
       });
@@ -649,20 +706,31 @@ const BookingBlock = (() => {
     }
 
     function focusCard(id, f) {
-      const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+      const li = cardEl(id);
       if (!li) return;
       const el = li.querySelector('[data-f="' + f + '"], [data-act="' + f + '"]') || li.querySelector('[data-act="more"]');
       el.focus();
     }
 
-    // The card's "Add … items" button (the editor's .day-menu-btn), scrolled into view.
+    // The card's "+ Add service item" (the editor's .day-menu-btn), scrolled into view.
     function focusItems(id) {
-      const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+      const li = cardEl(id);
       if (!li) return;
       const btn = li.querySelector('.day-menu-btn');
       if (!btn) return focusCard(id, 'more');
-      li.scrollIntoView({ block: 'nearest' });
+      li.scrollIntoView({ block: 'nearest', behavior: LSCUtil.reducedMotion() ? 'auto' : 'smooth' });
       btn.focus({ preventScroll: true });
+    }
+
+    // Start the pulse (booking.css .is-new) on a card; updateCard and paintCards keep it going.
+    function flash(id) {
+      pulse = { id, at: Date.now() };
+      const li = cardEl(id);
+      if (!li) return;
+      li.classList.remove('is-new');
+      li.style.animationDelay = '';
+      void li.offsetWidth; // restart on a second save in a row
+      li.classList.add('is-new');
     }
 
     function calendarDays() {
@@ -726,10 +794,12 @@ const BookingBlock = (() => {
         size: LSCUtil.readPref(CAL_SIZE_KEY, ['full'], 'compact'),
         onSizeChange: (size) => LSCUtil.savePref(CAL_SIZE_KEY, size),
         onRangeChange: (r) => load(r.from, r.to, { google: true }),
-        onDateActivate: (date, ctx) => addOn(date, ctx.trigger),
+        // ctx.opener finds the date's cell (or list line) again after the calendar redraws.
+        onDateActivate: (date, ctx) => pickDate(date, ctx.opener),
         onTileActivate: (day, ctx) => {
-          if (day.estimateId === ownId) return focusCard(day.id, 'more');
-          addOn(day.date, ctx.trigger); // the dialog says whose it is (D23)
+          // This estimate's tile (or its line in the list) is that very day.
+          if (day.estimateId === ownId) return editDay(day.id, { from: ctx.opener });
+          pickDate(day.date, ctx.opener); // the dialog says whose it is (D23)
         },
         // Only this estimate's rentals have somewhere to go; another's is named in the list (D84).
         rentalActionable: (r) => r.estimateId === ownId,
@@ -766,6 +836,16 @@ const BookingBlock = (() => {
 
     // ── Adding ────────────────────────────────────────────────────────────────
 
+    /* A date on the calendar: a day this estimate already has there opens for
+       editing (its first, if there are two; their tiles or list lines reach
+       each), with a way to add another. Any other date adds one. `from` is the
+       calendar's opener, where Esc, Cancel or the backdrop sends focus. */
+    function pickDate(date, from) {
+      const own = days.find((d) => d.date === date);
+      if (own) editDay(own.id, { from });
+      else addOn(date, from);
+    }
+
     async function addOn(date, trigger) {
       await ensureCovered([date]);
       if (!alive()) return;
@@ -795,6 +875,7 @@ const BookingBlock = (() => {
           onChange();
           // The new card in date order, focus on adding its items (production-day-booking brief).
           focusItems(day.id);
+          flash(day.id);
           $('booking-live').textContent = WORD[status] + ' day added, ' + C.longDate(date, LSCUtil.today()) + '.';
         }
       );
@@ -813,7 +894,7 @@ const BookingBlock = (() => {
 
     const cards = $('booking-cards');
     const moreBtn = (id) => {
-      const li = cards.querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+      const li = cardEl(id);
       return li && li.querySelector('[data-act="more"]');
     };
 
@@ -835,13 +916,19 @@ const BookingBlock = (() => {
 
     /* Edit day: the add dialog with the day's values and a Date field. A new
        date is checked as it is picked; Save re-sorts the cards and, for a
-       moved day, takes the calendar to it. */
+       moved day, takes the calendar to it. From a card's ⋯, focus goes back to
+       that ⋯. From the calendar (`opts.from`, calOpener), it goes back to the
+       calendar, on the day's date after a move, so dates can be worked through
+       there; the dialog also offers a second day on the date clicked, and the
+       way down to the day's items (Go to its items). */
     async function editDay(id, opts) {
       const day = byId(id);
       if (!day) return;
       if (day.date) await ensureCovered([day.date]);
       if (!alive() || !byId(id)) return;
       const n = days.indexOf(day) + 1;
+      const from = opts && opts.from;
+      const picked = day.date;
       openDialog(
         {
           mode: 'edit',
@@ -853,8 +940,12 @@ const BookingBlock = (() => {
             if (values.date) await ensureCovered([values.date]);
             return infoFor(day, values);
           },
+          another: from && picked
+            ? { label: '+ Another day on ' + short(picked), run: () => addOn(picked, from) }
+            : null,
+          toCard: from ? { label: 'Go to its items', run: () => focusItems(id) } : null,
         },
-        () => moreBtn(id),
+        from || (() => moreBtn(id)),
         (v) => {
           if (!alive() || !byId(id)) return;
           const moved = v.date !== day.date;
@@ -862,9 +953,17 @@ const BookingBlock = (() => {
           days = sortDays(days);
           paint();
           onChange();
-          focusCard(id, 'more');
+          flash(id);
           $('booking-live').textContent = titleOf(day, days.indexOf(day) + 1) + ' saved: ' +
             C.timeText(day, true) + ', ' + WORD[day.status].toLowerCase() + '.';
+          if (from && cal) {
+            if (moved && day.date) cal.select(day.date); // no Go-to-date wash; its month fetch follows from the move
+            const back = moved ? null : from();
+            if (back && back.isConnected) back.focus();
+            else cal.focus();
+            return;
+          }
+          focusCard(id, 'more');
           if (moved && day.date) {
             ensureCovered([day.date]).then(() => {
               if (alive() && cal) cal.goTo(day.date);
@@ -1043,7 +1142,7 @@ const BookingBlock = (() => {
         const day = days.find((d) => d.id === id);
         if (!day) return;
         day.trip = trip || null;
-        const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+        const li = cardEl(id);
         if (li) updateCard(li, day); // its trip summary
         onChange();
       },
@@ -1051,7 +1150,7 @@ const BookingBlock = (() => {
       /** Open the block and bring a day's card into view; the caller moves focus. */
       showDay(id) {
         reveal();
-        const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+        const li = cardEl(id);
         if (li) li.scrollIntoView({ block: 'nearest' });
         return li;
       },

@@ -67,7 +67,6 @@
 const TripPlanner = (() => {
   const { esc } = LSCUtil;
   const PHONE = window.matchMedia('(max-width: 767px)');
-  const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)');
   const MAX_DESTINATIONS = 23; // days.js MAX_TRIP_DESTINATIONS: Google's waypoint limit
   const SUGGEST_MS = 250;
   const MIN_QUERY = 3; // fewer letters suggest the whole country, and each request is billed
@@ -826,7 +825,7 @@ const TripPlanner = (() => {
       let points = cells.filter((c) => c.role !== 'return' && isPlaced(c)).map((c) => ({ lat: c.lat, lng: c.lng }));
       const trip = tripOf(cells, base);
       if (points.length > 1 && base && base.polyline && fits(trip)) points = points.concat(LSCMaps.decode(base.polyline));
-      LSCMaps.show(map, points, { animate: animate && !REDUCED.matches });
+      LSCMaps.show(map, points, { animate: animate && !LSCUtil.reducedMotion() });
     }
 
     /* The pins, redrawn whole: there are at most 25. */
@@ -1044,7 +1043,7 @@ const TripPlanner = (() => {
       drawPending();
       if (mapReady && !place.looking) {
         const at = { lat: place.lat, lng: place.lng };
-        if (REDUCED.matches) map.setCenter(at);
+        if (LSCUtil.reducedMotion()) map.setCenter(at);
         else map.panTo(at);
         if ((map.getZoom() || 0) < 14) map.setZoom(15);
       }

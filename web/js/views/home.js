@@ -129,7 +129,9 @@ const HomeView = (() => {
     o.innerHTML = '';
     document.removeEventListener('keydown', onPopKeydown);
     o.removeEventListener('click', onPopClick);
-    if (returnFocus && pop.opener && pop.opener.isConnected) pop.opener.focus();
+    // The calendar's opener finds the date again after a render; the week view hands over the element.
+    const back = typeof pop.opener === 'function' ? pop.opener() : pop.opener;
+    if (returnFocus && back && back.isConnected) back.focus();
     pop.opener = null;
   }
 
@@ -261,7 +263,7 @@ const HomeView = (() => {
         today,
         selected: anchor || today,
         onRangeChange: (range) => loadRange(range, target, (target.label = 'this month')),
-        onTileActivate: (day, { trigger }) => openPop(day, trigger),
+        onTileActivate: (day, { opener }) => openPop(day, opener),
       });
       target.apply = (days, rentals) => {
         cal.setDays(days);
@@ -430,7 +432,7 @@ const HomeView = (() => {
       const el = root.querySelector(next === 'full' ? '#dash-cal-close' : '#dash-cal-open');
       if (el) el.focus();
     };
-    const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const still = LSCUtil.reducedMotion();
     if (typeof document.startViewTransition === 'function' && !still) {
       // The cards carry view-transition names only while they move (home.css).
       const dash = root.querySelector('.dash');

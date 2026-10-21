@@ -264,6 +264,22 @@
 #modal-add-day .modal-title {
   margin-bottom: 14px;
 }
+/* Edit from the calendar: the eyebrow, and "Go to its items ↓" on its right,
+   the way through to the day's card. Text-only, so its words meet the edge. */
+.ad-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: 4px;
+}
+.ad-head .ad-eyebrow {
+  margin-bottom: 0;
+}
+.ad-tocard {
+  flex-shrink: 0;
+  margin-right: calc(-1 * var(--space-4));
+}
 .ad-msgs {
   display: flex;
   flex-direction: column;
@@ -424,8 +440,28 @@
   margin: 0 3px;
   background: var(--cal-proposed);
 }
+/* Bump out the same as bump in, said after Save is pressed (task 6). */
+.ad-err {
+  margin-top: var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--err-text);
+}
+.ad-err[hidden],
+.ad-overnight[hidden] {
+  display: none;
+}
+.ad-time input[aria-invalid='true'] {
+  border-color: var(--err-border);
+}
 #modal-add-day .modal-actions .btn {
   min-height: var(--touch-min);
+}
+/* "+ Another day on Sat 3 Oct" (edit from the calendar): its own row on the
+   sheet, then to the left of Cancel and Save, apart from the pair. */
+.ad-another {
+  flex: 1 0 100%;
+  justify-content: center;
 }
 @media (min-width: 768px) {
   .ad-time input {
@@ -437,6 +473,11 @@
   }
   #modal-add-day .modal-actions .btn {
     min-height: var(--control-h);
+  }
+  .ad-another {
+    flex: 0 0 auto;
+    margin-right: auto;
+    margin-left: calc(-1 * var(--space-4)); /* text-only: its words line up with the form's edge */
   }
 }
 
@@ -654,6 +695,26 @@
 /* The card the menu is adding to (the brief's B2 Key Interactions 1). */
 .day-card.is-target {
   box-shadow: 0 0 0 2px var(--accent);
+}
+/* A day just added or saved (task 6): one terracotta ring that holds, then
+   fades, so the eye finds where it landed. Gone under reduced motion; the
+   focus ring and the live region still say it. */
+.day-card.is-new {
+  animation: day-arrive 1.6s var(--easing-out) 1;
+}
+@keyframes day-arrive {
+  0%,
+  35% {
+    box-shadow: 0 0 0 2px var(--color-accent-mark);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .day-card.is-new {
+    animation: none;
+  }
 }
 
 .day-menu-btn {
