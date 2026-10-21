@@ -156,7 +156,10 @@ const BookingBlock = (() => {
     return sameYear ? a + ' – ' + b + yr(last) : a + yr(first) + ' – ' + b + yr(last);
   }
 
-  // ── The add-day dialog: one overlay for the page, like the cost breakdown's ──
+  // ── The day dialog: one overlay for the page, like the cost breakdown's ──
+  /* Adds a day (a date on the calendar) or edits one (the card's Edit day).
+     The same form both ways: edit adds a Date field, since a card no longer
+     has one (production-day-booking task 4, quiet day cards). */
 
   const dlg = { overlay: null, opener: null, onPick: null };
   const $d = (id) => dlg.overlay.querySelector('#' + id);
@@ -178,22 +181,52 @@ const BookingBlock = (() => {
     o.innerHTML = '';
     document.removeEventListener('keydown', onDialogKeydown);
     o.removeEventListener('click', onDialogClick);
-    if (returnFocus && dlg.opener && dlg.opener.isConnected) dlg.opener.focus();
+    // The opener may be a function: a card's ⋯ is redrawn whenever the cards are.
+    const back = typeof dlg.opener === 'function' ? dlg.opener() : dlg.opener;
+    if (returnFocus && back && back.isConnected) back.focus();
     dlg.opener = null;
     dlg.onPick = null;
   }
 
+  /* What the date's other bookings mean for the day, as lines over the form.
+     info: { confirmed, pencilled, unknown, ownAlready, locked } (locked: a
+     specification note is needed to book it). */
+  function dialogMsgs(date, info) {
+    if (!date) return '';
+    const msgs = [];
+    if (info.locked) {
+      msgs.push('<p class="ad-msg is-lock">' + esc(short(date)) + ' is confirmed for <b>' +
+        esc(upidList(info.confirmed)) + '</b>. Write a specification note to book it anyway.</p>');
+    } else if (info.confirmed.length) {
+      msgs.push('<p class="ad-msg is-warn">Since confirmed for <b>' + esc(upidList(info.confirmed)) +
+        '</b>. This day was booked first.</p>');
+    }
+    if (info.pencilled.length) {
+      msgs.push('<p class="ad-msg is-warn">Already pencilled for <b>' + esc(upidList(info.pencilled)) +
+        '</b>.' + (info.locked || info.confirmed.length ? '' : ' Add anyway?') + '</p>');
+    }
+    if (info.unknown) {
+      msgs.push('<p class="ad-msg">Other projects’ bookings couldn’t be checked just now. ' +
+        'The date is checked again when you save.</p>');
+    }
+    if (info.ownAlready) {
+      msgs.push('<p class="ad-msg">This estimate already has a day on ' + esc(short(date)) + '.</p>');
+    }
+    return msgs.join('');
+  }
+
+  const dialogTitle = (date) => (date ? C.longDate(date, LSCUtil.today()) : 'Date TBC');
+
   /**
    * @param {object} a
-   * @param {string} a.date
-   * @param {Array} a.confirmed — other projects' confirmed days on that date
-   * @param {Array} a.pencilled — and pencilled
-   * @param {boolean} a.unknown — the check couldn't be made (fetch failed)
-   * @param {boolean} a.ownAlready — this estimate already has a day that date
-   * @param {object} a.times — { startTime, endTime } to start the fields on (the last day's)
+   * @param {string} a.mode — 'add' (a date picked on the calendar) or 'edit' (a card's Edit day)
+   * @param {string} a.eyebrow — the line over the title ("Add a production day", "Edit Day 2")
+   * @param {object} a.values — { date, status, startTime, endTime, overrideNote } to start on
+   * @param {object} a.info — what the starting date's other bookings mean (dialogMsgs)
+   * @param {Function} [a.recheck] — edit: (values) → Promise<info> when the date or status changes
+   * @param {boolean} [a.focusDate] — edit: start on the date (a fresh duplicate has none)
    *
-   * One form (production-day-booking task 2): bump in, bump out and status,
-   * then Add day. onPick gets { status, startTime, endTime, overrideNote }.
+   * onPick gets { date, status, startTime, endTime, overrideNote }.
    */
   function openDialog(a, opener, onPick) {
     dlg.overlay = document.getElementById('modal-add-day');
@@ -201,55 +234,42 @@ const BookingBlock = (() => {
     closeDialog(false);
     dlg.opener = opener || null;
     dlg.onPick = onPick;
-    const times = a.times || {};
-
-    const locked = a.confirmed.length > 0;
-    const msgs = [];
-    if (locked) {
-      msgs.push('<p class="ad-msg is-lock">' + esc(short(a.date)) + ' is confirmed for <b>' +
-        esc(upidList(a.confirmed)) + '</b>. Write a specification note to book it anyway.</p>');
-    }
-    if (a.pencilled.length) {
-      msgs.push('<p class="ad-msg is-warn">Already pencilled for <b>' + esc(upidList(a.pencilled)) +
-        '</b>. Add anyway?</p>');
-    }
-    if (a.unknown) {
-      msgs.push('<p class="ad-msg">Other projects’ bookings couldn’t be checked just now. ' +
-        'The date is checked again when you save.</p>');
-    }
-    if (a.ownAlready) {
-      msgs.push('<p class="ad-msg">This estimate already has a day on ' + esc(short(a.date)) + '.</p>');
-    }
+    const edit = a.mode === 'edit';
+    const v = a.values;
 
     const time = (f, label) =>
       '<div class="ad-time"><label for="ad-' + f + '">' + label + '</label>' +
-      '<input id="ad-' + f + '" type="time" class="text-inp" value="' + esc(times[f] || '') + '"' +
+      '<input id="ad-' + f + '" type="time" class="text-inp" value="' + esc(v[f] || '') + '"' +
       ' aria-describedby="ad-overnight"></div>';
 
     dlg.overlay.innerHTML =
       '<form class="modal-box ad-box" role="dialog" aria-modal="true" aria-labelledby="ad-title"' +
-      (msgs.length ? ' aria-describedby="ad-msgs"' : '') + ' novalidate>' +
-      '<p class="ad-eyebrow">Add a production day</p>' +
-      '<h2 class="modal-title" id="ad-title">' + esc(C.longDate(a.date, LSCUtil.today())) + '</h2>' +
-      (msgs.length ? '<div class="ad-msgs" id="ad-msgs">' + msgs.join('') + '</div>' : '') +
-      (locked
-        ? '<div class="field ad-note"><label for="ad-note">Specification note</label>' +
-          '<input id="ad-note" type="text" maxlength="' + MAX_NOTE + '" placeholder="e.g. Subcontractor shooting"' +
-          ' aria-describedby="ad-msgs ad-note-hint">' +
-          '<span class="ad-note-hint" id="ad-note-hint">Kept with the day. Needed before you can add it.</span></div>'
+      ' aria-describedby="ad-msgs" novalidate>' +
+      '<p class="ad-eyebrow">' + esc(a.eyebrow) + '</p>' +
+      '<h2 class="modal-title" id="ad-title">' + esc(dialogTitle(v.date)) + '</h2>' +
+      (edit
+        ? '<div class="field ad-date"><label for="ad-date">Date</label>' +
+          '<input id="ad-date" type="date" class="text-inp" value="' + esc(v.date || '') + '"' +
+          ' aria-describedby="ad-date-hint">' +
+          '<span class="ad-hint" id="ad-date-hint">Moving it re-checks other bookings.</span></div>'
         : '') +
+      '<div class="ad-msgs" id="ad-msgs" aria-live="polite">' + dialogMsgs(v.date, a.info) + '</div>' +
+      '<div class="field ad-note" hidden><label for="ad-note">Specification note</label>' +
+      '<input id="ad-note" type="text" class="text-inp" maxlength="' + MAX_NOTE + '" placeholder="e.g. Subcontractor shooting"' +
+      ' value="' + esc(v.overrideNote || '') + '" aria-describedby="ad-msgs ad-note-hint">' +
+      '<span class="ad-hint" id="ad-note-hint">Kept with the day. Needed to book a date confirmed elsewhere.</span></div>' +
       '<div class="ad-times">' + time('startTime', 'Bump in') + time('endTime', 'Bump out') + '</div>' +
       '<p class="ad-overnight" id="ad-overnight" hidden>Ends the next day. The shoot runs past midnight and stays on its start date.</p>' +
       '<fieldset class="ad-status"><legend>Status</legend><div class="ad-status-opts">' +
       STATUSES.map(([s, w]) =>
         '<label class="ad-opt is-' + s + '"><input type="radio" name="ad-status" value="' + s + '"' +
-        (s === NEW_STATUS ? ' checked' : '') + '>' +
+        (s === v.status ? ' checked' : '') + '>' +
         '<span class="ad-swatch" aria-hidden="true"></span><span>' + w + '</span></label>'
       ).join('') +
       '</div></fieldset>' +
       '<div class="modal-actions">' +
       '<button type="button" class="btn btn-ghost" id="ad-cancel">Cancel</button>' +
-      '<button type="submit" class="btn btn-primary" id="ad-submit"' + (locked ? ' disabled' : '') + '>Add day</button>' +
+      '<button type="submit" class="btn btn-primary" id="ad-submit">' + (edit ? 'Save day' : 'Add day') + '</button>' +
       '</div>' +
       '</form>';
 
@@ -259,32 +279,78 @@ const BookingBlock = (() => {
     $d('ad-cancel').addEventListener('click', () => closeDialog(true));
 
     const form = dlg.overlay.querySelector('form');
-    const note = locked ? $d('ad-note') : null;
+    const date = edit ? $d('ad-date') : null;
+    const noteBox = dlg.overlay.querySelector('.ad-note');
+    const note = $d('ad-note');
     const start = $d('ad-startTime');
     const end = $d('ad-endTime');
     const submit = $d('ad-submit');
+    let locked = false;
+
+    // The note is asked for on a locked date, and kept on show once a day has one.
+    const gate = () => {
+      const empty = note.value.trim() === '';
+      submit.disabled = locked && empty;
+      if (locked && empty) note.setAttribute('aria-invalid', 'true');
+      else note.removeAttribute('aria-invalid');
+    };
+    const applyInfo = (info) => {
+      locked = Boolean(info.locked);
+      $d('ad-msgs').innerHTML = dialogMsgs(dateValue(), info);
+      noteBox.hidden = !(locked || (edit && v.overrideNote));
+      gate();
+    };
+    const dateValue = () => (edit ? (C.isDate(date.value) ? date.value : null) : v.date);
+    const status = () => form.elements['ad-status'].value || NEW_STATUS;
     const overnight = () => {
       $d('ad-overnight').hidden = !(start.value && end.value && end.value < start.value);
     };
+    applyInfo(a.info);
     overnight();
     start.addEventListener('input', overnight);
     end.addEventListener('input', overnight);
-    if (note) note.addEventListener('input', () => (submit.disabled = note.value.trim() === ''));
+    note.addEventListener('input', gate);
+
+    // Edit: a new date (or a day made confirmed) is checked again; a slow reply for an old value is dropped.
+    let checkSeq = 0;
+    const recheck = async () => {
+      if (!a.recheck) return;
+      const n = ++checkSeq;
+      const info = await a.recheck({ date: dateValue(), status: status() });
+      if (n === checkSeq && form.isConnected) applyInfo(info);
+    };
+    if (date) {
+      date.addEventListener('change', () => {
+        date.removeAttribute('aria-invalid');
+        $d('ad-title').textContent = dialogTitle(dateValue());
+        recheck();
+      });
+    }
+    form.addEventListener('change', (e) => {
+      if (e.target.name === 'ad-status') recheck();
+    });
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       if (submit.disabled) return;
+      // A half-typed date reads as '' (badInput): don't take it as Date TBC.
+      if (date && date.validity && date.validity.badInput) {
+        date.setAttribute('aria-invalid', 'true');
+        date.focus();
+        return;
+      }
       const pick = dlg.onPick;
       const chosen = {
-        status: form.elements['ad-status'].value || NEW_STATUS,
+        date: dateValue(),
+        status: status(),
         startTime: start.value,
         endTime: end.value,
-        overrideNote: note ? note.value.trim() : '',
+        overrideNote: noteBox.hidden ? '' : note.value.trim(),
       };
-      closeDialog(false); // focus goes to the new card instead
+      closeDialog(false); // focus goes to the card instead
       if (pick) pick(chosen);
     });
-    (note || start).focus();
+    (a.focusDate && date ? date : locked ? note : start).focus();
   }
 
   // ── The block ──────────────────────────────────────────────────────────────
@@ -473,48 +539,36 @@ const BookingBlock = (() => {
       return ['', ''];
     }
 
+    /* A quiet card (production-day-booking task 4): the date, its bump in to
+       bump out and its status in one head, with a ⋯ for Edit day, Duplicate
+       and Remove; then the day's items. Clash, note, trip and Google lines
+       appear only when there is something to say. Its date, times and status
+       are edited in the day dialog (editDay). */
     function cardMarkup(day, n) {
       const k = 'bd-' + day.id;
       const title = titleOf(day, n);
-      const field = (label, control, extra) =>
-        '<div class="day-field' + (extra || '') + '"><label for="' + k + '-' + label.toLowerCase() + '">' + label + '</label>' + control + '</div>';
       return (
         '<li class="day-card is-' + day.status + (day.id === targetId ? ' is-target' : '') + '" data-day-id="' + esc(day.id) + '">' +
-        '<div class="day-card-in" role="group" aria-labelledby="' + k + '-t">' +
+        '<div class="day-card-in" role="group" aria-labelledby="' + k + '-t ' + k + '-when">' +
         '<div class="day-card-head">' +
         '<span class="day-card-title" id="' + k + '-t">' + esc(title) + '</span>' +
+        '<span class="day-when" id="' + k + '-when"></span>' +
         C.statusChip(day.status) +
-        '<button type="button" class="btn btn-ghost btn-sm day-dup" data-act="duplicate" aria-label="Duplicate ' + esc(title) + '">Duplicate day</button>' +
-        '<button type="button" class="del-btn day-card-del" data-act="remove" aria-label="Remove ' + esc(title) + '">×</button>' +
+        '<button type="button" class="btn btn-quiet btn-sm day-more" data-act="more" aria-haspopup="menu" aria-expanded="false"' +
+        ' aria-label="More for ' + esc(title) + '"><span aria-hidden="true">⋯</span></button>' +
         '</div>' +
-        '<div class="day-fields">' +
-        field('Date',
-          '<input type="date" class="text-inp" id="' + k + '-date" data-f="date" value="' + esc(day.date || '') + '"' +
-          ' aria-describedby="' + k + '-date-h">' +
-          '<span class="day-hint" id="' + k + '-date-h">' + (day.date ? 'Moving it re-checks other bookings.' : 'Leave empty while the date is TBC.') + '</span>',
-          ' day-field-date') +
-        field('Status',
-          '<select class="svc-select" id="' + k + '-status" data-f="status">' +
-          STATUSES.map(([s, w]) => '<option value="' + s + '"' + (s === day.status ? ' selected' : '') + '>' + w + '</option>').join('') +
-          '</select>') +
-        field('Start', '<input type="time" class="text-inp" id="' + k + '-start" data-f="startTime" value="' + esc(day.startTime) + '"' +
-          ' aria-describedby="' + k + '-on">') +
-        field('End', '<input type="time" class="text-inp" id="' + k + '-end" data-f="endTime" value="' + esc(day.endTime) + '"' +
-          ' aria-describedby="' + k + '-on">') +
-        '</div>' +
-        '<p class="day-overnight" id="' + k + '-on" hidden>Ends next day: the shoot runs past midnight and belongs to its start date.</p>' +
         '<p class="day-clash" id="' + k + '-clash" hidden></p>' +
+        '<div class="day-field day-note" hidden>' +
+        '<label for="' + k + '-note">Specification note</label>' +
+        '<input type="text" class="text-inp" id="' + k + '-note" data-f="overrideNote" maxlength="' + MAX_NOTE + '"' +
+        ' placeholder="e.g. Subcontractor shooting" value="' + esc(day.overrideNote) + '" aria-describedby="' + k + '-clash">' +
+        '</div>' +
         '<button type="button" class="btn btn-quiet btn-sm day-trip" data-act="trip" hidden></button>' +
         // A day Google didn't take (task 14). Only a failure is marked: a write that is just waiting is gone in seconds.
         '<p class="day-sync" id="' + k + '-sync" hidden>' +
         '<span class="day-sync-text">Not in Google Calendar yet: Google didn’t take this day.</span>' +
         '<button type="button" class="btn btn-quiet btn-sm day-sync-retry" data-act="sync-retry" data-write>Try again</button>' +
         '</p>' +
-        '<div class="day-field day-note" hidden>' +
-        '<label for="' + k + '-note">Specification note</label>' +
-        '<input type="text" class="text-inp" id="' + k + '-note" data-f="overrideNote" maxlength="' + MAX_NOTE + '"' +
-        ' placeholder="e.g. Subcontractor shooting" value="' + esc(day.overrideNote) + '" aria-describedby="' + k + '-clash">' +
-        '</div>' +
         // The day's production items: the editor's element, moved in by paintCards.
         '<div class="day-items-slot"></div>' +
         '</div>' +
@@ -523,15 +577,17 @@ const BookingBlock = (() => {
     }
 
     /* Everything on a card that follows from its values, updated in place so a
-       keystroke never re-renders the field it is typed in. */
+       keystroke in its note never re-renders the field it is typed in. */
     function updateCard(li, day) {
       const k = 'bd-' + day.id;
       li.className = 'day-card is-' + day.status + (day.id === targetId ? ' is-target' : '');
       const chip = li.querySelector('.status-chip');
       if (chip) chip.outerHTML = C.statusChip(day.status);
 
-      const overnight = Boolean(day.startTime && day.endTime && day.endTime < day.startTime);
-      li.querySelector('#' + CSS.escape(k + '-on')).hidden = !overnight;
+      // "07:00–18:00", "07:00–02:00 (ends next day)", "No times set" (calendar.js, as the date's list says it).
+      const when = li.querySelector('.day-when');
+      when.textContent = C.timeText(day);
+      when.classList.toggle('is-unset', !day.startTime && !day.endTime);
 
       const [text, kind] = clashLine(day);
       const clash = li.querySelector('#' + CSS.escape(k + '-clash'));
@@ -591,7 +647,7 @@ const BookingBlock = (() => {
     function focusCard(id, f) {
       const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
       if (!li) return;
-      const el = li.querySelector('[data-f="' + f + '"], [data-act="' + f + '"]') || li.querySelector('[data-f="date"]');
+      const el = li.querySelector('[data-f="' + f + '"], [data-act="' + f + '"]') || li.querySelector('[data-act="more"]');
       el.focus();
     }
 
@@ -600,7 +656,7 @@ const BookingBlock = (() => {
       const li = $('booking-cards').querySelector('[data-day-id="' + CSS.escape(id) + '"]');
       if (!li) return;
       const btn = li.querySelector('.day-menu-btn');
-      if (!btn) return focusCard(id, 'startTime');
+      if (!btn) return focusCard(id, 'more');
       li.scrollIntoView({ block: 'nearest' });
       btn.focus({ preventScroll: true });
     }
@@ -666,7 +722,7 @@ const BookingBlock = (() => {
         onRangeChange: (r) => load(r.from, r.to, { google: true }),
         onDateActivate: (date, ctx) => addOn(date, ctx.trigger),
         onTileActivate: (day, ctx) => {
-          if (day.estimateId === ownId) return focusCard(day.id, 'date');
+          if (day.estimateId === ownId) return focusCard(day.id, 'more');
           addOn(day.date, ctx.trigger); // the dialog says whose it is (D23)
         },
         // Only this estimate's rentals have somewhere to go; another's is named in the list (D84).
@@ -708,15 +764,21 @@ const BookingBlock = (() => {
       await ensureCovered([date]);
       if (!alive()) return;
       const list = others.get(date) || [];
+      const confirmed = list.filter((d) => d.status === 'confirmed');
+      // A shoot's call times are usually the same each day: start on the last ones set.
+      const last = days.slice().reverse().find((d) => d.startTime || d.endTime) || {};
       openDialog(
         {
-          date,
-          confirmed: list.filter((d) => d.status === 'confirmed'),
-          pencilled: list.filter((d) => d.status === 'pencilled'),
-          unknown: !isCovered(date),
-          ownAlready: days.some((d) => d.date === date),
-          // A shoot's call times are usually the same each day: start on the last ones set.
-          times: days.slice().reverse().find((d) => d.startTime || d.endTime) || {},
+          mode: 'add',
+          eyebrow: 'Add a production day',
+          values: { date, status: NEW_STATUS, startTime: last.startTime || '', endTime: last.endTime || '', overrideNote: '' },
+          info: {
+            confirmed,
+            pencilled: list.filter((d) => d.status === 'pencilled'),
+            unknown: !isCovered(date),
+            ownAlready: days.some((d) => d.date === date),
+            locked: confirmed.length > 0,
+          },
         },
         trigger,
         ({ status, startTime, endTime, overrideNote }) => {
@@ -744,59 +806,75 @@ const BookingBlock = (() => {
     // ── Editing a card ────────────────────────────────────────────────────────
 
     const cards = $('booking-cards');
+    const moreBtn = (id) => {
+      const li = cards.querySelector('[data-day-id="' + CSS.escape(id) + '"]');
+      return li && li.querySelector('[data-act="more"]');
+    };
 
-    cards.addEventListener('input', (e) => {
-      const f = e.target.dataset.f;
-      const li = e.target.closest('[data-day-id]');
-      if (!li || !(f === 'startTime' || f === 'endTime' || f === 'overrideNote')) return;
-      const day = byId(li.dataset.dayId);
-      day[f] = e.target.value;
-      updateCard(li, day);
-      if (cal) cal.setDays(calendarDays()); // the list under it shows times and notes
-      onChange();
-    });
+    /* What a day's dialog says about a date: the card's own lock rule
+       (isLocked) run on the values being edited, without the note, since the
+       note is what the dialog asks for. */
+    function infoFor(day, values) {
+      const cand = Object.assign({}, day, { date: values.date || null, status: values.status, overrideNote: '' });
+      if (!cand.date) return { confirmed: [], pencilled: [], unknown: false, ownAlready: false, locked: false };
+      const c = clashOf(cand);
+      return {
+        confirmed: forced.has(cand.date) && !c.confirmed.length ? [{ upid: forced.get(cand.date) }] : c.confirmed,
+        pencilled: c.pencilled,
+        unknown: !isCovered(cand.date),
+        ownAlready: days.some((d) => d !== day && d.date === cand.date),
+        locked: isLocked(cand),
+      };
+    }
 
-    cards.addEventListener('change', async (e) => {
-      const f = e.target.dataset.f;
-      const li = e.target.closest('[data-day-id]');
-      if (!li || !(f === 'date' || f === 'status')) return;
-      const day = byId(li.dataset.dayId);
-      if (f === 'status') {
-        day.status = e.target.value;
-        updateCard(li, day);
-        if (cal) cal.setDays(calendarDays());
-        paintHead();
-        onChange();
-        return;
-      }
-      // A half-typed date reads as '' here; only a whole one (or a cleared field) moves the day.
-      const value = e.target.value;
-      if (value && !C.isDate(value)) return;
-      day.date = value || null;
-      days = sortDays(days);
-      paint(); // re-sorted, re-numbered; focus stays on this card's date field
-      onChange();
-      if (day.date) {
-        await ensureCovered([day.date]);
-        if (alive() && cal) cal.goTo(day.date);
-      }
-    });
-
-    cards.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-act="trip"]');
-      if (btn) onTrip(btn.closest('[data-day-id]').dataset.dayId);
-      const retry = e.target.closest('[data-act="sync-retry"]');
-      if (retry) onSyncRetry(retry.closest('[data-day-id]').dataset.dayId);
-    });
+    /* Edit day: the add dialog with the day's values and a Date field. A new
+       date is checked as it is picked; Save re-sorts the cards and, for a
+       moved day, takes the calendar to it. */
+    async function editDay(id, opts) {
+      const day = byId(id);
+      if (!day) return;
+      if (day.date) await ensureCovered([day.date]);
+      if (!alive() || !byId(id)) return;
+      const n = days.indexOf(day) + 1;
+      openDialog(
+        {
+          mode: 'edit',
+          eyebrow: 'Edit Day ' + n,
+          values: day,
+          info: infoFor(day, day),
+          focusDate: Boolean(opts && opts.focusDate),
+          recheck: async (values) => {
+            if (values.date) await ensureCovered([values.date]);
+            return infoFor(day, values);
+          },
+        },
+        () => moreBtn(id),
+        (v) => {
+          if (!alive() || !byId(id)) return;
+          const moved = v.date !== day.date;
+          Object.assign(day, v);
+          days = sortDays(days);
+          paint();
+          onChange();
+          focusCard(id, 'more');
+          $('booking-live').textContent = titleOf(day, days.indexOf(day) + 1) + ' saved: ' +
+            C.timeText(day, true) + ', ' + WORD[day.status].toLowerCase() + '.';
+          if (moved && day.date) {
+            ensureCovered([day.date]).then(() => {
+              if (alive() && cal) cal.goTo(day.date);
+            });
+          }
+        }
+      );
+    }
 
     /* Duplicate day (B2-5, D81): a Date TBC day straight after the source,
        Proposed as TBC days start, with the source's times, so the copy is
        the near-identical second day; the editor copies its lines
-       (onDuplicate). Focus goes to the copy's date, the field to fill next. */
-    cards.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-act="duplicate"]');
-      if (!btn) return;
-      const i = days.findIndex((d) => d.id === btn.closest('[data-day-id]').dataset.dayId);
+       (onDuplicate). Its dialog opens on the date, the field to fill next;
+       Cancel leaves the copy as Date TBC. */
+    function duplicateDay(id) {
+      const i = days.findIndex((d) => d.id === id);
       if (i === -1) return;
       const src = days[i];
       const srcTitle = titleOf(src, i + 1);
@@ -808,20 +886,19 @@ const BookingBlock = (() => {
       const n = onDuplicate(src.id, day.id);
       paint();
       onChange();
-      focusCard(day.id, 'date');
+      focusCard(day.id, 'more');
       const at = days.indexOf(day);
       $('booking-live').textContent = srcTitle + ' duplicated as ' + titleOf(day, at + 1) +
         (n ? ', with its ' + (n === 1 ? 'item' : n + ' items') : '') + '.';
-    });
+      editDay(day.id, { focusDate: true });
+    }
 
-    cards.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-act="remove"]');
-      if (!btn) return;
-      const li = btn.closest('[data-day-id]');
-      const i = days.findIndex((d) => d.id === li.dataset.dayId);
+    function removeDay(id) {
+      const i = days.findIndex((d) => d.id === id);
+      if (i === -1) return;
       const title = titleOf(days[i], i + 1);
       // Its items go with it — production, travel, crew and gear — and its trip, so the question says what.
-      const items = itemsFor(li.dataset.dayId);
+      const items = itemsFor(id);
       const n = items ? items.querySelectorAll('[data-rid]').length : 0;
       const parts = (days[i].trip ? ['trip'] : []).concat(n ? [n === 1 ? 'item' : n + ' items'] : []);
       const what = parts.length ? ' Its ' + parts.join(' and ') + (parts.length > 1 || n > 1 ? ' are' : ' is') + ' removed too.' : '';
@@ -832,8 +909,42 @@ const BookingBlock = (() => {
       $('booking-live').textContent = title + ' removed.';
       // Focus to the card that took its place, or the one before, or the calendar (where days are added).
       const next = days[i] || days[i - 1];
-      if (next) focusCard(next.id, 'remove');
+      if (next) focusCard(next.id, 'more');
       else if (cal) cal.focus();
+    }
+
+    // The note is the one field left on a card (shown only when the date needs it, or it has one).
+    cards.addEventListener('input', (e) => {
+      const li = e.target.closest('[data-day-id]');
+      if (!li || e.target.dataset.f !== 'overrideNote') return;
+      const day = byId(li.dataset.dayId);
+      day.overrideNote = e.target.value;
+      updateCard(li, day);
+      if (cal) cal.setDays(calendarDays()); // the list under it shows notes
+      onChange();
+    });
+
+    cards.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act]');
+      const li = btn && btn.closest('[data-day-id]');
+      if (!li) return;
+      const id = li.dataset.dayId;
+      if (btn.dataset.act === 'trip') onTrip(id);
+      else if (btn.dataset.act === 'sync-retry') onSyncRetry(id);
+      else if (btn.dataset.act === 'more') {
+        const day = byId(id);
+        const title = titleOf(day, days.indexOf(day) + 1);
+        const actions = { edit: () => editDay(id), duplicate: () => duplicateDay(id), remove: () => removeDay(id) };
+        LSCMenu.open(btn, {
+          label: 'More for ' + title,
+          items: [
+            { text: 'Edit day', hint: 'Date, times and status', act: 'edit' },
+            { text: 'Duplicate day', hint: 'A copy with its items', act: 'duplicate' },
+            { text: 'Remove day', danger: true, act: 'remove' },
+          ],
+          onSelect: (item) => actions[item.act](),
+        });
+      }
     });
 
     function reveal() {

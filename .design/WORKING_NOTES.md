@@ -172,6 +172,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   behind `if (!open)`. Open/close goes through `LSCPanel.setOpen`.
 - The booking block adds days only from the calendar (no button of its own); `addTbc()` survives
   only for the editor's "Add to a day ▾ → A new Date TBC day". Removing the last day focuses the calendar.
+  A card has no fields but the specification note: date, times and status change only in the day dialog
+  (`editDay`, edit mode of `openDialog`), so focus targets on a card are `[data-act="more"]`, never `[data-f="date"]`.
 - Stacked grids need `grid-template-columns: minmax(0, 1fr)`. A table that stacks on a phone needs a
   `data-label` on every cell. Prefer a class to an inline `style` where responsive rules must reach.
 - Editor equipment rows are hire or kit: read a hire row's fields through `hireRows()` and a row's cost

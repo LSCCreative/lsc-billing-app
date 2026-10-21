@@ -1219,7 +1219,7 @@ const EstimateEditor = (() => {
     panel.innerHTML =
       '<div class="day-items-bar">' +
       '<button type="button" class="btn btn-ghost btn-sm day-menu-btn" aria-expanded="false">' +
-      (off ? 'Add items' : 'Add production service items') + '</button>' +
+      (off ? 'Add items' : '+ Add service item') + '</button>' +
       '<span class="day-items-sum">' + (off ? 'Total' : 'Day total') + ' <b class="day-items-total">$0.00</b></span></div>' +
       '<p class="day-items-empty">' + (off ? 'Nothing here.' : 'Nothing on this day yet.') + '</p>' +
       DAY_GROUPS.map(([kind, label, head]) =>
@@ -2746,7 +2746,7 @@ const EstimateEditor = (() => {
       days.forEach((d) => {
         const panel = dayPanels.get(d.id);
         if (!panel) return;
-        panel.querySelector('.day-menu-btn').setAttribute('aria-label', 'Add production service items to ' + d.title);
+        panel.querySelector('.day-menu-btn').setAttribute('aria-label', 'Add service items to ' + d.title);
       });
       if (menu.target) paintMenuTitle();
     }
@@ -5400,7 +5400,7 @@ const EstimateEditor = (() => {
     }
 
     const day = options && options.focusDay ? booking.showDay(options.focusDay) : null;
-    const dayField = day && day.querySelector('[data-f="date"]');
+    const dayField = day && day.querySelector('[data-act="more"]'); // the card's ⋯: Edit day is first in it
     if (dayField) dayField.focus();
     // Job details is closed on an existing estimate: its head, whose summary names the job, takes focus.
     else if ($('ed-job-body').hidden) $('ed-job').querySelector('.panel-toggle').focus();

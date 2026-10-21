@@ -109,73 +109,64 @@
   border-color: var(--err-border);
 }
 
+/* The quiet head (production-day-booking task 4): what the day is, when it
+   runs and how sure it is, then ⋯ (Edit day, Duplicate, Remove). On a narrow
+   column the times take a line of their own under the title; once the column
+   holds them, one line. */
 .day-card-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'title chip more'
+    'when  when when';
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+  column-gap: var(--space-4);
+  row-gap: 2px;
+}
+@container days (min-width: 460px) {
+  .day-card-head {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'title when chip more';
+    column-gap: var(--space-5);
+  }
 }
 .day-card-title {
+  grid-area: title;
   font-family: 'Delight', 'Georgia', serif;
   font-weight: 700;
   font-size: 14px;
   letter-spacing: 0.02em;
   color: var(--text);
 }
-.day-card-del {
-  margin-left: auto;
-  min-width: 44px;
-  min-height: 44px;
-  font-size: 18px;
-}
-@media (min-width: 768px) {
-  .day-card-del {
-    min-width: 28px;
-    min-height: 28px;
-    font-size: 16px;
-  }
-}
-
-/* Label above field, one per row on a phone; four across once the column can
-   hold them (the editor at 768 and up). */
-.day-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-}
-@container days (min-width: 460px) {
-  .day-fields {
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
-    gap: 10px 8px;
-    align-items: start;
-  }
-}
-.day-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+.day-when {
+  grid-area: when;
   min-width: 0;
-}
-.day-field label {
+  font-family: var(--font-family-mono);
   font-size: var(--font-size-sm);
-  letter-spacing: var(--letter-spacing-normal);
+  letter-spacing: 0;
+  color: var(--color-text-secondary);
+}
+.day-when:empty {
+  display: none;
+}
+.day-when.is-unset {
   color: var(--muted);
 }
-.day-field .text-inp,
-.day-field .svc-select {
-  width: 100%;
-  max-width: none;
-  min-height: 44px;
-  font-size: 16px; /* under 16px, iOS zooms the page on focus */
-  color-scheme: dark;
+.day-card-head .status-chip {
+  grid-area: chip;
 }
-@media (min-width: 768px) {
-  .day-field .text-inp,
-  .day-field .svc-select {
-    min-height: 30px;
-    font-size: 12px;
-  }
+/* ⋯ keeps its 44px target on a phone (--control-h-sm) without making the head
+   taller: the negative margins give the height back to the card's padding. */
+.day-more {
+  grid-area: more;
+  min-width: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  margin: -8px -8px -8px 0;
+  padding: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
 }
+
 .day-hint {
   font-size: 10px;
   color: var(--muted);
@@ -187,16 +178,11 @@
   display: none;
 }
 
-.day-overnight,
 .day-clash {
   margin-top: 8px;
   font-size: 11px;
   line-height: 1.45;
 }
-.day-overnight {
-  color: var(--text);
-}
-.day-overnight[hidden],
 .day-clash[hidden] {
   display: none;
 }
@@ -307,18 +293,32 @@
 .ad-msg.is-lock b {
   color: var(--err-text);
 }
+.ad-msgs:empty {
+  display: none;
+}
+/* Edit day's Date (task 4), and the specification note: label, field, hint. */
+.ad-date,
 .ad-note {
   margin-bottom: 14px;
 }
+.ad-note[hidden] {
+  display: none;
+}
+.ad-date input,
 .ad-note input {
   min-height: 44px;
   font-size: 16px;
 }
-.ad-note-hint {
+.ad-date input {
+  font-family: var(--font-family-mono);
+  color-scheme: dark;
+}
+.ad-hint {
   font-size: 11px;
   color: var(--muted);
 }
 @media (min-width: 768px) {
+  .ad-date input,
   .ad-note input {
     min-height: 0;
     font-size: 13px;
@@ -458,7 +458,7 @@
   min-width: 0;
 }
 .day-items {
-  margin: 12px -12px -12px -16px;
+  margin: 10px -12px -12px -16px;
   border-top: 1px solid var(--border);
   background: var(--bg);
 }
@@ -649,7 +649,7 @@
   background: var(--border);
 }
 .off-day-hint {
-  margin: -4px 0 0;
+  margin: 4px 0 0;
 }
 /* The card the menu is adding to (the brief's B2 Key Interactions 1). */
 .day-card.is-target {
@@ -1088,32 +1088,6 @@
 .drop-rule {
   height: 2px;
   background: var(--accent);
-}
-
-/* Duplicate day. On a phone it has a row of its own under the head (task 33
-   DR12): beside the title, chip and × it squeezed "Day 3 — date TBC" onto
-   three lines. From 768 it sits beside Remove at the head's far end. */
-@media (max-width: 767px) {
-  .day-card-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    column-gap: 10px;
-    row-gap: 4px;
-  }
-  .day-dup {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    justify-self: start;
-    min-height: 44px;
-  }
-}
-@media (min-width: 768px) {
-  .day-dup {
-    margin-left: auto;
-  }
-  .day-dup + .day-card-del {
-    margin-left: 0;
-  }
 }
 
 /* ── Gear rentals (B2-7, D82) ─────────────────────────────────────────────────
