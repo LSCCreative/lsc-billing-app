@@ -213,7 +213,11 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   Mutation: the take-home figure put in a line's text is caught. The dataset has no saved client rows,
   so `clients.hnry_client_id` is only checked empty. Run it again on a copy of the live backup at H12._
 
-- [ ] **H11. Design review**: run /design-review against the brief for H6–H7 at 1280 / 800 / 375.
+- [x] **H11. Design review**: run /design-review against the brief for H6–H7 at 1280 / 800 / 375.
+  _Done 2026-10-23: `DESIGN_REVIEW.md` (44 captures, local only). Must fix: voiding an invoice in Hnry
+  leaves it live in Hnry and the dialog doesn't say so. Should fix: "sent" copy where Hnry locks the
+  invoice; the Balance names the deposit by the app's reference; Mark sent's fields crowded. Four
+  could-improves. **The fixes are not made yet.**_
 
 - [ ] **H12. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v20 (and v19 if still
   pending) on a copy of the backup, fetch and diff `origin/main`, NAS before Pages, credentials in the NAS
