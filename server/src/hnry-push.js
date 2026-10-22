@@ -193,8 +193,10 @@ function createHnryPusher(db, hnry, opts = {}) {
   async function run(invoiceId) {
     let row = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
     if (!row || !PUSHABLE.has(row.kind)) return { ok: false, skipped: 'not_pushable' };
-    if (row.status === 'void' || row.status === 'paid') return { ok: false, skipped: row.status };
     if (row.hnry_pushed_at) return { ok: true, already: true, hnryNumber: row.hnry_number };
+    // Only a draft is made in Hnry. One the app has already scheduled or sent to
+    // the client is out by the old way and stays there; void and paid are done.
+    if (row.status !== 'draft') return { ok: false, skipped: row.status };
     if (!hnry.enabled) return { ok: false, skipped: 'not_configured' };
 
     const totals = parseJson(row.totals_json, {});

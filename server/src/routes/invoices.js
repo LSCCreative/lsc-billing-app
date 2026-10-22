@@ -52,13 +52,17 @@ const INVOICE_LISTS = {
  *                                       { extras: [...] } on a final or single
  *                                       (D35); { depositPct } on a deposit,
  *                                       until its final has gone out.
- *   POST /api/invoices/:id/sent         { issuedAt, dueAt } — Mark sent, Stage
- *                                       D's stand-in for sending, with any
- *                                       issue date. From draft. The app now
- *                                       sends through /send; registered for
- *                                       the tests only (`markSent`, C13).
+ *   POST /api/invoices/:id/sent         { issuedAt, dueAt } — Mark sent, with any
+ *                                       issue date. From draft. For an invoice
+ *                                       that lives in Hnry (H5) this records
+ *                                       that you sent it from Hnry, once all of
+ *                                       it is there. For any other it is Stage
+ *                                       D's stand-in for sending, registered
+ *                                       for the tests alone (`markSent`, C13):
+ *                                       the app sends those through /send.
  *   POST /api/invoices/:id/send         the send panel (task 29, D43), from
- *                                       draft: { by: 'email', to, message?,
+ *                                       draft (409 `sent_from_hnry` for an
+ *                                       invoice in Hnry): { by: 'email', to, message?,
  *                                       scheduledFor?, dueAt } becomes
  *                                       `scheduled` with its dates and link,
  *                                       and `sent` when the email goes
@@ -94,6 +98,12 @@ const INVOICE_LISTS = {
  */
 function registerInvoiceRoutes(app, db, opts = {}) {
   const rowOf = (id) => db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+
+  /* An invoice that lives in Hnry is sent, and made into a PDF, there: the app
+     doesn't email it, schedule it, link it or print it (hnry-invoicing H5). Old
+     invoices, made and sent by the app before Hnry, keep working as they were. */
+  const inHnry = (row) => Boolean(row.hnry_invoice_id);
+  const SENT_FROM_HNRY = { error: 'sent_from_hnry', message: 'This invoice is sent from Hnry. Send it there, then mark it sent here.' };
 
   function reply(req, res, id, extra) {
     const today = todayOf(req);
@@ -251,7 +261,10 @@ function registerInvoiceRoutes(app, db, opts = {}) {
       const result = await hnryPush.push(row.id);
       if (result.skipped) {
         const message = result.skipped === 'void' ? 'This invoice is void.'
-          : result.skipped === 'paid' ? 'This invoice is paid.' : 'This invoice isn’t sent to Hnry.';
+          : result.skipped === 'paid' ? 'This invoice is paid.'
+          : (result.skipped === 'sent' || result.skipped === 'scheduled')
+            ? 'The app has already sent this invoice to the client, so it isn’t made again in Hnry.'
+            : 'This invoice isn’t sent to Hnry.';
         return res.status(409).json({ error: 'hnry_skipped', reason: result.skipped, message });
       }
       if (!result.ok) {
@@ -264,11 +277,30 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     }
   });
 
-  if (opts.markSent) app.post('/api/invoices/:id/sent', (req, res) => {
+  /* Mark sent. For an invoice that lives in Hnry (hnry-invoicing H5) this is how
+     the app learns the user sent it from Hnry: it moves the invoice to `sent`
+     with the dates it went out with, so the project's stage and the Dashboard's
+     Outstanding list follow. It needs the WHOLE invoice in Hnry (a half-made
+     draft isn't one to send). For every other invoice this is Stage D's
+     stand-in for sending, registered for the tests alone (`markSent`, C13): the
+     app sends those through /send. */
+  app.post('/api/invoices/:id/sent', (req, res, next) => {
     const row = invoiceFor(req, res);
     if (!row) return undefined;
-    const refusal = cannotEdit(row);
-    if (refusal) return res.status(409).json(refusal);
+    const hnry = inHnry(row);
+    if (!hnry && !opts.markSent) return next();
+    if (hnry) {
+      if (row.status === 'sent') return reply(req, res, row.id, { already: true });
+      if (row.status !== 'draft') {
+        return res.status(409).json({ error: 'not_draft', status: row.status, message: `This invoice is ${row.status}, so it can’t be marked sent.` });
+      }
+      if (!row.hnry_pushed_at) {
+        return res.status(409).json({ error: 'hnry_incomplete', message: 'Not all of this invoice is in Hnry yet. Retry sending it to Hnry first.' });
+      }
+    } else {
+      const refusal = cannotEdit(row);
+      if (refusal) return res.status(409).json(refusal);
+    }
     const { issuedAt, dueAt } = req.body || {};
     if (!isYmd(issuedAt)) return res.status(400).json({ error: 'issued_at_invalid', message: 'Choose the date it was issued.' });
     if (!isYmd(dueAt) || dueAt < issuedAt) {
@@ -279,7 +311,9 @@ function registerInvoiceRoutes(app, db, opts = {}) {
       db.prepare("UPDATE invoices SET status = 'sent', issued_at = ?, due_at = ?, updated_at = ? WHERE id = ?")
         .run(issuedAt, dueAt, now, row.id);
       touch(row, now);
-      logActivity(db, row.project_id, 'invoice_sent', { invoiceId: row.id, number: row.number, issuedAt, dueAt }, now);
+      logActivity(db, row.project_id, 'invoice_sent', {
+        invoiceId: row.id, number: row.number, issuedAt, dueAt, ...(hnry ? { by: 'hnry', hnryNumber: row.hnry_number } : {}),
+      }, now);
     })();
     return reply(req, res, row.id);
   });
@@ -287,6 +321,7 @@ function registerInvoiceRoutes(app, db, opts = {}) {
   app.post('/api/invoices/:id/send', (req, res) => {
     const row = invoiceFor(req, res);
     if (!row) return undefined;
+    if (inHnry(row)) return res.status(409).json(SENT_FROM_HNRY);
     const refusal = cannotEdit(row);
     if (refusal) return res.status(409).json(refusal);
     const now = nowIso();
@@ -448,6 +483,9 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     if (row.kind === 'legacy') {
       // An old-way invoice prints from its estimate row, as it always did.
       return res.status(409).json({ error: 'legacy_invoice', estimateId: row.estimate_id || null });
+    }
+    if (inHnry(row)) {
+      return res.status(409).json({ ...SENT_FROM_HNRY, message: 'Hnry makes this invoice’s PDF. Open it in Hnry.' });
     }
     const settings = readSettings(db);
     const doc = printable(req, row);

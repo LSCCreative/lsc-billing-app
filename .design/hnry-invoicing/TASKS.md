@@ -90,13 +90,25 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   831/831. **Known limit:** a line that times out may still have landed in Hnry (Zapier can't read a draft's
   lines back), so a retry can double it: H6 tells the user to check the draft in Hnry before sending._
 
-- [ ] **H5. Retire the app's invoice sending for Hnry invoices** (backend — Sonnet/high): an invoice that has a
+- [x] **H5. Retire the app's invoice sending for Hnry invoices** (backend — Sonnet/high): an invoice that has a
   `hnry_invoice_id` is **not sent by the app**: `/send`, scheduled sends and the invoice email are refused with
   "This invoice is sent from Hnry" (409 `sent_from_hnry`); no new invoice PDF or public invoice token is made
   for it. Invoices made before v20 (sent or paid, with live client links) keep working unchanged and read-only.
   "Mark paid" (`via: 'bank' | 'card'`) is untouched (H4 in the brief: paid is manual). Done when: tests show a
   Hnry invoice refuses `/send`, an old sent invoice's public page still resolves, `cancelPending` still works.
   _Modifies: `routes/invoices.js`, `sends.js`, `public.js`._
+  _Done 2026-10-22 (not committed): for an invoice with a `hnry_invoice_id`, `/send` (email, link, scheduled) and
+  `/pdf` answer 409 `sent_from_hnry`; no token, send row or PDF is made. The owner-only Cost Breakdown still
+  works. **Mark sent** (`POST /api/invoices/:id/sent`) was a test-only route; it is now always registered but,
+  outside the tests, works only for an invoice in Hnry, and records "you sent it from Hnry": from a draft that
+  is FULLY in Hnry (`hnry_incomplete` otherwise), with issue and due dates, activity `invoice_sent` with
+  `by: 'hnry'` and the Hnry number; the project stage and the Dashboard's Outstanding list follow (they key on
+  status `sent`). Mark paid is untouched. The pusher now pushes **drafts only** (an invoice the app already
+  sent or scheduled is never made again in Hnry: `hnry_skipped`), and a fully pushed one answers `already`
+  first. Invoices sent by the app before Hnry keep their link, page and PDF. No change to `sends.js` or
+  `public.js` was needed (a Hnry invoice never gets a token). 7 tests in `test-hnry-send.js`, 9 mutations
+  killed; suite green. H6 needs: a **Mark sent** control on a Hnry invoice (dates prefilled from Hnry's
+  defaults: issued today, due +20 days)._
 
 ## UI (**Frontend task**s)
 
