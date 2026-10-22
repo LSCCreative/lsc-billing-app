@@ -26,6 +26,8 @@ const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/go
 const { createGoogleSync } = require('./google-sync');
 const { createMailer } = require('./mail');
 const { createOutbox } = require('./sends');
+const { createHnry } = require('./hnry');
+const { createHnryPusher } = require('./hnry-push');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -85,6 +87,15 @@ function createApp(db, opts = {}) {
   app.locals.outbox = outbox;
   app.locals.mailer = mailer;
 
+  // Hnry (hnry-invoicing): an accepted project's deposit or single invoice is
+  // pushed there as a draft, after the accept commits and in the background.
+  // A test never reaches Zapier, whatever the developer's .env holds, unless it
+  // passes its own `hnry` (a fake transport). Not set up = nothing is pushed.
+  const hnry = opts.hnry || createHnry(config.isTest ? {} : config);
+  const hnryPush = createHnryPusher(db, hnry, { now: opts.now });
+  app.locals.hnry = hnry;
+  app.locals.hnryPush = hnryPush;
+
   // ── /health — the only route besides /login that never requires a session.
   // Deliberately says nothing about the data; it is a liveness probe for
   // Container Manager, not a status page.
@@ -107,7 +118,7 @@ function createApp(db, opts = {}) {
 
   // ── The client's pages (stage E): no session, by unguessable link, and
   // outside /api so no owner route can be reached through them.
-  registerPublicRoutes(app, db, { ...opts, outbox, ownerEmail: mailer.replyTo, maps });
+  registerPublicRoutes(app, db, { ...opts, outbox, hnryPush, ownerEmail: mailer.replyTo, maps });
 
   // ── Auth. /api/login, /api/logout, /api/session and /api/password/* handle
   // their own session state and must be registered before the gate below.
@@ -182,8 +193,8 @@ function createApp(db, opts = {}) {
   // Stage D's Mark sent routes (POST …/sent) are for the tests alone (C13):
   // the app sends through …/send, whose checks they don't share.
   const stageD = { markSent: opts.markSentRoutes !== undefined ? opts.markSentRoutes : config.isTest };
-  registerProjectRoutes(app, db, stageD);
-  registerInvoiceRoutes(app, db, stageD);
+  registerProjectRoutes(app, db, { ...stageD, hnryPush });
+  registerInvoiceRoutes(app, db, { ...stageD, hnryPush });
   registerSendRoutes(app, db, { outbox });
   registerGoogleRoutes(app, db, { oauth, sync: googleSync });
   googleSync.start();

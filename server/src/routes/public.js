@@ -165,6 +165,8 @@ function registerPublicRoutes(app, db, opts = {}) {
         // The accept confirms days: tell the calendar writer (task 14). Read
         // when it happens, as it is built after this route.
         onAccepted: (ids) => { if (app.locals.googleSync) app.locals.googleSync.touch(ids); },
+        // The invoices this accept made: the deposit (or single) goes to Hnry.
+        onInvoices: (made) => { if (opts.hnryPush) opts.hnryPush.pushMade(made); },
       });
       return res.status(out.status).json(out.body);
     } catch (err) {

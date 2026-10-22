@@ -75,6 +75,13 @@ const INVOICE_LISTS = {
  *                                       with the next free suffix (D100). A
  *                                       draft is edited instead; a paid one is
  *                                       never voided.
+ *   POST /api/invoices/:id/hnry         Create this invoice in Hnry as a draft (hnry-invoicing
+ *                                       H4): the final when the user asks for it, and Retry
+ *                                       for any invoice whose push failed or stopped part-way.
+ *                                       Waits for Hnry. 200 with the invoice and `hnry`; 409
+ *                                       when it can't (Hnry not set up, GST, the deposit not
+ *                                       in Hnry yet, lines that don't add up); 502 when Hnry
+ *                                       or Zapier failed (the invoice keeps what landed).
  *   POST /api/invoices/:id/pdf          { issuedAt?, dueAt? } — the PDF. A draft
  *                                       has no dates yet: the ones given (Mark
  *                                       sent's dialog passes its fields), else
@@ -223,6 +230,38 @@ function registerInvoiceRoutes(app, db, opts = {}) {
       }, now);
     })();
     return reply(req, res, row.id);
+  });
+
+  /* Hnry (hnry-invoicing H4). The pusher does the work and records it on the
+     row; this only asks, waits, and says how it went. A refusal the user can
+     act on is a 409; Hnry or Zapier failing is a 502 (what landed is kept, and
+     asking again continues from there). */
+  const HNRY_REFUSED = new Set(['gst_registered', 'deposit_not_in_hnry', 'zero_amount', 'amount_mismatch', 'no_client']);
+  app.post('/api/invoices/:id/hnry', async (req, res, next) => {
+    try {
+      const row = invoiceFor(req, res);
+      if (!row) return undefined;
+      const hnryPush = opts.hnryPush;
+      if (!hnryPush || !app.locals.hnry || !app.locals.hnry.enabled) {
+        return res.status(409).json({ error: 'hnry_not_configured', message: 'Hnry isn’t set up on this server yet.' });
+      }
+      if (row.kind === 'legacy') {
+        return res.status(409).json({ error: 'legacy_invoice', message: 'This invoice was made the old way, so it isn’t sent to Hnry.' });
+      }
+      const result = await hnryPush.push(row.id);
+      if (result.skipped) {
+        const message = result.skipped === 'void' ? 'This invoice is void.'
+          : result.skipped === 'paid' ? 'This invoice is paid.' : 'This invoice isn’t sent to Hnry.';
+        return res.status(409).json({ error: 'hnry_skipped', reason: result.skipped, message });
+      }
+      if (!result.ok) {
+        const status = HNRY_REFUSED.has(result.code) ? 409 : 502;
+        return res.status(status).json({ error: result.code, message: result.message || 'Hnry could not be reached. Try again.' });
+      }
+      return reply(req, res, row.id, { hnry: { ok: true, already: result.already === true, hnryNumber: result.hnryNumber || null } });
+    } catch (err) {
+      return next(err);
+    }
   });
 
   if (opts.markSent) app.post('/api/invoices/:id/sent', (req, res) => {

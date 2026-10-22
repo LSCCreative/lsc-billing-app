@@ -1001,11 +1001,15 @@ function registerProjectRoutes(app, db, opts = {}) {
     const lead = summarize(p, own, [], {}).estimateId;
     if (!lead) return res.status(409).json({ error: 'no_estimate' });
     let rebook = [];
+    let made = [];
     db.transaction(() => {
-      ({ rebook } = acceptEstimate(db, p, lead, own.map((e) => e.id), choice, nowIso()));
+      ({ rebook, made } = acceptEstimate(db, p, lead, own.map((e) => e.id), choice, nowIso()));
     })();
     // Accepting confirms the project's pencilled and proposed days (D18).
     touchGoogle(req, p.id);
+    // The deposit (or single) goes to Hnry as a draft, in the background: the
+    // accept is done, and nothing about Hnry can undo it (hnry-push.js).
+    if (opts.hnryPush) opts.hnryPush.pushMade(made);
     return folderReply(req, res, { rebook });
   });
 
@@ -1033,8 +1037,10 @@ function registerProjectRoutes(app, db, opts = {}) {
     const estimateId = billedEstimateId(p);
     if (!estimateId) return res.status(409).json({ error: 'no_estimate' });
     const now = nowIso();
+    let created = [];
     db.transaction(() => {
       const made = createInvoices(db, p, estimateId, choice, now);
+      created = made;
       db.prepare(`
         UPDATE projects SET invoicing = ?, deposit_pct = COALESCE(?, deposit_pct), updated_at = ? WHERE id = ?
       `).run(choice.invoicing, choice.pct, now, p.id);
@@ -1045,6 +1051,7 @@ function registerProjectRoutes(app, db, opts = {}) {
         invoices: made.map((i) => i.number),
       }, now);
     })();
+    if (opts.hnryPush) opts.hnryPush.pushMade(created);
     return folderReply(req, res);
   });
 

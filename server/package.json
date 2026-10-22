@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
+    "@zapier/zapier-sdk": "^0.117.0",
     "better-sqlite3": "^12.2.0",
     "cookie": "^1.0.2",
     "dotenv": "^17.2.1",

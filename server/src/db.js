@@ -995,6 +995,46 @@ const MIGRATIONS = [
       );
     },
   },
+  {
+    version: 20,
+    name: 'hnry invoices: where an invoice lives in Hnry',
+    up(db) {
+      // .design/hnry-invoicing/ H2. Additive, no rebuild. Invoices are created in
+      // Hnry as drafts and sent from there; the app keeps one row per invoice
+      // and records where it went. `number` stays the app's own reference (it is
+      // what Hnry's PO field carries); `hnry_number` is the number Hnry gave it
+      // and what the screens show once it is set.
+      //
+      //   invoices.hnry_invoice_id  Hnry's invoice id, as Zapier returns it (an
+      //                             opaque base64 gid); NULL = not in Hnry.
+      //   invoices.hnry_number      Hnry's `INV-…` number.
+      //   invoices.hnry_pushed_at   when the WHOLE invoice was in Hnry (ISO): NULL
+      //                             with an id set means some lines are still to go.
+      //   invoices.hnry_lines_done  how many of its lines Hnry has (a deposit or
+      //                             single is one; a final is its balance line,
+      //                             its extras and "less deposit"). A retry adds
+      //                             only the rest.
+      //   invoices.hnry_error       why the last push failed, a short code; NULL
+      //                             once it works. A failed push never blocks an
+      //                             acceptance (H3).
+      //   clients.hnry_client_id    the Hnry client this client was matched to,
+      //                             so a second job doesn't search again.
+      //
+      // Every existing invoice reads as "not in Hnry" and nothing about it
+      // changes. Safe to run twice (each column is added only when missing).
+      const addColumn = (table, name, type) => {
+        const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === name);
+        if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type};`);
+      };
+      addColumn('invoices', 'hnry_invoice_id', 'TEXT');
+      addColumn('invoices', 'hnry_number', 'TEXT');
+      addColumn('invoices', 'hnry_pushed_at', 'TEXT');
+      addColumn('invoices', 'hnry_lines_done', 'INTEGER');
+      addColumn('invoices', 'hnry_error', 'TEXT');
+      addColumn('clients', 'hnry_client_id', 'TEXT');
+      console.log('[db] v20: invoices and clients can now record their Hnry ids; nothing existing changes');
+    },
+  },
 ];
 
 /**

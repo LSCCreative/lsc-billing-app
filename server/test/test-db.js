@@ -817,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v19', () => {
-  assert.equal(LATEST_VERSION, 19);
+test('the schema knows it is at v20', () => {
+  assert.equal(LATEST_VERSION, 20);
 });
 
 /**
@@ -1532,7 +1532,7 @@ test('v19 gives every post service a 0× multiplier, drops the type multiplier, 
   const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
   assert.ok(before.estimates.some((e) => e.active_rows_json === JSON.stringify(V18_ROWS)), 'the fixture has a typed deliverable');
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 19 });
   assert.deepEqual([result.from, result.to, result.applied], [18, 19, 1]);
   const card = storedCard(db);
   assert.deepEqual(card.deliverableTypes, [
@@ -1555,7 +1555,7 @@ test('v19 gives every post service a 0× multiplier, drops the type multiplier, 
 
   // Run again: a type already in the new shape reads back as itself.
   db.prepare('DELETE FROM schema_version WHERE version >= 19').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 19 }).applied, 1);
   assert.deepEqual(storedCard(db), card);
   db.close();
 });
@@ -1564,19 +1564,81 @@ test('v19 keeps a multiplier already on a service, and leaves a card with no typ
   // Written by a build that already had the new shape: kept, not reset to 0.
   const mixed = { ...V18_CARD, deliverableTypes: [{ id: 'dt_m', name: 'M', services: [{ name: 'Edit', multiplier: 2 }, 'Grade'], multiplier: 3 }] };
   const db = v18WithTypes(mixed);
-  migrate(db);
+  migrate(db, { to: 19 });
   assert.deepEqual(storedCard(db).deliverableTypes, [{ id: 'dt_m', name: 'M', services: [{ name: 'Edit', multiplier: 2 }, { name: 'Grade', multiplier: 0 }] }]);
   db.close();
 
   for (const card of [{ ...V18_CARD, deliverableTypes: [] }, (({ deliverableTypes: _d, ...c }) => c)(V18_CARD)]) {
     const none = v18WithTypes(card);
     const row = none.prepare('SELECT * FROM pricing').get();
-    migrate(none);
+    migrate(none, { to: 19 });
     assert.deepEqual(none.prepare('SELECT * FROM pricing').get(), row, 'not rewritten, not even its updated_at');
     none.close();
   }
 
-  const fresh = openDatabase(tempDbPath('v19-fresh'));
+  const fresh = openDatabase(tempDbPath('v19-fresh'), { migrate: false });
+  migrate(fresh, { to: 19 });
   assert.equal(fresh.prepare('SELECT COUNT(*) AS n FROM pricing').get().n, 0, 'no card is invented');
   fresh.close();
+});
+
+/**
+ * MIGRATION v20 — where an invoice lives in Hnry (hnry-invoicing H2). Additive:
+ * four columns on invoices, one on clients, all unset. Every row of every table
+ * reads as it did, and every existing invoice reads as "not in Hnry".
+ */
+const HNRY_COLS = ['hnry_invoice_id', 'hnry_number', 'hnry_pushed_at', 'hnry_lines_done', 'hnry_error'];
+const withoutCols = (rows, cols) => rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !cols.includes(k))));
+
+test('v20 adds the Hnry columns unset and changes no row of any table', () => {
+  const db = v18WithTypes();
+  migrate(db, { to: 19 });
+  const tables = everyTableBut(db, ['schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(before.invoices.length > 0 && before.clients.length > 0, 'the fixture has invoices and a client');
+  assert.ok(!db.prepare('PRAGMA table_info(invoices)').all().some((c) => c.name === 'hnry_number'), 'v19 has no Hnry column');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [19, 20, 1]);
+  assert.equal(LATEST_VERSION, 20);
+
+  const inv = dump(db, 'invoices');
+  assert.equal(inv.length, before.invoices.length);
+  for (const r of inv) for (const c of HNRY_COLS) assert.equal(r[c], null, `${c} is unset`);
+  assert.deepEqual(withoutCols(inv, HNRY_COLS), before.invoices, 'no invoice value moved');
+  const cl = dump(db, 'clients');
+  assert.ok(cl.every((r) => r.hnry_client_id === null));
+  assert.deepEqual(withoutCols(cl, ['hnry_client_id']), before.clients);
+  for (const t of tables.filter((x) => !['invoices', 'clients'].includes(x))) assert.deepEqual(dump(db, t), before[t], t);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+
+  // Run again: no column is added twice, and what a push stored is kept.
+  db.prepare("UPDATE invoices SET hnry_invoice_id = 'gid', hnry_number = 'INV-1', hnry_pushed_at = 'x', hnry_lines_done = 2, hnry_error = 'timeout' WHERE id = ?").run(inv[0].id);
+  db.prepare("UPDATE clients SET hnry_client_id = 'c1' WHERE id = 'cl_acme'").run();
+  const edited = [dump(db, 'invoices'), dump(db, 'clients')];
+  db.prepare('DELETE FROM schema_version WHERE version >= 20').run();
+  assert.equal(migrate(db).applied, 1);
+  assert.deepEqual([dump(db, 'invoices'), dump(db, 'clients')], edited);
+  db.close();
+});
+
+test('a fresh database has the Hnry columns, and invoiceJson reads them (null for a never-pushed invoice)', () => {
+  const db = openDatabase(tempDbPath('v20-fresh'));
+  const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+  for (const c of HNRY_COLS) assert.ok(cols('invoices').includes(c), c);
+  assert.ok(cols('clients').includes('hnry_client_id'));
+
+  const now = '2026-10-22T00:00:00.000Z';
+  db.prepare('INSERT INTO projects (id, upid, created_at, updated_at) VALUES (?,?,?,?)').run('p1', 'UP-1', now, now);
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, created_at, updated_at) VALUES ('i_old','p1','deposit','INV-UP-1-D',?,?)").run(now, now);
+  db.prepare(`INSERT INTO invoices (id, project_id, kind, number, hnry_invoice_id, hnry_number, hnry_pushed_at, hnry_lines_done, hnry_error, created_at, updated_at)
+              VALUES ('i_new','p1','final','INV-UP-1-F','gid64','INV-10670074',?,3,'timeout',?,?)`).run(now, now, now);
+  const { invoiceJson } = require('../src/invoices');
+  const get = (id) => invoiceJson(db, db.prepare('SELECT * FROM invoices WHERE id = ?').get(id));
+  const old = get('i_old');
+  assert.deepEqual([old.hnryInvoiceId, old.hnryNumber, old.hnryPushedAt, old.hnryLinesDone, old.hnryError], [null, null, null, null, null]);
+  const pushed = get('i_new');
+  assert.deepEqual([pushed.hnryInvoiceId, pushed.hnryNumber, pushed.hnryPushedAt, pushed.hnryLinesDone, pushed.hnryError], ['gid64', 'INV-10670074', now, 3, 'timeout']);
+  assert.equal(pushed.number, 'INV-UP-1-F', 'the app\'s own number is kept beside Hnry\'s');
+  db.close();
 });

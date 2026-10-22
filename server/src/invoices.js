@@ -161,6 +161,11 @@ function cannotEdit(row) {
   if (row.kind === 'legacy') {
     return { error: 'legacy_invoice', message: 'This invoice was made the old way, so it can’t be changed here.' };
   }
+  // Once an invoice is in Hnry the draft there is the one the user sends, so the
+  // app's copy mustn't drift from it: change it in Hnry (hnry-invoicing H4).
+  if (row.hnry_invoice_id) {
+    return { error: 'in_hnry', message: 'This invoice is in Hnry. Change it there, so the two stay the same.' };
+  }
   if (row.status === 'draft') return null;
   const message = {
     scheduled: 'This invoice is scheduled to send. Cancel the send first.',
@@ -224,8 +229,15 @@ function invoiceJson(db, row) {
     paidVia: row.paid_via || null,
     voidedAt: row.voided_at || null,
     voidReason: row.void_reason || null,
+    // Where it lives in Hnry (schema v20): null all round for an invoice that
+    // was never pushed. `hnryError` is a short code the screens turn into words.
+    hnryInvoiceId: row.hnry_invoice_id || null,
+    hnryNumber: row.hnry_number || null,
+    hnryPushedAt: row.hnry_pushed_at || null,
+    hnryLinesDone: row.hnry_lines_done === null || row.hnry_lines_done === undefined ? null : row.hnry_lines_done,
+    hnryError: row.hnry_error || null,
     editable: !cannotEdit(row),
-    depositEditable: row.kind === 'deposit' && row.status === 'draft' && finals.every((f) => f.status === 'draft'),
+    depositEditable: row.kind === 'deposit' && row.status === 'draft' && !row.hnry_invoice_id && finals.every((f) => f.status === 'draft'),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

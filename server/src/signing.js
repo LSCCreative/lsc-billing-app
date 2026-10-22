@@ -219,6 +219,7 @@ async function signEstimate(db, token, body, ctx) {
   let out = null;
   let queued = false;
   let accepted = null; // the project's estimate ids, once the accept is in
+  let madeInvoices = []; // the invoices this accept made (none when the project can't be invoiced yet)
   db.transaction(() => {
     const again = gate(db, token, b, ctx.today());
     if (again.reply) {
@@ -240,7 +241,7 @@ async function signEstimate(db, token, body, ctx) {
     const refusal = cannotInvoice(db, p, invoiceNumbers(p.upid, agreement.choice.invoicing));
     const ownIds = db.prepare('SELECT id FROM estimates WHERE project_id = ?').all(p.id).map((r) => r.id);
     accepted = ownIds;
-    acceptEstimate(db, p, link.row.id, ownIds, refusal ? null : agreement.choice, sig.signed_at, {
+    ({ made: madeInvoices } = acceptEstimate(db, p, link.row.id, ownIds, refusal ? null : agreement.choice, sig.signed_at, {
       frozen: agreement.frozen,
       kind: 'signed',
       detail: {
@@ -250,7 +251,7 @@ async function signEstimate(db, token, body, ctx) {
         role: sig.role,
         ...(refusal ? { invoiceProblem: refusal.error } : {}),
       },
-    });
+    }));
     // The owner's notice and the client's signed copy (task 28), queued in
     // this transaction so they exist exactly when the signature does. They go
     // out after it commits (the kick below); a mail problem never touches the
@@ -269,6 +270,10 @@ async function signEstimate(db, token, body, ctx) {
   // Accepting confirms the project's days (D18): the calendar writer hears of
   // it here, the client's accept being no session's request (task 14).
   if (accepted && ctx.onAccepted) ctx.onAccepted(accepted);
+  // The deposit (or single) goes to Hnry as a draft, in the background, once
+  // the signature and the accept are committed; the client's answer never waits
+  // for Hnry and a Hnry failure can't touch it (hnry-push.js).
+  if (madeInvoices.length && ctx.onInvoices) ctx.onInvoices(madeInvoices);
   return out;
 }
 

@@ -79,6 +79,16 @@ const config = {
     clientSecret: (process.env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim(),
     redirectUri: (process.env.GOOGLE_OAUTH_REDIRECT_URI || '').trim(),
   },
+  // Hnry, through Zapier's SDK (hnry-invoicing H1): the "client credentials" made in
+  // Zapier (Connections → SDK credentials). Like the SMTP key they live here and
+  // in .env only, never in the database, a log or a reply. Empty = Hnry is "not
+  // set up": nothing is pushed and nothing throws at boot. `timeoutSeconds` is the
+  // longest one Hnry call may take before it is treated as failed.
+  hnry: {
+    clientId: (process.env.ZAPIER_CREDENTIALS_CLIENT_ID || '').trim(),
+    clientSecret: (process.env.ZAPIER_CREDENTIALS_CLIENT_SECRET || '').trim(),
+    timeoutSeconds: Number(process.env.HNRY_TIMEOUT_SECONDS || 60),
+  },
   // Writing bookings to the connected calendar (task 14, G4) is on whenever a
   // calendar is connected. GOOGLE_CALENDAR_WRITE=0 switches it off for a server
   // that shares a real connection with a throwaway database (a dev server on
