@@ -174,7 +174,11 @@ $161 (1.65%), full day $1,272 / $1,288, Minimum Job Price for 8 h with no costs 
   columns), sentence-case settings titles, and Est. Take-Home green only while the quote clears its
   Minimum Job Price. 765/765 tests; checked on scratch (under: plain, clears: green)._
 
-- [ ] **PF11. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v18 on a copy of
+- [x] **PF11. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v18 on a copy of
   the live backup (PF2's deferred check: goals before/after, every other table unchanged, `foreign_key_check`), fetch and diff `origin/main`, then NAS before Pages (`DEPLOYMENT.md`). After deploy,
   check the live Rate Card shows the new auto prices and the user reviews typed rows now badged below the
   floor. Update ROADMAP and move the folder to the archive.
+  _Done 2026-10-20: backup `backups/pre-v18-20261020-1744.db` (integrity ok); v18 on a copy of it changed only
+  `goals` (8 h / 65% / 10%), `foreign_key_check` clean; NAS rebuilt from `5f12eeb` (healthy, `migrated to v18`),
+  then Pages (`?v=5f12eeb9`). Shipped from `5f12eeb`, not `HEAD`: another session had committed post-multipliers
+  PM1/PM2 (v19) locally, which stay undeployed._

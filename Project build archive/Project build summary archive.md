@@ -70,3 +70,11 @@ deployed 2026-10-12. Open: the Routes API tier choice.
 ## hubspot-crm-sync
 Designed 2026-09-22, never built, **scrapped by the user 2026-10-13**. Docs deleted; git history has
 them (`git log -- .design/hubspot-crm-sync`). The local Clients table stays as the CRM.
+
+## pricing-floor
+Built and deployed 2026-10-20 [v18]. Capacity is hours worked × a share you can bill (live: 8 h / 65%); one
+break-even Minimum Job Price (income floor × hours + direct costs, advisory, with a clears / under-by
+verdict); markup became "Business profit" (live 10%, in every auto price, not the floor); the card fee %
+(Rate Card, P7) is built into every auto price, never a card-only surcharge. Saved estimates, invoices and
+documents are unchanged by the migration. Decisions P1–P7 in `BRIEF.md`, PF1–PF11 in `TASKS.md`, design
+review in `DESIGN_REVIEW.md`. Open: the user reviews typed rates now below the floor.
