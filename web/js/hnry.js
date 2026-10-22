@@ -13,7 +13,10 @@
  *                       nothing to say about it (an old-way invoice, a void
  *                       one, Hnry not set up and not in it, one the app sent).
  *                       Pure: the tests load this file and call it.
- *   ctx                 { enabled, depositInHnry, depositByApp }
+ *   ctx                 { enabled, depositInHnry, depositByApp }:
+ *                       contextFor(invoices) makes it from the project's invoices.
+ *   open(inv)           its Hnry page, in a new tab; pushedText(reply) the toast
+ *                       after a push.
  *
  * States, in the order they happen:
  *   not in Hnry yet   Hnry is set up, the invoice is a draft, nothing sent.
@@ -94,6 +97,11 @@ const LSCHnry = (() => {
     zapier_error: { text: 'Hnry couldn’t be reached through Zapier.', retry: true },
     unexpected_shape: { text: 'Hnry answered in a way the app didn’t expect.', retry: true },
     bad_input: { text: 'Something on this invoice isn’t a value Hnry takes.', retry: false },
+    po_in_use: { text: 'Hnry already has an invoice with this reference that has been sent, so it wasn’t made again. Look in Hnry.', retry: false },
+    hnry_changed: {
+      text: 'Its deposit was voided and remade after this went to Hnry, so the draft there is out of date. Change it in Hnry to bill what this page says.',
+      retry: false,
+    },
     internal: { text: 'Something went wrong on the server.', retry: true },
   };
   const wordsOf = (code) => WORDS[code] || { text: 'Hnry didn’t take it.', retry: true };
@@ -120,6 +128,13 @@ const LSCHnry = (() => {
 
     // In Hnry, whole.
     if (inHnry(inv) && complete(inv)) {
+      // Changed here since (hnry_changed): the draft in Hnry is out of date.
+      if (inv.status === 'draft' && inv.hnryError) {
+        return {
+          chip: 'Hnry out of date', tone: 'alert', line: 'err', text: wordsOf(inv.hnryError).text,
+          primary: { id: 'hnry-open', label: 'Open in Hnry' }, open: true, markSent: true,
+        };
+      }
       if (inv.status === 'draft') {
         return {
           chip: 'In Hnry', tone: 'info', line: 'ok',
@@ -137,11 +152,17 @@ const LSCHnry = (() => {
     // Started and stopped: some lines are there.
     if (inHnry(inv)) {
       const n = Number(inv.hnryLinesDone) || 0;
-      const why = inv.hnryError ? wordsOf(inv.hnryError).text + ' ' : '';
+      const w = inv.hnryError ? wordsOf(inv.hnryError) : null;
+      // Retry, unless what stopped it is fixed in Hnry, not by trying again (hnry_changed).
+      const retry = !w || w.retry;
       return {
         chip: 'Part in Hnry', tone: 'alert', line: 'err',
-        text: why + 'Only part of this invoice is in Hnry' + (n ? ' (' + n + (n === 1 ? ' line' : ' lines') + ' so far)' : '') + '. ' + CHECK_FIRST,
-        primary: { id: 'hnry-push', label: 'Retry in Hnry' }, open: true, markSent: false,
+        text: [
+          w && w.text,
+          'Only part of this invoice is in Hnry' + (n ? ' (' + n + (n === 1 ? ' line' : ' lines') + ' so far)' : '') + '.',
+          retry && CHECK_FIRST,
+        ].filter(Boolean).join(' '),
+        primary: retry ? { id: 'hnry-push', label: 'Retry in Hnry' } : { id: 'hnry-open', label: 'Open in Hnry' }, open: true, markSent: false,
       };
     }
 
@@ -198,5 +219,30 @@ const LSCHnry = (() => {
   }
   const defaultDates = (today) => ({ issuedAt: today, dueAt: addDays(today, 20) });
 
-  return { ready, enabled, forget, describe, lineMarkup, urlOf, numericId, inHnry, complete, wordsOf, push, markSent, defaultDates, addDays, WORDS };
+  /* describe()'s ctx, from every invoice of the project (the folder's list, or
+     the invoice reply's `invoices`): both screens ask the same question. */
+  function contextFor(invoices) {
+    const deposits = (invoices || []).filter((i) => i.kind === 'deposit');
+    return {
+      enabled: enabled(),
+      depositInHnry: deposits.some((i) => i.status !== 'void' && complete(i)),
+      // A deposit the app sent itself, before Hnry: the final goes the same old way.
+      depositByApp: deposits.some((i) => !inHnry(i) && ['scheduled', 'sent', 'paid'].includes(i.status)),
+    };
+  }
+
+  /* Hnry's own page for an invoice, in a new tab: the user checks and sends it there. */
+  function open(inv) {
+    const url = urlOf(inv);
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+
+  /* The toast once a push has answered. */
+  const pushedText = (reply) => (reply && reply.hnry && reply.hnry.already ? 'It’s already in Hnry.'
+    : 'In Hnry' + (reply && reply.hnry && reply.hnry.hnryNumber ? ' as ' + reply.hnry.hnryNumber : '') + '. Check the draft there before you send it.');
+
+  return {
+    ready, enabled, forget, describe, contextFor, lineMarkup, urlOf, open, numericId, inHnry, complete, wordsOf, push, pushedText, markSent,
+    defaultDates, addDays, WORDS,
+  };
 })();

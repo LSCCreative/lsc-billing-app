@@ -325,3 +325,55 @@ test('an invoice that is in Hnry can no longer be edited in the app, so the two 
   assert.equal(JSON.parse(row(final.id).extras_json).additional.length, 1);
   assert.equal(late.body.message, 'This invoice is in Hnry. Change it there, so the two stay the same.');
 });
+
+/* ── A deposit voided under a final already in Hnry ───────────────────── */
+
+const SENT = { issuedAt: '2026-10-04', dueAt: '2026-10-20' };
+
+test('voiding a deposit under a final already in Hnry reprices the final and marks its Hnry draft out of date', async () => {
+  const { deposit, final } = await accepted({ pct: 40 });
+  assert.equal((await toHnry(final.id)).status, 200);
+  assert.equal((await inv(deposit.id, 'sent', SENT)).status, 200);
+  const v = await inv(deposit.id, 'void', { reason: 'Wrong amount' });
+  assert.equal(v.status, 200, JSON.stringify(v.body));
+
+  const f = row(final.id);
+  assert.equal(f.less_invoice_id, v.body.invoice.id, 'the final takes off the deposit standing now');
+  assert.equal(f.hnry_error, 'hnry_changed');
+  assert.ok(f.hnry_pushed_at, 'still the draft in Hnry');
+  assert.equal((await inv(final.id)).body.invoice.hnryError, 'hnry_changed', 'the screens are told');
+
+  // Retry adds nothing on top of it.
+  const before = fake.calls.length;
+  assert.equal((await toHnry(final.id)).status, 200);
+  assert.equal(fake.calls.length, before);
+  // Sent from Hnry (corrected there first): the flag clears.
+  assert.equal((await inv(final.id, 'sent', { issuedAt: '2026-10-05', dueAt: '2026-10-25' })).status, 200);
+  assert.equal(row(final.id).hnry_error, null);
+});
+
+test('a final stopped part-way and then changed under it is not continued: the draft is corrected in Hnry', async () => {
+  const { deposit, final } = await accepted({ pct: 40 });
+  await putInv(final.id, { extras: [OT, CUSTOM] });
+  fake.fail('addItem', 1, { after: 1 });
+  assert.equal((await toHnry(final.id)).status, 502);
+  assert.equal((await inv(deposit.id, 'sent', SENT)).status, 200);
+  assert.equal((await inv(deposit.id, 'void', { reason: 'Wrong amount' })).status, 200);
+  assert.equal(row(final.id).hnry_error, 'hnry_changed');
+
+  const before = fake.calls.length;
+  const r = await toHnry(final.id);
+  assert.deepEqual([r.status, r.body.error], [409, 'hnry_changed']);
+  assert.equal(fake.calls.length, before, 'nothing added on top of the old lines');
+  assert.equal(row(final.id).hnry_error, 'hnry_changed', 'the flag stays');
+});
+
+test('a value Hnry won\'t take is a refusal (409), not a Hnry failure', async () => {
+  fake.fail('findOrCreateClient', 1);
+  const { deposit } = await accepted({ pct: 40 });
+  const t = totalsOf(row(deposit.id));
+  db.prepare('UPDATE invoices SET totals_json = ? WHERE id = ?')
+    .run(JSON.stringify({ ...t, clientPriceExGst: 20000000, totalIncGst: 20000000 }), deposit.id);
+  const r = await toHnry(deposit.id);
+  assert.deepEqual([r.status, r.body.error], [409, 'bad_input']);
+});

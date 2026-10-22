@@ -128,12 +128,7 @@ const InvoiceView = (() => {
   const TONE = { draft: 'neutral', scheduled: 'info', sent: 'info', paid: 'ok', void: 'void', overdue: 'alert', legacy: 'neutral' };
 
   /* What Hnry has to say about this invoice (web/js/hnry.js), or null. */
-  const hnryFor = (inv) => LSCHnry.describe(inv, {
-    enabled: LSCHnry.enabled(),
-    depositInHnry: ((data && data.invoices) || []).some((i) => i.kind === 'deposit' && i.status !== 'void' && LSCHnry.complete(i)),
-    // A deposit the app sent itself, before Hnry: the final goes the same old way.
-    depositByApp: ((data && data.invoices) || []).some((i) => i.kind === 'deposit' && !LSCHnry.inHnry(i) && ['scheduled', 'sent', 'paid'].includes(i.status)),
-  });
+  const hnryFor = (inv) => LSCHnry.describe(inv, LSCHnry.contextFor(data && data.invoices));
 
   function statusMarkup(inv) {
     const hnry = hnryFor(inv);
@@ -801,7 +796,7 @@ const InvoiceView = (() => {
     const button = openerOf(el);
     if (id === 'pdf' || id === 'breakdown' || id === 'legacy-pdf') return download(id, button);
     if (id === 'copy') return SendPanel.copyLink('invoice', data.invoice.publicToken, button);
-    if (id === 'hnry-open') return openInHnry();
+    if (id === 'hnry-open') return LSCHnry.open(data.invoice);
     if (dirty() && (id === 'send' || id === 'paid' || id === 'void' || id === 'hnry-push' || id === 'hnry-sent')) {
       showError('Save or undo the extras first: the invoice goes out as it is saved.');
       const save = $('inv-save');
@@ -817,12 +812,6 @@ const InvoiceView = (() => {
   }
 
   // ── Hnry (hnry-invoicing H6) ────────────────────────────────────────────
-
-  /* Hnry's own page for this invoice, in a new tab. */
-  function openInHnry() {
-    const url = LSCHnry.urlOf(data.invoice);
-    if (url) window.open(url, '_blank', 'noopener');
-  }
 
   /* The invoice as the server now has it: after a refusal or a failure, which
      are written on its row, so the screen says what happened. */
@@ -843,9 +832,7 @@ const InvoiceView = (() => {
      then belongs to Hnry, so it asks first; a deposit, a single or a Retry just goes. */
   function pushHere(opener) {
     const inv = data.invoice;
-    const go = (b) => write('hnry', {}, b, 'Sending to Hnry…', (reply) =>
-      reply.hnry && reply.hnry.already ? 'It’s already in Hnry.'
-        : 'In Hnry' + (reply.hnry && reply.hnry.hnryNumber ? ' as ' + reply.hnry.hnryNumber : '') + '. Check the draft there before you send it.')
+    const go = (b) => write('hnry', {}, b, 'Sending to Hnry…', LSCHnry.pushedText)
       .catch(async (err) => {
         await reloadInvoice();
         throw err;
@@ -1162,15 +1149,19 @@ const InvoiceView = (() => {
     const ticket = LSCRouter.ticket();
     window.scrollTo(0, 0);
     const then = state && state.action;
-    await LSCHnry.ready();
+    // Whether Hnry is set up, asked alongside the invoice rather than before it
+    // (it never rejects: a failed ask reads as "not set up").
+    const hnryReady = LSCHnry.ready();
     // A reply already in hand (void and remake, a corrected address): no second fetch.
     if (state && state.reply && state.reply.invoice && state.reply.invoice.id === invoiceId) {
+      await hnryReady;
+      if (!LSCRouter.isCurrent(ticket)) return;
       shown(state.reply, projectId, then);
       return;
     }
     placeholder(projectId, '<h3>Loading…</h3>');
     try {
-      const reply = await LSCApi.get('/api/invoices/' + encodeURIComponent(invoiceId) + '?today=' + today());
+      const [reply] = await Promise.all([LSCApi.get('/api/invoices/' + encodeURIComponent(invoiceId) + '?today=' + today()), hnryReady]);
       if (!LSCRouter.isCurrent(ticket)) return;
       shown(reply, projectId, then);
     } catch (err) {

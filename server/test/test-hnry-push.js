@@ -417,3 +417,24 @@ test('a remembered Hnry client Hnry no longer knows is forgotten when the push f
   assert.equal(fake.invoices.length, 1);
   assert.equal(db.prepare('SELECT hnry_client_id FROM clients WHERE id = ?').get(est.clientId).hnry_client_id, fake.clients[0].id);
 });
+
+test('while a push is under way the invoice can\'t be edited or sent from the app', async () => {
+  const est = await shoot();
+  const release = fake.hold();
+  try {
+    await act(est.projectId, 'accept', { invoicing: 'pair', depositPct: 50 });
+    const [deposit] = invoicesOf(est.projectId);
+    assert.equal(app.locals.hnryPush.busy(deposit.id), true);
+    const edit = await api(`/api/invoices/${deposit.id}`, { method: 'PUT', body: JSON.stringify({ depositPct: 30 }) }).then(json);
+    assert.deepEqual([edit.status, edit.body.error], [409, 'hnry_pushing']);
+    const send = await api(`/api/invoices/${deposit.id}/send`, { method: 'POST', body: JSON.stringify({ by: 'link', dueAt: '2026-10-20' }) }).then(json);
+    assert.deepEqual([send.status, send.body.error], [409, 'hnry_pushing']);
+  } finally {
+    release(); // never leave Hnry held, whatever the assertion said
+  }
+  await idle();
+  const [deposit] = invoicesOf(est.projectId);
+  assert.deepEqual([deposit.pct, deposit.status], [50, 'draft'], 'the figures Hnry got are the ones the app kept');
+  assert.equal(fake.total(deposit.hnry_invoice_id), Math.round(totalsOf(deposit).totalIncGst * 100));
+  assert.equal(app.locals.hnryPush.busy(deposit.id), false);
+});

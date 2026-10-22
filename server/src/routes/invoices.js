@@ -12,7 +12,7 @@ const {
 } = require('../pdf');
 const {
   EXTRAS_SECTION, parseExtras, billTotals, liveDeposit, replacementNumber, cannotEdit, voidReason,
-  invoiceJson, parseJson, amountDue,
+  invoiceJson, parseJson, amountDue, HNRY_CHANGED,
 } = require('../invoices');
 const { readFolder, logActivity, todayOf, isYmd, projectBriefs } = require('./projects');
 const { sendRequest, addSend, cancelPending, sydneyDate } = require('../sends');
@@ -86,7 +86,9 @@ const INVOICE_LISTS = {
  *                                       for any invoice whose push failed or stopped part-way.
  *                                       Waits for Hnry. 200 with the invoice and `hnry`; 409
  *                                       when it can't (Hnry not set up, GST, the deposit not
- *                                       in Hnry yet, lines that don't add up); 502 when Hnry
+ *                                       in Hnry yet, lines that don't add up, a value Hnry
+ *                                       won't take, its reference on an invoice Hnry has
+ *                                       already sent, a part-way draft changed since); 502 when Hnry
  *                                       or Zapier failed (the invoice keeps what landed).
  *   POST /api/invoices/:id/pdf          { issuedAt?, dueAt? } — the PDF. A draft
  *                                       has no dates yet: the ones given (Mark
@@ -106,6 +108,10 @@ function registerInvoiceRoutes(app, db, opts = {}) {
      invoices, made and sent by the app before Hnry, keep working as they were. */
   const inHnry = (row) => Boolean(row.hnry_invoice_id);
   const SENT_FROM_HNRY = { error: 'sent_from_hnry', message: 'This invoice is sent from Hnry. Send it there, then mark it sent here.' };
+  /* Why this invoice can't be edited or sent now (invoices.js cannotEdit),
+     counting a push to Hnry that is still under way as "in Hnry". */
+  const pushing = (row) => Boolean(opts.hnryPush && opts.hnryPush.busy(row.id));
+  const refusalOf = (row) => cannotEdit(row, { pushing: pushing(row) });
 
   function reply(req, res, id, extra) {
     const today = todayOf(req);
@@ -136,12 +142,19 @@ function registerInvoiceRoutes(app, db, opts = {}) {
   };
 
   /* A final re-priced against its deposit's stored totals, keeping the extras
-     block it has (invoices.js: never priced twice). */
+     block it has (invoices.js: never priced twice). The one write of an
+     invoice's figures that doesn't go through cannotEdit, so it answers for
+     Hnry itself: a final already in Hnry is repriced (the app's figure stays
+     the true one) and marked `hnry_changed`, so both screens say its draft in
+     Hnry is out of date and a part-way push isn't continued on top of it. */
   function repriceFinal(final, deposit, now) {
     const snapshot = parseJson(final.estimate_snapshot_json, {});
     const totals = billTotals('final', snapshot, parseJson(final.totals_json, {}).extras, parseJson(deposit.totals_json, {}));
-    db.prepare('UPDATE invoices SET totals_json = ?, less_invoice_id = ?, updated_at = ? WHERE id = ?')
-      .run(JSON.stringify(totals), deposit.id, now, final.id);
+    db.prepare(`
+      UPDATE invoices SET totals_json = ?, less_invoice_id = ?, updated_at = ?,
+             hnry_error = CASE WHEN hnry_invoice_id IS NOT NULL THEN ? ELSE hnry_error END
+       WHERE id = ?
+    `).run(JSON.stringify(totals), deposit.id, now, HNRY_CHANGED, final.id);
   }
 
   /* The Dashboard's lists: GET /api/invoices?state=outstanding|paid&limit=.
@@ -192,7 +205,7 @@ function registerInvoiceRoutes(app, db, opts = {}) {
   app.put('/api/invoices/:id', (req, res) => {
     const row = invoiceFor(req, res);
     if (!row) return undefined;
-    const refusal = cannotEdit(row);
+    const refusal = refusalOf(row);
     if (refusal) return res.status(409).json(refusal);
     const body = req.body || {};
     const snapshot = parseJson(row.estimate_snapshot_json, {});
@@ -255,7 +268,9 @@ function registerInvoiceRoutes(app, db, opts = {}) {
      row; this only asks, waits, and says how it went. A refusal the user can
      act on is a 409; Hnry or Zapier failing is a 502 (what landed is kept, and
      asking again continues from there). */
-  const HNRY_REFUSED = new Set(['gst_registered', 'deposit_not_in_hnry', 'zero_amount', 'amount_mismatch', 'no_client']);
+  const HNRY_REFUSED = new Set([
+    'gst_registered', 'deposit_not_in_hnry', 'zero_amount', 'amount_mismatch', 'no_client', 'bad_input', 'po_in_use', HNRY_CHANGED,
+  ]);
   app.post('/api/invoices/:id/hnry', async (req, res, next) => {
     try {
       const row = invoiceFor(req, res);
@@ -307,7 +322,7 @@ function registerInvoiceRoutes(app, db, opts = {}) {
         return res.status(409).json({ error: 'hnry_incomplete', message: 'Not all of this invoice is in Hnry yet. Retry sending it to Hnry first.' });
       }
     } else {
-      const refusal = cannotEdit(row);
+      const refusal = refusalOf(row);
       if (refusal) return res.status(409).json(refusal);
     }
     const { issuedAt, dueAt } = req.body || {};
@@ -319,6 +334,9 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     db.transaction(() => {
       db.prepare("UPDATE invoices SET status = 'sent', issued_at = ?, due_at = ?, updated_at = ? WHERE id = ?")
         .run(issuedAt, dueAt, now, row.id);
+      // Sent from Hnry: whatever it said about the draft there (`hnry_changed`)
+      // the user has dealt with, in Hnry, before sending it.
+      if (hnry) db.prepare('UPDATE invoices SET hnry_error = NULL WHERE id = ?').run(row.id);
       touch(row, now);
       logActivity(db, row.project_id, 'invoice_sent', {
         invoiceId: row.id, number: row.number, issuedAt, dueAt, ...(hnry ? { by: 'hnry', hnryNumber: row.hnry_number } : {}),
@@ -331,7 +349,7 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     const row = invoiceFor(req, res);
     if (!row) return undefined;
     if (inHnry(row)) return res.status(409).json(SENT_FROM_HNRY);
-    const refusal = cannotEdit(row);
+    const refusal = refusalOf(row);
     if (refusal) return res.status(409).json(refusal);
     const now = nowIso();
     const ask = sendRequest(req.body, now);
@@ -413,6 +431,13 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     }
     const why = voidReason((req.body || {}).reason);
     if (why.error) return res.status(400).json(why);
+    // A deposit's draft final is repriced below: not while it is being made in
+    // Hnry, whose lines were planned from the figures it has now.
+    if (row.kind === 'deposit') {
+      const drafts = db.prepare("SELECT * FROM invoices WHERE less_invoice_id = ? AND kind = 'final' AND status = 'draft'").all(row.id);
+      const busyFinal = drafts.find(pushing);
+      if (busyFinal) return res.status(409).json(refusalOf(busyFinal));
+    }
     const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(row.project_id);
     const number = project && project.upid ? replacementNumber(db, project.upid, row.kind) : null;
     if (!number) return res.status(409).json({ error: 'upid_missing', message: 'This project has no UPID to number a replacement with.' });

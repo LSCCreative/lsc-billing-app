@@ -227,3 +227,49 @@ test('no Hnry connection in Zapier is a clear failure; a lone row or no rows are
   const empty = createHnry({}, zapierTransport({ clientId: 'c', clientSecret: SECRET }, { importSdk: stubSdk({ data: [] }).importSdk }));
   assert.equal(await empty.findByPo({ clientId: 'c', poNumber: 'P' }), null);
 });
+
+/* ── Review fixes (2026-10-22) ────────────────────────────────────────── */
+
+test('findByPo adopts only a draft carrying exactly this reference; a sent one with it is po_in_use', async () => {
+  const rowsOf = (rows) => createHnry({}, { run: async () => rows });
+  const ask = { clientId: 'c', poNumber: 'INV-X-D' };
+  // A search that matched the reference inside a longer one is no match.
+  assert.equal(await rowsOf([{ id: 'g2', invoiceNumber: 'INV-2', status: 'DRAFT', poNumber: 'INV-X-D2' }]).findByPo(ask), null);
+  // The exact one is found among others, wherever it is in the list.
+  const among = await rowsOf([
+    { id: 'g2', invoiceNumber: 'INV-2', status: 'DRAFT', poNumber: 'INV-X-D2' },
+    { id: 'g1', invoiceNumber: 'INV-1', status: 'DRAFT', poNumber: 'INV-X-D' },
+  ]).findByPo(ask);
+  assert.equal(among.id, 'g1');
+  // No status reads as a draft; no PO is no match.
+  assert.equal((await rowsOf([{ id: 'g1', invoiceNumber: 'INV-1', poNumber: 'INV-X-D' }]).findByPo(ask)).id, 'g1');
+  assert.equal(await rowsOf([{ id: 'g1', invoiceNumber: 'INV-1', status: 'DRAFT' }]).findByPo(ask), null);
+  // Sent or paid in Hnry: never adopted, never added to.
+  for (const status of ['SENT', 'PAID']) {
+    await rejects(rowsOf([{ id: 'g1', invoiceNumber: 'INV-1', status, poNumber: 'INV-X-D' }]).findByPo(ask), 'po_in_use');
+  }
+});
+
+test('a call that never answers is a timeout, at twice the action\'s own limit', async () => {
+  const hung = createHnry({ hnry: { timeoutSeconds: 0.02 } }, { run: () => new Promise(() => {}) });
+  const started = Date.now();
+  await rejects(hung.createInvoice({ clientId: 'c', poNumber: 'P', description: 'd', price: 5 }), 'timeout');
+  const took = Date.now() - started;
+  assert.ok(took >= 35 && took < 1000, `took ${took}ms`);
+});
+
+test('a search that finds nothing keeps the transport signed in: no second sign-in or connection lookup', async () => {
+  const log = { created: 0, connections: 0 };
+  const sdk = {
+    async findFirstConnection() { log.connections += 1; return { data: { id: 'conn_1' } }; },
+    async runAction(args) {
+      if (args.action === ACTIONS.findInvoice.action) throw new Error('Error from halted execution: Nothing could be found for the search.');
+      return { data: [{ id: 'gid', invoiceNumber: 'INV-1', status: 'DRAFT' }] };
+    },
+  };
+  const importSdk = async () => ({ createZapierSdk: () => { log.created += 1; return sdk; } });
+  const hnry = createHnry({}, zapierTransport({ clientId: 'cid', clientSecret: SECRET }, { importSdk }));
+  assert.equal(await hnry.findByPo({ clientId: 'c', poNumber: 'P' }), null);
+  await hnry.createInvoice({ clientId: 'c', poNumber: 'P', description: 'd', price: 5 });
+  assert.deepEqual(log, { created: 1, connections: 1 });
+});

@@ -20,9 +20,13 @@
  * `code` the screens can turn into words:
  *   not_configured  no credentials (Hnry "isn't set up"; never thrown at boot)
  *   bad_input       something we were about to send is not a clean value
- *   timeout         Hnry/Zapier took longer than config.hnry.timeoutSeconds
+ *   timeout         Hnry/Zapier took longer than config.hnry.timeoutSeconds (the
+ *                   action itself), or twice that for the whole call (signing
+ *                   in and finding the connection included): a call never hangs
  *   zapier_error    Zapier or Hnry refused or failed
  *   unexpected_shape  it answered, but not with an id and an invoice number
+ *   po_in_use       findByPo: Hnry holds this reference on an invoice that is no
+ *                   longer a draft, so it is neither adopted nor made again
  * Nothing here retries and nothing here logs a credential: the caller decides.
  *
  * THE ACTION TABLE is the part to verify against the real account (H9): the
@@ -166,9 +170,13 @@ function zapierTransport(cfg, deps = {}) {
         const rows = out && out.data;
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
       } catch (err) {
-        // A stale connection or a half-made client must not stick: start clean next time.
-        sdk = null;
-        connection = null;
+        // A stale connection or a half-made client must not stick: start clean next
+        // time. A search that found nothing is an answer, not a failure: keep both,
+        // or every first push would sign in and look the connection up twice.
+        if (!NOTHING_FOUND.test(String((err && err.message) || ''))) {
+          sdk = null;
+          connection = null;
+        }
         throw err;
       }
     },
@@ -186,11 +194,21 @@ function createHnry(config = {}, transport) {
   const cfg = config.hnry || config;
   const impl = transport || (cfg.clientId && cfg.clientSecret ? zapierTransport(cfg) : null);
   const enabled = Boolean(impl);
+  // The longest one whole call may take: twice the action's own limit, since
+  // signing in and finding the connection come first and have none of their
+  // own. Past it the call is a timeout, so a push (and the Retry that shares
+  // it) always finishes, whatever the SDK does.
+  const seconds = Number(cfg.timeoutSeconds) > 0 ? Number(cfg.timeoutSeconds) : 60;
+  const callLimitMs = seconds * 2000;
 
   async function call(spec, inputs) {
     if (!impl) throw new HnryError('not_configured', 'Hnry isn’t set up on this server.');
+    let timer = null;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new HnryError('timeout', 'Hnry took too long to answer.')), callLimitMs);
+    });
     try {
-      return await impl.run(spec, inputs);
+      return await Promise.race([impl.run(spec, inputs), deadline]);
     } catch (err) {
       if (err instanceof HnryError) throw err;
       let msg = err && err.message ? String(err.message) : 'Hnry failed.';
@@ -204,6 +222,8 @@ function createHnry(config = {}, transport) {
       }
       // The reason, never a credential: only the message is kept.
       throw new HnryError('zapier_error', msg.slice(0, 300), err);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -253,15 +273,30 @@ function createHnry(config = {}, transport) {
       return { ok: true };
     },
 
-    /** The invoice carrying this reference for this client, or null. Drafts only (so far). */
+    /**
+     * The DRAFT carrying exactly this reference for this client, or null. What
+     * the search hands back is checked, not trusted: a row whose PO is another
+     * reference (a search that matches "INV-X-D" inside "INV-X-D2") is no match,
+     * and one with this reference that Hnry has sent or paid is never adopted
+     * and lines added to it: that is `po_in_use`. A row with no status is read as
+     * a draft (the search sees drafts only, so far); one with no PO is no match,
+     * so the worst a missing field can do is make a second draft, never touch
+     * the wrong invoice.
+     */
     async findByPo({ clientId, poNumber } = {}) {
+      const want = text(poNumber, 'The reference', 100);
       const rows = await call(ACTIONS.findInvoice, {
         queryField: PO_QUERY_FIELD,
         clientId: text(clientId, 'The Hnry client', 200),
-        poNumber: text(poNumber, 'The reference', 100),
+        poNumber: want,
       });
-      if (!rows.length) return null;
-      return toInvoice(rows[0]);
+      const same = rows.map(toInvoice).filter((i) => i.poNumber !== null && i.poNumber.trim() === want);
+      const draft = same.find((i) => i.status === null || i.status === 'DRAFT');
+      if (draft) return draft;
+      if (same.length) {
+        throw new HnryError('po_in_use', `Hnry already has an invoice for ${want} that is no longer a draft, so it isn’t made again.`);
+      }
+      return null;
     },
   };
 }

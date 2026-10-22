@@ -162,6 +162,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   address, 50k polyline. Autosave PUTs are throttled because every mutating request snapshots the DB
   (`backup.js`). Anything that changes trip stops goes through `changed()`, not `emit()` alone
   (`routeSeq` drops late replies).
+- Hnry: an invoice in Hnry (or with a push under way, `hnryPush.busy`) must not change in the app. Edits
+  and sends go through `cannotEdit(row, { pushing })` (routes/invoices.js `refusalOf`); the one other
+  writer of invoice figures, `repriceFinal`, flags an in-Hnry final `hnry_changed` instead. A new
+  writer of `totals_json`/`extras_json`/`less_invoice_id` must do one or the other.
 
 ## Frontend traps
 

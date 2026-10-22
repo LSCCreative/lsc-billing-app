@@ -156,10 +156,16 @@ function replacementNumber(db, upid, kind) {
 }
 
 /* Why this invoice can't be edited, as a reply body; or null. Only an app-made
-   draft edits in place (D100). */
-function cannotEdit(row) {
+   draft edits in place (D100). `opts.pushing`: a push to Hnry is under way for
+   it (hnry-push.js busy), so it is as good as in Hnry already: an edit or a send
+   now would land after the push read it, and Hnry's draft would bill the old
+   figures (or the client would get it twice). */
+function cannotEdit(row, opts = {}) {
   if (row.kind === 'legacy') {
     return { error: 'legacy_invoice', message: 'This invoice was made the old way, so it can’t be changed here.' };
+  }
+  if (opts.pushing) {
+    return { error: 'hnry_pushing', message: 'This invoice is being made in Hnry right now. Wait a moment, then try again.' };
   }
   // Once an invoice is in Hnry the draft there is the one the user sends, so the
   // app's copy mustn't drift from it: change it in Hnry (hnry-invoicing H4).
@@ -174,6 +180,24 @@ function cannotEdit(row) {
     void: 'This invoice is void. Its replacement is the one to edit.',
   }[row.status] || 'This invoice can’t be changed.';
   return { error: 'not_draft', status: row.status, message };
+}
+
+/* The `hnry_error` of an invoice whose figures changed here after its draft
+   went to Hnry (a deposit voided and remade under a final): the draft there is
+   out of date and is corrected by hand. Mark sent clears it. */
+const HNRY_CHANGED = 'hnry_changed';
+
+/* Where an invoice lives in Hnry (schema v20), as both screens read it (the
+   invoice page's invoiceJson and the folder's rows): null all round for one
+   never pushed. `hnryError` is a short code the screens turn into words. */
+function hnryFields(row) {
+  return {
+    hnryInvoiceId: row.hnry_invoice_id || null,
+    hnryNumber: row.hnry_number || null,
+    hnryPushedAt: row.hnry_pushed_at || null,
+    hnryLinesDone: row.hnry_lines_done === null || row.hnry_lines_done === undefined ? null : row.hnry_lines_done,
+    hnryError: row.hnry_error || null,
+  };
 }
 
 /* A reason for voiding: required, trimmed, one paragraph at most. */
@@ -229,13 +253,7 @@ function invoiceJson(db, row) {
     paidVia: row.paid_via || null,
     voidedAt: row.voided_at || null,
     voidReason: row.void_reason || null,
-    // Where it lives in Hnry (schema v20): null all round for an invoice that
-    // was never pushed. `hnryError` is a short code the screens turn into words.
-    hnryInvoiceId: row.hnry_invoice_id || null,
-    hnryNumber: row.hnry_number || null,
-    hnryPushedAt: row.hnry_pushed_at || null,
-    hnryLinesDone: row.hnry_lines_done === null || row.hnry_lines_done === undefined ? null : row.hnry_lines_done,
-    hnryError: row.hnry_error || null,
+    ...hnryFields(row),
     editable: !cannotEdit(row),
     depositEditable: row.kind === 'deposit' && row.status === 'draft' && !row.hnry_invoice_id && finals.every((f) => f.status === 'draft'),
     createdAt: row.created_at,
@@ -253,6 +271,8 @@ module.exports = {
   liveDeposit,
   replacementNumber,
   cannotEdit,
+  HNRY_CHANGED,
+  hnryFields,
   voidReason,
   invoiceJson,
   parseJson,

@@ -91,7 +91,7 @@ test('a failure says why; Retry only where trying again could help', () => {
 test('every failure code the server can record has its own words', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'src', 'hnry-push.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '..', 'src', 'hnry.js'), 'utf8');
   // `not_configured` is never recorded on an invoice: with Hnry off, nothing is pushed and nothing is written.
-  const codes = new Set([...server.matchAll(/(?:PlanError|HnryError)\('([a-z_]+)'/g)].map((m) => m[1]).concat(['gst_registered']));
+  const codes = new Set([...server.matchAll(/(?:PlanError|HnryError)\('([a-z_]+)'/g)].map((m) => m[1]).concat(['gst_registered', 'hnry_changed']));
   codes.delete('not_configured');
   for (const code of codes) assert.ok(H.WORDS[code], `${code} has words`);
 });
@@ -154,4 +154,39 @@ test('whether Hnry is set up is asked once, and a failed ask reads as "not set u
   assert.equal(down.enabled(), false);
   await down.ready();
   assert.equal(asked, 2, 'a failed ask is asked again, not remembered');
+});
+
+test('a whole draft changed here since it went to Hnry says so: out of date, open it there, then mark it sent', () => {
+  const d = D(inHnry({ kind: 'final', hnryError: 'hnry_changed' }), ON);
+  assert.deepEqual([d.chip, d.tone, d.line, d.open, d.markSent], ['Hnry out of date', 'alert', 'err', true, true]);
+  assert.deepEqual(d.primary, { id: 'hnry-open', label: 'Open in Hnry' });
+  assert.match(d.text, /out of date/);
+  // Part-way and changed: no Retry on top of the old lines.
+  const part = D(inv({ kind: 'final', hnryInvoiceId: gid(1), hnryLinesDone: 2, hnryError: 'hnry_changed' }), ON);
+  assert.deepEqual(part.primary, { id: 'hnry-open', label: 'Open in Hnry' });
+  assert.doesNotMatch(part.text, /before you retry/);
+  // Once sent, the app's own words again.
+  assert.equal(D(inHnry({ status: 'sent', hnryError: 'hnry_changed' }), ON).chip, null);
+});
+
+test('both screens build describe()\'s context the same way from the project\'s invoices', () => {
+  const c = (list) => { const x = plain(H.contextFor(list)); delete x.enabled; return x; };
+  const none = { depositInHnry: false, depositByApp: false };
+  assert.deepEqual(c(undefined), none);
+  assert.deepEqual(c([]), none);
+  assert.deepEqual(c([inHnry()]), { depositInHnry: true, depositByApp: false });
+  assert.deepEqual(c([inHnry({ status: 'void' })]), none);
+  assert.deepEqual(c([inv({ status: 'sent' })]), { depositInHnry: false, depositByApp: true });
+  assert.deepEqual(c([inv({ kind: 'final', status: 'sent' })]), none, 'only a deposit counts');
+});
+
+test('the push toast, and Open in Hnry in a new tab (nothing for an invoice not in it)', () => {
+  assert.equal(H.pushedText({ hnry: { ok: true, already: true } }), 'It’s already in Hnry.');
+  assert.equal(H.pushedText({ hnry: { ok: true, hnryNumber: 'INV-1' } }), 'In Hnry as INV-1. Check the draft there before you send it.');
+  const opened = [];
+  sandbox.window = { open: (...a) => opened.push(a) };
+  H.open(inHnry());
+  H.open(inv());
+  H.open(undefined);
+  assert.deepEqual(plain(opened), [['https://app.hnry.io/invoices/8890452/edit', '_blank', 'noopener']]);
 });

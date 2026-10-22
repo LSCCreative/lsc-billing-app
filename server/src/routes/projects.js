@@ -7,7 +7,7 @@ const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
 const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals, tripLineQty } = require('../calc');
-const { amountDue } = require('../invoices');
+const { amountDue, hnryFields } = require('../invoices');
 const { docSettings } = require('../documents');
 const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays, callSheetDays } = require('../public');
 const { agreementFilename } = require('../pdf');
@@ -265,14 +265,9 @@ function readFolder(db, id, today) {
       // Its client page (task 30), made the first time it's sent, and its newest email.
       publicToken: i.public_token || null,
       send: invoiceSends.get(i.id) || null,
-      // Where it lives in Hnry (schema v20, invoices.js invoiceJson): null all
-      // round for an invoice that was never pushed. The rows say whether it is in
-      // Hnry, part-way, or why it isn't, without opening the invoice.
-      hnryInvoiceId: i.hnry_invoice_id || null,
-      hnryNumber: i.hnry_number || null,
-      hnryPushedAt: i.hnry_pushed_at || null,
-      hnryLinesDone: i.hnry_lines_done === null || i.hnry_lines_done === undefined ? null : i.hnry_lines_done,
-      hnryError: i.hnry_error || null,
+      // Where it lives in Hnry, as the invoice page has it: the rows say whether
+      // it is in Hnry, part-way, or why it isn't, without opening the invoice.
+      ...hnryFields(i),
       createdAt: i.created_at,
       updatedAt: i.updated_at,
     })),

@@ -40,11 +40,16 @@
  *     can't read a draft's lines back), so the user checks the draft before
  *     sending it.
  *   - One push per invoice at a time (a retry during the accept's own push
- *     shares it).
+ *     shares it), and while it runs the invoice can't be edited, sent or have
+ *     its final repriced (`busy`, which routes/invoices.js passes to
+ *     cannotEdit): the lines were planned from the figures it read at the start.
+ *   - Once a draft is in Hnry its figures stay put; the one change that can
+ *     still reach them (a deposit voided and remade under a final, repriceFinal)
+ *     marks it `hnry_changed`, and a part-way push isn't continued from there.
  */
 
 const { nowIso } = require('./db');
-const { amountDue, parseJson, extrasRows, liveDeposit } = require('./invoices');
+const { amountDue, parseJson, extrasRows, liveDeposit, HNRY_CHANGED } = require('./invoices');
 const { readSettings, readPricing } = require('./ratecard');
 const { extrasTotals } = require('./calc');
 const { logActivity } = require('./routes/projects');
@@ -198,6 +203,12 @@ function createHnryPusher(db, hnry, opts = {}) {
     // the client is out by the old way and stays there; void and paid are done.
     if (row.status !== 'draft') return { ok: false, skipped: row.status };
     if (!hnry.enabled) return { ok: false, skipped: 'not_configured' };
+    // Its figures changed after part of it reached Hnry: the lines there bill the
+    // old ones, so adding the rest would make a draft that is neither. It is
+    // put right in Hnry, by hand (the flag stays, so the screens keep saying so).
+    if (row.hnry_invoice_id && row.hnry_error === HNRY_CHANGED) {
+      return { ok: false, code: HNRY_CHANGED, message: 'This invoice changed after part of it went to Hnry. Correct the draft in Hnry.' };
+    }
 
     const totals = parseJson(row.totals_json, {});
     if (carriesGst(totals) || (readSettings(db).gst || {}).registered) {
@@ -272,6 +283,8 @@ function createHnryPusher(db, hnry, opts = {}) {
 
   return {
     push,
+    /** Whether a push of this invoice is under way now. */
+    busy: (invoiceId) => inflight.has(invoiceId),
     /** The deposit / single among `made` ({ id, kind }), in the background: the caller does not wait. */
     pushMade(made) {
       for (const inv of made || []) if (AUTO.has(inv.kind)) push(inv.id);

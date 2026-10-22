@@ -318,7 +318,7 @@ const ProjectFolder = (() => {
     Accepted: 'ok', Paid: 'ok',
     Declined: 'alert', Overdue: 'alert', Expired: 'alert',
     // An invoice in Hnry (hnry-invoicing H6): where the draft is, in words.
-    'In Hnry': 'info', 'Part in Hnry': 'alert', 'Hnry error': 'alert', 'Not in Hnry': 'neutral',
+    'In Hnry': 'info', 'Part in Hnry': 'alert', 'Hnry error': 'alert', 'Hnry out of date': 'alert', 'Not in Hnry': 'neutral',
     Void: 'void',
     // The call sheet's link (trip-planner task 11).
     'Link on': 'info', 'Link off': 'neutral', 'Not shared': 'neutral',
@@ -428,12 +428,7 @@ const ProjectFolder = (() => {
     const open = { id: 'invoice', label: 'Open', target: inv.id };
     // Hnry (hnry-invoicing H6): an invoice can live there as a draft the user sends from Hnry.
     const inH = LSCHnry.inHnry(inv);
-    const hnry = LSCHnry.describe(inv, {
-      enabled: LSCHnry.enabled(),
-      depositInHnry: folder.invoices.some((i) => i.kind === 'deposit' && i.status !== 'void' && LSCHnry.complete(i)),
-      // A deposit the app sent itself, before Hnry: the final goes the same old way.
-      depositByApp: folder.invoices.some((i) => i.kind === 'deposit' && !LSCHnry.inHnry(i) && ['scheduled', 'sent', 'paid'].includes(i.status)),
-    });
+    const hnry = LSCHnry.describe(inv, LSCHnry.contextFor(folder.invoices));
     if (hnry && hnry.chip && inv.status === 'draft') chip = hnry.chip;
     if (inv.hnryNumber && inv.number && inv.hnryNumber !== inv.number) {
       meta = [meta, 'app ref ' + esc(inv.number)].filter(Boolean).join(' · ');
@@ -1268,12 +1263,6 @@ const ProjectFolder = (() => {
 
   // ── Hnry (hnry-invoicing H6) ────────────────────────────────────────────
 
-  /* Hnry's own page for an invoice, in a new tab: the user checks and sends it there. */
-  function openInHnry(inv) {
-    const url = inv ? LSCHnry.urlOf(inv) : null;
-    if (url) window.open(url, '_blank', 'noopener');
-  }
-
   /* Ask the server to make this invoice in Hnry (or finish it: Retry), then show
      the folder as it now is. Whatever happened is on the invoice's row, so the
      folder is read again after a failure too. Resolves; throws an Error carrying
@@ -1282,8 +1271,7 @@ const ProjectFolder = (() => {
     Toast.working('Sending to Hnry…');
     try {
       const reply = await LSCHnry.push(inv.id);
-      Toast.ok(reply.hnry && reply.hnry.already ? 'It’s already in Hnry.'
-        : 'In Hnry' + (reply.hnry && reply.hnry.hnryNumber ? ' as ' + reply.hnry.hnryNumber : '') + '. Check the draft there before you send it.');
+      Toast.ok(LSCHnry.pushedText(reply));
       await refresh();
       return reply;
     } catch (err) {
@@ -1338,7 +1326,7 @@ const ProjectFolder = (() => {
     if (kind === 'inv-paid') return openInvoice(id, 'paid');
     if (kind === 'inv-void') return openInvoice(id, 'void');
     if (kind === 'inv-hnry-sent') return openInvoice(id, 'hnry-sent');
-    if (kind === 'hnry-open') return openInHnry(folder.invoices.find((i) => i.id === id));
+    if (kind === 'hnry-open') return LSCHnry.open(folder.invoices.find((i) => i.id === id));
     if (kind === 'hnry-push') return pushToHnry(folder.invoices.find((i) => i.id === id), button);
     if (kind === 'send') return openSendEstimate(button);
     if (kind === 'send-invoice') return openSendInvoice(folder.invoices.find((i) => i.id === id), button);
@@ -1457,8 +1445,11 @@ const ProjectFolder = (() => {
     window.scrollTo(0, 0);
     placeholder('<h3>Loading…</h3>');
     try {
-      const reply = await LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today());
-      await LSCHnry.ready();
+      // Whether Hnry is set up is asked alongside the folder, not after it (it never rejects).
+      const [reply] = await Promise.all([
+        LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today()),
+        LSCHnry.ready(),
+      ]);
       if (!LSCRouter.isCurrent(ticket)) return;
       activityAll = false;
       folder = reply;
