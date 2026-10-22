@@ -29,10 +29,12 @@
  *                   longer a draft, so it is neither adopted nor made again
  * Nothing here retries and nothing here logs a credential: the caller decides.
  *
- * THE ACTION TABLE is the part to verify against the real account (H9): the
- * input names are the ones the Zap editor showed, but the `action` keys and
- * `actionType` strings are the SDK's, and `findByPo`'s `queryField` value is
- * the option id the editor listed ("PO Number or Reference").
+ * THE ACTION TABLE was read from the real account through the SDK
+ * (`listActions`, `listActionInputFields`, H9, 2026-10-23). Create Invoice
+ * takes its one line in the `invoiceItems` fieldset, not as top-level fields.
+ * Find Invoice by "PO Number or Reference" takes only the reference (no client)
+ * and answers with each invoice's `client` ({ id, name, … }); an unknown
+ * reference is no rows.
  */
 
 class HnryError extends Error {
@@ -45,10 +47,10 @@ class HnryError extends Error {
 }
 
 const ACTIONS = {
-  findOrCreateClient: { name: 'findOrCreateClient', actionType: 'search_or_write', action: 'find_or_create_client' },
+  findOrCreateClient: { name: 'findOrCreateClient', actionType: 'search_or_write', action: 'search_client' },
   createInvoice: { name: 'createInvoice', actionType: 'write', action: 'create_invoice' },
   addItem: { name: 'addItem', actionType: 'write', action: 'add_item_to_existing_invoice' },
-  findInvoice: { name: 'findInvoice', actionType: 'search', action: 'find_invoice' },
+  findInvoice: { name: 'findInvoice', actionType: 'search', action: 'search_invoice' },
 };
 
 const PO_QUERY_FIELD = 'PO Number or Reference';
@@ -111,11 +113,13 @@ function toInvoice(raw) {
   }
   const poNumber = pick(raw, ['poNumber', 'Po Number', 'PO Number', 'po_number']);
   const status = pick(raw, ['status', 'Status']);
+  const client = raw && typeof raw.client === 'object' ? pick(raw.client, ['id', 'ID']) : pick(raw, ['clientId', 'client_id']);
   return {
     id,
     number,
     status: typeof status === 'string' ? status.toUpperCase() : null,
     poNumber: typeof poNumber === 'string' ? poNumber : null,
+    clientId: typeof client === 'string' ? client : null,
   };
 }
 
@@ -287,9 +291,11 @@ function createHnry(config = {}, transport) {
       const inputs = {
         clientId: text(clientId, 'The Hnry client', 200),
         poNumber: text(poNumber, 'The reference', 100),
-        description: text(description, 'The description', 500),
-        quantity: qty(quantity),
-        price: money(price, 'The price'),
+        invoiceItems: [{
+          description: text(description, 'The description', 500),
+          quantity: qty(quantity),
+          price: money(price, 'The price'),
+        }],
       };
       const inv = ymd(invoiceDate, 'The invoice date');
       const due = ymd(dueDate, 'The due date');
@@ -313,24 +319,23 @@ function createHnry(config = {}, transport) {
     },
 
     /**
-     * The DRAFT carrying exactly this reference for this client, or null. What
-     * the search hands back is checked, not trusted: a row whose PO is another
-     * reference (a search that matches "INV-X-D" inside "INV-X-D2") is no match,
-     * and one with this reference that Hnry has sent or paid is never adopted
-     * and lines added to it: that is `po_in_use`. A row with no status is read as
-     * a draft (the search sees drafts only, so far); one with no PO is no match,
-     * so the worst a missing field can do is make a second draft, never touch
-     * the wrong invoice.
+     * The DRAFT carrying exactly this reference for this client, or null. The
+     * search is by reference alone (Hnry's reference search takes no client), and
+     * what it hands back is checked, not trusted: a row whose PO is another
+     * reference (a search that matches "INV-X-D" inside "INV-X-D2") is no match;
+     * one with this reference that Hnry has sent or paid, or that sits on another
+     * client, is never adopted and lines added to it: that is `po_in_use`. A row
+     * with no status is read as a draft (the search sees drafts only, so far), and
+     * one that names no client is taken as this client's; one with no PO is no
+     * match, so the worst a missing field can do is make a second draft, never
+     * touch the wrong invoice.
      */
     async findByPo({ clientId, poNumber } = {}) {
       const want = text(poNumber, 'The reference', 100);
-      const rows = await call(ACTIONS.findInvoice, {
-        queryField: PO_QUERY_FIELD,
-        clientId: text(clientId, 'The Hnry client', 200),
-        poNumber: want,
-      });
+      const client = text(clientId, 'The Hnry client', 200);
+      const rows = await call(ACTIONS.findInvoice, { queryField: PO_QUERY_FIELD, poNumber: want });
       const same = rows.map(toInvoice).filter((i) => i.poNumber !== null && i.poNumber.trim() === want);
-      const draft = same.find((i) => i.status === null || i.status === 'DRAFT');
+      const draft = same.find((i) => (i.status === null || i.status === 'DRAFT') && (i.clientId === null || i.clientId === client));
       if (draft) return draft;
       if (same.length) {
         throw new HnryError('po_in_use', `Hnry already has an invoice for ${want} that is no longer a draft, so it isn’t made again.`);

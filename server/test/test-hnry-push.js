@@ -258,7 +258,7 @@ test('a draft Hnry already holds for this invoice\'s number is adopted, not dupl
 
   // Meanwhile a draft with this number exists in Hnry (a push that died after Hnry made it).
   const c = (await fake.run({ name: 'findOrCreateClient' }, { name: 'Saltwater Co.' }))[0];
-  const [existing] = await fake.run({ name: 'createInvoice' }, { clientId: c.id, poNumber: single.number, description: 'earlier', quantity: 1, price: 5 });
+  const [existing] = await fake.run({ name: 'createInvoice' }, { clientId: c.id, poNumber: single.number, invoiceItems: [{ description: 'earlier', quantity: 1, price: 5 }] });
   const creates = () => fake.calls.filter((x) => x.name === 'createInvoice').length;
   const before = creates();
   const r = await app.locals.hnryPush.push(single.id);

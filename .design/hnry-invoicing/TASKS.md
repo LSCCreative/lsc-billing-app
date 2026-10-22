@@ -176,12 +176,26 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   `hnry.enabled` is true and Settings → Hnry says Connected (the check took ~5 s). The NAS `.env` lines
   are the user's to type at H12._
 
-- [ ] **H9. Live round trip** (money — Opus/high): on scratch with the real credential and the user's **own
+- [x] **H9. Live round trip** (money — Opus/high): on scratch with the real credential and the user's **own
   client record only** (never a real client): accept a $1,000 test project → one deposit draft in Hnry with
   the PO, line and price; create the final with an extra and a "less deposit" line → totals match to the cent;
   Retry after a forced failure; confirm card payment is on by default and GST is $0.00. The user deletes the
   drafts afterwards (the stray `INV-10657741` and test `INV-10670074` too). Done when: the numbers are
   recorded in this file.
+  _Done 2026-10-23 on `api-scratch-hnry-live`, client "Lachlan Sullivan-Carey" (the user's own Hnry record).
+  **Found first: the guessed action table was wrong** (`find_or_create_client`, `find_invoice`, a flat line):
+  read from the account with the SDK, the real ones are `search_client`, `search_invoice` (by reference it
+  takes `poNumber` only, no client; rows carry `client`; none found = no rows) and `create_invoice` with the
+  line in `invoiceItems: [{ description, quantity, price }]`. `hnry.js`, the fake (now refuses the old shapes)
+  and tests fixed; `findByPo` adopts only a draft on the same client. Then, all checked on Hnry's own edit page:
+  (1) $1,000 job accepted as a 50% pair → deposit `INV-10679475`, PO `INV-H9-TEST-1-D`, one line "Deposit
+  invoice (50%): H9 test - delete me" 1 × $500.00, GST $0.00, due $500.00, card on ($7.25).
+  (2) Final with a $250.50 extra → `INV-10679486`, PO `INV-H9-TEST-1-F`: $1,000.00 + $250.50 − $500.00 "Less
+  deposit (INV-10679475)" = $750.50 = the app's balance to the cent, GST $0.00, card $10.88.
+  (3) Wrong Zapier secret → $100 single accepted anyway, row "Hnry error" (`zapier_error`), nothing in Hnry;
+  real secret + Retry → `INV-10679524` 1 × $100.00, PO `INV-H9-TEST-2`; a second press answered "already".
+  A reference search shows one draft per reference. The user deletes INV-10679475, INV-10679486,
+  INV-10679524, INV-10657741 and INV-10670074._
 
 - [ ] **H10. Money review** (money — Opus/high): end-to-end pass: stored totals, Cost Breakdown and every
   document unchanged for projects accepted before v20; a new project pushes the same figures it stores; no

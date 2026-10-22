@@ -226,3 +226,5 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   1Password mounted `.env` must sit outside the Drive folder, and only `grep` reads it (sh, awk get
   nothing). Accepting or Create/Retry there makes REAL Hnry drafts: the user's own client only.
 - Settings → Hnry checks only once its section is on screen: a background tab never starts it.
+- The fake Hnry only proves what it mirrors: read real Zapier shapes with the SDK (`listActions`,
+  `listActionInputFields`, read-only searches) before trusting a new action; the guessed ones were wrong.

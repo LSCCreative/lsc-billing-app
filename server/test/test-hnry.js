@@ -77,8 +77,13 @@ test('createInvoice makes one DRAFT line and hands back Hnry\'s id and number', 
   assert.equal(inv.status, 'DRAFT');
   assert.equal(inv.poNumber, 'INV-UP-1-D');
   const sent = fake.calls.at(-1).inputs;
-  assert.equal(sent.price, 2750.51, 'to the cent');
-  assert.equal(sent.quantity, 1, 'quantity defaults to 1');
+  assert.equal(inv.clientId, c.id);
+  assert.deepEqual(Object.keys(sent).sort(), ['clientId', 'dueDate', 'invoiceItems', 'poNumber'], 'the line goes in invoiceItems, as Hnry\'s Create Invoice takes it');
+  const [line] = sent.invoiceItems;
+  assert.equal(sent.invoiceItems.length, 1);
+  assert.equal(line.description, 'Deposit invoice (50%): Brand film');
+  assert.equal(line.price, 2750.51, 'to the cent');
+  assert.equal(line.quantity, 1, 'quantity defaults to 1');
   assert.equal(sent.dueDate, '2026-11-11');
   assert.ok(!('invoiceDate' in sent), 'a date left out is left to Hnry');
   assert.equal(fake.total(inv.id), 275051);
@@ -93,21 +98,24 @@ test('a final adds its extras and a negative "less deposit" line, and the draft 
   assert.equal(fake.total(inv.id), 275050, '5000.50 + 250.25 - 2500.25');
 });
 
-test('findByPo returns the draft for that client and reference, null for a miss or another client', async () => {
+test('findByPo returns the draft for that client and reference, null for a miss; another client\'s is never adopted', async () => {
   const { hnry } = setup();
   const a = await hnry.findOrCreateClient({ name: 'A' });
   const b = await hnry.findOrCreateClient({ name: 'B' });
   const made = await hnry.createInvoice({ clientId: a.id, poNumber: 'REF-1', description: 'd', price: 10 });
   assert.deepEqual(await hnry.findByPo({ clientId: a.id, poNumber: 'REF-1' }), made);
   assert.equal(await hnry.findByPo({ clientId: a.id, poNumber: 'REF-2' }), null);
-  assert.equal(await hnry.findByPo({ clientId: b.id, poNumber: 'REF-1' }), null);
+  await rejects(hnry.findByPo({ clientId: b.id, poNumber: 'REF-1' }), 'po_in_use');
 });
 
-test('findByPo asks the search the way the Zap editor did', async () => {
+test('findByPo searches by the reference alone, as Hnry\'s reference search takes no client', async () => {
   const { fake, hnry } = setup();
   const a = await hnry.findOrCreateClient({ name: 'A' });
   await hnry.findByPo({ clientId: a.id, poNumber: 'REF-1' });
-  assert.deepEqual(fake.calls.at(-1), { name: 'findInvoice', inputs: { queryField: PO_QUERY_FIELD, clientId: a.id, poNumber: 'REF-1' } });
+  assert.deepEqual(fake.calls.at(-1), { name: 'findInvoice', inputs: { queryField: PO_QUERY_FIELD, poNumber: 'REF-1' } });
+  assert.equal(PO_QUERY_FIELD, 'PO Number or Reference', 'the option value the SDK lists');
+  assert.equal(ACTIONS.findInvoice.action, 'search_invoice');
+  assert.equal(ACTIONS.findOrCreateClient.action, 'search_client');
 });
 
 /* ── Nothing unclean goes out ─────────────────────────────────────────── */
@@ -159,7 +167,7 @@ test('an answer with no id and number is unexpected_shape, never a half-saved in
 test('an answer under Zapier\'s display names reads the same as one under the field names', async () => {
   const labelled = createHnry({}, { run: async () => [{ ID: 'gid1', 'Invoice Number': 'INV-9', Status: 'draft', 'Po Number': 'P' }] });
   assert.deepEqual(await labelled.createInvoice({ clientId: 'c', poNumber: 'P', description: 'd', price: 5 }),
-    { id: 'gid1', number: 'INV-9', status: 'DRAFT', poNumber: 'P' });
+    { id: 'gid1', number: 'INV-9', status: 'DRAFT', poNumber: 'P', clientId: null });
 });
 
 test('a search that finds nothing is null whether Zapier says so with no rows or with a halted step', async () => {
@@ -203,7 +211,7 @@ test('the transport signs in with the credentials, finds the Hnry connection onc
   assert.equal(log.connections, 1, 'the connection is looked up once');
   assert.deepEqual(log.runs[0], {
     app: 'hnry', actionType: ACTIONS.createInvoice.actionType, action: ACTIONS.createInvoice.action, connection: 'conn_1',
-    inputs: { clientId: 'c', poNumber: 'P', description: 'd', quantity: 1, price: 12.5 }, timeoutSeconds: 45,
+    inputs: { clientId: 'c', poNumber: 'P', invoiceItems: [{ description: 'd', quantity: 1, price: 12.5 }] }, timeoutSeconds: 45,
   });
 });
 

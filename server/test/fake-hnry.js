@@ -3,9 +3,10 @@
 /**
  * A stand-in for Hnry behind `hnry.js` (hnry-invoicing H1), used by every test
  * that pushes an invoice (H3, H4, H5). It behaves the way the real account did
- * on 2026-10-22: Create Invoice makes a DRAFT with one line and a Hnry number,
- * Add Item adds a line to a draft, Find Invoice sees drafts only and matches on
- * client + PO, Find or Create Client matches by name.
+ * on 2026-10-22/23: Create Invoice makes a DRAFT with one line (sent in
+ * `invoiceItems`) and a Hnry number, Add Item adds a line to a draft, Find
+ * Invoice by reference takes no client, sees drafts only and names each row's
+ * client, Find or Create Client matches by name.
  *
  *   const fake = fakeHnry();
  *   const hnry = createHnry({}, fake);
@@ -82,6 +83,8 @@ function fakeHnry() {
         }
         case 'createInvoice': {
           if (!clients.some((c) => c.id === inputs.clientId)) throw new Error('Unknown client');
+          const line = (inputs.invoiceItems || [])[0];
+          if (!line || inputs.description !== undefined) throw new Error('Create Invoice takes its line in invoiceItems');
           const n = nextNumber++;
           const inv = {
             id: gid('Invoice', n),
@@ -89,10 +92,11 @@ function fakeHnry() {
             invoiceNumber: `INV-${n}`,
             status: 'DRAFT',
             poNumber: inputs.poNumber || '',
-            items: [{ description: inputs.description, quantity: inputs.quantity, price: inputs.price }],
+            items: [{ description: line.description, quantity: line.quantity, price: line.price }],
           };
           invoices.push(inv);
-          return [{ id: inv.id, invoiceNumber: inv.invoiceNumber, status: inv.status, poNumber: inv.poNumber }];
+          const c = clients.find((x) => x.id === inv.clientId);
+          return [{ id: inv.id, invoiceNumber: inv.invoiceNumber, status: inv.status, poNumber: inv.poNumber, client: { id: c.id, name: c.name } }];
         }
         case 'addItem': {
           const inv = invoices.find((i) => i.id === inputs.invoiceId);
@@ -102,9 +106,15 @@ function fakeHnry() {
           return [{ id: inv.id, invoiceNumber: inv.invoiceNumber, status: inv.status }];
         }
         case 'findInvoice': {
-          const inv = invoices.find((i) => i.clientId === inputs.clientId && i.poNumber === inputs.poNumber && i.status === 'DRAFT');
-          if (!inv) throw new Error('Nothing could be found for the search.');
-          return [{ id: inv.id, invoiceNumber: inv.invoiceNumber, status: inv.status, poNumber: inv.poNumber }];
+          // As the real search by "PO Number or Reference" (2026-10-23): the
+          // reference only, no client; drafts only; each row names its client.
+          if (inputs.clientId !== undefined) throw new Error('A reference search takes no client');
+          return invoices
+            .filter((i) => i.poNumber === inputs.poNumber && i.status === 'DRAFT')
+            .map((i) => {
+              const c = clients.find((x) => x.id === i.clientId);
+              return { id: i.id, invoiceNumber: i.invoiceNumber, status: i.status, poNumber: i.poNumber, client: { id: i.clientId, name: c ? c.name : null } };
+            });
         }
         default:
           throw new Error(`unknown action ${spec.name}`);
