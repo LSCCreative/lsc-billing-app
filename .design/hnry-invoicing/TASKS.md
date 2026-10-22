@@ -139,13 +139,30 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   `test-hnry-web.js` (the web file loaded in a sandbox), 10 mutations killed; suite 853/853. Not checked: Safari,
   a keyboard walk-through of the new dialogs (they reuse the project dialog's focus trap), the design review (H11)._
 
-- [ ] **H7. Settings and Rate Card copy** (frontend — Opus/high): Settings' "Card payments" block
+- [x] **H7. Settings and Rate Card copy** (frontend — Opus/high): Settings' "Card payments" block
   (`settings.js` ~620) becomes **Hnry**: connected or not (a harmless read call), "Invoices are created in
   Hnry as drafts; you send them from Hnry", and the card-fee note (1.45%, min $0.25, paid by you). The Rate
   Card's card-fee ⓘ and its placeholder (`pricing.js` ~1028 and ~1852) drop "Stripe 1.65% + 30c" for Hnry's
   1.45%; the user decides at build time whether the saved fee moves (it is their number to type).
   Done when: no "Stripe" or "passed on to the client" remains in `web/`, and 375px is checked.
   _Modifies: `settings.js`, `pricing.js`._
+  _Done 2026-10-22 (committed, not deployed): Settings' "Card payments" section is now **Hnry**
+  (`#/settings/hnry`): what Hnry does (drafts made there, sent from there), a status line from the new
+  **`GET /api/hnry/check`** (`hnry.check()`: signs in to Zapier and looks the Hnry connection up afresh; no Hnry
+  action runs, nothing read or made; always 200 with `{ enabled, connected, code?, message? }`) in four states
+  (Connected / Not connected with why and what it means for an accepted project / Not set up yet with the env
+  names / Couldn't check), a **Check again** button (announced; `aria-disabled` while checking so focus stays),
+  and the card-fee note (1.45%, min $0.25, paid by you) linking to the Rate Card. The Rate Card's card-fee ⓘ
+  names Hnry's 1.45% instead of Stripe's 1.65% + 30c; the PF8 Stripe readout comment is gone. The saved fee is
+  untouched (the user's number). The fake and `dev-stub-hnry.js` fail the check with `/fail {"name":"check"}`.
+  3 tests (`test-hnry.js` ×2, `test-hnry-send.js`); suite 866/866. Checked on the stub: all four states, 375px
+  (no sideways scroll, 44px targets). One "Stripe" stays in `web/css/tokens.css`: a design reference to its
+  dashboard look (U18), not payment copy. Adds a boot-time route: NAS before Pages. Review fixes: the
+  check has its own 15 s deadline, a push keeps the connection it looked up (a failed check can't clear it),
+  Settings checks only once the Hnry section is near the screen, an answer counts only for the latest check
+  (a rail jump no longer leaves "Checking…"), and focus moves to the answer when Check again hides. Left open
+  from the review: the Settings wording duplicates `LSCHnry.wordsOf`; the Rate Card ⓘ says invoices are paid
+  through Hnry even before it is set up; no `#/settings/cards` alias; no web test for the panel._
 
 ## Setup and verification
 

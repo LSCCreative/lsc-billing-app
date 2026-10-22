@@ -5,8 +5,13 @@
  * Until task 21 this was the Invoice Settings pop-up, opened over whatever was
  * on #main. It is a screen now, with eight sections, each linkable as
  * #/settings/<section>: Business, Payment, Estimates & invoices, Service
- * agreement, Email, Google Calendar, Card payments and Account. A rail beside them from 1100px, a jump
- * list above them below that. Card payments reads "Not set up yet" (held, D101).
+ * agreement, Email, Google Calendar, Hnry and Account. A rail beside them from 1100px, a jump
+ * list above them below that.
+ * Hnry (hnry-invoicing H7; it replaced the held "Card payments" block) says
+ * whether the server reaches Hnry through Zapier (GET /api/hnry/check, a
+ * sign-in and a connection lookup that reads nothing in Hnry), that invoices
+ * are made there as drafts and sent from there, and what Hnry's card fee is.
+ * Nothing in it is saved: the Zapier credential lives in the server's .env.
  * Email shows whether the server's SMTP key is connected and sends a test
  * (task 28); the key itself is set on the server, never typed in here.
  * Google Calendar (trip-planner task 12; G1, G2) connects the server to the
@@ -84,7 +89,7 @@ const SettingsView = (() => {
     ['agreement', 'Service agreement'],
     ['email', 'Email'],
     ['calendar', 'Google Calendar'],
-    ['cards', 'Card payments'],
+    ['hnry', 'Hnry'],
     ['account', 'Account'],
   ];
   const MESSAGE_LABELS = { estimate: 'Estimate', deposit: 'Deposit invoice', final: 'Final invoice', single: 'Single invoice' };
@@ -532,12 +537,6 @@ const SettingsView = (() => {
       '</div>');
   }
 
-  function pendingMarkup(id, title, body) {
-    return section(id, title, '',
-      '<p class="set-status"><span class="set-status-dot" aria-hidden="true"></span>Not set up yet</p>' +
-      '<p class="set-hint set-hint-lead">' + body + '</p>');
-  }
-
   /* Email (task 28, D102). The status and any failed sends come from
      GET /api/email/status once the screen is drawn (EmailPanel). Nothing here
      is saved with the settings: the key lives in the server's .env. */
@@ -566,6 +565,28 @@ const SettingsView = (() => {
         '<p class="set-status"><span class="set-status-dot" aria-hidden="true"></span><span>Checking…</span></p>' +
       '</div>' +
       '<p class="sr-only" id="set-gcal-live" role="status" aria-live="polite"></p>');
+  }
+
+  /* Hnry (hnry-invoicing H7). The status is filled by HnryPanel once
+     GET /api/hnry/check answers. Hnry's card fee is the business's, never the
+     client's (brief H1), so the Rate Card's Card fees is where it reaches prices. */
+  function hnryMarkup() {
+    return section('hnry', 'Hnry',
+      'Invoices are created in Hnry as drafts, and you send them from Hnry. A deposit (or single) invoice is made ' +
+      'there when a client accepts a quote; the final, from the project page once the extras are in. The connection ' +
+      'is set on the server, never typed in here.',
+      '<div class="set-hnry-status">' +
+        '<p class="set-status" id="set-hnry-status"><span class="set-status-dot" aria-hidden="true"></span>' +
+          '<span id="set-hnry-status-text">Checking…</span></p>' +
+        '<button type="button" class="btn btn-quiet btn-sm" id="set-hnry-check" hidden>Check again</button>' +
+      '</div>' +
+      '<p class="set-hint set-hint-lead" id="set-hnry-detail" tabindex="-1"></p>' +
+      '<p class="sr-only" id="set-hnry-live" role="status" aria-live="polite"></p>' +
+      '<h3 class="set-group-head">Card payments</h3>' +
+      '<p class="set-hint set-hint-lead">Every Hnry invoice can be paid by card. Hnry charges 1.45% of each card ' +
+        'payment (at least $0.25), and you pay it, not the client: it’s a business expense. Your prices carry it ' +
+        'through the Card fees figure on the Rate Card.</p>' +
+      '<p class="set-hnry-link"><a class="set-link" href="#/finance/pricing">Card fees on the Rate Card</a></p>');
   }
 
   /* Account (account-recovery). A <form> of its own so Enter saves it and a
@@ -616,8 +637,7 @@ const SettingsView = (() => {
         agreementMarkup(f) +
         emailMarkup() +
         calendarMarkup() +
-        pendingMarkup('cards', 'Card payments',
-          'Paying an invoice by card through Stripe, with the card fee passed on to the client, is on hold. Clients pay by bank transfer, as the invoices say.') +
+        hnryMarkup() +
         accountMarkup() +
         '<div id="settings-error" role="alert"></div>' +
         '<div class="pricing-save-bar set-save-bar">' +
@@ -1618,6 +1638,111 @@ const SettingsView = (() => {
     return { load, sendTest, reset() { mail = null; } };
   })();
 
+  // ── Hnry: whether the server reaches it ───────────────────────────────────
+
+  /* hnry-invoicing H7. Four states from GET /api/hnry/check: not set up (no
+     Zapier credential on the server), connected, not connected (the credential
+     is there but Zapier or its Hnry connection failed: why, and what that means
+     for an accepted project), or couldn't check (the server didn't answer).
+     "Check again" asks once more; the result is announced.
+     The first check waits until the section is near the screen: each one signs
+     in to Zapier, so opening Settings for Business doesn't. An answer counts
+     only for the check that asked last (`asked`): never the router's ticket,
+     which a rail jump moves without redrawing anything. */
+  const HnryPanel = (() => {
+    let state = null; // the last check, or null while unknown
+    let checking = false;
+    let asked = 0; // which check is the current one; reset() moves it on
+    let watcher = null; // waits for the section to come near the screen
+
+    function reason(s) {
+      if (s.code === 'timeout') return 'Zapier took too long to answer.';
+      return s.message ? s.message.replace(/\s*\.?$/, '.') : 'Zapier didn’t answer.';
+    }
+
+    function paint() {
+      const text = $('set-hnry-status-text');
+      if (!text) return; // the screen was left
+      const dot = document.querySelector('#set-hnry-status .set-status-dot');
+      const detail = $('set-hnry-detail');
+      const again = $('set-hnry-check');
+      dot.classList.remove('is-on', 'is-warn');
+      // Not `disabled`: that would drop the keyboard focus a click on it left there.
+      again.setAttribute('aria-disabled', String(checking));
+      if (checking) {
+        text.textContent = 'Checking…';
+        return;
+      }
+      let line;
+      if (!state) {
+        text.textContent = 'Couldn’t check';
+        line = 'The server didn’t answer. Try again once it’s back.';
+      } else if (!state.enabled) {
+        text.textContent = 'Not set up yet';
+        line = 'Add the Zapier SDK credential to the server’s settings (ZAPIER_CREDENTIALS_CLIENT_ID and ' +
+          'ZAPIER_CREDENTIALS_CLIENT_SECRET), then restart it. Until then, invoices are sent from the app as before.';
+      } else if (state.connected) {
+        text.textContent = 'Connected';
+        dot.classList.add('is-on');
+        line = 'Zapier signed in and found your Hnry account.';
+      } else {
+        text.textContent = 'Not connected';
+        dot.classList.add('is-warn');
+        line = 'The server has a Zapier credential, but Hnry couldn’t be reached: ' + reason(state) + ' Clients can ' +
+          'still accept quotes; their invoices wait as “Not in Hnry yet” until you retry them on the project page.';
+      }
+      detail.textContent = line;
+      // Nothing to check again until the server has a credential. Hiding the
+      // button that has focus would drop it to the page: the answer takes it.
+      const hide = Boolean(state && !state.enabled);
+      if (hide && document.activeElement === again) detail.focus();
+      again.hidden = hide;
+    }
+
+    async function load(announce) {
+      const mine = ++asked;
+      checking = true;
+      paint();
+      let next = null;
+      try {
+        next = await LSCApi.get('/api/hnry/check');
+      } catch (err) {
+        if (mine !== asked) return;
+        if (!(err instanceof LSCApi.ApiError)) throw err;
+        if (err.kind === 'auth') { handlers.onAuthLost(); return; }
+      }
+      if (mine !== asked) return; // a newer check, or the screen was redrawn
+      checking = false;
+      state = next;
+      paint();
+      const live = $('set-hnry-live');
+      if (announce && live) LSCUtil.announce(live, 'Hnry: ' + $('set-hnry-status-text').textContent + '.');
+    }
+
+    function bind() {
+      $('set-hnry-check').addEventListener('click', () => { if (!checking) load(true); });
+      const sec = $('set-sec-hnry');
+      if (typeof IntersectionObserver !== 'function') { load(false); return; }
+      watcher = new IntersectionObserver((entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        watcher.disconnect();
+        watcher = null;
+        load(false);
+      }, { rootMargin: '200px 0px' });
+      watcher.observe(sec);
+    }
+
+    function reset() {
+      if (watcher) watcher.disconnect();
+      watcher = null;
+      state = null;
+      checking = false;
+      asked += 1;
+    }
+
+    return { bind, reset };
+  })();
+
   // ── Google Calendar: the connection and the calendars shown ────────────────
 
   /* Trip-planner task 12 (G1, G2; IA "Settings → Google Calendar").
@@ -2225,6 +2350,7 @@ const SettingsView = (() => {
     Clauses.reset();
     EmailPanel.reset();
     GcalPanel.reset();
+    HnryPanel.reset();
     AccountPanel.reset();
     root.innerHTML = head + '<div class="empty-state"><h3>Loading…</h3></div>';
     let settings;
@@ -2254,6 +2380,7 @@ const SettingsView = (() => {
     EmailPanel.load(ticket);
     GcalPanel.bind();
     GcalPanel.load(ticket, arrival);
+    HnryPanel.bind();
     AccountPanel.bind();
     AccountPanel.load(ticket);
     LSCUtil.landFocus(root);

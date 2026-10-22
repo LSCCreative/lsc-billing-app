@@ -10,7 +10,8 @@
  * A small control server on :8081 puts Hnry in the state you want to look at:
  *
  *   POST /fail {"name":"createInvoice","times":1,"after":0}   the next calls to
- *        that action throw (findOrCreateClient, createInvoice, addItem, findInvoice)
+ *        that action throw (findOrCreateClient, createInvoice, addItem, findInvoice,
+ *        or check: Settings' "Connected" line)
  *   POST /reset                                               forget every draft and failure
  *   GET  /drafts                                              what "Hnry" holds, with each draft's lines
  *
@@ -27,6 +28,10 @@ const { fakeHnry } = require('../test/fake-hnry');
 ensureDataDirs();
 let fake = fakeHnry();
 const transport = {
+  async check() {
+    console.log('[stub-hnry] check');
+    return fake.check();
+  },
   async run(spec, inputs) {
     console.log(`[stub-hnry] ${spec.name} ${JSON.stringify(inputs)}`);
     return fake.run(spec, inputs);

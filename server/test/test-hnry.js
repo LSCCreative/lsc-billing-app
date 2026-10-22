@@ -273,3 +273,76 @@ test('a search that finds nothing keeps the transport signed in: no second sign-
   await hnry.createInvoice({ clientId: 'c', poNumber: 'P', description: 'd', price: 5 });
   assert.deepEqual(log, { created: 1, connections: 1 });
 });
+
+/* ── Settings' connection check (H7) ──────────────────────────────────── */
+
+test('check signs in and looks the Hnry connection up afresh, and runs no Hnry action', async () => {
+  const stub = stubSdk();
+  const hnry = createHnry({}, zapierTransport({ clientId: 'cid', clientSecret: SECRET }, { importSdk: stub.importSdk }));
+  assert.deepEqual(await hnry.check(), { connected: true });
+  assert.deepEqual(await hnry.check(), { connected: true });
+  assert.equal(stub.log.connections, 2, 'each check looks again: a connection removed in Zapier shows');
+  assert.deepEqual(stub.log.runs, [], 'nothing read or made in Hnry');
+  assert.deepEqual(stub.log.created, [{ credentials: { clientId: 'cid', clientSecret: SECRET } }]);
+});
+
+test('check says why it isn\'t connected, without the secret, and starts clean next time', async () => {
+  await rejects(createHnry({}).check(), 'not_configured');
+  const none = stubSdk({ noConnection: true });
+  await rejects(createHnry({}, zapierTransport({ clientId: 'c', clientSecret: SECRET }, { importSdk: none.importSdk })).check(), 'zapier_error');
+
+  let fail = true;
+  let made = 0;
+  const importSdk = async () => ({
+    createZapierSdk: () => {
+      made += 1;
+      return { async findFirstConnection() { if (fail) throw new Error(`bad credentials ${SECRET}`); return { data: { id: 'conn_1' } }; } };
+    },
+  });
+  const hnry = createHnry({ hnry: { clientId: 'cid', clientSecret: SECRET } }, zapierTransport({ clientId: 'cid', clientSecret: SECRET }, { importSdk }));
+  await rejects(hnry.check(), 'zapier_error');
+  fail = false;
+  assert.deepEqual(await hnry.check(), { connected: true });
+  assert.equal(made, 2, 'a failed check drops the signed-in client');
+
+  const hung = createHnry({ hnry: { timeoutSeconds: 0.02 } }, { run: async () => [], check: () => new Promise(() => {}) });
+  await rejects(hung.check(), 'timeout');
+  assert.deepEqual(await createHnry({}, { run: async () => [] }).check(), { connected: true }, 'a fake with no check of its own');
+});
+
+test('a check that fails while a push is looking Hnry up never takes the connection from under the push', async () => {
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let lookups = 0;
+  const runs = [];
+  const sdk = {
+    async findFirstConnection() {
+      lookups += 1;
+      if (lookups === 1) { await held; return { data: { id: 'conn_1' } }; }
+      throw new Error('Zapier down');
+    },
+    async runAction(args) { runs.push(args); return { data: [{ id: 'gid', invoiceNumber: 'INV-1', status: 'DRAFT' }] }; },
+  };
+  const importSdk = async () => ({ createZapierSdk: () => sdk });
+  const hnry = createHnry({}, zapierTransport({ clientId: 'cid', clientSecret: SECRET }, { importSdk }));
+  const push = hnry.createInvoice({ clientId: 'c', poNumber: 'P', description: 'd', price: 5 });
+  await new Promise((r) => setImmediate(r));
+  const check = hnry.check();
+  release();
+  await rejects(check, 'zapier_error');
+  assert.equal((await push).number, 'INV-1');
+  assert.equal(runs[0].connection, 'conn_1');
+});
+
+test('the check has its own short deadline, whatever the push limit is', async () => {
+  const hnry = createHnry({ hnry: { timeoutSeconds: 600 } }, { run: async () => [], check: () => new Promise(() => {}) });
+  const realSetTimeout = global.setTimeout;
+  const asked = [];
+  global.setTimeout = (fn, ms, ...rest) => { asked.push(ms); return realSetTimeout(fn, 0, ...rest); };
+  try {
+    await rejects(hnry.check(), 'timeout');
+  } finally {
+    global.setTimeout = realSetTimeout;
+  }
+  assert.deepEqual(asked, [15000]);
+});

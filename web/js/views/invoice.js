@@ -33,7 +33,8 @@
  * While its email waits it is `scheduled` (dates set, nothing editable), and
  * the line under its status says when it goes, with Change and Cancel email
  * (D47); cancelling makes it a draft again. "Mark paid" records a payment
- * that came in (card payments, held at D101, would mark their own).
+ * that came in, by bank or by card through Hnry (Hnry never says an invoice
+ * was paid, so it is always marked here).
  *
  * CORRECTING ONE (D100): a draft edits in place; a sent, unpaid one is voided
  * with a reason and a draft replacement made, which this screen then opens;

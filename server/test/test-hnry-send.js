@@ -34,7 +34,7 @@ let app;
 const servers = [];
 
 let fake;
-const transport = { run: (spec, inputs) => fake.run(spec, inputs) };
+const transport = { run: (spec, inputs) => fake.run(spec, inputs), check: () => fake.check() };
 
 async function start(opts) {
   const a = createApp(db, { today: () => '2026-10-04', renderPdf: async () => Buffer.from('%PDF-fake'), publicLimits: LIMITS, ...opts });
@@ -266,6 +266,27 @@ test('GET /api/hnry/status says whether Hnry is set up, and needs a session', as
   assert.deepEqual([none.status, none.body], [200, { enabled: false }]);
   const anon = await fetch(`${base}/api/hnry/status`);
   assert.equal(anon.status, 401);
+});
+
+/* ── Settings asks whether the connection is there (H7) ───────────────── */
+
+test('GET /api/hnry/check answers connected, or why not, and never makes anything in Hnry', async () => {
+  const ok = await api('/api/hnry/check').then(json);
+  assert.deepEqual([ok.status, ok.body], [200, { enabled: true, connected: true }]);
+  assert.deepEqual(fake.calls.map((c) => c.name), ['check'], 'only the check: no Hnry action ran');
+
+  fake.fail('check', 1, { message: 'No Hnry connection in Zapier.' });
+  const down = await api('/api/hnry/check').then(json);
+  assert.deepEqual([down.status, down.body], [200, { enabled: true, connected: false, code: 'zapier_error', message: 'No Hnry connection in Zapier.' }]);
+
+  const off = await start({});
+  const loginOff = await fetch(`${off.url}/api/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'lachlan', password: PASSWORD }),
+  });
+  const c2 = loginOff.headers.getSetCookie()[0].split(';')[0];
+  const none = await fetch(`${off.url}/api/hnry/check`, { headers: { cookie: c2 } }).then(json);
+  assert.deepEqual([none.status, none.body], [200, { enabled: false, connected: false }]);
+  assert.equal((await fetch(`${base}/api/hnry/check`)).status, 401);
 });
 
 /* ── The project page's rows carry where each invoice is in Hnry (H6) ── */

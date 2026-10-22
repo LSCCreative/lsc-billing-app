@@ -11,6 +11,7 @@
  *   const hnry = createHnry({}, fake);
  *   fake.fail('createInvoice', 1)        // the next createInvoice throws once
  *   fake.fail('addItem', 1, { after: 2 }) // ...or after two good addItem calls
+ *   fake.fail('check', 1)                 // Settings' connection check fails once (H7)
  *   fake.calls                            // every call, in order: { name, inputs }
  *   fake.total(invoiceId)                 // the sum of that draft's lines, in cents
  *   const release = fake.hold()           // every call waits (Hnry "slow") until release()
@@ -57,6 +58,13 @@ function fakeHnry() {
       const inv = invoices.find((i) => i.id === invoiceId);
       if (!inv) throw new Error('no such draft');
       return inv.items.reduce((s, it) => s + Math.round(it.price * 100) * it.quantity, 0);
+    },
+
+    /** Settings' connection check (H7): fails like any action, by the name 'check'. */
+    async check() {
+      calls.push({ name: 'check', inputs: {} });
+      if (gate) await gate;
+      maybeFail('check');
     },
 
     async run(spec, inputs) {

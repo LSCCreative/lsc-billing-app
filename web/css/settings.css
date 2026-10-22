@@ -194,7 +194,7 @@
   display: none;
 }
 
-/* ── Not set up yet (Email, Card payments until stage E) ──────────────────── */
+/* ── A connection's status (Email, Google Calendar, Hnry) ─────────────────── */
 
 .set-status {
   display: inline-flex;
@@ -214,6 +214,32 @@
   height: 7px;
   border-radius: 50%;
   border: 1px solid var(--muted);
+}
+
+/* ── Hnry (hnry-invoicing H7) ─────────────────────────────────────────────── */
+
+/* The status and "Check again" share a line, wrapping under it when narrow. */
+.set-hnry-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: 14px;
+}
+.set-hnry-status .set-status {
+  margin-bottom: 0;
+}
+.set-hnry-status .btn[hidden] {
+  display: none;
+}
+/* The Rate Card link under the card-fee note: a link, so it needs the block
+   box for .set-link's 44px target. */
+.set-hnry-link {
+  margin: -8px 0 0;
+}
+.set-hnry-link .set-link {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ── Errors and the save bar ──────────────────────────────────────────────── */

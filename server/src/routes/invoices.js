@@ -81,6 +81,9 @@ const INVOICE_LISTS = {
  *                                       never voided.
  *   GET  /api/hnry/status               { enabled }: whether Hnry is set up here
  *                                       (H6), so the screens know to offer it.
+ *   GET  /api/hnry/check                { enabled, connected, code?, message? }:
+ *                                       Settings asks Zapier for the Hnry connection
+ *                                       (H7). Reads nothing in Hnry; always 200.
  *   POST /api/invoices/:id/hnry         Create this invoice in Hnry as a draft (hnry-invoicing
  *                                       H4): the final when the user asks for it, and Retry
  *                                       for any invoice whose push failed or stopped part-way.
@@ -262,6 +265,25 @@ function registerInvoiceRoutes(app, db, opts = {}) {
      no account. Behind the session gate like every /api route. */
   app.get('/api/hnry/status', (_req, res) => {
     res.json({ enabled: Boolean(app.locals.hnry && app.locals.hnry.enabled) });
+  });
+
+  /* Settings' Hnry block (H7): is the connection there right now? A sign-in
+     and a connection lookup, no Hnry action, so asking is always harmless. A
+     failure is an answer to show, not an error: 200 with why. */
+  app.get('/api/hnry/check', async (_req, res) => {
+    const hnry = app.locals.hnry;
+    if (!hnry || !hnry.enabled) return res.json({ enabled: false, connected: false });
+    try {
+      await hnry.check();
+      res.json({ enabled: true, connected: true });
+    } catch (err) {
+      res.json({
+        enabled: true,
+        connected: false,
+        code: (err && err.code) || 'zapier_error',
+        message: String((err && err.message) || 'Hnry didn’t answer.').slice(0, 300),
+      });
+    }
   });
 
   /* Hnry (hnry-invoicing H4). The pusher does the work and records it on the

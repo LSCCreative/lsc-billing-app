@@ -150,20 +150,39 @@ function zapierTransport(cfg, deps = {}) {
     return sdk;
   }
 
+  /* The Hnry connection in Zapier, looked up now. Callers keep what this
+     returns: `connection` is shared, and a check may clear it mid-push. */
+  async function lookup(zapier) {
+    const found = await zapier.findFirstConnection({ app: 'hnry', owner: 'me' });
+    const conn = found && found.data;
+    if (!conn || !conn.id) throw new Error('No Hnry connection in Zapier.');
+    connection = conn;
+    return conn;
+  }
+
   return {
+    /* Settings' "Connected" (H7): sign in and find the Hnry connection afresh,
+       nothing more. No Hnry action runs, so nothing in Hnry is read or made. A
+       push under way keeps the connection it already holds. */
+    async check() {
+      try {
+        await lookup(await client());
+      } catch (err) {
+        sdk = null;
+        connection = null;
+        throw err;
+      }
+    },
+
     async run(spec, inputs) {
       try {
         const zapier = await client();
-        if (!connection) {
-          const found = await zapier.findFirstConnection({ app: 'hnry', owner: 'me' });
-          connection = found && found.data;
-          if (!connection || !connection.id) throw new Error('No Hnry connection in Zapier.');
-        }
+        const conn = connection || await lookup(zapier);
         const out = await zapier.runAction({
           app: 'hnry',
           actionType: spec.actionType,
           action: spec.action,
-          connection: connection.id,
+          connection: conn.id,
           inputs,
           timeoutSeconds: cfg.timeoutSeconds || 60,
         });
@@ -200,15 +219,24 @@ function createHnry(config = {}, transport) {
   // it) always finishes, whatever the SDK does.
   const seconds = Number(cfg.timeoutSeconds) > 0 ? Number(cfg.timeoutSeconds) : 60;
   const callLimitMs = seconds * 2000;
+  // Settings' check (H7) is a sign-in and one lookup, and someone is waiting on
+  // it: well under Cloudflare's ~100 s, so a hung Zapier reads "took too long".
+  const checkLimitMs = Math.min(callLimitMs, 15000);
 
   async function call(spec, inputs) {
+    return guarded(() => impl.run(spec, inputs), spec.name);
+  }
+
+  /* One call to the transport, with the deadline, the redaction and the error
+     codes every caller relies on. */
+  async function guarded(run, name, limitMs = callLimitMs) {
     if (!impl) throw new HnryError('not_configured', 'Hnry isn’t set up on this server.');
     let timer = null;
     const deadline = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new HnryError('timeout', 'Hnry took too long to answer.')), callLimitMs);
+      timer = setTimeout(() => reject(new HnryError('timeout', 'Hnry took too long to answer.')), limitMs);
     });
     try {
-      return await Promise.race([impl.run(spec, inputs), deadline]);
+      return await Promise.race([run(), deadline]);
     } catch (err) {
       if (err instanceof HnryError) throw err;
       let msg = err && err.message ? String(err.message) : 'Hnry failed.';
@@ -216,7 +244,7 @@ function createHnry(config = {}, transport) {
       for (const secret of [cfg.clientSecret, cfg.clientId]) {
         if (secret && secret.length >= 6) msg = msg.split(secret).join('[redacted]');
       }
-      if (NOTHING_FOUND.test(msg) && spec.name === 'findInvoice') return [];
+      if (NOTHING_FOUND.test(msg) && name === 'findInvoice') return [];
       if (/time(d)?\s*out|timeout|ETIMEDOUT|aborted/i.test(msg)) {
         throw new HnryError('timeout', 'Hnry took too long to answer.', err);
       }
@@ -229,6 +257,17 @@ function createHnry(config = {}, transport) {
 
   return {
     enabled,
+
+    /**
+     * Whether Zapier signs in and has a Hnry connection (Settings, H7). Reads
+     * nothing in Hnry and makes nothing. Resolves { connected: true } or throws
+     * an HnryError like any call. A transport with no check of its own (a test
+     * fake) counts as connected.
+     */
+    async check() {
+      await guarded(() => (impl && impl.check ? impl.check() : undefined), 'check', checkLimitMs);
+      return { connected: true };
+    },
 
     /** The Hnry client for this name, made if there isn't one. Resolves { id, name }. */
     async findOrCreateClient({ name, email } = {}) {

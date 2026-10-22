@@ -26,10 +26,11 @@
  * out-of-range value blocks the save rather than being guessed at.
  *
  * CARD FEES (pricing-floor PF8)
- * The block under the tax rate edits the card's `cardFeePct`, a PERCENT (1.65)
+ * The block under the tax rate edits the card's `cardFeePct`, a PERCENT (1.45)
  * where the tax rate is a fraction. Blank is no fee (null); 0 to 10, else the
  * save is refused naming the field. It is in every auto price for every client
- * (calc.js suggestedPrice), never a card-only surcharge (P7). As it is typed,
+ * (calc.js suggestedPrice), never a card-only surcharge (P7): Hnry's card fee
+ * is the business's, never the client's (hnry-invoicing). As it is typed,
  * every auto row updates in place, as the Service Day's do: a valid figure is
  * copied onto priceCtx, which resolve() prices from; a bad one leaves the last
  * good figure there until the save names it. Typed prices don't move, and the
@@ -1021,11 +1022,11 @@ const PricingView = (() => {
       label: 'How card fees reach your prices',
       title: 'Card fees',
       paragraphs: [
-        'Card surcharges are banned from 1 October 2026: the fee can’t be added only to invoices paid by card. ' +
-          'It is recovered through your prices instead, so every client pays it, however they pay.',
+        'Your invoices are paid through Hnry, which charges you 1.45% of each card payment (at least $0.25). ' +
+          'The client is never charged it: it is recovered through your prices instead, so every client pays it, however they pay.',
         'An auto price is your income floor × (1 + business profit) × (1 + this fee), rounded up once. ' +
           'Own-time travel takes the fee but not your profit; the car’s per km and anything billed at cost take neither.',
-        'Stripe’s standard rate for Australian cards is 1.65% + 30c a payment. Enter the percentage; the 30c isn’t in it.',
+        'Enter Hnry’s percentage; its $0.25 minimum only matters on invoices under about $17.',
         'The floor badges still measure against your bare income floor, so the fee never hides a price that’s too low. ' +
           'Estimates already saved keep the figures they were quoted at.',
       ],
@@ -1848,9 +1849,8 @@ const PricingView = (() => {
       '<div class="sum-label pricing-day-title">Card fees (%)' + cardFeeInfo() + '</div>' +
       '<div class="pricing-setting-hint" id="fee-hint">Built into every auto price, for every client however they pay. ' +
       'Prices you’ve typed don’t move. Blank is no fee.</div></div>' +
-      /* The "rate actually paid" readout and its "Use this" button go here once
-         card-payments can read what Stripe charged (pricing-floor PF8): no UI
-         for them until then. */
+      /* No "rate actually paid" readout (pricing-floor PF8): Hnry, through
+         Zapier, doesn't say what a card payment cost (hnry-invoicing H7). */
       '<input type="number" id="fee-inp" min="0" max="10" step="0.01" placeholder="0" value="' + esc(feeRaw) +
       '" aria-label="Card fees, percent" aria-describedby="fee-hint"></div>' +
       /* The Service Day — see SERVICE UNITS above. Same block as the tax rate:
