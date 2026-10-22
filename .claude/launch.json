@@ -41,6 +41,16 @@
       "port": 8080
     },
     {
+      "_comment": "The REAL Hnry, through Zapier (hnry-invoicing H8/H9): the api-scratch-hnry database with the Zapier SDK credential from the 1Password Environment ZAPIER_CREDENTIALS, mounted at ~/.config/lsc-billing/hnry.env, outside the Drive folder because the preview launcher can't read a 1Password pipe inside it and read through grep, the one reader 1Password serves it to here (sh and awk get nothing) (create it with the 1Password MCP create_local_env_file; never copy values into a file). Accepting a project or pressing Create/Retry here makes REAL drafts in Hnry: only with the user's own client record (H9). Settings -> Hnry's check only signs in.",
+      "name": "api-scratch-hnry-live",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "eval \"$(grep -E '^ZAPIER_CREDENTIALS_CLIENT_(ID|SECRET)=' \"$HOME/.config/lsc-billing/hnry.env\" | sed 's/^/export /')\" && cd server && GOOGLE_CALENDAR_WRITE=0 DATA_DIR=/tmp/lsc-billing-hnry CORS_ORIGINS=http://localhost:5173 COOKIE_SAMESITE=none COOKIE_SECURE=1 APP_URL=http://localhost:5173/ SESSION_SECRET=dev-session-secret-0123456789-0123456789 node scripts/dev-stub-mail.js"
+      ],
+      "port": 8080
+    },
+    {
       "_comment": "api-scratch with a pretend Google (server/scripts/dev-stub-google.js): Connect goes to a local consent page and every Google call is answered locally, for Settings → Google Calendar without an OAuth client. STUB_GOOGLE_REFRESH_FAIL=1 makes Google refuse the refresh token; STUB_GOOGLE_DOWN=1 makes it unreachable.",
       "name": "api-scratch-google",
       "runtimeExecutable": "sh",
@@ -71,7 +81,7 @@
       "port": 8080
     },
     {
-      "_comment": "A never-configured database, for verifying the first-run setup steps on the estimates empty state \u2014 those only render while the pricing and settings rows have never been written, which api-scratch's database has. Delete /tmp/lsc-billing-firstrun to reset it. Seed it first: cd server && DATA_DIR=/tmp/lsc-billing-firstrun ADMIN_USERNAME=dev ADMIN_PASSWORD=<12+ chars> npm run seed",
+      "_comment": "A never-configured database, for verifying the first-run setup steps on the estimates empty state — those only render while the pricing and settings rows have never been written, which api-scratch's database has. Delete /tmp/lsc-billing-firstrun to reset it. Seed it first: cd server && DATA_DIR=/tmp/lsc-billing-firstrun ADMIN_USERNAME=dev ADMIN_PASSWORD=<12+ chars> npm run seed",
       "name": "api-firstrun",
       "runtimeExecutable": "sh",
       "runtimeArgs": [

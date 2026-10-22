@@ -49,11 +49,32 @@ GOOGLE_MAPS_SERVER_KEY=               # "LSC Billing — server" key, Maps Stati
 GOOGLE_OAUTH_CLIENT_ID=               # client "LSC Billing — NAS calendar"
 GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=https://billing.lsccreative.studio/api/google/oauth/callback
+ZAPIER_CREDENTIALS_CLIENT_ID=         # Hnry: 1Password Environment "ZAPIER_CREDENTIALS"
+ZAPIER_CREDENTIALS_CLIENT_SECRET=
 ```
 
 `APP_ORIGIN` stays unset (falls back to `APP_URL`). **Never set `GOOGLE_CALENDAR_WRITE=0` on the
 NAS**: that is the dev-server switch and would stop live bookings writing to Google. A missing Google
 or mail value only disables that one feature.
+
+## Hnry through Zapier (hnry-invoicing)
+
+- **The credential:** a Zapier SDK credential (Zapier → Connections → SDK credentials; its secret is
+  shown once), kept in the 1Password Environment **ZAPIER_CREDENTIALS** as
+  `ZAPIER_CREDENTIALS_CLIENT_ID` and `_SECRET`. The Hnry connection itself is made once in Zapier.
+- **NAS:** the user types both into the NAS `server/.env` (never through chat or a tracked file), then
+  `docker compose up -d --build` (not `restart`). Empty = Hnry "not set up": nothing is pushed and the
+  app sends invoices itself as before.
+- **Check:** Settings → Hnry says **Connected** (`GET /api/hnry/check`: a Zapier sign-in and connection
+  lookup, nothing read or made in Hnry). "Not connected" quotes Zapier's reason; a 401 on the
+  credentials exchange is a wrong ID/secret pair.
+- **Order:** schema v20 and the `/api/hnry/*` routes ship on the NAS **before** Pages, with the
+  credential already in `.env`. After deploy accept nothing real; the user does one real project when
+  ready (H12). A live push makes real Hnry drafts: test only with the user's own client record.
+- **Local:** launch config `api-scratch-hnry-live` (the `/tmp/lsc-billing-hnry` scratch DB) reads the
+  Environment mounted at `~/.config/lsc-billing/hnry.env` with the 1Password MCP `create_local_env_file`.
+  It must sit outside the Drive folder, and only `grep` gets its contents (sh and awk read nothing), so
+  the config loads it through `grep`. `api-scratch-hnry` is the pretend Hnry, no credential.
 
 ## Pages secrets (Settings → Secrets and variables → Actions)
 

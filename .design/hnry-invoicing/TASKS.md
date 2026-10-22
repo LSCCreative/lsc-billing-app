@@ -166,11 +166,15 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
 
 ## Setup and verification
 
-- [ ] **H8. Credentials and runbook** (deploy — Sonnet/medium; the user does the secret steps): the user creates a
+- [x] **H8. Credentials and runbook** (deploy — Sonnet/medium; the user does the secret steps): the user creates a
   Zapier **SDK credential** (Connections → SDK credentials, secret shown once) and stores it in a 1Password
   Environment (never chat or tracked files); `create_local_env_file` feeds scratch; the NAS `server/.env` gets
   the two variables (`server/.env.example` and `DEPLOYMENT.md` updated). The Zapier connection to Hnry is
   already made. Done when: `hnry.enabled` is true on scratch and the Settings block says connected.
+  _2026-10-22: Environment `ZAPIER_CREDENTIALS` made; `DEPLOYMENT.md` gains the Hnry section; launch config
+  `api-scratch-hnry-live` reads it (see there for the grep-only mount). **Done:** on scratch
+  `hnry.enabled` is true and Settings → Hnry says Connected (the check took ~5 s). The NAS `.env` lines
+  are the user's to type at H12._
 
 - [ ] **H9. Live round trip** (money — Opus/high): on scratch with the real credential and the user's **own
   client record only** (never a real client): accept a $1,000 test project → one deposit draft in Hnry with

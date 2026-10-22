@@ -222,3 +222,7 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   the DB up before any check that sends, voids or marks paid. Don't `git stash` to compare trees.
 - Every deploy: fetch and diff `origin/main` first; ask the user; NAS before Pages when there is a
   migration or new route (see `DEPLOYMENT.md`).
+- Real Hnry on scratch: `api-scratch-hnry-live` (credential from 1Password, see `DEPLOYMENT.md`). A
+  1Password mounted `.env` must sit outside the Drive folder, and only `grep` reads it (sh, awk get
+  nothing). Accepting or Create/Retry there makes REAL Hnry drafts: the user's own client only.
+- Settings → Hnry checks only once its section is on screen: a background tab never starts it.
