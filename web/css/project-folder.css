@@ -506,6 +506,13 @@
   color: var(--color-status-error-text);
   font-weight: var(--font-weight-semibold);
 }
+/* A field after the dialog's words or after another field (Mark sent's two
+   dates, Void's reason) needs its own room: its label belongs to the field
+   below it, not to the one above (H11). */
+.pf-dialog .pfd-text + .field,
+.pf-dialog .field + .field {
+  margin-top: var(--space-6);
+}
 .pf-dialog .field label {
   display: block;
   margin-bottom: var(--space-3);

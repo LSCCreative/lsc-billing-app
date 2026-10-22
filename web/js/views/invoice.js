@@ -265,13 +265,17 @@ const InvoiceView = (() => {
     }
     if (inv.replaces) {
       html += '<p class="pf-notice">Replaces <button type="button" class="inv-link" data-go="' + esc(inv.replaces.id) + '">' +
-        esc(inv.replaces.number || 'a voided invoice') + '</button>, which was voided.</p>';
+        esc(shownNumber(inv.replaces) || 'a voided invoice') + '</button>, which was voided.</p>';
     }
     if (inv.kind === 'final' && inv.less && inv.less.status === 'void' && inv.status !== 'void') {
-      html += '<p class="pf-notice is-alert" role="note"><strong>The deposit this takes off, ' + esc(inv.less.number || '') +
+      html += '<p class="pf-notice is-alert" role="note"><strong>The deposit this takes off, ' + esc(shownNumber(inv.less)) +
         ', was voided.</strong> ' + (inv.status === 'draft'
         ? 'Reopen the folder to see the deposit that stands now.'
         : 'Void this final and make a replacement: the replacement takes off the deposit that stands now.') + '</p>';
+    }
+    if (inv.status === 'void' && LSCHnry.inHnry(inv)) {
+      html += '<p class="pf-notice is-alert" role="note"><strong>Voided here only.</strong> Void or credit ' +
+        esc(shownNumber(inv)) + ' in Hnry too, or the client can still pay it there.</p>';
     }
     if (inv.kind === 'legacy') {
       html += '<p class="pf-notice">Made the old way, before projects: its PDF prints from the estimate it was made as, and nothing ' +
@@ -286,10 +290,13 @@ const InvoiceView = (() => {
     return '<div class="inv-row' + (cls ? ' ' + cls : '') + '"><dt>' + label + '</dt><dd>' + value + '</dd></div>';
   }
 
+  /* An invoice by the number its client sees: Hnry's once it lives there (H3). */
+  const shownNumber = (r) => (r && (r.hnryNumber || r.number)) || '';
+
   function lessLabel(less) {
     const paid = less && less.status === 'paid';
     return (paid ? 'Less deposit paid' : 'Less deposit invoiced') +
-      (less && less.number ? ' <span class="inv-num">' + esc(less.number) + '</span>' : '');
+      (shownNumber(less) ? ' <span class="inv-num">' + esc(shownNumber(less)) + '</span>' : '');
   }
 
   /* The sum, top to bottom (D35): the estimate, the extras, the whole job,
@@ -459,6 +466,19 @@ const InvoiceView = (() => {
     return lines.map((l, i) => lineMarkup(l, i, editable)).join('');
   }
 
+  /* The line in the Extras panel's foot: what locks this invoice. One headed
+     for Hnry locks when it is made there, not when it is sent (H6). */
+  function extrasHint(inv, editable) {
+    const toHnry = !LSCHnry.inHnry(inv) && Boolean(hnryFor(inv));
+    if (editable) {
+      return 'Billed at the standard rate: no day or time rate applies to extras. ' +
+        (toHnry ? 'Editable until you create it in Hnry.' : 'Editable until the invoice is sent.');
+    }
+    if (inv.status === 'void') return 'This invoice is void.';
+    if (LSCHnry.inHnry(inv)) return 'It’s in Hnry, so it doesn’t change here: change it in Hnry.';
+    return 'Sent invoices don’t change. To correct one, void it and make a replacement.';
+  }
+
   /* The Extras panel: Save extras in its foot (IA). It keeps .billing-block
      for the editor's line grid: the tablet floor and the phone's stacked
      label/value rows (responsive.css). */
@@ -474,9 +494,7 @@ const InvoiceView = (() => {
       '<div class="right">Price</div><div class="right">Bill</div><div></div></div>' +
       '<div class="gt-body" id="inv-extras-body">' + extrasRowsMarkup(editable) + '</div>' +
       '<div class="panel-foot inv-extras-foot">' +
-      '<p class="inv-extras-hint">' + (editable
-        ? 'Billed at the standard rate: no day or time rate applies to extras. Editable until the invoice is sent.'
-        : inv.status === 'void' ? 'This invoice is void.' : 'Sent invoices don’t change. To correct one, void it and make a replacement.') + '</p>' +
+      '<p class="inv-extras-hint">' + extrasHint(inv, editable) + '</p>' +
       (editable
         ? '<div class="inv-save"><span class="inv-save-state" id="inv-save-state" aria-live="polite"></span>' +
           '<button type="button" class="btn" id="inv-save" data-write disabled><span class="spinner"></span>Save extras</button></div>'
@@ -1016,16 +1034,26 @@ const InvoiceView = (() => {
 
   function openVoid(opener) {
     const inv = data.invoice;
+    // An invoice that lives in Hnry (H6): the client's copy is there, and voiding here doesn't reach it.
+    const inH = LSCHnry.inHnry(inv);
+    const named = shownNumber(inv) || 'this invoice';
+    const deposit = inv.kind === 'deposit' ? ' A final invoice not yet sent takes off the replacement instead.' : '';
     ProjectFolder.dialog(opener, {
-      title: 'Void ' + (inv.number || 'this invoice') + '?',
+      title: 'Void ' + named + '?',
       body:
-        '<p class="pfd-text" id="pfd-desc">The client has seen this number, so it is never reused. ' + esc(inv.number || 'It') +
-        ' stays in the folder marked void, dated today, with your reason, and a draft replacement (' +
-        esc(nextNumberGuess(inv)) + ') is made for you to correct and send.' +
-        (inv.kind === 'deposit' ? ' A final invoice not yet sent takes off the replacement instead.' : '') + '</p>' +
+        '<p class="pfd-text" id="pfd-desc">' + (inH
+          ? esc(named) + ' stays in the folder marked void, dated today, with your reason, and a draft replacement (' +
+            esc(nextNumberGuess(inv)) + ') is made for you to correct and create in Hnry.' + deposit +
+            ' <strong>Voiding here doesn’t change Hnry: void or credit ' + esc(named) + ' in Hnry too, or the client can still pay it there.</strong>'
+          : 'The client has seen this number, so it is never reused. ' + esc(inv.number || 'It') +
+            ' stays in the folder marked void, dated today, with your reason, and a draft replacement (' +
+            esc(nextNumberGuess(inv)) + ') is made for you to correct and send.' + deposit) + '</p>' +
         '<div class="field"><label for="pfd-reason">Why it’s being voided</label>' +
         '<textarea id="pfd-reason" rows="3" maxlength="500" aria-describedby="pfd-reason-hint"></textarea>' +
-        '<p class="pfd-hint" id="pfd-reason-hint">Your client sees this: it’s on the old invoice’s page, which points them to the replacement, and printed on the void copy. Write it for them.</p></div>',
+        '<p class="pfd-hint" id="pfd-reason-hint">' + (inH
+          ? 'For your records. The client’s copy is in Hnry, so they don’t see this here.'
+          : 'Your client sees this: it’s on the old invoice’s page, which points them to the replacement, and printed on the void copy. Write it for them.') +
+        '</p></div>',
       describe: true,
       confirm: 'Void and make replacement',
       danger: true,
@@ -1034,7 +1062,8 @@ const InvoiceView = (() => {
         const reason = dlgValue('pfd-reason').trim();
         if (!reason) throw fieldError('pfd-reason', 'Say why it’s being voided.');
         return write('void', { reason }, b, 'Voiding…', (reply) =>
-          (inv.number || 'The invoice') + ' voided. ' + (reply.invoice.number || 'Its replacement') + ' is a draft, ready to correct.');
+          (shownNumber(inv) || 'The invoice') + ' voided' + (inH ? ' here: void it in Hnry too. ' : '. ') +
+          (reply.invoice.number || 'Its replacement') + ' is a draft, ready to correct.');
       },
     });
   }

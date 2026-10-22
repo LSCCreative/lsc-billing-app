@@ -120,6 +120,17 @@ const draftOf = (r) => fake.invoices.find((d) => d.poNumber === r.number);
 
 /* ── The final, line by line ──────────────────────────────────────────── */
 
+test('the final names its deposit by the deposit\'s Hnry number, as the draft in Hnry does (H11)', async () => {
+  const { deposit, final } = await accepted({ pct: 40 });
+  const hnryNumber = row(deposit.id).hnry_number;
+  assert.ok(hnryNumber, 'the deposit is in Hnry');
+  const r = await inv(final.id);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual([r.body.invoice.less.number, r.body.invoice.less.hnryNumber], [deposit.number, hnryNumber]);
+  assert.equal((await toHnry(final.id)).status, 200);
+  assert.ok(draftOf(final).items.some((i) => i.description === `Less deposit (${hnryNumber})`), 'the same number in Hnry');
+});
+
 test('the final goes as its balance line, each extra, and a negative "less deposit", adding up to what it bills', async () => {
   const { est, deposit, final } = await accepted({ pct: 40 });
   assert.ok(row(deposit.id).hnry_number, 'the deposit is in Hnry first');

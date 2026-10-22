@@ -99,6 +99,28 @@ says nothing about Hnry**, so the old invoice stays payable there. Three copy an
    the mark is wrong there too, re-run the tracking once the panels that load later (Google Calendar,
    Account) have drawn._
 
+## Outcome (2026-10-23, same day)
+
+All four Must and Should items are fixed. They were checked on a fresh throwaway copy at 1280 and 375
+(`screenshots/fixed-*.png`, local only), measuring what each fixed text now says:
+
+- **Must 1:** for an invoice in Hnry, the void dialog is titled with the Hnry number. It says the replacement is made "to
+  correct and create in Hnry" and ends in bold: "Voiding here doesn't change Hnry: void or credit INV-… in
+  Hnry too, or the client can still pay it there." The reason hint reads "For your records. The client's
+  copy is in Hnry, so they don't see this here." The toast says "voided here: void it in Hnry too". The void
+  row adds "· void it in Hnry too", and the voided invoice's page says "Voided here only. Void or credit
+  INV-… in Hnry too…". An old-way invoice's dialog is unchanged.
+- **Should 1:** `extrasHint()` gives "Editable until you create it in Hnry." on a final headed for Hnry, and
+  "It's in Hnry, so it doesn't change here: change it in Hnry." on one in Hnry. The old-way and void wording
+  is unchanged.
+- **Should 2:** `invoiceJson` (server) now carries `hnryNumber` on `less`, `replaces` and `replacedBy`, and
+  the page names an invoice by it when there is one: HF-400 reads "Less deposit paid INV-10670003", the
+  number its Hnry final uses. A test pins it, and it fails without the column.
+- **Should 3:** `.pf-dialog .pfd-text + .field, .pf-dialog .field + .field` get `--space-6`. Mark sent now has
+  16px from the words to "Issued on" and 16px from the Issued box to "Due on" (12px label to box).
+
+The Could improve items are left as they are.
+
 ## What Works Well
 
 - **One next step per invoice.** Each state's main button is the thing to do: Retry in Hnry, Create in

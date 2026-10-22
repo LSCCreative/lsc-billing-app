@@ -415,8 +415,12 @@ const ProjectFolder = (() => {
       meta = 'made the old way';
     } else if (inv.status === 'void') {
       chip = 'Void';
-      meta = (inv.voidedAt ? 'voided ' + when(inv.voidedAt) : '') +
-        (replacedBy ? (inv.voidedAt ? ' · ' : '') + 'replaced by ' + esc(replacedBy.number || '') : '');
+      meta = [
+        inv.voidedAt ? 'voided ' + when(inv.voidedAt) : '',
+        replacedBy ? 'replaced by ' + esc(replacedBy.hnryNumber || replacedBy.number || '') : '',
+        // Voiding here doesn't reach Hnry, where the client can still pay it (H11).
+        LSCHnry.inHnry(inv) ? 'void it in Hnry too' : '',
+      ].filter(Boolean).join(' · ');
     } else {
       chip = overdue ? 'Overdue' : INVOICE_STATUS[inv.status] || inv.status;
       meta = [

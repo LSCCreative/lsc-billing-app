@@ -220,12 +220,13 @@ function voidReason(value) {
  * once its final has gone out with that deposit taken off it.
  */
 function invoiceJson(db, row) {
-  const byId = db.prepare('SELECT id, kind, number, status, totals_json, paid_at, voided_at FROM invoices WHERE id = ?');
-  const brief = (r) => (r ? { id: r.id, kind: r.kind, number: r.number || null, status: r.status, paidAt: r.paid_at || null } : null);
+  const byId = db.prepare('SELECT id, kind, number, hnry_number, status, totals_json, paid_at, voided_at FROM invoices WHERE id = ?');
+  // hnryNumber: the number the client sees once it lives in Hnry (hnry-invoicing H3); the screens name it by that.
+  const brief = (r) => (r ? { id: r.id, kind: r.kind, number: r.number || null, hnryNumber: r.hnry_number || null, status: r.status, paidAt: r.paid_at || null } : null);
   const totals = parseJson(row.totals_json, {});
   const legacy = row.kind === 'legacy';
   const less = row.less_invoice_id ? byId.get(row.less_invoice_id) : null;
-  const replacedBy = db.prepare('SELECT id, kind, number, status, paid_at FROM invoices WHERE replaces_id = ? ORDER BY created_at, id LIMIT 1')
+  const replacedBy = db.prepare('SELECT id, kind, number, hnry_number, status, paid_at FROM invoices WHERE replaces_id = ? ORDER BY created_at, id LIMIT 1')
     .get(row.id);
   const finals = row.kind === 'deposit'
     ? db.prepare("SELECT status FROM invoices WHERE less_invoice_id = ? AND kind = 'final' AND status <> 'void'").all(row.id)

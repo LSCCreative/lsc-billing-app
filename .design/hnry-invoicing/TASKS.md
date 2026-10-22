@@ -217,7 +217,9 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   _Done 2026-10-23: `DESIGN_REVIEW.md` (44 captures, local only). Must fix: voiding an invoice in Hnry
   leaves it live in Hnry and the dialog doesn't say so. Should fix: "sent" copy where Hnry locks the
   invoice; the Balance names the deposit by the app's reference; Mark sent's fields crowded. Four
-  could-improves. **The fixes are not made yet.**_
+  could-improves. All four Must and Should fixes made the same day (see the review's Outcome): void and Hnry,
+  Hnry-locking copy, the deposit's Hnry number (`invoiceJson` gains `hnryNumber` on less/replaces/replacedBy,
+  1 test), dialog field spacing. The could-improves are left._
 
 - [ ] **H12. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v20 (and v19 if still
   pending) on a copy of the backup, fetch and diff `origin/main`, NAS before Pages, credentials in the NAS
