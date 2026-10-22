@@ -197,11 +197,21 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   A reference search shows one draft per reference. The user deletes INV-10679475, INV-10679486,
   INV-10679524, INV-10657741 and INV-10670074._
 
-- [ ] **H10. Money review** (money — Opus/high): end-to-end pass: stored totals, Cost Breakdown and every
+- [x] **H10. Money review** (money — Opus/high): end-to-end pass: stored totals, Cost Breakdown and every
   document unchanged for projects accepted before v20; a new project pushes the same figures it stores; no
   internal figure (floors, tax set-aside, take-home) is sent to Hnry (the line is only the client-facing
   amount). Update `WORKING_NOTES.md` (Hnry is the invoice rail; paid is manual; never block acceptance on
   Zapier; the GST guard).
+  _Done 2026-10-23: `migration-check.js` (this folder; usage in its header) on the review dataset made with
+  the v19 tree `0491971` (11 projects, every invoice state): NO DIFFERENCES. Every table identical but the
+  new `hnry_*` columns (all empty), schema one new row 20; calc.js identical on 26 priced copies; 169 owner
+  and public routes and PDFs identical (45 PDF texts, invoices and Cost Breakdowns) with Hnry not set up;
+  against a fake Hnry, every sent/paid/void/legacy invoice is refused with nothing sent, the two finals
+  whose deposit went the old way refuse (`deposit_not_in_hnry`), the one pre-v20 draft and a newly
+  accepted pair (deposit, final + 2 extras, $4,899.05 in 4 lines) each equal their stored figure to the
+  cent with stored totals unchanged; the 12 calls carry only names, the reference, ids and line prices.
+  Mutation: the take-home figure put in a line's text is caught. The dataset has no saved client rows,
+  so `clients.hnry_client_id` is only checked empty. Run it again on a copy of the live backup at H12._
 
 - [ ] **H11. Design review**: run /design-review against the brief for H6–H7 at 1280 / 800 / 375.
 

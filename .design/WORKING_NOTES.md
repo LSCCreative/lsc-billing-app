@@ -166,6 +166,13 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   and sends go through `cannotEdit(row, { pushing })` (routes/invoices.js `refusalOf`); the one other
   writer of invoice figures, `repriceFinal`, flags an in-Hnry final `hnry_changed` instead. A new
   writer of `totals_json`/`extras_json`/`less_invoice_id` must do one or the other.
+- Hnry is the invoice rail: invoices are made there as drafts (deposit/single at acceptance, the final
+  on request) and the user sends them from Hnry. Paid is never read back: Mark paid stays manual.
+  Acceptance never waits on or fails because of Zapier (the push runs after commit; a failure is
+  recorded on the row for Retry). The GST guard pushes nothing while any figure carries GST or Settings
+  says registered (brief C2). Lines come from STORED totals and must sum to `amountDue` to the cent;
+  only names, the reference, ids and client-facing prices go to Hnry, never an internal figure
+  (`.design/hnry-invoicing/migration-check.js` section 4 checks it).
 
 ## Frontend traps
 
