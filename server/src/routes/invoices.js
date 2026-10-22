@@ -79,6 +79,8 @@ const INVOICE_LISTS = {
  *                                       with the next free suffix (D100). A
  *                                       draft is edited instead; a paid one is
  *                                       never voided.
+ *   GET  /api/hnry/status               { enabled }: whether Hnry is set up here
+ *                                       (H6), so the screens know to offer it.
  *   POST /api/invoices/:id/hnry         Create this invoice in Hnry as a draft (hnry-invoicing
  *                                       H4): the final when the user asks for it, and Retry
  *                                       for any invoice whose push failed or stopped part-way.
@@ -240,6 +242,13 @@ function registerInvoiceRoutes(app, db, opts = {}) {
       }, now);
     })();
     return reply(req, res, row.id);
+  });
+
+  /* Whether Hnry is set up on this server (hnry-invoicing H6): the screens offer
+     "Create in Hnry" and the like only when it is. Nothing else is said: no key,
+     no account. Behind the session gate like every /api route. */
+  app.get('/api/hnry/status', (_req, res) => {
+    res.json({ enabled: Boolean(app.locals.hnry && app.locals.hnry.enabled) });
   });
 
   /* Hnry (hnry-invoicing H4). The pusher does the work and records it on the

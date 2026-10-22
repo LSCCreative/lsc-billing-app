@@ -127,7 +127,17 @@ const InvoiceView = (() => {
      meaning, the tint only echoes it. */
   const TONE = { draft: 'neutral', scheduled: 'info', sent: 'info', paid: 'ok', void: 'void', overdue: 'alert', legacy: 'neutral' };
 
+  /* What Hnry has to say about this invoice (web/js/hnry.js), or null. */
+  const hnryFor = (inv) => LSCHnry.describe(inv, {
+    enabled: LSCHnry.enabled(),
+    depositInHnry: ((data && data.invoices) || []).some((i) => i.kind === 'deposit' && i.status !== 'void' && LSCHnry.complete(i)),
+    // A deposit the app sent itself, before Hnry: the final goes the same old way.
+    depositByApp: ((data && data.invoices) || []).some((i) => i.kind === 'deposit' && !LSCHnry.inHnry(i) && ['scheduled', 'sent', 'paid'].includes(i.status)),
+  });
+
   function statusMarkup(inv) {
+    const hnry = hnryFor(inv);
+    const hnryChip = hnry && hnry.chip && inv.status === 'draft';
     const s = inv.status;
     const overdue = s === 'sent' && inv.dueAt && inv.dueAt < today();
     let note = '';
@@ -135,13 +145,15 @@ const InvoiceView = (() => {
     else if (s === 'void') note = inv.voidedAt ? 'voided ' + when(inv.voidedAt) : '';
     else if (s === 'sent' && inv.dueAt) note = (overdue ? 'was due ' : 'due ') + when(inv.dueAt);
     else if (s === 'scheduled' && inv.dueAt) note = 'due ' + when(inv.dueAt);
-    else if (s === 'draft' && inv.kind === 'final') note = 'add any extras, then send it';
+    else if (s === 'draft' && inv.kind === 'final' && !hnry) note = 'add any extras, then send it';
     if (inv.kind === 'legacy' && s !== 'paid') note = 'made the old way';
-    const word = inv.kind === 'legacy' && s !== 'paid' ? 'Legacy' : overdue ? 'Overdue' : STATUS_WORD[s] || s;
+    const word = inv.kind === 'legacy' && s !== 'paid' ? 'Legacy' : overdue ? 'Overdue' : hnryChip ? hnry.chip : STATUS_WORD[s] || s;
     const tone = inv.kind === 'legacy' && s !== 'paid' ? 'legacy' : overdue ? 'overdue' : s;
-    return '<p class="inv-status"><span class="pf-chip is-' + (TONE[tone] || 'neutral') + '">' + esc(word) + '</span>' +
+    return '<p class="inv-status"><span class="pf-chip is-' + (hnryChip && !overdue ? hnry.tone : TONE[tone] || 'neutral') + '">' + esc(word) + '</span>' +
       (note ? '<span class="inv-status-note' + (overdue ? ' is-alert' : '') + '">' + esc(note) + '</span>' : '') + '</p>' +
-      (inv.kind === 'legacy' ? '' : SendPanel.statusMarkup(inv.send, inv.number || 'this invoice'));
+      (inv.kind === 'legacy' ? ''
+        : LSCHnry.lineMarkup(hnry, inv.number || 'this invoice') +
+          (LSCHnry.inHnry(inv) ? '' : SendPanel.statusMarkup(inv.send, inv.number || 'this invoice')));
   }
 
   /* The header's one primary, Actions ▾ and Documents ▾ (IA "Invoice row and
@@ -158,10 +170,23 @@ const InvoiceView = (() => {
         files: [inv.estimateId ? { id: 'legacy-pdf', label: 'Invoice PDF', hint: 'From its estimate' } : null],
       };
     }
+    // Hnry (hnry-invoicing H6): an invoice that lives in Hnry is sent from Hnry.
+    const hnry = hnryFor(inv);
+    const inH = LSCHnry.inHnry(inv);
+    const hnryOpen = hnry && hnry.open ? { id: 'hnry-open', label: 'Open in Hnry' } : null;
+    const hnryLeads = Boolean(hnry && (hnry.primary || hnry.defer));
+    const send = inv.status === 'draft' && !inH
+      ? { id: 'send', label: hnryLeads ? 'Send from the app…' : 'Send…', write: true } : null;
+    let primary = inv.status === 'draft' ? send : out ? { id: 'paid', label: 'Mark paid…', write: true } : null;
+    if (hnry && hnry.primary) primary = { id: hnry.primary.id, label: hnry.primary.label, write: hnry.primary.id === 'hnry-push' };
+    else if (hnry && hnry.defer) primary = null;
+    else if (hnryOpen && inv.status === 'draft') primary = hnryOpen;
     return {
-      primary: inv.status === 'draft' ? { id: 'send', label: 'Send…', write: true }
-        : out ? { id: 'paid', label: 'Mark paid…', write: true } : null,
+      primary,
       actions: [
+        hnryLeads ? send : null,
+        hnryOpen && !(primary && primary.id === hnryOpen.id) ? hnryOpen : null,
+        hnry && hnry.markSent ? { id: 'hnry-sent', label: 'Mark sent…', write: true } : null,
         inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status) ? { id: 'copy', label: 'Copy link' } : null,
         inv.status === 'draft' ? { id: 'paid', label: 'Mark paid…', write: true } : null,
         inv.status === 'void' && inv.replacedBy
@@ -169,7 +194,8 @@ const InvoiceView = (() => {
         out ? { id: 'void', label: 'Void and remake…', danger: true, write: true } : null,
       ],
       files: [
-        { id: 'pdf', label: 'Invoice PDF' },
+        // Hnry makes the PDF of an invoice that lives there.
+        inH ? null : { id: 'pdf', label: 'Invoice PDF' },
         inv.status !== 'void' ? { id: 'breakdown', label: 'Cost Breakdown', hint: 'For you only' } : null,
       ],
     };
@@ -212,7 +238,8 @@ const InvoiceView = (() => {
     return (
       '<header class="inv-head" aria-label="Invoice ' + esc(inv.number || '') + '">' +
       '<div class="inv-overview">' +
-      '<p class="eyebrow inv-number">' + esc(inv.number || 'No number') + '</p>' +
+      '<p class="eyebrow inv-number">' + esc(inv.hnryNumber || inv.number || 'No number') +
+      (inv.hnryNumber && inv.number && inv.hnryNumber !== inv.number ? ' · app ref ' + esc(inv.number) : '') + '</p>' +
       '<h1 class="inv-title">' + esc(KIND_TITLE[inv.kind] || 'Invoice') + '</h1>' +
       '<p class="inv-client">' + esc([project.name || 'Untitled', client.businessName].filter(Boolean).join(' · ')) + '</p>' +
       statusMarkup(inv) +
@@ -774,7 +801,8 @@ const InvoiceView = (() => {
     const button = openerOf(el);
     if (id === 'pdf' || id === 'breakdown' || id === 'legacy-pdf') return download(id, button);
     if (id === 'copy') return SendPanel.copyLink('invoice', data.invoice.publicToken, button);
-    if (dirty() && (id === 'send' || id === 'paid' || id === 'void')) {
+    if (id === 'hnry-open') return openInHnry();
+    if (dirty() && (id === 'send' || id === 'paid' || id === 'void' || id === 'hnry-push' || id === 'hnry-sent')) {
       showError('Save or undo the extras first: the invoice goes out as it is saved.');
       const save = $('inv-save');
       if (save) save.focus();
@@ -783,7 +811,83 @@ const InvoiceView = (() => {
     if (id === 'send') return openSendHere(button);
     if (id === 'paid') return openMarkPaid(button);
     if (id === 'void') return openVoid(button);
+    if (id === 'hnry-push') return pushHere(button);
+    if (id === 'hnry-sent') return openMarkSent(button);
     return undefined;
+  }
+
+  // ── Hnry (hnry-invoicing H6) ────────────────────────────────────────────
+
+  /* Hnry's own page for this invoice, in a new tab. */
+  function openInHnry() {
+    const url = LSCHnry.urlOf(data.invoice);
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+
+  /* The invoice as the server now has it: after a refusal or a failure, which
+     are written on its row, so the screen says what happened. */
+  async function reloadInvoice() {
+    const id = data.invoice.id;
+    try {
+      const reply = await LSCApi.get('/api/invoices/' + encodeURIComponent(id) + '?today=' + today());
+      if (onScreen() && data.invoice.id === id) {
+        accept(reply);
+        draw();
+      }
+    } catch (_) {
+      // The answer already in hand is the one to show; a failed look changes nothing.
+    }
+  }
+
+  /* Make this invoice in Hnry, or finish it (Retry). A final is made once and
+     then belongs to Hnry, so it asks first; a deposit, a single or a Retry just goes. */
+  function pushHere(opener) {
+    const inv = data.invoice;
+    const go = (b) => write('hnry', {}, b, 'Sending to Hnry…', (reply) =>
+      reply.hnry && reply.hnry.already ? 'It’s already in Hnry.'
+        : 'In Hnry' + (reply.hnry && reply.hnry.hnryNumber ? ' as ' + reply.hnry.hnryNumber : '') + '. Check the draft there before you send it.')
+      .catch(async (err) => {
+        await reloadInvoice();
+        throw err;
+      });
+    if (inv.kind === 'final' && !inv.hnryInvoiceId) {
+      return ProjectFolder.dialog(opener, {
+        title: 'Create the final invoice in Hnry?',
+        body: '<p class="pfd-text" id="pfd-desc">This makes a draft in Hnry with the job’s total, your extras and the deposit taken ' +
+          'off. After that it can’t be edited here: change it in Hnry. Check the extras are all in first.</p>',
+        describe: true,
+        confirm: 'Create in Hnry',
+        run: (b) => go(b),
+      });
+    }
+    return go(opener).catch((err) => showError(err.message || 'Hnry could not be reached.'));
+  }
+
+  /* Record that the user sent it from Hnry: it becomes Sent, with the dates it
+     went out with (Hnry's own defaults: issued today, due in 20 days), and the
+     project reads invoiced. */
+  function openMarkSent(opener) {
+    const inv = data.invoice;
+    const d = LSCHnry.defaultDates(today());
+    ProjectFolder.dialog(opener, {
+      title: 'Mark ' + (inv.hnryNumber || inv.number || 'invoice') + ' sent',
+      body:
+        '<p class="pfd-text" id="pfd-desc">Record that you sent this invoice from Hnry. It then counts as outstanding until you mark it paid. ' +
+        'Use the dates on the invoice in Hnry.</p>' +
+        '<div class="field"><label for="pfd-issued">Issued on</label><input id="pfd-issued" type="date" value="' + d.issuedAt + '"></div>' +
+        '<div class="field"><label for="pfd-due">Due on</label><input id="pfd-due" type="date" value="' + d.dueAt + '"></div>',
+      describe: true,
+      confirm: 'Mark sent',
+      focus: 'pfd-issued',
+      run: async (b) => {
+        const issuedAt = dlgValue('pfd-issued');
+        const dueAt = dlgValue('pfd-due');
+        if (!C.isDate(issuedAt)) throw fieldError('pfd-issued', 'Choose the date it was issued.');
+        if (!C.isDate(dueAt) || dueAt < issuedAt) throw fieldError('pfd-due', 'The due date can’t be before the issue date.');
+        return write('sent', { issuedAt, dueAt }, b, 'Saving…', (reply) =>
+          reply.already ? 'It was already marked sent.' : 'Marked sent, due ' + when(dueAt) + '.');
+      },
+    });
   }
 
   // ── Sending (task 29) ───────────────────────────────────────────────────
@@ -1045,11 +1149,12 @@ const InvoiceView = (() => {
       onScreen: () => onScreen() && data && data.invoice.id === reply.invoice.id,
       dirty,
     });
-    // The folder's row menus hand over Mark paid… and Void and remake….
-    if (then === 'paid' || then === 'void') {
+    // The folder's row menus hand over Mark paid…, Void and remake… and Mark sent….
+    const handOver = { paid: openMarkPaid, void: openVoid, 'hnry-sent': openMarkSent }[then];
+    if (handOver) {
       // Only while this state still offers it (the primary, or an Actions item).
       const el = root.querySelector('.inv-acts [data-act="' + then + '"]');
-      if (el) (then === 'paid' ? openMarkPaid : openVoid)(openerOf(el));
+      if (el) handOver(openerOf(el));
     }
   }
 
@@ -1057,6 +1162,7 @@ const InvoiceView = (() => {
     const ticket = LSCRouter.ticket();
     window.scrollTo(0, 0);
     const then = state && state.action;
+    await LSCHnry.ready();
     // A reply already in hand (void and remake, a corrected address): no second fetch.
     if (state && state.reply && state.reply.invoice && state.reply.invoice.id === invoiceId) {
       shown(state.reply, projectId, then);
@@ -1093,7 +1199,7 @@ const InvoiceView = (() => {
 
     /* The router's way in: the project id, then [invoiceId]. `state.action`
        'paid' opens Mark paid once drawn (the folder's "Mark deposit paid…"),
-       'void' its Void and remake (the folder's row menu). */
+       'void' its Void and remake, 'hnry-sent' its Mark sent (the folder's row menu). */
     show(projectId, rest, state) {
       const [invoiceId, extra] = rest;
       if (invoiceId === undefined || extra !== undefined) return false;

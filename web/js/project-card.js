@@ -154,9 +154,13 @@ const ProjectCard = (() => {
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';
-      case 'invoice_sent': return (d.number || 'Invoice') +
-        (d.by === 'email' ? ' emailed' + (d.late ? ' late' : '') : d.by === 'link' ? ' sent by link' : ' marked sent') +
+      case 'invoice_sent': return (d.by === 'hnry' ? (d.hnryNumber || d.number || 'Invoice') : (d.number || 'Invoice')) +
+        (d.by === 'email' ? ' emailed' + (d.late ? ' late' : '') : d.by === 'link' ? ' sent by link' : d.by === 'hnry' ? ' sent from Hnry' : ' marked sent') +
         (C.isDate(d.dueAt) ? ', due ' + dayMonth(d.dueAt, today) : '');
+      // Hnry (hnry-invoicing): made there as a draft, or why it didn't get there.
+      case 'hnry_pushed': return (d.number || 'Invoice') + ' made in Hnry' + (d.hnryNumber ? ' as ' + d.hnryNumber : '') +
+        (d.lines > 1 ? ' (' + d.lines + ' lines)' : '');
+      case 'hnry_push_failed': return (d.number || 'Invoice') + ' didn’t reach Hnry' + (d.message ? ': ' + d.message : '');
       case 'invoice_paid': return (d.number || 'Invoice') + ' paid' + (typeof d.amount === 'number' ? ', ' + fmt(d.amount) : '') +
         (d.via === 'card' ? ' by card' : d.via === 'bank' ? ' by bank transfer' : '');
       case 'invoice_voided': return (d.number || 'Invoice') + ' voided' + (d.reason ? ': ' + d.reason : '') +

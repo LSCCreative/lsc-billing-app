@@ -31,6 +31,8 @@ js/config.js             the API address and the Google Maps browser key + Map
                          ID. Gitignored — copy from config.example.js
 js/api.js                the only place that calls fetch; classifies failures.
                          postPdf() is the one binary path (PDF export)
+js/hnry.js               Hnry on the invoice screens (hnry-invoicing H6): an invoice's
+                         Hnry state and words, Hnry's page, the push and Mark sent calls
 js/calc.js               the money model. A byte-identical copy of
                          server/src/calc.js — see below
 js/util.js               fmt / esc / today / num, and the ABN helpers

@@ -317,6 +317,8 @@ const ProjectFolder = (() => {
     Sent: 'info', Scheduled: 'info',
     Accepted: 'ok', Paid: 'ok',
     Declined: 'alert', Overdue: 'alert', Expired: 'alert',
+    // An invoice in Hnry (hnry-invoicing H6): where the draft is, in words.
+    'In Hnry': 'info', 'Part in Hnry': 'alert', 'Hnry error': 'alert', 'Not in Hnry': 'neutral',
     Void: 'void',
     // The call sheet's link (trip-planner task 11).
     'Link on': 'info', 'Link off': 'neutral', 'Not shared': 'neutral',
@@ -424,22 +426,54 @@ const ProjectFolder = (() => {
       ].filter(Boolean).join(' · ');
     }
     const open = { id: 'invoice', label: 'Open', target: inv.id };
-    const send = !legacy && inv.status === 'draft' ? { id: 'send-invoice', label: 'Send…', target: inv.id } : null;
+    // Hnry (hnry-invoicing H6): an invoice can live there as a draft the user sends from Hnry.
+    const inH = LSCHnry.inHnry(inv);
+    const hnry = LSCHnry.describe(inv, {
+      enabled: LSCHnry.enabled(),
+      depositInHnry: folder.invoices.some((i) => i.kind === 'deposit' && i.status !== 'void' && LSCHnry.complete(i)),
+      // A deposit the app sent itself, before Hnry: the final goes the same old way.
+      depositByApp: folder.invoices.some((i) => i.kind === 'deposit' && !LSCHnry.inHnry(i) && ['scheduled', 'sent', 'paid'].includes(i.status)),
+    });
+    if (hnry && hnry.chip && inv.status === 'draft') chip = hnry.chip;
+    if (inv.hnryNumber && inv.number && inv.hnryNumber !== inv.number) {
+      meta = [meta, 'app ref ' + esc(inv.number)].filter(Boolean).join(' · ');
+    }
+    const hnryPrimary = hnry && hnry.primary ? { id: hnry.primary.id, label: hnry.primary.label, target: inv.id } : null;
+    const hnryOpen = hnry && hnry.open ? { id: 'hnry-open', label: 'Open in Hnry', target: inv.id } : null;
+    const hnrySent = hnry && hnry.markSent ? { id: 'inv-hnry-sent', label: 'Mark sent…', target: inv.id } : null;
+    // The app sends only what Hnry doesn't hold: an invoice in Hnry is sent from Hnry.
+    const hnryLeads = Boolean(hnryPrimary || (hnry && hnry.defer));
+    const send = !legacy && !inH && inv.status === 'draft'
+      ? { id: 'send-invoice', label: hnryLeads ? 'Send from the app…' : 'Send…', target: inv.id } : null;
     const paid = unpaid && (legacy || inv.status === 'draft' || out) ? { id: 'inv-paid', label: 'Mark paid…', target: inv.id } : null;
+    let primary = send || open;
+    let before = send ? [open] : [];
+    if (hnryPrimary) {
+      primary = hnryPrimary;
+      before = [open, send];
+    } else if (hnry && hnry.defer) {
+      primary = open;
+      before = [send];
+    } else if (hnryOpen && inv.status === 'draft') {
+      primary = hnryOpen;
+      before = [open];
+    }
     return {
       key: 'i-' + inv.id,
       label: named,
       name: esc(INVOICE_KIND[inv.kind] || 'Invoice'),
-      ref: inv.number || '',
+      ref: inv.hnryNumber || inv.number || '',
       chip,
       meta,
       alert: overdue,
-      status: legacy ? '' : SendPanel.statusMarkup(inv.send, named),
+      status: legacy ? '' : LSCHnry.lineMarkup(hnry, named) + (inH ? '' : SendPanel.statusMarkup(inv.send, named)),
       amount: inv.status === 'void' ? '<s>' + fmt(inv.amountDue) + '</s>' : fmt(inv.amountDue),
       void: inv.status === 'void',
-      primary: send || open,
+      primary,
       actions: [
-        send ? open : null,
+        ...before,
+        hnryOpen && primary.id !== hnryOpen.id ? hnryOpen : null,
+        hnrySent,
         !legacy && inv.publicToken && ['scheduled', 'sent', 'paid'].includes(inv.status)
           ? { id: 'copy-invoice', label: 'Copy link', target: inv.id } : null,
         paid,
@@ -450,7 +484,8 @@ const ProjectFolder = (() => {
         // An old invoice prints from the estimate row it was made from, as it always did.
         ? [inv.estimateId ? { id: 'legacy-pdf', label: 'Invoice PDF', target: inv.estimateId } : null]
         : [
-          { id: 'inv-pdf', label: 'Invoice PDF', target: inv.id },
+          // Hnry makes the PDF of an invoice that lives there; the app's Cost Breakdown is still its own.
+          inH ? null : { id: 'inv-pdf', label: 'Invoice PDF', target: inv.id },
           inv.status !== 'void' ? { id: 'inv-breakdown', label: 'Cost Breakdown', hint: 'For you only', target: inv.id } : null,
         ],
     };
@@ -1231,12 +1266,80 @@ const ProjectFolder = (() => {
 
   // ── Downloads ───────────────────────────────────────────────────────────
 
+  // ── Hnry (hnry-invoicing H6) ────────────────────────────────────────────
+
+  /* Hnry's own page for an invoice, in a new tab: the user checks and sends it there. */
+  function openInHnry(inv) {
+    const url = inv ? LSCHnry.urlOf(inv) : null;
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+
+  /* Ask the server to make this invoice in Hnry (or finish it: Retry), then show
+     the folder as it now is. Whatever happened is on the invoice's row, so the
+     folder is read again after a failure too. Resolves; throws an Error carrying
+     the reason, for a dialog to show or a row to say. */
+  async function pushNow(inv) {
+    Toast.working('Sending to Hnry…');
+    try {
+      const reply = await LSCHnry.push(inv.id);
+      Toast.ok(reply.hnry && reply.hnry.already ? 'It’s already in Hnry.'
+        : 'In Hnry' + (reply.hnry && reply.hnry.hnryNumber ? ' as ' + reply.hnry.hnryNumber : '') + '. Check the draft there before you send it.');
+      await refresh();
+      return reply;
+    } catch (err) {
+      Toast.hide();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') {
+        handlers.onAuthLost({ keepScreen: true });
+        return null;
+      }
+      if (err.status === 404) {
+        showMissing();
+        return null;
+      }
+      await refresh();
+      throw new Error(err.kind === 'network' ? 'The server is unreachable.' : (err.message || 'Hnry could not be reached.'));
+    }
+  }
+
+  /* A final is made once and then belongs to Hnry, so it asks first; a deposit,
+     a single, or a Retry just goes. */
+  function pushToHnry(inv, button) {
+    if (!inv || busy) return undefined;
+    if (inv.kind === 'final' && !inv.hnryInvoiceId) {
+      return openConfirm(button, {
+        title: 'Create the final invoice in Hnry?',
+        body: 'This makes a draft in Hnry with the job’s total, your extras and the deposit taken off. After that it can’t be ' +
+          'edited here: change it in Hnry. Check the extras are all in first.',
+        confirm: 'Create in Hnry',
+        run: () => pushNow(inv),
+      });
+    }
+    const spin = button.querySelector('.spinner');
+    button.disabled = true;
+    if (spin) spin.style.display = 'inline-block';
+    const box = $('pf-doc-error');
+    if (box) {
+      box.textContent = '';
+      box.classList.remove('show');
+    }
+    return pushNow(inv).catch((err) => showDocError(err.message)).finally(() => {
+      if (button.isConnected) {
+        button.disabled = false;
+        if (spin) spin.style.display = 'none';
+      }
+    });
+  }
+
   async function runDoc(kind, id, el) {
     const button = openerOf(el);
     if (kind === 'invoice') return openInvoice(id);
     // The invoice's own page does these, as its header would (IA: * rows only).
     if (kind === 'inv-paid') return openInvoice(id, 'paid');
     if (kind === 'inv-void') return openInvoice(id, 'void');
+    if (kind === 'inv-hnry-sent') return openInvoice(id, 'hnry-sent');
+    if (kind === 'hnry-open') return openInHnry(folder.invoices.find((i) => i.id === id));
+    if (kind === 'hnry-push') return pushToHnry(folder.invoices.find((i) => i.id === id), button);
     if (kind === 'send') return openSendEstimate(button);
     if (kind === 'send-invoice') return openSendInvoice(folder.invoices.find((i) => i.id === id), button);
     if (kind === 'copy') {
@@ -1355,6 +1458,7 @@ const ProjectFolder = (() => {
     placeholder('<h3>Loading…</h3>');
     try {
       const reply = await LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today());
+      await LSCHnry.ready();
       if (!LSCRouter.isCurrent(ticket)) return;
       activityAll = false;
       folder = reply;

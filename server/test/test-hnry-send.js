@@ -251,3 +251,39 @@ test('marking an invoice in Hnry paid works from draft, as before', async () => 
   const after = row(deposit.id);
   assert.deepEqual([after.status, after.paid_via, after.issued_at], ['paid', 'card', '2026-10-22']);
 });
+
+/* ── The screens ask whether Hnry is set up (H6) ──────────────────────── */
+
+test('GET /api/hnry/status says whether Hnry is set up, and needs a session', async () => {
+  const on = await api('/api/hnry/status').then(json);
+  assert.deepEqual([on.status, on.body], [200, { enabled: true }]);
+  const off = await start({});
+  const loginOff = await fetch(`${off.url}/api/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'lachlan', password: PASSWORD }),
+  });
+  const c2 = loginOff.headers.getSetCookie()[0].split(';')[0];
+  const none = await fetch(`${off.url}/api/hnry/status`, { headers: { cookie: c2 } }).then(json);
+  assert.deepEqual([none.status, none.body], [200, { enabled: false }]);
+  const anon = await fetch(`${base}/api/hnry/status`);
+  assert.equal(anon.status, 401);
+});
+
+/* ── The project page's rows carry where each invoice is in Hnry (H6) ── */
+
+test('the folder\'s invoice rows say where each invoice is in Hnry, as the invoice page does', async () => {
+  fake.fail('addItem', 1, { after: 0 });
+  const { est, deposit, final } = await accepted({ pct: 40 });
+  await putInv(final.id, { extras: [OT] });
+  assert.equal((await inv(final.id, 'hnry')).status, 502); // the balance line landed; the extra didn't
+  const f = (await api(`/api/projects/${est.projectId}`).then(json)).body;
+  const dep = f.invoices.find((i) => i.id === deposit.id);
+  const fin = f.invoices.find((i) => i.id === final.id);
+  const d = row(deposit.id);
+  assert.deepEqual([dep.hnryInvoiceId, dep.hnryNumber, dep.hnryPushedAt, dep.hnryLinesDone, dep.hnryError],
+    [d.hnry_invoice_id, d.hnry_number, d.hnry_pushed_at, 1, null]);
+  assert.ok(dep.hnryInvoiceId && dep.hnryPushedAt, 'the deposit is wholly in Hnry');
+  assert.deepEqual([!!fin.hnryInvoiceId, fin.hnryPushedAt, fin.hnryLinesDone, fin.hnryError], [true, null, 1, 'zapier_error'], 'the final is part-way');
+  // The invoice page's own view says the same.
+  const one = (await inv(final.id)).body.invoice;
+  assert.deepEqual([one.hnryInvoiceId, one.hnryLinesDone, one.hnryError], [fin.hnryInvoiceId, fin.hnryLinesDone, fin.hnryError]);
+});

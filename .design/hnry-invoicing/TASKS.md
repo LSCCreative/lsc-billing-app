@@ -112,7 +112,7 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
 
 ## UI (**Frontend task**s)
 
-- [ ] **H6. Project page invoice rows** (frontend — Opus/high): in `project-folder.js` / `project-card.js` each
+- [x] **H6. Project page invoice rows** (frontend — Opus/high): in `project-folder.js` / `project-card.js` each
   invoice row shows the Hnry number (falling back to the app's number), its kind, amount, the status the user
   set, and a Hnry state: "In Hnry (draft)", "Not in Hnry yet" with **Retry**, or "Hnry error" with the message
   and Retry. "Open in Hnry" opens `https://app.hnry.io/invoices/<numeric id>/edit` (decode the id's trailing
@@ -120,6 +120,24 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   Send / PDF / schedule controls disappear for Hnry invoices (H5). Done when: five states are checked
   (draft, error, retry, final ready, old invoice) at 1280 / 800 / 375, and a failed push is visible without
   opening the invoice. _Modifies: `project-folder.js`, `project-card.js`, `web/js/views/invoice.js`._
+  _Done 2026-10-22 (not committed, not deployed): both screens (the project page's rows and the invoice page) share
+  **`web/js/hnry.js`** (`LSCHnry`: `describe(inv, ctx)`, status line, `urlOf`, push / Mark sent calls, Hnry's 20-day
+  default dates), and `GET /api/hnry/status` ({enabled}) tells them whether Hnry is set up. Each Hnry invoice shows
+  the Hnry number (the app's as "app ref"), a chip (In Hnry / Part in Hnry / Hnry error / Not in Hnry; Sent and Paid
+  once it has gone), one status line in the email line's own style, and one main button: Open in Hnry,
+  Retry in Hnry, Create in Hnry (a final asks first: "can't be edited here after"), or Open. Mark sent… (dates
+  prefilled issued today / due +20 days) records "sent from Hnry". Send / PDF / Copy link are gone for an invoice in
+  Hnry; the app's own Send stays as "Send from the app…" in Actions for one not in Hnry. A part-way final says how
+  many lines landed and tells the user to **look at the draft in Hnry before retrying** (a timed-out line may be
+  there). A final whose deposit went out by the app stays entirely on the old path. Server: the folder's invoice
+  rows now carry the `hnry*` fields (found on screen: they were missing); activity reads "made in Hnry as …",
+  "didn't reach Hnry: …", "sent from Hnry". New: `scripts/dev-stub-hnry.js` + launch config `api-scratch-hnry`
+  (pretend Hnry with a control port :8081). Checked on that stub against a scratch DB: draft, error, part-way (Retry
+  completed it; Hnry's draft summed to the app's $10,470.00), final (Hnry $12,323.85 - $4,929.54 = the row's
+  $7,394.31), Mark sent (validation, then Sent), the old-way project unchanged; 800 and 375 (no overflow, 44px
+  targets, the longest line wraps to 3); 1280 layout seen but too small in the pane to read. 13 tests in
+  `test-hnry-web.js` (the web file loaded in a sandbox), 10 mutations killed; suite 853/853. Not checked: Safari,
+  a keyboard walk-through of the new dialogs (they reuse the project dialog's focus trap), the design review (H11)._
 
 - [ ] **H7. Settings and Rate Card copy** (frontend — Opus/high): Settings' "Card payments" block
   (`settings.js` ~620) becomes **Hnry**: connected or not (a harmless read call), "Invoices are created in
