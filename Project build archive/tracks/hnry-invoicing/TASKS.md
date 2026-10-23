@@ -221,10 +221,20 @@ Reference check for every push, on the live setup (not GST-registered): the Hnry
   Hnry-locking copy, the deposit's Hnry number (`invoiceJson` gains `hnryNumber` on less/replaces/replacedBy,
   1 test), dialog field spacing. The could-improves are left._
 
-- [ ] **H12. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v20 (and v19 if still
+- [x] **H12. Deploy** (Sonnet/medium; ask the user first): back up the live DB, run v20 (and v19 if still
   pending) on a copy of the backup, fetch and diff `origin/main`, NAS before Pages, credentials in the NAS
   `.env` first. After deploy: accept nothing real; the user does one real project when ready. Update ROADMAP,
   move the folder to the archive, delete the draft Zap "Untitled Zap" in Zapier.
+  _Done 2026-10-23: the two Zapier variables piped from the 1Password-mounted file into the NAS `.env`
+  (`/volume4/lsc-billing/app/.env`, old copy `.env.bak-20261023-111301`), values never shown. Suite 869/869.
+  Live backup `data/backups/pre-v20-20261023-1113.db` (v19, integrity ok). `migration-check.js` on a copy:
+  NO DIFFERENCES; the live data has one estimate (PTLSC02, accepted, deposit + final drafts), so 4b ran on
+  a second copy with a duplicated draft given UPID `HTWO12` (deposit $3,834.83, final + 2 extras $8,435.48,
+  each to the cent; 13 calls, nothing internal). NAS files matched `0491971` before the copy and HEAD
+  after; `docker compose up -d --build` (~28 min, apt layers redone): healthy, `migrated to v20`, and the
+  container's own Hnry check says connected. Pages `782416f` live. Nothing was accepted or pushed. Left to
+  the user: delete "Untitled Zap" and the five test drafts; PTLSC02's two draft invoices are not in Hnry
+  (Create in Hnry on its project page if wanted)._
 
 ## Open checks carried into the build
 

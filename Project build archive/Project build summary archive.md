@@ -78,3 +78,14 @@ verdict); markup became "Business profit" (live 10%, in every auto price, not th
 (Rate Card, P7) is built into every auto price, never a card-only surcharge. Saved estimates, invoices and
 documents are unchanged by the migration. Decisions P1–P7 in `BRIEF.md`, PF1–PF11 in `TASKS.md`, design
 review in `DESIGN_REVIEW.md`. Open: the user reviews typed rates now below the floor.
+
+## hnry-invoicing
+Built and deployed 2026-10-23 [v20]. Replaces card-payments (Stripe dropped): invoices are drafted **in
+Hnry** through the Zapier SDK (`server/src/hnry.js`, all calls in one place): the deposit or single on
+acceptance (after commit, never blocking it; a failure is kept on the row for Retry), the final from
+"Create in Hnry" with extras and a "Less deposit" line summing to the stored figure to the cent. Hnry's
+number replaces the app's; the app stops sending or printing an invoice that lives in Hnry; paid stays
+manual; a GST guard pushes nothing while anything carries GST. Settings → Hnry checks the connection; the
+credential lives in the 1Password Environment `ZAPIER_CREDENTIALS` and the NAS `.env`. Decisions in
+`BRIEF.md`, H1–H12 in `TASKS.md`, design review in `DESIGN_REVIEW.md`, `migration-check.js` (v19 → v20,
+rerun on the live backup at deploy). Open: C2 (GST once registered), C4 (paid read-back).

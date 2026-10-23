@@ -172,7 +172,7 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   recorded on the row for Retry). The GST guard pushes nothing while any figure carries GST or Settings
   says registered (brief C2). Lines come from STORED totals and must sum to `amountDue` to the cent;
   only names, the reference, ids and client-facing prices go to Hnry, never an internal figure
-  (`.design/hnry-invoicing/migration-check.js` section 4 checks it).
+  (`Project build archive/tracks/hnry-invoicing/migration-check.js` section 4 checks it).
 
 ## Frontend traps
 
